@@ -1,5 +1,15 @@
+__ctype_b_loc@GLIBC_2.4
+__ctype_tolower_loc@GLIBC_2.4
+__errno_location@GLIBC_2.4
+__isoc99_fscanf@GLIBC_2.7
+__isoc99_sscanf@GLIBC_2.7
+__libc_start_main@GLIBC_2.4
+__strdup@GLIBC_2.4
+__xstat@GLIBC_2.4
+_exit@GLIBC_2.4
 abort@GLIBC_2.4
 accept@GLIBC_2.4
+access@GLIBC_2.4
 acos@GLIBC_2.4
 asin@GLIBC_2.4
 asinh@GLIBC_2.4
@@ -8,14 +18,10 @@ bind@GLIBC_2.4
 calloc@GLIBC_2.4
 chmod@GLIBC_2.4
 clock_gettime@GLIBC_2.4
-closedir@GLIBC_2.4
 close@GLIBC_2.4
+closedir@GLIBC_2.4
 connect@GLIBC_2.4
 cos@GLIBC_2.4
-__ctype_b_loc@GLIBC_2.4
-__ctype_tolower_loc@GLIBC_2.4
-__errno_location@GLIBC_2.4
-_exit@GLIBC_2.4
 fclose@GLIBC_2.4
 fcntl@GLIBC_2.4
 fflush@GLIBC_2.4
@@ -27,8 +33,8 @@ fopen@GLIBC_2.4
 fprintf@GLIBC_2.4
 fputs@GLIBC_2.4
 fread@GLIBC_2.4
-freeaddrinfo@GLIBC_2.4
 free@GLIBC_2.4
+freeaddrinfo@GLIBC_2.4
 fseek@GLIBC_2.4
 ftell@GLIBC_2.4
 fwrite@GLIBC_2.4
@@ -44,9 +50,6 @@ inet_addr@GLIBC_2.4
 inet_ntoa@GLIBC_2.4
 inet_pton@GLIBC_2.4
 ioctl@GLIBC_2.4
-__isoc99_fscanf@GLIBC_2.7
-__isoc99_sscanf@GLIBC_2.7
-__libc_start_main@GLIBC_2.4
 listen@GLIBC_2.4
 localtime@GLIBC_2.4
 localtime_r@GLIBC_2.4
@@ -59,8 +62,8 @@ memmove@GLIBC_2.4
 memset@GLIBC_2.4
 mktime@GLIBC_2.4
 mmap@GLIBC_2.4
-opendir@GLIBC_2.4
 open@GLIBC_2.4
+opendir@GLIBC_2.4
 pause@GLIBC_2.4
 pclose@GLIBC_2.4
 perror@GLIBC_2.4
@@ -76,8 +79,8 @@ pthread_mutex_unlock@GLIBC_2.4
 qsort@GLIBC_2.4
 raise@GLIBC_2.4
 rand@GLIBC_2.4
-readdir@GLIBC_2.4
 read@GLIBC_2.4
+readdir@GLIBC_2.4
 realloc@GLIBC_2.4
 recv@GLIBC_2.4
 remove@GLIBC_2.4
@@ -99,7 +102,6 @@ strchr@GLIBC_2.4
 strcmp@GLIBC_2.4
 strcpy@GLIBC_2.4
 strcspn@GLIBC_2.4
-__strdup@GLIBC_2.4
 strerror@GLIBC_2.4
 strftime@GLIBC_2.4
 strlen@GLIBC_2.4
@@ -122,4 +124,3 @@ unlink@GLIBC_2.4
 usleep@GLIBC_2.4
 vfprintf@GLIBC_2.4
 write@GLIBC_2.4
-__xstat@GLIBC_2.4
