@@ -370,6 +370,7 @@ void client_link_apply_state(const char * j) {
 static void * reader_thread(void * arg) {
     (void)arg;
     char url[160], cmd[256], line[8192];
+    sleep(2);
     for (;;) {
         if (!host_ok(settings.master_host)) {
             toon_state.connected = 0;

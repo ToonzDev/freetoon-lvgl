@@ -245,6 +245,7 @@ static char g_therm_pub[64] = {0};
 static int send_query(const char* destuuid, const char* service, const char* state_var);
 
 static void handle_notify(const char* xml) {
+    if (settings.client_mode) return;
     char sid[128];
     if (!attr_value(xml, "serviceid", sid, sizeof(sid))) return;
     char src_uuid[64] = {0};
@@ -398,6 +399,7 @@ static void handle_notify(const char* xml) {
 static char last_query_var[64] = {0};
 
 static void handle_query_response(const char* xml) {
+    if (settings.client_mode) return;
     /* QueryStateVariableResponse wraps the value as <VarName>VAL</VarName>.
        Identify the variable by element name in the response itself — much
        more robust than tracking last_query_var, since multiple queries can
@@ -506,7 +508,7 @@ static void handle_msg(const char* xml) {
         /* happ_thermstat thermostatInfo dataset — the native source for the
          * calibrated room temp + humidity (the same push qt-gui consumes).
          * currentTemp/currentSetpoint are centi-°C; currentHumidity is %. */
-        if (strstr(xml, "happ_thermstat") && strstr(xml, "UpdateDataSet")
+        if (!settings.client_mode && strstr(xml, "happ_thermstat") && strstr(xml, "UpdateDataSet")
             && strstr(xml, "thermostatInfo")) {
             float v;
             if (elem_text_float(xml, "currentTemp", &v) && v > 0) {
@@ -519,7 +521,7 @@ static void handle_msg(const char* xml) {
                 toon_state.setpoint = v / 100.0f;
         }
         /* Could be a response to our SetSetpoint — extract setpoint from response */
-        if (strstr(xml, "ManualSetpoint") || strstr(xml, "SetSetpoint") || strstr(xml, "Setpoint")) {
+        if (!settings.client_mode && (strstr(xml, "ManualSetpoint") || strstr(xml, "SetSetpoint") || strstr(xml, "Setpoint"))) {
             float v;
             if (elem_text_float(xml, "currentSetpoint", &v) || elem_text_float(xml, "CurrentSetpoint", &v)) {
                 toon_state.setpoint = v / 100.0f;
@@ -530,7 +532,7 @@ static void handle_msg(const char* xml) {
         /* GetBoilerType / SetBoilerType response — both echo the boiler type
            back in an <ot> element (0=OpenTherm, 1=On/Off). Log raw the first
            few times so the verb/serviceid can be confirmed on-device. */
-        if (strstr(xml, "BoilerType")) {
+        if (!settings.client_mode && strstr(xml, "BoilerType")) {
             static int bt_log_n = 0;
             if (bt_log_n < 4) { bt_log_n++; fprintf(stderr, "[bxt] BoilerType msg: %.400s\n", xml); }
             float v;
@@ -1170,6 +1172,14 @@ int boxtalk_set_program(int preset) {
 }
 
 int boxtalk_set_manual(void) {
+    if (settings.client_mode) {
+        int rc = client_link_program(-1);
+        if (rc == 0) {
+            toon_state.program_state = PROG_MANUAL;
+            toon_state.active_state  = -1;
+        }
+        return rc;
+    }
     /* "Manual": leave the schedule and hold indefinitely (programState=0).
      * Verified on a Toon 2: a bare roomSetpoint write makes a TEMP override
      * (programState=2, reverts at the next schedule switch), NOT a manual hold.
@@ -1270,7 +1280,7 @@ static void* bxt_thread(void* arg) {
     (void)arg;
     while (1) {
         if (connect_loop() != 0) { sleep(2); continue; }
-        toon_state.connected = 1;
+        if (!settings.client_mode) toon_state.connected = 1;
         rxlen = 0;
         send_initial_handshake();
 
@@ -1305,7 +1315,7 @@ static void* bxt_thread(void* arg) {
             }
         }
         close(sock_fd); sock_fd = -1;
-        toon_state.connected = 0;
+        if (!settings.client_mode) toon_state.connected = 0;
         sleep(1);
     }
     return NULL;
@@ -1316,8 +1326,10 @@ int boxtalk_start(void) {
     pthread_t th;
     if (pthread_create(&th, NULL, bxt_thread, NULL) != 0) return -1;
     pthread_detach(th);
-    pthread_t poll;
-    if (pthread_create(&poll, NULL, http_poll_thread, NULL) == 0)
-        pthread_detach(poll);
+    if (!settings.client_mode) {
+        pthread_t poll;
+        if (pthread_create(&poll, NULL, http_poll_thread, NULL) == 0)
+            pthread_detach(poll);
+    }
     return 0;
 }

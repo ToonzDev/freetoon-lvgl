@@ -133,6 +133,10 @@ int main(int argc, char** argv) {
      * tile_slots_subscribe_all() has something to subscribe to. */
     tile_slots_init();
 
+    /* BoxTalk client: maintains local HCB connection for WiFi (hcb_netcon) and system daemons */
+    if (boxtalk_start() != 0)
+        fprintf(stderr, "[main] boxtalk_start failed\n");
+
     if (settings.client_mode) {
         /* Slave: mirror a master Toon over its PWA API; start NO local
          * integrations so we connect only to the master. */
@@ -140,8 +144,6 @@ int main(int argc, char** argv) {
         if (client_link_start() != 0)
             fprintf(stderr, "[main] client_link_start failed\n");
     } else {
-        if (boxtalk_start() != 0)
-            fprintf(stderr, "[main] boxtalk_start failed\n");
         if (homewizard_start() != 0)
             fprintf(stderr, "[main] homewizard_start failed\n");
         extern int p1esphome_start(void);
