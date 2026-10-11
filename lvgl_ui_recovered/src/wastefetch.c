@@ -31,7 +31,7 @@ static char * http_get(const char * url) {
     char cmd[2048];
     /* -k: provider/CDN certs vary; -L: follow redirects; bounded time. */
     snprintf(cmd, sizeof cmd,
-             "/usr/bin/curl -s -k -L --max-time 25 --connect-timeout 8 "
+             "curl -s -k -L --max-time 25 --connect-timeout 8 "
              "-A 'Mozilla/5.0' '%.1900s'", url);
     FILE * fp = popen(cmd, "r");
     if (!fp) return NULL;
@@ -133,12 +133,42 @@ int main(int argc, char ** argv) {
     const char * pid = argv[1], * zip = argv[2], * nr = argv[3], * icsid = argv[4],
                * street = argv[5], * city = argv[6], * fullics = argv[7], * out = argv[8];
 
-    /* 1) download the provider script */
-    char url[512];
-    snprintf(url, sizeof url, "%swastecollectionProvider_%s.js", PLUGIN_BASE, pid);
-    char * script = http_get(url);
+    /* 1) load provider script: check local cache in /mnt/data/waste_plugins/ first,
+       otherwise download from PLUGIN_BASE and cache locally. */
+    char local_path[256];
+    snprintf(local_path, sizeof local_path, "/mnt/data/waste_plugins/wastecollectionProvider_%s.js", pid);
+    char * script = NULL;
+    FILE * lf = fopen(local_path, "r");
+    if (lf) {
+        fseek(lf, 0, SEEK_END);
+        long sz = ftell(lf);
+        fseek(lf, 0, SEEK_SET);
+        if (sz > 50) {
+            script = malloc(sz + 1);
+            if (script) {
+                size_t nr_bytes = fread(script, 1, sz, lf);
+                script[nr_bytes] = 0;
+            }
+        }
+        fclose(lf);
+    }
     if (!script || strlen(script) < 50) {
-        fprintf(stderr, "[wastefetch] could not download provider script %s\n", url);
+        if (script) { free(script); script = NULL; }
+        char url[512];
+        snprintf(url, sizeof url, "%swastecollectionProvider_%s.js", PLUGIN_BASE, pid);
+        script = http_get(url);
+        if (script && strlen(script) >= 50) {
+            /* Cache locally for offline use and faster subsequent runs */
+            system("mkdir -p /mnt/data/waste_plugins 2>/dev/null");
+            FILE * wf = fopen(local_path, "w");
+            if (wf) {
+                fputs(script, wf);
+                fclose(wf);
+            }
+        }
+    }
+    if (!script || strlen(script) < 50) {
+        fprintf(stderr, "[wastefetch] could not load provider script for id %s\n", pid);
         free(script); return 1;
     }
 

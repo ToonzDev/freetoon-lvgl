@@ -452,23 +452,28 @@ static int fetch_ics(void) {
  * This is the full stock-app mimic; covers all ~42 providers. */
 static int fetch_plugin(void) {
     if (!settings.waste_plugin[0] || strcmp(settings.waste_plugin, "0") == 0) return -1;
+    if (access("/mnt/data/wastefetch", X_OK) != 0) {
+        fprintf(stderr, "[waste] error: /mnt/data/wastefetch is missing or not executable\n");
+        return -1;
+    }
+    unlink("/mnt/data/wastedates.ics");
     char cmd[1280];
     snprintf(cmd, sizeof cmd,
         "/mnt/data/wastefetch '%s' '%s' '%s' '%s' '%s' '%s' '%s' "
-        "/mnt/data/wastedates.ics 2>/tmp/wastefetch.log",
+        "/mnt/data/wastedates.ics >/tmp/wastefetch.log 2>&1",
         settings.waste_plugin, settings.waste_postcode, settings.waste_housenr,
         settings.waste_icsid, settings.waste_street, settings.waste_city,
         settings.waste_ics_url);
-    if (system(cmd) == -1) return -1;
-    /* Log the exit code + first line of stderr so the one-shot fetch can be
-       debugged on-device without recompiling */
+    int rc = system(cmd);
+    /* Log the output so the one-shot fetch can be debugged on-device without recompiling */
     FILE * f = fopen("/tmp/wastefetch.log", "r");
     if (f) {
         char line[256];
         if (fgets(line, sizeof line, f))
-            fprintf(stderr, "[waste] wastefetch: %s", line);
+            fprintf(stderr, "[waste] wastefetch (rc=%d): %s", rc, line);
         fclose(f);
     }
+    if (rc != 0) return -1;
     f = fopen("/mnt/data/wastedates.ics", "r");
     if (!f) return -1;
     static char body[300 * 1024];

@@ -52,19 +52,36 @@ pick() {
     echo ""
 }
 
+# Helper to find release binary candidate (checking release_* folders, HERE, build folders, /mnt/data)
+find_cand() {
+    _bin="$1"; shift
+    for _d in "$@"; do
+        if [ -n "$_d" ] && [ -f "$_d" ]; then echo "$_d"; return 0; fi
+    done
+    for _rel in "$HERE"/release_*; do
+        if [ -d "$_rel" ] && [ -f "$_rel/$_bin" ]; then echo "$_rel/$_bin"; return 0; fi
+    done
+    echo ""
+}
+
 resolve_artefacts() {
     if [ "$IS_TOON1" = 1 ]; then
-        TOONUI_BIN="$(pick "${TOONUI_BIN:-}" "$DL_DIR/toonui" "$HERE/toonui-toon1" "$HERE/toonui" "$HERE/lvgl_ui_recovered/build1/toonui" "$HERE/lvgl_ui_recovered/build/toonui" "/mnt/data/toonui")"
+        TOONUI_BIN="$(pick "${TOONUI_BIN:-}" "$DL_DIR/toonui" "$(find_cand toonui-toon1 "$HERE/toonui-toon1" "$HERE/lvgl_ui_recovered/build1/toonui")" "$HERE/toonui" "/mnt/data/toonui")"
+        WASTEFETCH_BIN="$(pick "${WASTEFETCH_BIN:-}" "$DL_DIR/wastefetch" "$(find_cand wastefetch-toon1 "$HERE/wastefetch-toon1" "$HERE/lvgl_ui_recovered/build1/wastefetch")" "$HERE/wastefetch" "/mnt/data/wastefetch")"
+        QUBY_BRIDGE_BIN="$(pick "${QUBY_BRIDGE_BIN:-}" "$DL_DIR/quby_bridge" "$(find_cand quby_bridge-toon1 "$HERE/quby_bridge-toon1")" "$HERE/quby_bridge" "$HERE/quby_bridge/quby_bridge" "/mnt/data/quby_bridge")"
+        P1_BRIDGE_BIN="$(pick "${P1_BRIDGE_BIN:-}" "$DL_DIR/p1bridge" "$(find_cand p1bridge-toon1 "$HERE/p1bridge-toon1")" "$HERE/p1bridge" "$HERE/p1bridge/p1bridge" "/mnt/data/p1bridge")"
     else
-        TOONUI_BIN="$(pick "${TOONUI_BIN:-}" "$DL_DIR/toonui" "$HERE/toonui" "$HERE/lvgl_ui_recovered/build/toonui" "$HERE/lvgl_ui_recovered/build1/toonui" "$HERE/toonui-toon1" "/mnt/data/toonui")"
+        TOONUI_BIN="$(pick "${TOONUI_BIN:-}" "$DL_DIR/toonui" "$(find_cand toonui "$HERE/toonui" "$HERE/lvgl_ui_recovered/build/toonui")" "$HERE/toonui-toon1" "/mnt/data/toonui")"
+        WASTEFETCH_BIN="$(pick "${WASTEFETCH_BIN:-}" "$DL_DIR/wastefetch" "$(find_cand wastefetch "$HERE/wastefetch" "$HERE/lvgl_ui_recovered/build/wastefetch")" "$HERE/wastefetch-toon1" "/mnt/data/wastefetch")"
+        QUBY_BRIDGE_BIN="$(pick "${QUBY_BRIDGE_BIN:-}" "$DL_DIR/quby_bridge" "$(find_cand quby_bridge "$HERE/quby_bridge" "$HERE/quby_bridge/quby_bridge")" "$HERE/quby_bridge-toon1" "/mnt/data/quby_bridge")"
+        P1_BRIDGE_BIN="$(pick "${P1_BRIDGE_BIN:-}" "$DL_DIR/p1bridge" "$(find_cand p1bridge "$HERE/p1bridge" "$HERE/p1bridge/p1bridge")" "$HERE/p1bridge-toon1" "/mnt/data/p1bridge")"
     fi
+    FBVNC_INPUT="$(pick "${FBVNC_INPUT:-}" "$DL_DIR/fbvnc_input" "$(find_cand fbvnc_input "$HERE/fbvnc_input" "$HERE/../qt_rebuild/fbvnc_input")" "/mnt/data/fbvnc_input")"
     UI_LAUNCHER="$(pick "${UI_LAUNCHER:-}"         "$DL_DIR/ui_launcher.sh"         "$HERE/ui_launcher.sh"         "$HERE/scripts/ui_launcher.sh"         "/mnt/data/ui_launcher.sh")"
     COMPANION_GATE="$(pick "${COMPANION_GATE:-}"   "$DL_DIR/companion_gate.sh"     "$HERE/companion_gate.sh"     "$HERE/scripts/companion_gate.sh"     "/mnt/data/companion_gate.sh")"
     INTEG_INSTALLER="$(pick "${INTEG_INSTALLER:-}" "$DL_DIR/integrations-install.sh" "$HERE/integrations-install.sh" "$HERE/scripts/integrations-install.sh" "/mnt/data/integrations-install.sh")"
     TOONVNC_SH="$(pick "${TOONVNC_SH:-}"           "$DL_DIR/toonvnc.sh"             "$HERE/toonvnc.sh"             "$HERE/scripts/toonvnc.sh"             "/mnt/data/toonvnc.sh")"
     OT_MODE_SH="$(pick "${OT_MODE_SH:-}"           "$DL_DIR/ot_mode_switch.sh"      "$HERE/ot_mode_switch.sh"      "$HERE/scripts/ot_mode_switch.sh"      "/mnt/data/ot_mode_switch.sh")"
-    QUBY_BRIDGE_BIN="$(pick "${QUBY_BRIDGE_BIN:-}" "$DL_DIR/quby_bridge"            "$HERE/quby_bridge"            "$HERE/quby_bridge/quby_bridge"       "/mnt/data/quby_bridge")"
-    FBVNC_INPUT="$(pick "${FBVNC_INPUT:-}"         "$DL_DIR/fbvnc_input"            "$HERE/fbvnc_input"            "$HERE/../qt_rebuild/fbvnc_input"     "/mnt/data/fbvnc_input")"
 
     PWA_DIR="${PWA_DIR:-}"
     if [ -z "$PWA_DIR" ]; then
@@ -96,10 +113,12 @@ download_artefacts() {
         fi
     done
 
-    # Main UI binary from release if available
+    # Release binaries if available
     if [ -n "$TAG" ]; then
         say "Latest release is $TAG (from $REPO)"
         BASE="https://github.com/$REPO/releases/download/$TAG"
+
+        # Main UI binary
         if [ "$IS_TOON1" = 1 ]; then
             BIN_ASSET="toonui-toon1"
             say "Detected Toon 1 (ARMv5) — fetching $BIN_ASSET..."
@@ -107,25 +126,47 @@ download_artefacts() {
             BIN_ASSET="toonui"
             say "Detected Toon 2 (ARMv7) — fetching $BIN_ASSET..."
         fi
-        if curl -fSL --connect-timeout 8 --max-time 120 -o "$DL_DIR/toonui" "$BASE/$BIN_ASSET" 2>/dev/null; then
-            chmod +x "$DL_DIR/toonui"
-            TOONUI_BIN="$DL_DIR/toonui"
-        else
-            say "Note: could not download $BIN_ASSET from release $TAG on $REPO"
-        fi
-
-        # Optional VNC input bridge
-        if [ ! -f "$HERE/fbvnc_input" ] && [ ! -f "/mnt/data/fbvnc_input" ]; then
-            curl -fSL --connect-timeout 8 --max-time 60 -o "$DL_DIR/fbvnc_input" "$BASE/fbvnc_input" 2>/dev/null || true
-            [ -s "$DL_DIR/fbvnc_input" ] && FBVNC_INPUT="$DL_DIR/fbvnc_input" && chmod +x "$FBVNC_INPUT"
+        if [ -z "$TOONUI_BIN" ] || [ ! -f "$TOONUI_BIN" ]; then
+            if curl -fSL --connect-timeout 8 --max-time 120 -o "$DL_DIR/toonui" "$BASE/$BIN_ASSET" 2>/dev/null; then
+                chmod +x "$DL_DIR/toonui"
+                TOONUI_BIN="$DL_DIR/toonui"
+            else
+                say "Note: could not download $BIN_ASSET from release $TAG on $REPO"
+            fi
         fi
 
         # Optional waste provider engine
         WF_ASSET="wastefetch"
         if [ "$IS_TOON1" = 1 ]; then WF_ASSET="wastefetch-toon1"; fi
-        if [ ! -f "$HERE/$WF_ASSET" ] && [ ! -f "/mnt/data/wastefetch" ]; then
-            curl -fSL --connect-timeout 8 --max-time 60 -o "$DL_DIR/wastefetch" "$BASE/$WF_ASSET" 2>/dev/null || true
-            [ -s "$DL_DIR/wastefetch" ] && chmod +x "$DL_DIR/wastefetch"
+        if [ -z "$WASTEFETCH_BIN" ] || [ ! -f "$WASTEFETCH_BIN" ]; then
+            if curl -fSL --connect-timeout 8 --max-time 60 -o "$DL_DIR/wastefetch" "$BASE/$WF_ASSET" 2>/dev/null; then
+                [ -s "$DL_DIR/wastefetch" ] && chmod +x "$DL_DIR/wastefetch" && WASTEFETCH_BIN="$DL_DIR/wastefetch"
+            fi
+        fi
+
+        # Optional OpenTherm bridge
+        QB_ASSET="quby_bridge"
+        if [ "$IS_TOON1" = 1 ]; then QB_ASSET="quby_bridge-toon1"; fi
+        if [ -z "$QUBY_BRIDGE_BIN" ] || [ ! -f "$QUBY_BRIDGE_BIN" ]; then
+            if curl -fSL --connect-timeout 8 --max-time 60 -o "$DL_DIR/quby_bridge" "$BASE/$QB_ASSET" 2>/dev/null; then
+                [ -s "$DL_DIR/quby_bridge" ] && chmod +x "$DL_DIR/quby_bridge" && QUBY_BRIDGE_BIN="$DL_DIR/quby_bridge"
+            fi
+        fi
+
+        # Optional P1 bridge
+        P1_ASSET="p1bridge"
+        if [ "$IS_TOON1" = 1 ]; then P1_ASSET="p1bridge-toon1"; fi
+        if [ -z "$P1_BRIDGE_BIN" ] || [ ! -f "$P1_BRIDGE_BIN" ]; then
+            if curl -fSL --connect-timeout 8 --max-time 60 -o "$DL_DIR/p1bridge" "$BASE/$P1_ASSET" 2>/dev/null; then
+                [ -s "$DL_DIR/p1bridge" ] && chmod +x "$DL_DIR/p1bridge" && P1_BRIDGE_BIN="$DL_DIR/p1bridge"
+            fi
+        fi
+
+        # Optional VNC input bridge
+        if [ -z "$FBVNC_INPUT" ] || [ ! -f "$FBVNC_INPUT" ]; then
+            if curl -fSL --connect-timeout 8 --max-time 60 -o "$DL_DIR/fbvnc_input" "$BASE/fbvnc_input" 2>/dev/null; then
+                [ -s "$DL_DIR/fbvnc_input" ] && chmod +x "$DL_DIR/fbvnc_input" && FBVNC_INPUT="$DL_DIR/fbvnc_input"
+            fi
         fi
 
         # WASM bundle for phone/browser UI
@@ -273,11 +314,14 @@ do_install() {
     push "$INTEG_INSTALLER" /mnt/data/integrations-install.sh
     push "$TOONVNC_SH"      /mnt/data/toonvnc.sh
     push "$OT_MODE_SH"      /mnt/data/ot_mode_switch.sh
-    [ -n "$FBVNC_INPUT" ] && [ -x "$FBVNC_INPUT" ] && push "$FBVNC_INPUT" /mnt/data/fbvnc_input
-    if [ -f "$DL_DIR/wastefetch" ]; then
-        push "$DL_DIR/wastefetch" /mnt/data/wastefetch
-    elif [ -f "$HERE/wastefetch" ]; then
-        push "$HERE/wastefetch" /mnt/data/wastefetch
+    [ -n "$FBVNC_INPUT" ] && [ -e "$FBVNC_INPUT" ] && push "$FBVNC_INPUT" /mnt/data/fbvnc_input
+    if [ -n "$WASTEFETCH_BIN" ] && [ -e "$WASTEFETCH_BIN" ]; then
+        push "$WASTEFETCH_BIN" /mnt/data/wastefetch
+    else
+        say "Note: wastefetch absent — waste calendar provider plugin execution will be unavailable"
+    fi
+    if [ -n "$P1_BRIDGE_BIN" ] && [ -e "$P1_BRIDGE_BIN" ]; then
+        push "$P1_BRIDGE_BIN" /mnt/data/p1bridge
     fi
 
     echo "[3/5] Setting up WASM slave UI bundle..."
@@ -345,19 +389,8 @@ CFG
     remote "umount -l /dev/ttymxc0 2>/dev/null; true"
     upsert_row "$TOON_ROW"
     upsert_row "$VNCS_ROW"
-    if [ -n "$QUBY_BRIDGE_BIN" ] && [ -x "$QUBY_BRIDGE_BIN" ]; then
-        echo "  → /mnt/data/quby_bridge"
-        if [ "$IS_LOCAL" = 1 ]; then
-            if [ "$QUBY_BRIDGE_BIN" != "/mnt/data/quby_bridge" ]; then
-                cp -f "$QUBY_BRIDGE_BIN" /mnt/data/quby_bridge.new
-                mv -f /mnt/data/quby_bridge.new /mnt/data/quby_bridge && chmod +x /mnt/data/quby_bridge
-            else
-                chmod +x /mnt/data/quby_bridge 2>/dev/null || true
-            fi
-        else
-            $SCP "$QUBY_BRIDGE_BIN" "$TOON_USER@$TOON_HOST:/mnt/data/quby_bridge.new"
-            remote "mv -f /mnt/data/quby_bridge.new /mnt/data/quby_bridge && chmod +x /mnt/data/quby_bridge"
-        fi
+    if [ -n "$QUBY_BRIDGE_BIN" ] && [ -e "$QUBY_BRIDGE_BIN" ]; then
+        push "$QUBY_BRIDGE_BIN" /mnt/data/quby_bridge
         remote "/mnt/data/ot_mode_switch.sh proxy" || true
     else
         echo "  (skipping bridge install — quby_bridge absent; OT bridge stays off)"
