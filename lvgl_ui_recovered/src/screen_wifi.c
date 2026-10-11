@@ -362,6 +362,7 @@ static void build_rows(void) {
 
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
+    if (!scr_root || lv_scr_act() != scr_root) return;
     if (netcon_response_ready) {
         if (strstr(netcon_response_buf, "GetWirelessNetworksResponse")) {
             parse_scan(netcon_response_buf);

@@ -65,8 +65,8 @@ static void on_ok(lv_event_t * e) {
         return;
     }
     if (g_err_lbl) {
-        lv_label_set_text_fmt(g_err_lbl, tr("Onjuist — nog %d pogingen",
-                                            "Incorrect — %d tries left"),
+        lv_label_set_text_fmt(g_err_lbl, tr("Onjuist - nog %d pogingen",
+                                            "Incorrect - %d tries left"),
                               MAX_ATTEMPTS - g_attempts);
         lv_obj_set_style_text_color(g_err_lbl, lv_color_hex(0xff6060), 0);
     }

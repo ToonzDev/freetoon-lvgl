@@ -322,6 +322,7 @@ static void build_rows(void) {
 
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
+    if (!scr_root || lv_scr_act() != scr_root) return;
     /* Poll for a pending GetDevices response. */
     if (zwave_response_ready) {
         parse_devices();

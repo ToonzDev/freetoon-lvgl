@@ -91,8 +91,8 @@ static void rebuild_chart(void) {
 
     char ttl[96], hi[32], lo[32], lc[32];
     if (n == 0) {
-        lv_label_set_text_fmt(lbl_title, tr("%s — geen data (nog aan het ophalen…)",
-                                            "%s — no data (still fetching…)"), coin_sym[cur_coin]);
+        lv_label_set_text_fmt(lbl_title, tr("%s - geen data (nog aan het ophalen...)",
+                                            "%s - no data (still fetching...)"), coin_sym[cur_coin]);
         lv_label_set_text(lbl_hi, ""); lv_label_set_text(lbl_lo, "");
         lv_chart_set_point_count(chart, 1);
         cs->y_points[0] = 0; lv_chart_refresh(chart);
@@ -187,8 +187,8 @@ lv_obj_t * screen_crypto_create(void) {
     lv_label_set_text(lbl_lo, "");
     lv_obj_align_to(lbl_lo, chart, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, 2);
 
-    if (coin_n == 0) lv_label_set_text(lbl_title, tr("Geen munten gekozen — Instellingen → Crypto",
-                                                     "No coins selected — Settings → Crypto"));
+    if (coin_n == 0) lv_label_set_text(lbl_title, tr("Geen munten gekozen - Instellingen -> Crypto",
+                                                     "No coins selected - Settings -> Crypto"));
     else rebuild_chart();
     return scr_root;
 }

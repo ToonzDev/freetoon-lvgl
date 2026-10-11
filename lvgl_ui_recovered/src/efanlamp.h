@@ -2,7 +2,7 @@
 #define EFANLAMP_H
 
 /* ESPHome native API client for the ld2411-ble-fanlamp ESP32-C3 at
- * settings.efanlamp_host (default 192.168.3.34, port 6053).
+ * settings.efanlamp_host (port 6053).
  *
  * Uses the Noise_NNpsk0_25519_ChaChaPoly_SHA256 encrypted native API —
  * fully independent of HA and MQTT; talks directly to the device. PSK is

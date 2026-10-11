@@ -104,6 +104,7 @@ static void build_rows(void) {
 
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
+    if (!scr_root || lv_scr_act() != scr_root) return;
     if (lbl_status) {
         if (!settings.enable_domoticz)
             lv_label_set_text(lbl_status, tr("Domoticz uitgeschakeld - schakel het in op de instellingenpagina.",

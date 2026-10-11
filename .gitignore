@@ -9,6 +9,9 @@ build/
 quby_bridge/quby_bridge
 quby_bridge/qubytap
 p1bridge/p1bridge
+boxtalk_mirror/boxtalk_mirror*
+boxtalk_mirror/boxtalk_sniff
+boxtalk_proxy/boxtalk_proxy*
 
 # quby_bridge debug / capture artefacts
 quby_bridge/*.cap

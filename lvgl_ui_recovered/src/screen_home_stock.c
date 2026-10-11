@@ -599,6 +599,7 @@ static void on_arrow(lv_event_t * e) {
 /* ---- periodic refresh ---------------------------------------------------- */
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
+    if (!scr_root || lv_scr_act() != scr_root) return;
     for (int i = 0; i < N_SLOTS; i++) refresh_slot(&slots[i]);
 
     /* Big readout = indoor temp (default) or setpoint, per settings.stock_big_indoor;

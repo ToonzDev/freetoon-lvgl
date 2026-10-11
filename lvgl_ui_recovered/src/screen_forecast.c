@@ -16,6 +16,7 @@
 #include "settings.h"
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 static lv_obj_t * scr_root = NULL;
 static lv_obj_t * lbl_title;
@@ -27,6 +28,7 @@ static lv_obj_t * fc_icon[WEATHER_FORECAST_DAYS];
 static lv_obj_t * fc_wind_lbl[WEATHER_FORECAST_DAYS];
 static lv_obj_t * fc_wind_arrow[WEATHER_FORECAST_DAYS];
 static lv_obj_t * radar_img = NULL;
+static int radar_loaded = 0;
 static lv_timer_t * refresh_timer = NULL;
 
 /* Radar zoom — LVGL convention: 256 = 100 %. Source GIF is 550x512, frame
@@ -49,15 +51,25 @@ static void on_radar_zoom(lv_event_t * e) {
 
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
-    lv_label_set_text(lbl_title, weather_state.weatherreport_title);
-    lv_label_set_text(lbl_body,  weather_state.weatherreport_text);
+    if (!scr_root || lv_scr_act() != scr_root) return;
+    weather_state_t wx;
+    weather_get_snapshot(&wx);
+    lv_label_set_text(lbl_title, wx.weatherreport_title);
+    lv_label_set_text(lbl_body,  wx.weatherreport_text);
+
+    if (radar_img && !radar_loaded && access("/tmp/toonui_radar.gif", R_OK) == 0) {
+        lv_gif_set_src(radar_img, "S:/tmp/toonui_radar.gif");
+        lv_img_set_zoom(radar_img, radar_zoom);
+        lv_obj_center(radar_img);
+        radar_loaded = 1;
+    }
 
     int show_hourly = settings.forecast_mode != FORECAST_DAILY
-                      && weather_state.hour_count > 0;
+                      && wx.hour_count > 0;
     if (show_hourly) {
-        for (int i = 0; i < weather_state.hour_count
+        for (int i = 0; i < wx.hour_count
                      && i < WEATHER_FORECAST_DAYS; i++) {
-            const weather_hour_t * h = &weather_state.hours[i];
+            const weather_hour_t * h = &wx.hours[i];
             lv_label_set_text(fc_day_lbl[i], h->label);
             lv_label_set_text_fmt(fc_temp_lbl[i], "%.0f\xc2\xb0",
                                   h->temperature);
@@ -84,9 +96,9 @@ static void refresh_cb(lv_timer_t * t) {
             }
         }
     } else {
-        for (int i = 0; i < weather_state.day_count
+        for (int i = 0; i < wx.day_count
                      && i < WEATHER_FORECAST_DAYS; i++) {
-            const weather_day_t * d = &weather_state.days[i];
+            const weather_day_t * d = &wx.days[i];
             lv_label_set_text(fc_day_lbl[i], d->day);
             lv_label_set_text_fmt(fc_temp_lbl[i],
                                   "%.0f\xc2\xb0 (%.0f\xc2\xb0)",
@@ -154,7 +166,12 @@ lv_obj_t * screen_forecast_create(void) {
     /* Buienradar radar GIF. With our local gifdec patch the no-GCT
        case is now accepted; the per-frame LCT populates the palette. */
     radar_img = lv_gif_create(radar_frame);
-    lv_gif_set_src(radar_img, "S:/tmp/toonui_radar.gif");
+    if (access("/tmp/toonui_radar.gif", R_OK) == 0) {
+        lv_gif_set_src(radar_img, "S:/tmp/toonui_radar.gif");
+        radar_loaded = 1;
+    } else {
+        radar_loaded = 0;
+    }
     lv_img_set_zoom(radar_img, radar_zoom);
     lv_obj_center(radar_img);
 

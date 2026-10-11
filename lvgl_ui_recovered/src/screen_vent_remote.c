@@ -101,6 +101,7 @@ static void update_btn_highlights(void) {
 /* ── refresh callback (1 Hz) ────────────────────────────────── */
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
+    if (!scr_root || lv_scr_act() != scr_root) return;
 
     /* Status line */
     if (!vent_state.connected) {

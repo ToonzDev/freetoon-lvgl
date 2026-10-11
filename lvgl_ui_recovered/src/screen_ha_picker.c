@@ -64,8 +64,8 @@ static void load_entities(void) {
     if (ok != 0 || count == 0) {
         char msg[80];
         snprintf(msg, sizeof(msg),
-                 tr("Geen %s-entiteiten gevonden — controleer HA-verbinding",
-                    "No %s entities found — check HA connection"),
+                 tr("Geen %s-entiteiten gevonden - controleer HA-verbinding",
+                    "No %s entities found - check HA connection"),
                  g_domain);
         lv_list_add_text(lst_results, msg);
         return;

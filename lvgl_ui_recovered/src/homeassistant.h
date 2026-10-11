@@ -60,6 +60,11 @@ typedef struct {
 
 extern ha_state_t ha_state;
 
+/* Thread safety primitives */
+void ha_lock(void);
+void ha_unlock(void);
+void ha_get_snapshot(ha_state_t * out);
+
 /* Opens the Life360/tracker location-map modal (defined in screen_home.c).
  * Used by the native Family tile and the stock-theme Trackers tile. */
 void life360_map_open(void);

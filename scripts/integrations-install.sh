@@ -11,7 +11,7 @@
 
 set -eu
 
-CATALOG_URL=https://raw.githubusercontent.com/Ierlandfan/freetoon-integrations/main/catalog/index.json
+CATALOG_URL=https://raw.githubusercontent.com/ToonSoftwareCollective/freetoon-integrations/main/catalog/index.json
 INTEGRATIONS_DIR=/mnt/data/integrations
 LOG=/var/volatile/tmp/integration_install.log
 

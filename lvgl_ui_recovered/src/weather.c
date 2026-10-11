@@ -20,6 +20,22 @@
 #include <time.h>
 
 weather_state_t weather_state = {0};
+static pthread_mutex_t g_wx_mtx = PTHREAD_MUTEX_INITIALIZER;
+
+void weather_lock(void) {
+    pthread_mutex_lock(&g_wx_mtx);
+}
+
+void weather_unlock(void) {
+    pthread_mutex_unlock(&g_wx_mtx);
+}
+
+void weather_get_snapshot(weather_state_t * out) {
+    if (!out) return;
+    pthread_mutex_lock(&g_wx_mtx);
+    *out = weather_state;
+    pthread_mutex_unlock(&g_wx_mtx);
+}
 
 /* The configured location's exact lat/lon, resolved by the Open-Meteo geocoder
  * (weather_geocode). Drives the Open-Meteo current+forecast fetch. 0 = unresolved. */
@@ -265,7 +281,10 @@ static int fetch_openmeteo(void) {
         g_cfg_lat, g_cfg_lon);
     static char body[48 * 1024];
     if (http_fetch(url, body, sizeof body) != 0) return -1;
-    return parse_openmeteo(body);
+    weather_lock();
+    int rc = parse_openmeteo(body);
+    weather_unlock();
+    return rc;
 }
 
 /* buienradar feed — used ONLY for the radar-map URL + the NL weather-report
@@ -421,8 +440,11 @@ static void * wx_thread(void * arg) {
 
         /* buienradar feed — radar-map URL + NL weather-report narrative only. */
         if (http_fetch("https://data.buienradar.nl/2.0/feed/json",
-                       body, sizeof(body)) == 0)
+                       body, sizeof(body)) == 0) {
+            weather_lock();
             parse_buienradar_extras(body);
+            weather_unlock();
+        }
 
         /* Fetch the radar image every 5 minutes (3 ticks of 15-min loop is
            too slow; we do an inner sleep loop instead). */

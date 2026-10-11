@@ -235,6 +235,7 @@ static void on_scr_event(lv_event_t * e) {
 
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
+    if (!scr_root || lv_scr_act() != scr_root) return;
     for (int r = 0; r < row_count; r++) {
         dev_row_t * R = &rows[r];
         ha_device_t * D = &ha_devices[R->dev_idx];

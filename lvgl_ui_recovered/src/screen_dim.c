@@ -198,6 +198,7 @@ static void on_wake_tap(lv_event_t * e) {
 
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
+    if (lv_scr_act() != scr_root) return;
     static int n = 0;
     if (++n % 5 == 0) fprintf(stderr, "[dim] tick t=%.2f sp=%.2f prog=%s\n",
                               toon_state.indoor_temp, toon_state.setpoint,
@@ -614,8 +615,6 @@ static void refresh_cb(lv_timer_t * t) {
             lv_obj_add_flag(lbl_dim_nilm, LV_OBJ_FLAG_HIDDEN);
         }
     }
-
-    lv_obj_invalidate(scr_root);
 }
 
 lv_obj_t * screen_dim_create(void) {

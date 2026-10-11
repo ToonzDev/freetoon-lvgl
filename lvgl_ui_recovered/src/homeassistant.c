@@ -69,6 +69,23 @@ static const char * ha_hostport(char * out, size_t outsz) {
 
 ha_state_t ha_state = {0};
 
+static pthread_mutex_t g_ha_state_mtx = PTHREAD_MUTEX_INITIALIZER;
+
+void ha_lock(void) {
+    pthread_mutex_lock(&g_ha_state_mtx);
+}
+
+void ha_unlock(void) {
+    pthread_mutex_unlock(&g_ha_state_mtx);
+}
+
+void ha_get_snapshot(ha_state_t * out) {
+    if (!out) return;
+    pthread_mutex_lock(&g_ha_state_mtx);
+    *out = ha_state;
+    pthread_mutex_unlock(&g_ha_state_mtx);
+}
+
 static char g_token[256] = "";
 
 static void load_token(void) {
@@ -216,14 +233,14 @@ static int ha_call_service(const char * domain, const char * service,
         ha_scheme(), ha_hostport(hp, sizeof hp), domain, service);
     FILE * p = popen(cmd, "r");
     if (!p) {
-        notify_show("system", "ha_offline", "HA niet bereikbaar — actie niet uitgevoerd");
+        notify_show("system", "ha_offline", "HA niet bereikbaar - actie niet uitgevoerd");
         return -1;
     }
     size_t n = fread(out, 1, sizeof(out) - 1, p);
     out[n] = 0;
     int rc = pclose(p);
     if (rc != 0 || n == 0)
-        notify_show("system", "ha_offline", "HA niet bereikbaar — actie niet uitgevoerd");
+        notify_show("system", "ha_offline", "HA niet bereikbaar - actie niet uitgevoerd");
     else
         notify_clear("system", "ha_offline");
     return (rc == 0) ? 0 : -1;

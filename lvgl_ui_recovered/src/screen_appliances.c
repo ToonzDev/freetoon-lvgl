@@ -417,6 +417,7 @@ static void rebuild_custom_list(void) {
 /* ── refresh timer ────────────────────────────────────────────── */
 static void refresh_cb(lv_timer_t *t) {
     (void)t;
+    if (!scr_root || lv_scr_act() != scr_root) return;
     /* Rebuild lists only when data has changed */
     if (nilm_unknown_count != g_last_unk_count)
         rebuild_unknown_list();

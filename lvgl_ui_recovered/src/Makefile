@@ -78,7 +78,7 @@ else ifeq ($(TARGET),toon2)
   GLIBC_LDFLAGS := -Wl,--wrap=fcntl \
                    -Wl,--wrap=strcasecmp -Wl,--wrap=fputc -Wl,--wrap=pthread_attr_destroy
 else ifeq ($(TARGET),sim)
-  # Headless host build — render UI to a PPM, no device/X/SDL. 1024x600.
+  # Host build — render UI to a window (X11/WSLg) or PPM. 1024x600.
   CROSS      :=
   SYSROOTFLAG:=
   ARCHFLAGS  :=
@@ -88,8 +88,9 @@ else ifeq ($(TARGET),sim)
   POSTLINK   := :
   ENTRY      := sim.c
   EXTRA      :=
+  GLIBC_LDFLAGS := -lX11
 else ifeq ($(TARGET),sim1)
-  # Headless host build at the Toon 1 geometry (800x480).
+  # Host build at the Toon 1 geometry (800x480).
   CROSS      :=
   SYSROOTFLAG:=
   ARCHFLAGS  :=
@@ -99,6 +100,7 @@ else ifeq ($(TARGET),sim1)
   POSTLINK   := :
   ENTRY      := sim.c
   EXTRA      :=
+  GLIBC_LDFLAGS := -lX11
 else
   $(error Unknown TARGET '$(TARGET)' — use toon1, toon2, sim or sim1)
 endif
@@ -141,7 +143,7 @@ APP_SRC       := $(ENTRY) $(GLIBC_SRC) boxtalk.c ui_stack.c screen_home.c screen
                  notify.c healthcheck.c pwa_server.c packages.c mqtt_client.c \
                  schedule.c icons.c backlight.c settings.c bootpick.c update_check.c \
                  tile_slots.c client_link.c news.c doorbell.c calendar.c layout.c \
-                 toon1_touch.c pin_modal.c video.c ui_cmd.c \
+                 toon1_touch.c pin_modal.c update_modal.c video.c ui_cmd.c \
                  lv_font_montserrat_96_custom.c lv_font_montserrat_64_custom.c \
                  lv_font_os_light_30.c lv_font_os_light_40.c lv_font_os_light_50.c lv_font_os_light_90.c \
                  lv_font_os_reg_13.c lv_font_os_reg_14.c lv_font_os_reg_15.c \
@@ -188,7 +190,7 @@ lvgl-patches:
 
 # Recompile the version-bearing objects whenever BUILD_VERSION changes
 # (placed after `all` so it doesn't hijack the default goal).
-$(BUILDDIR)/update_check.o $(BUILDDIR)/screen_home.o: $(VERFILE)
+$(BUILDDIR)/update_check.o $(BUILDDIR)/screen_home.o $(BUILDDIR)/update_modal.o: $(VERFILE)
 
 # The libc-replacement wrappers must NOT be built with builtins: at -O2 GCC
 # would fold __wrap_fputc's fwrite(&c,1,1,f) straight back into fputc — the very

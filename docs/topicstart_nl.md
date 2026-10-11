@@ -27,7 +27,7 @@ originele interface.
 Eén commando op de Toon (via SSH):
 
 ```
-curl -fsSL https://raw.githubusercontent.com/Ierlandfan/freetoon-lvgl/main/scripts/toon-selfinstall.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ToonSoftwareCollective/freetoon-lvgl/main/scripts/toon-selfinstall.sh | sh
 reboot
 ```
 

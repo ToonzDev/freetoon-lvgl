@@ -29,8 +29,142 @@
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <X11/keysym.h>
+
+static Display * g_x_display = NULL;
+static Window    g_x_window  = 0;
+static GC        g_x_gc      = 0;
+static XImage  * g_x_image   = NULL;
+static uint32_t* g_x_pixels  = NULL;
+static Atom      g_wm_delete = 0;
+static int       g_x11_running = 1;
+static int       g_mouse_x = 0, g_mouse_y = 0, g_mouse_down = 0;
 
 static lv_color_t fb[DISP_HOR * DISP_VER];
+
+static int x11_gui_init(int width, int height, const char * title) {
+    g_x_display = XOpenDisplay(NULL);
+    if (!g_x_display) return 0;
+    int screen = DefaultScreen(g_x_display);
+    Window root = RootWindow(g_x_display, screen);
+
+    g_x_window = XCreateSimpleWindow(g_x_display, root, 100, 100, width, height, 0,
+                                     BlackPixel(g_x_display, screen),
+                                     BlackPixel(g_x_display, screen));
+
+    XStoreName(g_x_display, g_x_window, title);
+
+    XSizeHints * size_hints = XAllocSizeHints();
+    if (size_hints) {
+        size_hints->flags = PMinSize | PMaxSize | PSize;
+        size_hints->min_width = size_hints->max_width = size_hints->base_width = width;
+        size_hints->min_height = size_hints->max_height = size_hints->base_height = height;
+        XSetWMNormalHints(g_x_display, g_x_window, size_hints);
+        XFree(size_hints);
+    }
+
+    g_wm_delete = XInternAtom(g_x_display, "WM_DELETE_WINDOW", False);
+    XSetWMProtocols(g_x_display, g_x_window, &g_wm_delete, 1);
+
+    XSelectInput(g_x_display, g_x_window,
+                 ExposureMask | KeyPressMask | ButtonPressMask | ButtonReleaseMask |
+                 PointerMotionMask | StructureNotifyMask);
+
+    g_x_gc = DefaultGC(g_x_display, screen);
+
+    g_x_pixels = (uint32_t *)calloc(width * height, sizeof(uint32_t));
+    Visual * visual = DefaultVisual(g_x_display, screen);
+    g_x_image = XCreateImage(g_x_display, visual, 24, ZPixmap, 0,
+                             (char *)g_x_pixels, width, height, 32, 0);
+
+    XMapWindow(g_x_display, g_x_window);
+    XFlush(g_x_display);
+    return 1;
+}
+
+static void x11_handle_events(void) {
+    if (!g_x_display) return;
+    while (XPending(g_x_display) > 0) {
+        XEvent ev;
+        XNextEvent(g_x_display, &ev);
+        switch (ev.type) {
+            case ButtonPress:
+                if (ev.xbutton.button == Button1) {
+                    g_mouse_down = 1;
+                    g_mouse_x = ev.xbutton.x;
+                    g_mouse_y = ev.xbutton.y;
+                }
+                break;
+            case ButtonRelease:
+                if (ev.xbutton.button == Button1) {
+                    g_mouse_down = 0;
+                    g_mouse_x = ev.xbutton.x;
+                    g_mouse_y = ev.xbutton.y;
+                }
+                break;
+            case MotionNotify:
+                g_mouse_x = ev.xmotion.x;
+                g_mouse_y = ev.xmotion.y;
+                break;
+            case ClientMessage:
+                if ((Atom)ev.xclient.data.l[0] == g_wm_delete) {
+                    g_x11_running = 0;
+                }
+                break;
+            case KeyPress: {
+                KeySym sym = XLookupKeysym(&ev.xkey, 0);
+                if (sym == XK_Escape) {
+                    g_x11_running = 0;
+                }
+                break;
+            }
+            default:
+                break;
+        }
+    }
+}
+
+static void x11_flush(lv_disp_drv_t * drv, const lv_area_t * a, lv_color_t * px) {
+    for (int y = a->y1; y <= a->y2; y++) {
+        for (int x = a->x1; x <= a->x2; x++) {
+            lv_color_t c = *px++;
+            fb[y * DISP_HOR + x] = c;
+#if LV_COLOR_DEPTH == 16
+            uint32_t r = ((c.ch.red << 3) | (c.ch.red >> 2));
+            uint32_t g = ((c.ch.green << 2) | (c.ch.green >> 4));
+            uint32_t b = ((c.ch.blue << 3) | (c.ch.blue >> 2));
+            g_x_pixels[y * DISP_HOR + x] = (r << 16) | (g << 8) | b;
+#else
+            g_x_pixels[y * DISP_HOR + x] = (c.ch.red << 16) | (c.ch.green << 8) | c.ch.blue;
+#endif
+        }
+    }
+    if (g_x_display && g_x_window && g_x_image) {
+        int w = a->x2 - a->x1 + 1;
+        int h = a->y2 - a->y1 + 1;
+        XPutImage(g_x_display, g_x_window, g_x_gc, g_x_image,
+                  a->x1, a->y1, a->x1, a->y1, w, h);
+    }
+    lv_disp_flush_ready(drv);
+}
+
+static void x11_indev_read(lv_indev_drv_t * drv, lv_indev_data_t * data) {
+    (void)drv;
+    data->point.x = g_mouse_x;
+    data->point.y = g_mouse_y;
+    data->state = g_mouse_down ? LV_INDEV_STATE_PR : LV_INDEV_STATE_REL;
+}
+
+static void x11_gui_close(void) {
+    if (g_x_display) {
+        if (g_x_image) XDestroyImage(g_x_image);
+        if (g_x_window) XDestroyWindow(g_x_display, g_x_window);
+        XCloseDisplay(g_x_display);
+        g_x_display = NULL;
+    }
+}
 
 static void sim_flush(lv_disp_drv_t * drv, const lv_area_t * a, lv_color_t * px) {
     for (int y = a->y1; y <= a->y2; y++)
@@ -293,6 +427,50 @@ int main(int argc, char ** argv) {
       if (st) snprintf(settings.stock_tiles, sizeof settings.stock_tiles, "%s", st); }
 
     const char * mode = (argc > 1) ? argv[1] : "home";
+
+    if (!strcmp(mode, "--help") || !strcmp(mode, "-h")) {
+        printf("Usage: toonui-sim [OPTIONS] [COMMAND]\n\n"
+               "Options:\n"
+               "  --gui, --interactive, (no args)  Run interactive graphical simulator (X11/WSLg)\n"
+               "  all [dir]                        Dump all screens as PPM images to dir (default /tmp)\n"
+               "  nav [file] [x,y ...]             Interactive navigation replay with taps\n"
+               "  <screen> [file] [x,y ...]        Render named screen (e.g. home, settings, etc.)\n");
+        return 0;
+    }
+
+    if (!strcmp(mode, "gui") || !strcmp(mode, "--gui") || !strcmp(mode, "--interactive") ||
+        !strcmp(mode, "--freetoon") || (!strcmp(mode, "home") && argc <= 1 && getenv("DISPLAY"))) {
+        char title[128];
+#ifdef TOON1
+        snprintf(title, sizeof(title), "FreeToon Simulator - Toon 1 (%dx%d)", DISP_HOR, DISP_VER);
+#else
+        snprintf(title, sizeof(title), "FreeToon Simulator - Toon 2 (%dx%d)", DISP_HOR, DISP_VER);
+#endif
+        if (x11_gui_init(DISP_HOR, DISP_VER, title)) {
+            dd.flush_cb = x11_flush;
+            id.read_cb  = x11_indev_read;
+            ui_init();
+            fprintf(stderr, "[sim] Interactive GUI active in window (%dx%d)... Click with mouse; press ESC or close window to exit.\n", DISP_HOR, DISP_VER);
+
+            struct timespec last_t, now_t;
+            clock_gettime(CLOCK_MONOTONIC, &last_t);
+            while (g_x11_running) {
+                x11_handle_events();
+                lv_timer_handler();
+                clock_gettime(CLOCK_MONOTONIC, &now_t);
+                uint32_t elapsed_ms = (now_t.tv_sec - last_t.tv_sec) * 1000 +
+                                      (now_t.tv_nsec - last_t.tv_nsec) / 1000000;
+                if (elapsed_ms > 0) {
+                    lv_tick_inc(elapsed_ms);
+                    last_t = now_t;
+                }
+                usleep(5000);
+            }
+            x11_gui_close();
+            fprintf(stderr, "[sim] GUI closed cleanly.\n");
+            return 0;
+        }
+    }
 
     if (!strcmp(mode, "all")) {
         const char * dir = (argc > 2) ? argv[2] : "/tmp";

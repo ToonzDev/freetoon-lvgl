@@ -1,15 +1,145 @@
 /* Shells out to /usr/bin/curl for HTTPS fetches. Keeps Toonui free of
    libcurl/libssl link dependencies and avoids cross-toolchain header
-   hassle — Toon already has a recent curl with system CA trust. */
+   hassle — Toon already has a recent curl with system CA trust.
+   For plain http://, uses lightweight direct sockets to avoid expensive
+   fork/popen overhead on Toon 1's 400MHz CPU. */
+#define _GNU_SOURCE
 #include "http.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <ctype.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <sys/time.h>
+#include <errno.h>
+
+static int socket_http_fetch(const char * url, char * out, size_t out_max, int timeout_s) {
+    const char * p = url + 7;
+    const char * slash = strchr(p, '/');
+    char host_port[256];
+    size_t hlen = slash ? (size_t)(slash - p) : strlen(p);
+    if (hlen == 0 || hlen >= sizeof(host_port)) return -1;
+    memcpy(host_port, p, hlen);
+    host_port[hlen] = '\0';
+
+    const char * path = slash ? slash : "/";
+
+    char host[256];
+    char port_str[16] = "80";
+    char * colon = strchr(host_port, ':');
+    if (colon) {
+        size_t host_len = (size_t)(colon - host_port);
+        if (host_len >= sizeof(host)) return -1;
+        memcpy(host, host_port, host_len);
+        host[host_len] = '\0';
+        snprintf(port_str, sizeof(port_str), "%s", colon + 1);
+    } else {
+        snprintf(host, sizeof(host), "%s", host_port);
+    }
+
+    struct addrinfo hints, *res = NULL, *rp;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+
+    if (getaddrinfo(host, port_str, &hints, &res) != 0 || !res) {
+        return -1;
+    }
+
+    int s = -1;
+    for (rp = res; rp != NULL; rp = rp->ai_next) {
+        s = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+        if (s < 0) continue;
+        struct timeval tv = { .tv_sec = timeout_s > 0 ? timeout_s : 8, .tv_usec = 0 };
+        setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+        if (connect(s, rp->ai_addr, rp->ai_addrlen) == 0) break;
+        close(s);
+        s = -1;
+    }
+    freeaddrinfo(res);
+    if (s < 0) return -1;
+
+    char req[1024];
+    int req_len = snprintf(req, sizeof(req),
+        "GET %s HTTP/1.0\r\n"
+        "Host: %s\r\n"
+        "User-Agent: toonui/1.0\r\n"
+        "Connection: close\r\n\r\n",
+        path, host);
+    if (req_len <= 0 || req_len >= (int)sizeof(req) || send(s, req, req_len, 0) != req_len) {
+        close(s);
+        return -1;
+    }
+
+    /* Read header first into a scratch buffer */
+    char hdr_buf[2048];
+    size_t hdr_got = 0;
+    char * body_start = NULL;
+
+    while (hdr_got < sizeof(hdr_buf) - 1) {
+        ssize_t n = recv(s, hdr_buf + hdr_got, sizeof(hdr_buf) - 1 - hdr_got, 0);
+        if (n <= 0) break;
+        hdr_got += (size_t)n;
+        hdr_buf[hdr_got] = '\0';
+        body_start = strstr(hdr_buf, "\r\n\r\n");
+        if (body_start) {
+            body_start += 4;
+            break;
+        }
+        body_start = strstr(hdr_buf, "\n\n");
+        if (body_start) {
+            body_start += 2;
+            break;
+        }
+    }
+
+    if (!body_start) {
+        close(s);
+        return -1;
+    }
+
+    /* Check status code: HTTP/1.x 200 */
+    int status = 0;
+    if (sscanf(hdr_buf, "HTTP/%*d.%*d %d", &status) != 1 || status != 200) {
+        /* Not 200 OK (e.g. 301/302 redirect, 404, etc.) - fallback to curl */
+        close(s);
+        return -1;
+    }
+
+    size_t body_pre = hdr_got - (size_t)(body_start - hdr_buf);
+    size_t to_copy = body_pre;
+    if (to_copy >= out_max - 1) to_copy = out_max - 1;
+    memcpy(out, body_start, to_copy);
+    size_t total_body = to_copy;
+
+    while (total_body < out_max - 1) {
+        ssize_t n = recv(s, out + total_body, out_max - 1 - total_body, 0);
+        if (n <= 0) break;
+        total_body += (size_t)n;
+    }
+    out[total_body] = '\0';
+    close(s);
+    return 0;
+}
 
 int http_fetch_to(const char * url, char * out, size_t out_max, int timeout_s) {
     if (!url || !out || out_max < 16) return -1;
     if (timeout_s < 1) timeout_s = 8;
+
+    /* Fast-path: try direct socket fetch for plain http:// endpoints to avoid
+     * expensive fork/popen(/usr/bin/curl) on Toon 1's 400MHz CPU.
+     * Falls back to curl for https://, redirects (3xx), or errors. */
+    if (strncasecmp(url, "http://", 7) == 0) {
+        if (socket_http_fetch(url, out, out_max, timeout_s) == 0) {
+            return 0;
+        }
+    }
 
     /* Sanity check the URL — only allow http/https and pre-escaped chars,
        so we can pass it via popen without further quoting. */

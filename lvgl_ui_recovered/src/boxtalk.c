@@ -33,6 +33,23 @@
 toon_state_t toon_state = { .program_state = -1, .active_state = -1,
                             .boiler_type = -1 };
 
+static pthread_mutex_t g_bxt_state_mtx = PTHREAD_MUTEX_INITIALIZER;
+
+void boxtalk_lock(void) {
+    pthread_mutex_lock(&g_bxt_state_mtx);
+}
+
+void boxtalk_unlock(void) {
+    pthread_mutex_unlock(&g_bxt_state_mtx);
+}
+
+void boxtalk_get_snapshot(toon_state_t * out) {
+    if (!out) return;
+    pthread_mutex_lock(&g_bxt_state_mtx);
+    *out = toon_state;
+    pthread_mutex_unlock(&g_bxt_state_mtx);
+}
+
 /* Temporary-override bookkeeping. Read by program_label() at the top of
  * the file as well as by the +/- nudge and tick paths further down, so
  * the declarations live up here. See note_temp_override() for semantics. */
@@ -472,6 +489,7 @@ static void handle_msg(const char* xml) {
         fprintf(stderr, "[bxt] msg: %.500s\n---\n", xml);
     }
     p++;
+    boxtalk_lock();
     if (strncmp(p, "notify", 6) == 0) {
         handle_notify(xml);
     } else if (strncmp(p, "query", 5) == 0) {
@@ -555,6 +573,7 @@ static void handle_msg(const char* xml) {
             fprintf(stderr, "[bxt] NETCON response %zu bytes\n", n);
         }
     }
+    boxtalk_unlock();
 }
 
 /* ---- RRD GetRraData request/response plumbing ---- */

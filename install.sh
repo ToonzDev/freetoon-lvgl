@@ -1,146 +1,283 @@
-#!/usr/bin/env bash
-# freetoon-lvgl one-click installer.
+#!/bin/sh
+# freetoon-lvgl installer & updater.
 #
 # Replaces the stock Eneco qt-gui with the LVGL UI, sets up the boot picker
 # so the user can always switch back, and turns on the VNC respawn so the
 # Toon's screen is reachable remotely. Idempotent — re-run to upgrade.
 #
+# Usage:
+#   1) Directly ON the Toon device:
+#      sh ./install.sh                           # auto-detects model, uses local or downloads binaries
+#      sh ./install.sh --download                # force download latest release from GitHub
+#      sh ./install.sh --uninstall               # revert back to stock qt-gui
+#
+#   2) Remotely from a PC (via SSH):
+#      TOON_HOST=192.168.x.x ./install.sh
+#      ./install.sh --uninstall
+#
 # All optional integrations (HomeWizard P1 / WTR, Itho ventilation, Home
 # Assistant) are OFF by default; flip them on later from Settings →
 # Integrations on the Toon.
-#
-# Usage:
-#   ./install.sh                                 # uses defaults below
-#   TOON_HOST=192.168.x.x ./install.sh           # different IP
-#   ./install.sh --uninstall                     # back to stock qt-gui
-#
-# Required on the install host: sshpass, ssh, scp.
-#
-# Run this script from inside the release tarball OR from a checkout of
-# the dev tree (the binaries / scripts get resolved either way).
 
-set -euo pipefail
+set -eu
 
-TOON_HOST="${TOON_HOST:-192.168.3.212}"
+TOON_HOST="${TOON_HOST:-toon}"
 TOON_PASS="${TOON_PASS:-toon}"
 TOON_USER="${TOON_USER:-root}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
+DL_DIR="/tmp/freetoon.$$"
+FORCE_DOWNLOAD=0
 
-# Resolve each artefact — release tarballs put them next to install.sh,
-# dev checkouts keep them under each component's build dir.
-pick() {
-    local var="$1"; shift
-    local v="${!var:-}"; [[ -n "$v" ]] && { echo "$v"; return; }
-    for c in "$@"; do [[ -e "$c" ]] && { echo "$c"; return; }; done
-    echo "$1"   # echo first candidate for clearer error messages
-}
-
-TOONUI_BIN="$(pick TOONUI_BIN       "$HERE/toonui"             "$HERE/lvgl_ui_recovered/build/toonui")"
-UI_LAUNCHER="$(pick UI_LAUNCHER     "$HERE/ui_launcher.sh"     "$HERE/scripts/ui_launcher.sh")"
-COMPANION_GATE="$(pick COMPANION_GATE "$HERE/companion_gate.sh" "$HERE/scripts/companion_gate.sh")"
-INTEG_INSTALLER="$(pick INTEG_INSTALLER "$HERE/integrations-install.sh" "$HERE/scripts/integrations-install.sh")"
-TOONVNC_SH="$(pick TOONVNC_SH       "$HERE/toonvnc.sh"         "$HERE/toonvnc.sh")"
-OT_MODE_SH="$(pick OT_MODE_SH       "$HERE/ot_mode_switch.sh"  "$HERE/scripts/ot_mode_switch.sh")"
-QUBY_BRIDGE_BIN="$(pick QUBY_BRIDGE_BIN "$HERE/quby_bridge"        "$HERE/quby_bridge/quby_bridge")"
-FBVNC_INPUT="$(pick FBVNC_INPUT     "$HERE/fbvnc_input"        "$HERE/../qt_rebuild/fbvnc_input")"
-# The only frontend on :10081 is the WASM slave UI. PWA_DIR points at the
-# built WASM bundle (index.html/index.js/index.wasm from web/build.sh); it is
-# deployed to /mnt/data/pwa/ui/.
-PWA_DIR="${PWA_DIR:-}"
-if [[ -z "$PWA_DIR" ]]; then
-    for d in "$HERE/pwa/ui" "$HERE/web/build" "$HERE/build"; do
-        [[ -f "$d/index.wasm" ]] && PWA_DIR="$d" && break
-    done
-    : "${PWA_DIR:=$HERE/web/build}"   # fallback for error message
+# Detect if running ON the Toon directly (BusyBox, root, /etc/inittab, /mnt/data)
+IS_LOCAL=0
+if [ -f /etc/inittab ] && [ -d /mnt/data ] && { [ -f /etc/opkg/arch.conf ] || [ -d /qmf ]; }; then
+    IS_LOCAL=1
 fi
 
-SSH="sshpass -p $TOON_PASS ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR $TOON_USER@$TOON_HOST"
-SCP="sshpass -p $TOON_PASS scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+# Detect Toon model (Toon 1 vs Toon 2)
+IS_TOON1=0
+if [ -f /etc/opkg/arch.conf ] && ! grep -q nxt /etc/opkg/arch.conf 2>/dev/null; then
+    IS_TOON1=1
+fi
 
-# `toon:` runs ui_launcher.sh — it shows the 10 s boot picker, then exec's
-# either toonui or /qmf/sbin/qt-gui based on /mnt/data/ui_choice. Keep the
-# id stable so re-runs upgrade cleanly.
+say() { echo "[freetoon] $*"; }
+
+# Resolve each artefact — checks override var, then candidate paths
+pick() {
+    _val="$1"; shift
+    if [ -n "$_val" ]; then echo "$_val"; return 0; fi
+    for _c in "$@"; do
+        if [ -e "$_c" ]; then echo "$_c"; return 0; fi
+    done
+    echo "$1"
+}
+
+resolve_artefacts() {
+    if [ "$IS_TOON1" = 1 ]; then
+        TOONUI_BIN="$(pick "${TOONUI_BIN:-}" "$HERE/toonui-toon1" "$HERE/toonui" "$HERE/lvgl_ui_recovered/build1/toonui" "$HERE/lvgl_ui_recovered/build/toonui")"
+    else
+        TOONUI_BIN="$(pick "${TOONUI_BIN:-}" "$HERE/toonui" "$HERE/lvgl_ui_recovered/build/toonui" "$HERE/lvgl_ui_recovered/build1/toonui" "$HERE/toonui-toon1")"
+    fi
+    UI_LAUNCHER="$(pick "${UI_LAUNCHER:-}"         "$HERE/ui_launcher.sh"         "$HERE/scripts/ui_launcher.sh")"
+    COMPANION_GATE="$(pick "${COMPANION_GATE:-}"   "$HERE/companion_gate.sh"     "$HERE/scripts/companion_gate.sh")"
+    INTEG_INSTALLER="$(pick "${INTEG_INSTALLER:-}" "$HERE/integrations-install.sh" "$HERE/scripts/integrations-install.sh")"
+    TOONVNC_SH="$(pick "${TOONVNC_SH:-}"           "$HERE/toonvnc.sh"             "$HERE/scripts/toonvnc.sh")"
+    OT_MODE_SH="$(pick "${OT_MODE_SH:-}"           "$HERE/ot_mode_switch.sh"      "$HERE/scripts/ot_mode_switch.sh")"
+    QUBY_BRIDGE_BIN="$(pick "${QUBY_BRIDGE_BIN:-}" "$HERE/quby_bridge"            "$HERE/quby_bridge/quby_bridge")"
+    FBVNC_INPUT="$(pick "${FBVNC_INPUT:-}"         "$HERE/fbvnc_input"            "$HERE/../qt_rebuild/fbvnc_input")"
+
+    PWA_DIR="${PWA_DIR:-}"
+    if [ -z "$PWA_DIR" ]; then
+        for d in "$HERE/pwa/ui" "$HERE/web/build" "$HERE/build"; do
+            if [ -f "$d/index.wasm" ]; then PWA_DIR="$d"; break; fi
+        done
+        : "${PWA_DIR:=$HERE/web/build}"
+    fi
+}
+
+# Download matching release binaries & assets from GitHub
+download_artefacts() {
+    say "Resolving latest release from GitHub..."
+    REPO="${REPO:-ToonSoftwareCollective/freetoon-lvgl}"
+    TAG=$(curl -fsSL --connect-timeout 8 --max-time 30 \
+            "https://api.github.com/repos/$REPO/releases?per_page=1" 2>/dev/null \
+          | grep -m1 '"tag_name"' | sed 's/.*"tag_name"[^"]*"\([^"]*\)".*/\1/')
+    if [ -z "$TAG" ] && [ "$REPO" != "Ierlandfan/freetoon-lvgl" ]; then
+        TAG=$(curl -fsSL --connect-timeout 8 --max-time 30 \
+                "https://api.github.com/repos/Ierlandfan/freetoon-lvgl/releases?per_page=1" 2>/dev/null \
+              | grep -m1 '"tag_name"' | sed 's/.*"tag_name"[^"]*"\([^"]*\)".*/\1/')
+        [ -n "$TAG" ] && REPO="Ierlandfan/freetoon-lvgl"
+    fi
+    if [ -z "$TAG" ]; then
+        say "ERROR: could not resolve latest release tag (no internet connection?)."
+        return 1
+    fi
+    say "Latest release is $TAG (from $REPO)"
+    BASE="https://github.com/$REPO/releases/download/$TAG"
+
+    mkdir -p "$DL_DIR"
+
+    # Main UI binary
+    if [ "$IS_TOON1" = 1 ]; then
+        BIN_ASSET="toonui-toon1"
+        say "Detected Toon 1 (ARMv5) — fetching $BIN_ASSET..."
+    else
+        BIN_ASSET="toonui"
+        say "Detected Toon 2 (ARMv7) — fetching $BIN_ASSET..."
+    fi
+    if ! curl -fSL --connect-timeout 8 --max-time 120 -o "$DL_DIR/toonui" "$BASE/$BIN_ASSET"; then
+        say "ERROR: Failed to download $BIN_ASSET from $BASE."
+        return 1
+    fi
+    chmod +x "$DL_DIR/toonui"
+    TOONUI_BIN="$DL_DIR/toonui"
+
+    # Helpers
+    for s in ui_launcher.sh companion_gate.sh ot_mode_switch.sh toonvnc.sh integrations-install.sh; do
+        if [ ! -f "$HERE/scripts/$s" ] && [ ! -f "$HERE/$s" ]; then
+            say "Fetching $s..."
+            curl -fSL --connect-timeout 8 --max-time 60 -o "$DL_DIR/$s" "$BASE/$s" 2>/dev/null || true
+            [ -s "$DL_DIR/$s" ] && chmod +x "$DL_DIR/$s"
+        fi
+    done
+
+    # Optional VNC input bridge
+    if [ ! -f "$HERE/fbvnc_input" ]; then
+        curl -fSL --connect-timeout 8 --max-time 60 -o "$DL_DIR/fbvnc_input" "$BASE/fbvnc_input" 2>/dev/null || true
+        [ -s "$DL_DIR/fbvnc_input" ] && FBVNC_INPUT="$DL_DIR/fbvnc_input" && chmod +x "$FBVNC_INPUT"
+    fi
+
+    # Optional waste provider engine
+    WF_ASSET="wastefetch"
+    if [ "$IS_TOON1" = 1 ]; then WF_ASSET="wastefetch-toon1"; fi
+    if [ ! -f "$HERE/$WF_ASSET" ]; then
+        curl -fSL --connect-timeout 8 --max-time 60 -o "$DL_DIR/wastefetch" "$BASE/$WF_ASSET" 2>/dev/null || true
+        [ -s "$DL_DIR/wastefetch" ] && chmod +x "$DL_DIR/wastefetch"
+    fi
+
+    # WASM bundle for phone/browser UI
+    mkdir -p "$DL_DIR/pwa/ui"
+    for f in index.html index.wasm index.js; do
+        curl -fSL --connect-timeout 8 --max-time 60 -o "$DL_DIR/pwa/ui/$f" "$BASE/$f" 2>/dev/null || true
+    done
+    [ -s "$DL_DIR/pwa/ui/index.wasm" ] && PWA_DIR="$DL_DIR/pwa/ui"
+
+    # Bundled x11vnc if needed
+    if [ ! -x /usr/bin/x11vnc ] && ! which x11vnc >/dev/null 2>&1 && [ ! -x /mnt/data/x11vnc-bundle/bin/x11vnc ]; then
+        say "Fetching x11vnc bundle..."
+        if curl -fSL --connect-timeout 8 --max-time 120 -o "$DL_DIR/x11vnc-bundle.tgz" "$BASE/x11vnc-bundle.tgz" 2>/dev/null; then
+            mkdir -p /mnt/data/x11vnc-bundle
+            tar xzf "$DL_DIR/x11vnc-bundle.tgz" -C /mnt/data/x11vnc-bundle 2>/dev/null || true
+            chmod +x /mnt/data/x11vnc-bundle/bin/x11vnc 2>/dev/null || true
+        fi
+    fi
+
+    return 0
+}
+
+if [ "$IS_LOCAL" = 1 ]; then
+    remote() { sh -c "$*"; }
+    push() {
+        _src="$1"
+        _dest="$2"
+        echo "  → $_dest"
+        cp -f "$_src" "${_dest}.new"
+        mv -f "${_dest}.new" "$_dest"
+        chmod +x "$_dest"
+    }
+else
+    SSH="sshpass -p $TOON_PASS ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR $TOON_USER@$TOON_HOST"
+    SCP="sshpass -p $TOON_PASS scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+    remote() { $SSH "$@"; }
+    push() {
+        _src="$1"
+        _dest="$2"
+        echo "  → $_dest"
+        $SCP "$_src" "$TOON_USER@$TOON_HOST:${_dest}.new"
+        remote "mv -f ${_dest}.new ${_dest} && chmod +x ${_dest}"
+    }
+fi
+
 TOON_ROW="toon:345:respawn:/mnt/data/ui_launcher.sh >> /var/volatile/tmp/toonui.log 2>&1"
 VNCS_ROW="vncs:345:respawn:/mnt/data/toonvnc.sh respawn >> /var/volatile/tmp/x11vnc.log 2>&1"
 
-require() { command -v "$1" >/dev/null 2>&1 || { echo "ERROR: '$1' not on PATH — apt-get install sshpass" >&2; exit 2; }; }
-remote() { $SSH "$@"; }
-push() {
-    local src="$1" dest="$2"
-    echo "  → $dest"
-    $SCP "$src" "$TOON_USER@$TOON_HOST:${dest}.new"
-    remote "mv -f ${dest}.new ${dest} && chmod +x ${dest}"
+require() {
+    if [ "$IS_LOCAL" = 1 ]; then return 0; fi
+    command -v "$1" >/dev/null 2>&1 || { echo "ERROR: '$1' not on PATH — apt-get install sshpass" >&2; exit 2; }
 }
+
 upsert_row() {
-    local row="$1" id="${1%%:*}"
-    remote "grep -v '^${id}:' /etc/inittab > /etc/inittab.new && echo '${row}' >> /etc/inittab.new && mv -f /etc/inittab.new /etc/inittab"
+    _row="$1"
+    _id="${1%%:*}"
+    remote "grep -v '^${_id}:' /etc/inittab > /etc/inittab.new && echo '${_row}' >> /etc/inittab.new && mv -f /etc/inittab.new /etc/inittab"
 }
+
 drop_row() {
     remote "grep -v '^${1}:' /etc/inittab > /etc/inittab.new && mv -f /etc/inittab.new /etc/inittab"
 }
 
 check_artefacts() {
-    local missing=0
+    resolve_artefacts
+
+    # If toonui binary is missing or forced download requested: fetch from GitHub
+    if [ ! -f "$TOONUI_BIN" ] || [ "$FORCE_DOWNLOAD" = 1 ]; then
+        say "No pre-compiled toonui binary found locally (or --download was specified)."
+        download_artefacts || {
+            say "ERROR: Could not find local toonui binary and download failed."
+            exit 3
+        }
+        resolve_artefacts
+    fi
+
+    missing=0
     for pair in "toonui:$TOONUI_BIN" "ui_launcher.sh:$UI_LAUNCHER" \
                 "companion_gate.sh:$COMPANION_GATE" "toonvnc.sh:$TOONVNC_SH" \
                 "ot_mode_switch.sh:$OT_MODE_SH"; do
-        local name="${pair%%:*}" path="${pair#*:}"
-        if [[ ! -e "$path" ]]; then
+        name="${pair%%:*}"
+        path="${pair#*:}"
+        if [ ! -e "$path" ]; then
             echo "  missing $name: $path" >&2
             missing=1
         fi
     done
-    if [[ ! -f "$PWA_DIR/index.wasm" ]]; then
-        echo "  missing WASM bundle: $PWA_DIR/index.wasm (run web/build.sh)" >&2
-        missing=1
+
+    if [ "$missing" -ne 0 ]; then
+        say "Some required scripts are missing. Attempting download..."
+        download_artefacts && resolve_artefacts
     fi
-    (( missing )) && {
-        echo >&2
-        echo "If this is a release tarball, expand it first and run install.sh from inside it." >&2
-        echo "If this is the dev tree, build toonui with 'make' in lvgl_ui_recovered/src/." >&2
-        echo "Or just run the one-liner ON the Toon (no local build needed):" >&2
-        echo "  curl -fsSL https://raw.githubusercontent.com/Ierlandfan/freetoon-lvgl/main/scripts/toon-selfinstall.sh | sh" >&2
+
+    if [ ! -f "$TOONUI_BIN" ]; then
+        say "FATAL: toonui binary could not be resolved or downloaded."
         exit 3
-    }
-    # Non-fatal: VNC just stays view-only without the input bridge. Printed
-    # only when the preflight otherwise passes, so it's never mistaken for the
-    # cause of an abort.
-    [[ -x "$FBVNC_INPUT" ]] || echo "  note: fbvnc_input absent — VNC will be view-only (not fatal)" >&2
+    fi
+    [ -x "$FBVNC_INPUT" ] || echo "  note: fbvnc_input absent — VNC will be view-only (not fatal)" >&2
 }
 
 do_install() {
     echo "[1/5] Verifying artefacts..."
     check_artefacts
 
-    echo "[2/5] Pushing binaries + scripts to $TOON_HOST..."
-    push "$TOONUI_BIN"     /mnt/data/toonui
-    push "$UI_LAUNCHER"    /mnt/data/ui_launcher.sh
-    push "$COMPANION_GATE" /mnt/data/companion_gate.sh
+    target_desc="$TOON_HOST"
+    if [ "$IS_LOCAL" = 1 ]; then target_desc="local Toon"; fi
+    echo "[2/5] Installing binaries + scripts to $target_desc..."
+    push "$TOONUI_BIN"      /mnt/data/toonui
+    push "$UI_LAUNCHER"     /mnt/data/ui_launcher.sh
+    push "$COMPANION_GATE"  /mnt/data/companion_gate.sh
     push "$INTEG_INSTALLER" /mnt/data/integrations-install.sh
-    push "$TOONVNC_SH"     /mnt/data/toonvnc.sh
-    push "$OT_MODE_SH"     /mnt/data/ot_mode_switch.sh
-    [[ -x "$FBVNC_INPUT" ]] && push "$FBVNC_INPUT" /mnt/data/fbvnc_input
+    push "$TOONVNC_SH"      /mnt/data/toonvnc.sh
+    push "$OT_MODE_SH"      /mnt/data/ot_mode_switch.sh
+    [ -x "$FBVNC_INPUT" ] && push "$FBVNC_INPUT" /mnt/data/fbvnc_input
+    if [ -f "$DL_DIR/wastefetch" ]; then
+        push "$DL_DIR/wastefetch" /mnt/data/wastefetch
+    elif [ -f "$HERE/wastefetch" ]; then
+        push "$HERE/wastefetch" /mnt/data/wastefetch
+    fi
 
-    echo "[3/5] Pushing WASM slave UI bundle..."
+    echo "[3/5] Setting up WASM slave UI bundle..."
     remote "mkdir -p /mnt/data/pwa/ui"
     for f in index.html index.js index.wasm; do
-        [[ -f "$PWA_DIR/$f" ]] || continue
+        [ -f "$PWA_DIR/$f" ] || continue
         echo "  → /mnt/data/pwa/ui/$f"
-        $SCP "$PWA_DIR/$f" "$TOON_USER@$TOON_HOST:/mnt/data/pwa/ui/${f}.new"
-        remote "mv -f /mnt/data/pwa/ui/${f}.new /mnt/data/pwa/ui/${f}"
+        if [ "$IS_LOCAL" = 1 ]; then
+            cp -f "$PWA_DIR/$f" "/mnt/data/pwa/ui/${f}.new"
+            mv -f "/mnt/data/pwa/ui/${f}.new" "/mnt/data/pwa/ui/$f"
+        else
+            $SCP "$PWA_DIR/$f" "$TOON_USER@$TOON_HOST:/mnt/data/pwa/ui/${f}.new"
+            remote "mv -f /mnt/data/pwa/ui/${f}.new /mnt/data/pwa/ui/${f}"
+        fi
     done
-    # Retire obsolete simple-app / settings-page assets at the pwa root — the
-    # WASM UI under /ui/ is the only frontend now ("/" 302-redirects there).
-    # Guarded on the bundle existing so we never strip a working root.
     remote '[ -s /mnt/data/pwa/ui/index.wasm ] && cd /mnt/data/pwa && rm -f \
         app.js sw.js manifest.json icon-192.png index.html index.js index.wasm \
         index.html.bak index.html.staticbak index.js.bak index.wasm.bak || true'
 
     echo "[4/5] Seeding default config..."
-    # ui_choice — pick freetoon on first install; respect existing user choice
-    remote "[ -f /mnt/data/ui_choice ] || echo freetoon > /mnt/data/ui_choice"
+    # Toon 1 default to qt-gui on first install; Toon 2 default to freetoon
+    if [ "$IS_TOON1" = 1 ]; then
+        remote "[ -f /mnt/data/ui_choice ] || echo qt-gui > /mnt/data/ui_choice"
+    else
+        remote "[ -f /mnt/data/ui_choice ] || echo freetoon > /mnt/data/ui_choice"
+    fi
     # toonui.cfg — write a basic-mode default ONLY if user has no cfg yet.
-    # Existing installs keep their integration toggles.
     remote "[ -f /mnt/data/toonui.cfg ] || cat > /mnt/data/toonui.cfg" <<'CFG'
 auto_dim_enabled=1
 auto_dim_seconds=10
@@ -153,72 +290,86 @@ enable_vent=0
 enable_ha=0
 CFG
 
-    echo "[5/5] Wiring inittab + restart..."
-    # Drop any legacy bridges first so ot_mode_switch.sh starts from a
-    # clean slate. We learned the hard way that starting the bridge while
-    # happ_thermstat is still holding a stale fd on /dev/ttymxc0 locks
-    # both into a "12 B / 0 fr" loop; ot_mode_switch.sh handles the
-    # umount+kick sequence properly, but only from a clean baseline.
+    echo "[5/5] Wiring inittab + firewall + restart..."
+    # Open PWA (10081) and VNC (5900) ports in stock Toon firewall
+    if [ "$IS_LOCAL" = 1 ]; then
+        FW=/etc/default/iptables.conf
+        for p in 10081 5900; do
+            if [ -f "$FW" ] && ! grep -q "dport $p " "$FW"; then
+                sed -i "/--dport 80 --tcp-flags/a -A HCB-INPUT -p tcp -m tcp --dport $p --tcp-flags SYN,RST,ACK SYN -j ACCEPT" "$FW" 2>/dev/null || true
+            fi
+            if [ -x /usr/sbin/iptables ]; then
+                /usr/sbin/iptables -C HCB-INPUT -p tcp --dport "$p" -j ACCEPT 2>/dev/null \
+                    || /usr/sbin/iptables -I HCB-INPUT 1 -p tcp --dport "$p" -j ACCEPT 2>/dev/null || true
+            fi
+        done
+    fi
+
     drop_row qbri
     drop_row p1br
     remote "pkill -x quby_bridge 2>/dev/null; pkill -x p1bridge 2>/dev/null; true"
     remote "umount -l /dev/ttymxc0 2>/dev/null; true"
     upsert_row "$TOON_ROW"
     upsert_row "$VNCS_ROW"
-    # Now enable proxy mode via the official switcher — adds the qbri
-    # inittab row, kicks happ_thermstat, and waits for the rebind. This
-    # is what makes the PWA boiler card light up while keeping CV pressure
-    # live (verified 2026-05-19, project_quby_bridge_is_the_culprit_…).
-    if [[ -x "$QUBY_BRIDGE_BIN" ]]; then
+    if [ -x "$QUBY_BRIDGE_BIN" ]; then
         echo "  → /mnt/data/quby_bridge"
-        $SCP "$QUBY_BRIDGE_BIN" "$TOON_USER@$TOON_HOST:/mnt/data/quby_bridge.new"
-        remote "mv -f /mnt/data/quby_bridge.new /mnt/data/quby_bridge && chmod +x /mnt/data/quby_bridge"
+        if [ "$IS_LOCAL" = 1 ]; then
+            cp -f "$QUBY_BRIDGE_BIN" /mnt/data/quby_bridge.new
+            mv -f /mnt/data/quby_bridge.new /mnt/data/quby_bridge && chmod +x /mnt/data/quby_bridge
+        else
+            $SCP "$QUBY_BRIDGE_BIN" "$TOON_USER@$TOON_HOST:/mnt/data/quby_bridge.new"
+            remote "mv -f /mnt/data/quby_bridge.new /mnt/data/quby_bridge && chmod +x /mnt/data/quby_bridge"
+        fi
         remote "/mnt/data/ot_mode_switch.sh proxy" || true
     else
         echo "  (skipping bridge install — $QUBY_BRIDGE_BIN absent; OT bridge stays off)"
     fi
-    # Stop the running UI / VNC so init respawns through the new launcher.
-    # On a FRESH install the live UI is the stock qt-gui (started by its own
-    # stock mechanism / startqt), NOT our toonui — so killing only toonui left
-    # qt-gui owning the framebuffer. init's HUP would add the `toon:` row, but
-    # the freetoon launcher/bootpick could never claim the screen, so qt-gui
-    # appeared to just "restart" and the user had to manually pick restart from
-    # the qt-gui Software tab. Tear down the stock UI too (startqt + qt-gui) so
-    # `kill -HUP 1` lets the new `toon:` launcher engage immediately — exactly
-    # what the in-UI "restart Toon" does. Idempotent: on an upgrade where
-    # toonui was already running, these qt-gui pkills are simply no-ops.
     remote "pkill -9 -x toonui 2>/dev/null; pkill -9 -x x11vnc 2>/dev/null; pkill -9 -x qt-gui 2>/dev/null; pkill -9 -f /qmf/sbin/qt-gui 2>/dev/null; pkill -9 -x startqt 2>/dev/null; true"
-    remote "kill -HUP 1"
+    remote "kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true"
+
+    rm -rf "$DL_DIR" 2>/dev/null || true
 
     echo
-    echo "Installed. Toon should be running freetoon-lvgl in basic mode."
+    echo "Installed successfully! Toon is now running FreeToon."
     echo "  • Boot picker: 10 s window at boot to switch to stock qt-gui"
-    echo "  • Settings → UI mode: same toggle from inside the running UI"
-    echo "  • Settings → Integrations: opt in to P1 / Itho / HA pollers"
+    echo "  • Settings → UI mode: switch between FreeToon and qt-gui"
+    echo "  • Settings → Integrations: configure P1 / Itho / HA"
 }
 
 do_uninstall() {
     echo "[1/3] Dropping inittab rows..."
     drop_row toon
     drop_row vncs
-    drop_row p1br    # legacy rows from earlier installers
+    drop_row p1br
     drop_row qbri
     echo "[2/3] Stopping daemons..."
     remote "pkill -9 -x toonui 2>/dev/null; pkill -9 -x x11vnc 2>/dev/null; pkill -9 -x quby_bridge 2>/dev/null; pkill -9 -x p1bridge 2>/dev/null; true"
     echo "[3/3] Removing files..."
     remote "rm -f /mnt/data/toonui /mnt/data/ui_launcher.sh /mnt/data/companion_gate.sh /mnt/data/toonvnc.sh /mnt/data/ot_mode_switch.sh /mnt/data/fbvnc_input /mnt/data/ui_choice /mnt/data/toonvnc.plain /mnt/data/toonui.cfg"
     remote "rm -rf /mnt/data/pwa"
-    remote "kill -HUP 1"
+    remote "kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true"
     echo "Uninstalled. Stock qt-gui takes over on next launcher cycle."
 }
 
-require sshpass
-require ssh
-require scp
-
 case "${1:-install}" in
-    install|"")  do_install   ;;
-    --uninstall) do_uninstall ;;
-    -h|--help)   sed -n '2,25p' "$0" ;;
-    *) echo "Unknown command '$1' — see --help" >&2; exit 1 ;;
+    install|"")
+        [ "$IS_LOCAL" = 0 ] && { require sshpass; require ssh; require scp; }
+        do_install
+        ;;
+    --download|--update)
+        FORCE_DOWNLOAD=1
+        [ "$IS_LOCAL" = 0 ] && { require sshpass; require ssh; require scp; }
+        do_install
+        ;;
+    --uninstall)
+        [ "$IS_LOCAL" = 0 ] && { require sshpass; require ssh; require scp; }
+        do_uninstall
+        ;;
+    -h|--help)
+        sed -n '2,20p' "$0"
+        ;;
+    *)
+        echo "Unknown command '$1' — see --help" >&2
+        exit 1
+        ;;
 esac

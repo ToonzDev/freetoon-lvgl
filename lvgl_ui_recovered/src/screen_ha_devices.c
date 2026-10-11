@@ -153,7 +153,7 @@ lv_obj_t * screen_ha_devices_create(void) {
     const struct { int type; const char * txt; } adds[] = {
         { HADEV_LIGHT, tr("+ Lamp", "+ Light") }, { HADEV_COVER, tr("+ Scherm", "+ Cover") },
         { HADEV_SWITCH, tr("+ Schakelaar", "+ Switch") }, { HADEV_SCRIPT, tr("+ Script", "+ Script") },
-        { HADEV_SCENE, tr("+ Scène", "+ Scene") },
+        { HADEV_SCENE, tr("+ Scene", "+ Scene") },
     };
     for (size_t i = 0; i < sizeof(adds)/sizeof(adds[0]); i++)
         small_btn(addrow, adds[i].txt, 0x2e5e8a, SX(140), SY(40), on_add, adds[i].type);
@@ -176,7 +176,7 @@ lv_obj_t * screen_ha_devices_create(void) {
     lv_obj_set_style_text_align(empty_hint, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(empty_hint,
         tr("Nog geen apparaten. Gebruik de knoppen hierboven om een lamp, scherm,\n"
-           "schakelaar, script of scène uit je Home Assistant toe te voegen.",
+           "schakelaar, script of scene uit je Home Assistant toe te voegen.",
            "No devices yet. Use the buttons above to add a light, cover,\n"
            "switch, script or scene from your Home Assistant."));
     lv_obj_align(empty_hint, LV_ALIGN_CENTER, 0, 0);

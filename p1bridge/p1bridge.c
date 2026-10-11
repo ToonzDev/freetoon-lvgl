@@ -44,8 +44,8 @@
 /* ---- config ---------------------------------------------------------- */
 #define BXT_HOST        "127.0.0.1"
 #define BXT_PORT        1337
-#define HWE_P1_HOST     "192.168.99.69"
-#define HWE_WTR_HOST    "192.168.99.115"
+static char g_hwe_p1_host[128]  = "192.168.99.69";
+static char g_hwe_wtr_host[128] = "192.168.99.115";
 #define CONF_PATH       "/mnt/data/p1bridge.conf"
 #define OPENSSL_BIN     "/usr/bin/openssl"
 #define WATER_POLL_S    5
@@ -131,13 +131,13 @@ static int load_config(void) {
         char *p;
         for (p = val + strlen(val) - 1; p >= val && (*p=='\r'||*p=='\n'||*p==' '); p--) *p = 0;
         while (*key == ' ') key++;
-        if (strcmp(key, HWE_P1_HOST) == 0) {
+        if (strcmp(key, g_hwe_p1_host) == 0) {
             snprintf(g_elec_token, sizeof(g_elec_token), "%s", val);
         }
     }
     fclose(f);
     if (!g_elec_token[0]) {
-        logmsg("config: no token for %s — elec WS will not start", HWE_P1_HOST);
+        logmsg("config: no token for %s — elec WS will not start", g_hwe_p1_host);
         return -1;
     }
     logmsg("config: elec token loaded (%zu chars)", strlen(g_elec_token));
@@ -374,7 +374,7 @@ static int http_get_v1(const char *host, const char *path, char *out, size_t out
 
 static void water_tick(void) {
     char body[4096];
-    if (http_get_v1(HWE_WTR_HOST, "/api/v1/data", body, sizeof(body)) != 0) return;
+    if (http_get_v1(g_hwe_wtr_host, "/api/v1/data", body, sizeof(body)) != 0) return;
     if (!strstr(body, "active_liter_lpm")) return;
     double lpm = json_num(body, "active_liter_lpm", 0);
     double m3  = json_num(body, "total_liter_m3", -1);
@@ -731,9 +731,9 @@ static void elec_publish(const char *json) {
 }
 
 static int elec_run_once(void) {
-    int fd = tls_spawn(HWE_P1_HOST);
+    int fd = tls_spawn(g_hwe_p1_host);
     if (fd < 0) { logmsg("tls spawn failed"); return -1; }
-    if (ws_handshake(fd, HWE_P1_HOST) != 0) { tls_kill(fd); return -1; }
+    if (ws_handshake(fd, g_hwe_p1_host) != 0) { tls_kill(fd); return -1; }
 
     char msg[16384]; size_t mlen;
     int saw_auth_req = 0, authorized = 0, subscribed = 0;
@@ -797,11 +797,21 @@ static int elec_run_once(void) {
 /* main                                                                  */
 /* ===================================================================== */
 
-int main(void) {
+int main(int argc, char **argv) {
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
     signal(SIGPIPE, SIG_IGN);
     logmsg("starting, pid=%d", (int)getpid());
+
+    const char *env_p1 = getenv("HWE_P1_HOST");
+    if (env_p1 && env_p1[0]) snprintf(g_hwe_p1_host, sizeof(g_hwe_p1_host), "%s", env_p1);
+    const char *env_wtr = getenv("HWE_WTR_HOST");
+    if (env_wtr && env_wtr[0]) snprintf(g_hwe_wtr_host, sizeof(g_hwe_wtr_host), "%s", env_wtr);
+    for (int i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "--p1") && i + 1 < argc) snprintf(g_hwe_p1_host, sizeof(g_hwe_p1_host), "%s", argv[++i]);
+        else if (!strcmp(argv[i], "--water") && i + 1 < argc) snprintf(g_hwe_wtr_host, sizeof(g_hwe_wtr_host), "%s", argv[++i]);
+    }
+    logmsg("target hosts: p1=%s water=%s", g_hwe_p1_host, g_hwe_wtr_host);
 
     int have_elec = (load_config() == 0);
 

@@ -1,6 +1,6 @@
 /*
  * Marketplace screen — browses the catalog at
- *   https://raw.githubusercontent.com/Ierlandfan/freetoon-integrations/main/catalog/index.json
+ *   https://raw.githubusercontent.com/ToonSoftwareCollective/freetoon-integrations/main/catalog/index.json
  * and lets the user install integrations on-device with one tap.
  *
  * Install path: tap "Install" → screen runs `/mnt/data/integrations-install.sh <id>`
@@ -26,7 +26,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
-#define CATALOG_URL "https://raw.githubusercontent.com/Ierlandfan/freetoon-integrations/main/catalog/index.json"
+#define CATALOG_URL "https://raw.githubusercontent.com/ToonSoftwareCollective/freetoon-integrations/main/catalog/index.json"
 #define INSTALL_HELPER "/mnt/data/integrations-install.sh"
 
 #define COL_BG       0x0e1a2a
@@ -54,11 +54,15 @@ typedef struct {
     lv_obj_t * row;
     lv_obj_t * btn_install;
     lv_obj_t * btn_install_lbl;
+    volatile int install_status; /* 0=idle, 1=installing, 2=ok, 3=failed */
+    int last_applied_status;
 } integration_t;
 
 #define MAX_INTEGRATIONS 16
 static integration_t entries[MAX_INTEGRATIONS];
 static int           entry_count = 0;
+static char          g_fetch_msg[128] = "";
+static volatile int  g_fetch_dirty = 0;
 
 /* ===================================================================== */
 /* JSON walker — finds the next "field" : "value" or "field": value pair. */
@@ -84,6 +88,28 @@ static const char * find_json_str(const char * src, const char * key,
     return p;
 }
 
+/* Map unsupported Unicode glyphs from catalog JSON to ASCII equivalents */
+static void sanitize_unicode_to_ascii(char * s) {
+    if (!s) return;
+    char * r = s;
+    char * w = s;
+    while (*r) {
+        if ((unsigned char)r[0] == 0xE2 && (unsigned char)r[1] == 0x80 && (unsigned char)r[2] == 0x94) {
+            *w++ = '-';
+            r += 3;
+        } else if ((unsigned char)r[0] == 0xE2 && (unsigned char)r[1] == 0x80 && (unsigned char)r[2] == 0xA6) {
+            *w++ = '.'; *w++ = '.'; *w++ = '.';
+            r += 3;
+        } else if ((unsigned char)r[0] == 0xE2 && (unsigned char)r[1] == 0x86 && (unsigned char)r[2] == 0x92) {
+            *w++ = '-'; *w++ = '>';
+            r += 3;
+        } else {
+            *w++ = *r++;
+        }
+    }
+    *w = '\0';
+}
+
 /* Parse catalog_buf into entries[]. Tolerant of formatting and missing
  * fields — anything we couldn't find stays as empty string. */
 static void parse_catalog(void) {
@@ -100,6 +126,8 @@ static void parse_catalog(void) {
         find_json_str(next, "name",        e->name,        sizeof e->name);
         find_json_str(next, "description", e->description, sizeof e->description);
         find_json_str(next, "version",     e->version,     sizeof e->version);
+        sanitize_unicode_to_ascii(e->name);
+        sanitize_unicode_to_ascii(e->description);
         entry_count++;
         scan = after_id;   /* move past this id so the next pass picks the next */
     }
@@ -110,30 +138,24 @@ static void parse_catalog(void) {
 /* ===================================================================== */
 static void * fetch_thread(void * arg) {
     (void)arg;
-    if (status_lbl)
-        lv_label_set_text(status_lbl, tr("Catalogus ophalen...", "Fetching catalog..."));
+    snprintf(g_fetch_msg, sizeof(g_fetch_msg), "%s", tr("Catalogus ophalen...", "Fetching catalog..."));
+    g_fetch_dirty = 1;
     /* http_fetch returns 0 on success / -1 on failure (NOT a byte count) and
      * fills catalog_buf. Treat a non-zero rc OR an empty body as failure. */
     int rc = http_fetch(CATALOG_URL, catalog_buf, sizeof catalog_buf);
     catalog_len = (int)strlen(catalog_buf);
     if (rc != 0 || catalog_len <= 0) {
-        if (status_lbl)
-            lv_label_set_text(status_lbl,
-                tr("Catalogus ophalen mislukt - controleer je internet.",
-                   "Catalog fetch failed - check your internet."));
+        snprintf(g_fetch_msg, sizeof(g_fetch_msg), "%s",
+            tr("Catalogus ophalen mislukt - controleer je internet.",
+               "Catalog fetch failed - check your internet."));
+        g_fetch_dirty = 1;
         return NULL;
     }
     parse_catalog();
-    /* Rebuild the visible list. We can't manipulate LVGL widgets from a
-     * non-UI thread safely on this LVGL version, so we just flag the
-     * shared state and let the on_screen_show handler repaint. */
-    if (status_lbl) {
-        char msg[64];
-        snprintf(msg, sizeof msg,
-                 tr("%d integraties beschikbaar", "%d integrations available"),
-                 entry_count);
-        lv_label_set_text(status_lbl, msg);
-    }
+    snprintf(g_fetch_msg, sizeof(g_fetch_msg),
+             tr("%d integraties beschikbaar", "%d integrations available"),
+             entry_count);
+    g_fetch_dirty = 1;
     return NULL;
 }
 
@@ -155,34 +177,17 @@ extern void wasm_push_event(const char * topic, const char * payload);
 
 static void * install_thread(void * arg) {
     integration_t * e = (integration_t *)arg;
-    if (e->btn_install_lbl) lv_label_set_text(e->btn_install_lbl, tr("Installeren...", "Installing..."));
-    if (e->btn_install)
-        lv_obj_set_style_bg_color(e->btn_install, lv_color_hex(COL_BUSY), 0);
-
 #ifdef WASM_BUILD
-    /* Fire-and-forget: bridge posts JSON to the master. Result shows up in
-     * the next SSE state frame (tile_slots gets refreshed centrally). */
     char payload[96];
     snprintf(payload, sizeof payload, "{\"id\":\"%s\"}", e->id);
     wasm_push_event("/api/install", payload);
-    if (e->btn_install_lbl) lv_label_set_text(e->btn_install_lbl, tr("Naar master gestuurd", "Sent to master"));
-    if (e->btn_install)
-        lv_obj_set_style_bg_color(e->btn_install, lv_color_hex(COL_OK), 0);
+    e->install_status = 2;
     return NULL;
 #else
     char cmd[256];
     snprintf(cmd, sizeof cmd, "%s %s", INSTALL_HELPER, e->id);
     int rc = system(cmd);
-
-    if (rc == 0) {
-        if (e->btn_install_lbl) lv_label_set_text(e->btn_install_lbl, tr("Geïnstalleerd", "Installed"));
-        if (e->btn_install)
-            lv_obj_set_style_bg_color(e->btn_install, lv_color_hex(COL_OK), 0);
-    } else {
-        if (e->btn_install_lbl) lv_label_set_text(e->btn_install_lbl, tr("Mislukt", "Failed"));
-        if (e->btn_install)
-            lv_obj_set_style_bg_color(e->btn_install, lv_color_hex(COL_WARN), 0);
-    }
+    e->install_status = (rc == 0) ? 2 : 3;
     return NULL;
 #endif
 }
@@ -204,9 +209,15 @@ static void on_install_clicked(lv_event_t * e) {
             lv_label_set_text(ent->btn_install_lbl, tr("Helper nodig", "Need helper"));
         return;
     }
+    ent->install_status = 1;
+    if (ent->btn_install_lbl) lv_label_set_text(ent->btn_install_lbl, tr("Installeren...", "Installing..."));
+    if (ent->btn_install)
+        lv_obj_set_style_bg_color(ent->btn_install, lv_color_hex(COL_BUSY), 0);
     pthread_t t;
     if (pthread_create(&t, NULL, install_thread, ent) == 0)
         pthread_detach(t);
+    else
+        ent->install_status = 3;
 #endif
 }
 
@@ -265,17 +276,34 @@ static void build_rows(void) {
                           install_helper_ok() ? tr("Installeren", "Install")
                                               : tr("Geen helper", "No helper"));
         lv_obj_center(ent->btn_install_lbl);
+        ent->last_applied_status = ent->install_status;
     }
 }
 
-/* Called by the periodic refresh timer (every 500 ms). Cheap; only
- * rebuilds rows when entry_count just transitioned from 0 → N. */
+/* Called by the periodic refresh timer (every 500 ms). */
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
     static int prev_count = -1;
+    if (g_fetch_dirty) {
+        if (status_lbl) lv_label_set_text(status_lbl, g_fetch_msg);
+        g_fetch_dirty = 0;
+    }
     if (entry_count != prev_count) {
         build_rows();
         prev_count = entry_count;
+    }
+    for (int i = 0; i < entry_count; i++) {
+        integration_t * ent = &entries[i];
+        if (ent->install_status != ent->last_applied_status) {
+            ent->last_applied_status = ent->install_status;
+            if (ent->install_status == 2) {
+                if (ent->btn_install_lbl) lv_label_set_text(ent->btn_install_lbl, tr("Geïnstalleerd", "Installed"));
+                if (ent->btn_install) lv_obj_set_style_bg_color(ent->btn_install, lv_color_hex(COL_OK), 0);
+            } else if (ent->install_status == 3) {
+                if (ent->btn_install_lbl) lv_label_set_text(ent->btn_install_lbl, tr("Mislukt", "Failed"));
+                if (ent->btn_install) lv_obj_set_style_bg_color(ent->btn_install, lv_color_hex(COL_WARN), 0);
+            }
+        }
     }
 }
 

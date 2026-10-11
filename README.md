@@ -134,7 +134,7 @@ when qt-gui is the active UI.
 ### Settings → Marketplace
 
 Browse + one-tap install of third-party integrations from
-[freetoon-integrations](https://github.com/Ierlandfan/freetoon-integrations).
+[freetoon-integrations](https://github.com/ToonSoftwareCollective/freetoon-integrations).
 Each integration is a small daemon that publishes data on BoxTalk; toonui
 picks it up via its existing subscribe path, and Settings → Tiles binds any
 installed integration to any home-tile slot.
@@ -195,7 +195,7 @@ from **source** if you want to hack on the code. Both use the same
 ### Path A — Use a release (recommended)
 
 1. Grab the latest tarball from
-   [Releases](https://github.com/Ierlandfan/freetoon-lvgl/releases) — pick
+   [Releases](https://github.com/ToonSoftwareCollective/freetoon-lvgl/releases) — pick
    `freetoon-lvgl-vX.Y.Z.tar.gz`.
 
 2. Extract somewhere on your Linux host:
@@ -245,7 +245,7 @@ Use this if you want to modify the UI or the bridges.
 1. Clone the repo and grab the LVGL submodule:
 
    ```bash
-   git clone https://github.com/Ierlandfan/freetoon-lvgl.git
+   git clone https://github.com/ToonSoftwareCollective/freetoon-lvgl.git
    cd freetoon-lvgl
    git submodule update --init --recursive
    ```

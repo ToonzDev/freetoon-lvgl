@@ -44,7 +44,7 @@ static void update_picked_label(void) {
     for (int i = 0; i < sel_n && o < (int)sizeof buf - 8; i++)
         o += snprintf(buf + o, sizeof buf - o, "%s%s%s",
                       i ? ", " : "", sel_sym[i], i == 0 ? tr(" (tegel)", " (tile)") : "");
-    if (sel_n == 0) snprintf(buf, sizeof buf, tr("Gekozen 0/%d — tik op een munt", "Selected 0/%d — tap a coin"), MAX_PICK);
+    if (sel_n == 0) snprintf(buf, sizeof buf, tr("Gekozen 0/%d - tik op een munt", "Selected 0/%d - tap a coin"), MAX_PICK);
     lv_label_set_text(lbl_picked, buf);
 }
 
@@ -61,13 +61,13 @@ static void refilter(void) {
     const char * q = lv_textarea_get_text(ta_search);
     char ql[64]; lc(q, ql, sizeof ql);
     if (!ql[0]) {
-        lv_obj_t * b = lv_list_add_text(lst_results, tr("Typ om te zoeken (naam of symbool)…",
-                                                        "Type to search (name or symbol)…"));
+        lv_obj_t * b = lv_list_add_text(lst_results, tr("Typ om te zoeken (naam of symbool)...",
+                                                        "Type to search (name or symbol)..."));
         (void)b; return;
     }
     FILE * f = fopen(COINS_TSV, "r");
-    if (!f) { lv_list_add_text(lst_results, tr("coins.tsv ontbreekt — crypto-integratie nog niet geinstalleerd?",
-                                               "coins.tsv missing — crypto integration not installed yet?")); return; }
+    if (!f) { lv_list_add_text(lst_results, tr("coins.tsv ontbreekt - crypto-integratie nog niet geinstalleerd?",
+                                               "coins.tsv missing - crypto integration not installed yet?")); return; }
     char line[256]; int shown = 0;
     while (fgets(line, sizeof line, f) && shown < MAX_RESULTS) {
         char * nl = strchr(line, '\n'); if (nl) *nl = 0;
@@ -93,8 +93,8 @@ static void refilter(void) {
     }
     fclose(f);
     if (shown == 0) lv_list_add_text(lst_results, tr("Geen munten gevonden", "No coins found"));
-    else if (shown >= MAX_RESULTS) lv_list_add_text(lst_results, tr("… verfijn de zoekopdracht voor meer",
-                                                                     "… refine the search for more"));
+    else if (shown >= MAX_RESULTS) lv_list_add_text(lst_results, tr("... verfijn de zoekopdracht voor meer",
+                                                                     "... refine the search for more"));
 }
 
 static void on_pick(lv_event_t * e) {
@@ -203,8 +203,8 @@ lv_obj_t * screen_crypto_picker_create(void) {
 
     ta_search = lv_textarea_create(scr_root);
     lv_textarea_set_one_line(ta_search, true);
-    lv_textarea_set_placeholder_text(ta_search, tr("Zoek munt (bv. bitcoin, eth, solana)…",
-                                                   "Search coin (e.g. bitcoin, eth, solana)…"));
+    lv_textarea_set_placeholder_text(ta_search, tr("Zoek munt (bv. bitcoin, eth, solana)...",
+                                                   "Search coin (e.g. bitcoin, eth, solana)..."));
     lv_obj_set_width(ta_search, LV_PCT(70));
     lv_obj_align(ta_search, LV_ALIGN_TOP_MID, 0, SY(64));
     lv_obj_add_event_cb(ta_search, on_search_changed, LV_EVENT_VALUE_CHANGED, NULL);

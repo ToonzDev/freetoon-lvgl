@@ -9,5 +9,6 @@ X="$1"
 Y="$2"
 if [[ -z "$X" || -z "$Y" ]]; then echo "usage: $0 X Y"; exit 1; fi
 
-sshpass -p toon ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-    -o LogLevel=ERROR root@192.168.3.212 "/mnt/data/toontap $X $Y"
+HOST="${TOON_HOST:-toon}"
+sshpass -p "${TOON_PASS:-toon}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    -o LogLevel=ERROR "root@$HOST" "/mnt/data/toontap $X $Y"

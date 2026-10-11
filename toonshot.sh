@@ -5,11 +5,12 @@
 #   default output: /tmp/toonshot.png
 
 OUT="${1:-/tmp/toonshot.png}"
+HOST="${TOON_HOST:-toon}"
 BYTES=$((1024 * 600 * 4))
 
-sshpass -p toon ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+sshpass -p "${TOON_PASS:-toon}" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -o LogLevel=ERROR \
-    root@192.168.3.212 "dd if=/dev/fb0 bs=4096 count=600 2>/dev/null" \
+    "root@$HOST" "dd if=/dev/fb0 bs=4096 count=600 2>/dev/null" \
   | python3 -c "
 import sys
 from PIL import Image

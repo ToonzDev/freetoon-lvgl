@@ -70,7 +70,7 @@ static void on_fan_btn(lv_event_t * e) {
 /* ── refresh ──────────────────────────────────────────────────── */
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
-    if (!scr_root) return;
+    if (!scr_root || lv_scr_act() != scr_root) return;
 
     if (!efanlamp.connected) {
         lv_label_set_text(lbl_status, tr("Niet verbonden", "Disconnected"));

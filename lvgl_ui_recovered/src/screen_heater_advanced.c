@@ -132,7 +132,7 @@ lv_obj_t * screen_heater_advanced_create(void) {
     lv_obj_t * hdr = lv_label_create(scr_root);
     lv_obj_set_style_text_font(hdr, SF(28), 0);
     lv_obj_set_style_text_color(hdr, lv_color_hex(0xffffff), 0);
-    lv_label_set_text(hdr, tr("Ketel — Geavanceerd (OTGW)", "Boiler — Advanced (OTGW)"));
+    lv_label_set_text(hdr, tr("Ketel - Geavanceerd (OTGW)", "Boiler - Advanced (OTGW)"));
     lv_obj_align(hdr, LV_ALIGN_TOP_LEFT, SX(20), SY(16));
 
     /* back button */

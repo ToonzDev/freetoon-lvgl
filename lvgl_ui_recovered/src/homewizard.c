@@ -24,6 +24,23 @@
 
 hw_state_t hw_state = {0};
 
+static pthread_mutex_t g_hw_state_mtx = PTHREAD_MUTEX_INITIALIZER;
+
+void homewizard_lock(void) {
+    pthread_mutex_lock(&g_hw_state_mtx);
+}
+
+void homewizard_unlock(void) {
+    pthread_mutex_unlock(&g_hw_state_mtx);
+}
+
+void homewizard_get_snapshot(hw_state_t * out) {
+    if (!out) return;
+    pthread_mutex_lock(&g_hw_state_mtx);
+    *out = hw_state;
+    pthread_mutex_unlock(&g_hw_state_mtx);
+}
+
 static int http_get(const char * ip, const char * path, char * out, size_t outsz) {
     int s = socket(AF_INET, SOCK_STREAM, 0);
     if (s < 0) return -1;
@@ -110,6 +127,7 @@ static void poll_p1(void) {
         hw_state.connected_p1 = 0;
         return;
     }
+    homewizard_lock();
     hw_state.power_w          = (float)parse_num(j, "active_power_w",         0);
     hw_state.kwh_import_t1    = (float)parse_num(j, "total_power_import_t1_kwh", 0);
     hw_state.kwh_import_t2    = (float)parse_num(j, "total_power_import_t2_kwh", 0);
@@ -121,6 +139,7 @@ static void poll_p1(void) {
     hw_state.voltage_l1_v     = (float)parse_num(j, "active_voltage_l1_v",    0);
     hw_state.current_l1_a     = (float)parse_num(j, "active_current_a",       0);
     hw_state.connected_p1     = 1;
+    homewizard_unlock();
 }
 
 /* Track per-pour session totals. session_start_m3 is captured the moment
@@ -164,8 +183,6 @@ static void poll_water(void) {
     }
     float new_total_m3 = (float)parse_num(j, "total_liter_m3",   0);
     float device_lpm   = (float)parse_num(j, "active_liter_lpm", 0);
-    hw_state.water_total_m3  = new_total_m3;
-    hw_state.connected_water = 1;
 
     /* Delta-derived flow: litres since last poll → L/min. Picks up tiny
      * pours the device's smoothed lpm misses entirely. The device's own
@@ -191,6 +208,10 @@ static void poll_water(void) {
             fclose(df);
         }
     }
+
+    homewizard_lock();
+    hw_state.water_total_m3  = new_total_m3;
+    hw_state.connected_water = 1;
     hw_state.water_lpm = shown_lpm;
 
     /* Session bookkeeping. The "flowing now?" test is shown_lpm > 0.05
@@ -223,6 +244,7 @@ static void poll_water(void) {
             hw_state.water_session_age_s = 0;
         }
     }
+    homewizard_unlock();
 }
 
 /* Bin start helpers — round a timestamp down to the start of the current

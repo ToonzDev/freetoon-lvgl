@@ -798,9 +798,13 @@ static void * efanlamp_thread(void *arg) {
     (void)arg;
 
     for (;;) {
-        const char *host = settings.efanlamp_host[0] ? settings.efanlamp_host : "192.168.3.34";
-        const char *psk_b64 = settings.efanlamp_psk[0] ? settings.efanlamp_psk
-                                : "91dT9Peert6ZI1hukAy1AvUzxS0pqgdauqaf7YQ8b04=";
+        if (!settings.efanlamp_host[0] || !settings.efanlamp_psk[0]) {
+            /* Not configured; wait for user to configure in Settings */
+            sleep(5);
+            continue;
+        }
+        const char *host = settings.efanlamp_host;
+        const char *psk_b64 = settings.efanlamp_psk;
 
         /* decode PSK */
         uint8_t psk[32] = {0};
@@ -1011,9 +1015,13 @@ static int ef_b64(const char *s, uint8_t *out, int max) {
 }
 
 int main(int argc, char **argv) {
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s <host> [psk_b64]\n", argv[0]);
+        return 1;
+    }
     g_ef_verbose = 1;
-    const char *host = argc > 1 ? argv[1] : "192.168.3.34";
-    const char *psk_b64 = argc > 2 ? argv[2] : "91dT9Peert6ZI1hukAy1AvUzxS0pqgdauqaf7YQ8b04=";
+    const char *host = argv[1];
+    const char *psk_b64 = argc > 2 ? argv[2] : "";
     uint8_t psk[32] = {0};
     int pn = ef_b64(psk_b64, psk, 32);
     fprintf(stderr, "[test] host=%s psk_bytes=%d\n", host, pn);

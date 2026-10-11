@@ -149,6 +149,7 @@ static void on_wake(lv_event_t * e) { (void)e; ui_wake_now(); }
 
 static void d_refresh(lv_timer_t * t) {
     (void)t;
+    if (!scr_root || lv_scr_act() != scr_root) return;
     time_t now = time(NULL); struct tm tm; localtime_r(&now, &tm);
     char b[64];
 

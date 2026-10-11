@@ -55,7 +55,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$RawUrl = 'https://raw.githubusercontent.com/Ierlandfan/freetoon-lvgl/main/scripts/toon_tailscale.sh'
+$RawUrl = 'https://raw.githubusercontent.com/ToonSoftwareCollective/freetoon-lvgl/main/scripts/toon_tailscale.sh'
 
 function Write-Log { param($m) Write-Host "[oneclick] $m" -ForegroundColor Cyan }
 function Write-Err { param($m) Write-Host "[oneclick] ERROR: $m" -ForegroundColor Red }

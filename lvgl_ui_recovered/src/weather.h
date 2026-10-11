@@ -46,6 +46,11 @@ typedef struct {
 
 extern weather_state_t weather_state;
 
+/* Thread safety primitives */
+void weather_lock(void);
+void weather_unlock(void);
+void weather_get_snapshot(weather_state_t * out);
+
 int weather_start(void);
 
 /* Resolve a city name to a Buienradar/GeoNames location id (Open-Meteo

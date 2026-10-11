@@ -56,7 +56,7 @@
 /* ===================================================================== */
 /* configuration                                                         */
 /* ===================================================================== */
-#define OTGW_HOST       "192.168.99.21"
+static char g_otgw_host[128] = "192.168.99.21";
 #define OTGW_PORT       80
 #define OTGW_SERIAL_PORT 25238    /* serial-over-IP — accepts CS=/CH=/TR=/TT=
                                      and actually injects them on the OT wire.
@@ -244,7 +244,7 @@ static int http_post_json(const char *host, int port, const char *path,
 static void send_otgw_command(const char *cmd) {
     char body[160];
     snprintf(body, sizeof(body), "{\"command\":\"%s\"}", cmd);
-    if (http_post_json(OTGW_HOST, OTGW_PORT, OTGW_CMD_PATH, body) != 0)
+    if (http_post_json(g_otgw_host, OTGW_PORT, OTGW_CMD_PATH, body) != 0)
         logmsg("otgw command send failed: %s", cmd);
 }
 
@@ -256,7 +256,7 @@ static void send_otgw_command(const char *cmd) {
  * everything on the floor in this firmware build (PIC 6.5 / Robert van
  * den Breemen 0.10.3+e334c42). */
 static void send_otgw_serial(const char *cmd) {
-    int s = tcp_connect(OTGW_HOST, OTGW_SERIAL_PORT);
+    int s = tcp_connect(g_otgw_host, OTGW_SERIAL_PORT);
     if (s < 0) {
         logmsg("otgw serial connect failed: %s", strerror(errno));
         return;
@@ -647,7 +647,7 @@ static void publish_to_boxtalk(void) {
 }
 
 static void poll_otgw(void) {
-    if (http_get(OTGW_HOST, OTGW_PORT, OTMON_PATH,
+    if (http_get(g_otgw_host, OTGW_PORT, OTMON_PATH,
                  g_otm_json, sizeof(g_otm_json)) <= 0) {
         logmsg("otmonitor GET failed");
         return;
@@ -1194,8 +1194,10 @@ static void usage(const char *p) {
         "  proxy     bind-mount pty + transparently shuttle bytes happ↔real\n"
         "            keteladapter; sniff every frame, publish BoilerInfo +\n"
         "            ThermostatInfo notifies to BoxTalk Hub. Heat keeps\n"
-        "            working since we never fake replies.\n",
-        p);
+        "            working since we never fake replies.\n"
+        "Options:\n"
+        "  -o <host> OTGW host/IP (default: $OTGW_HOST or %s)\n",
+        p, g_otgw_host);
 }
 
 /* Frame-align a byte buffer: find the next valid Quby header byte and
@@ -1242,10 +1244,15 @@ static void sniff_frame(const uint8_t *f) {
 int main(int argc, char **argv) {
     const char *mode = "passive";
     int reply = 0, do_bind = 0, do_proxy = 0;
+    const char *env_host = getenv("OTGW_HOST");
+    if (env_host && env_host[0]) {
+        snprintf(g_otgw_host, sizeof(g_otgw_host), "%s", env_host);
+    }
     int opt;
-    while ((opt = getopt(argc, argv, "m:h")) != -1) {
+    while ((opt = getopt(argc, argv, "m:o:h")) != -1) {
         switch (opt) {
         case 'm': mode = optarg; break;
+        case 'o': snprintf(g_otgw_host, sizeof(g_otgw_host), "%s", optarg); break;
         case 'h': default: usage(argv[0]); return 1;
         }
     }

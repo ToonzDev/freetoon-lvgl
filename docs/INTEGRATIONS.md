@@ -6,7 +6,7 @@ to an ARMv7 Linux binary (or a shell/Python script the Toon can run), you can
 add a live tile to the UI.
 
 > Want the runnable starting point instead of reading? Clone
-> [`freetoon-integrations`](https://github.com/Ierlandfan/freetoon-integrations)
+> [`freetoon-integrations`](https://github.com/ToonSoftwareCollective/freetoon-integrations)
 > and copy `examples/hello-solar/` — this doc explains every piece of it.
 
 ---
@@ -232,7 +232,7 @@ Scripts work too: a `#!/bin/sh` or Python file the Toon can run is a valid
    tar czf hello-solar.tar.gz manifest.json hello-solar README.md
    ```
 2. Open a PR against
-   [`freetoon-integrations`](https://github.com/Ierlandfan/freetoon-integrations):
+   [`freetoon-integrations`](https://github.com/ToonSoftwareCollective/freetoon-integrations):
    - add your folder under `examples/<id>/` (source + manifest + tarball),
    - add an entry to `catalog/index.json`:
      ```json
@@ -242,8 +242,8 @@ Scripts work too: a `#!/bin/sh` or Python file the Toon can run is a valid
        "description": "…",
        "author": "you",
        "version": "1.0.0",
-       "url": "https://github.com/Ierlandfan/freetoon-integrations/raw/main/examples/hello-solar/hello-solar.tar.gz",
-       "manifest_url": "https://raw.githubusercontent.com/Ierlandfan/freetoon-integrations/main/examples/hello-solar/manifest.json",
+       "url": "https://github.com/ToonSoftwareCollective/freetoon-integrations/raw/main/examples/hello-solar/hello-solar.tar.gz",
+       "manifest_url": "https://raw.githubusercontent.com/ToonSoftwareCollective/freetoon-integrations/main/examples/hello-solar/manifest.json",
        "tile": { "title": "Solar", "color": "0xffcc44", "icon": "sun", "service": "solarProduction" }
      }
      ```

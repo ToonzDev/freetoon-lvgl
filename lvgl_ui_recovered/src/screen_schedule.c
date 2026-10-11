@@ -485,22 +485,22 @@ static void show_edit_modal(int idx) {
 /* Periodic timer just to refresh the "now" indicator. */
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
-    if (!timeline_box) return;
-    if (timeline_now_line) lv_obj_del(timeline_now_line);
+    if (!scr_root || lv_scr_act() != scr_root || !timeline_box) return;
     time_t now = time(NULL);
     struct tm tm;
     localtime_r(&now, &tm);
     int wd = tm.tm_wday;
     int toon_day = (wd + 6) % 7;
     int y_now = ((tm.tm_hour * 60 + tm.tm_min) * TL_HOUR_PX) / 60;
-    timeline_now_line = lv_obj_create(timeline_box);
-    lv_obj_set_size(timeline_now_line, TL_COL_W, 2);
+    if (!timeline_now_line) {
+        timeline_now_line = lv_obj_create(timeline_box);
+        lv_obj_set_size(timeline_now_line, TL_COL_W, 2);
+        lv_obj_set_style_bg_color(timeline_now_line, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_border_width(timeline_now_line, 0, 0);
+        lv_obj_set_style_radius(timeline_now_line, 0, 0);
+        lv_obj_clear_flag(timeline_now_line, LV_OBJ_FLAG_SCROLLABLE);
+    }
     lv_obj_set_pos(timeline_now_line, toon_day * TL_COL_W, y_now - 1);
-    lv_obj_set_style_bg_color(timeline_now_line, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_border_width(timeline_now_line, 0, 0);
-    lv_obj_set_style_radius(timeline_now_line, 0, 0);
-    lv_obj_clear_flag(timeline_now_line, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_invalidate(scr_root);
 }
 
 lv_obj_t * screen_schedule_create(void) {

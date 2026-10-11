@@ -29,6 +29,7 @@
 #include "news.h"
 #include "wastecollection.h"
 #include "update_check.h"
+#include "update_modal.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -66,7 +67,6 @@ static lv_obj_t * sl_offset,   * lbl_offset_val;
 static lv_obj_t * sw_boiler;
 static lv_obj_t * lbl_boiler_mode;
 static lv_obj_t * lbl_boiler_ot;
-static lv_obj_t * lbl_about_status;
 static int        pending_boiler_type = -1;
 
 /* ============================ value callbacks ============================ */
@@ -465,11 +465,11 @@ static void on_boiler_switch(lv_event_t * e) {
         tr("Ketelregeling omzetten naar %s?\n\n"
            "Dit verandert hoe Toon je ketel aanstuurt en wordt direct naar "
            "het apparaat geschreven. Wijzig dit alleen als je je ketel-"
-           "bedrading kent — de verkeerde instelling kan je verwarming uitschakelen.",
+           "bedrading kent - de verkeerde instelling kan je verwarming uitschakelen.",
            "Switch boiler control to %s?\n\n"
            "This reconfigures how Toon drives your boiler and is written to "
            "the device immediately. Only change it if you know your boiler "
-           "wiring — the wrong setting can stop your heating from working."),
+           "wiring - the wrong setting can stop your heating from working."),
         want_onoff ? "On/Off" : "OpenTherm");
     lv_obj_align(body, LV_ALIGN_TOP_LEFT, 0, SY(48));
 
@@ -514,28 +514,6 @@ static void heating_tick(void) {
             lv_label_set_text(lbl_boiler_ot, "");
         }
     }
-}
-
-static void about_tick(void) {
-    if (!lbl_about_status) return;
-    double up = 0;
-    FILE * f = fopen("/proc/uptime", "r");
-    if (f) { if (fscanf(f, "%lf", &up) != 1) up = 0; fclose(f); }
-    int uh = (int)(up / 3600), um = (int)((up - uh * 3600) / 60);
-    lv_label_set_text_fmt(lbl_about_status,
-        tr("BoxTalk: %s   (ber %d)\n"
-           "Ketel: %s\n"
-           "Binnen %.1f C   -   Streefwaarde %.1f C\n"
-           "Systeem-uptime: %dh %dm",
-           "BoxTalk: %s   (msg %d)\n"
-           "Boiler: %s\n"
-           "Indoor %.1f C   -   Setpoint %.1f C\n"
-           "System uptime: %dh %dm"),
-        toon_state.connected ? tr("verbonden", "connected") : tr("verbinden...", "connecting..."),
-        toon_state.msg_count,
-        toon_state.boiler_type == 1 ? "On/Off" :
-        toon_state.boiler_type == 0 ? "OpenTherm" : tr("onbekend", "unknown"),
-        toon_state.indoor_temp, toon_state.setpoint, uh, um);
 }
 
 /* Language selector — OFF = Nederlands (LANG_NL), ON = English (LANG_EN).
@@ -700,10 +678,10 @@ static void open_weather_modal(lv_event_t * e) {
     lv_label_set_text(hint,
         tr("Vind de id van je plaats in de URL op buienradar.nl/weer/<plaats>/nl/<ID>\n"
            "(bijv. Medemblik = 2751073, De Bilt = 2757783). Gewone KNMI-codes\n"
-           "werken niet — dit zijn GeoNames-id's.",
+           "werken niet - dit zijn GeoNames-id's.",
            "Find your city's id in the URL on buienradar.nl/weer/<city>/nl/<ID>\n"
            "(e.g. Medemblik = 2751073, De Bilt = 2757783). Plain KNMI codes\n"
-           "won't work — these are GeoNames ids."));
+           "won't work - these are GeoNames ids."));
     lv_obj_align(hint, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     y += 70;
 
@@ -1750,7 +1728,7 @@ static void open_calendar_modal(lv_event_t * e) {
     lv_obj_set_size(ta_cal_ics, SX(470), SY(44));
     lv_obj_align(ta_cal_ics, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_textarea_set_one_line(ta_cal_ics, true);
-    lv_textarea_set_placeholder_text(ta_cal_ics, "https://… .ics");
+    lv_textarea_set_placeholder_text(ta_cal_ics, "https://... .ics");
     lv_textarea_set_text(ta_cal_ics, settings.calendar_ics_url);
     y += 60;
 
@@ -1829,7 +1807,7 @@ static void open_news_modal(lv_event_t * e) {
     lv_obj_set_size(ta_news_url, SX(470), SY(44));
     lv_obj_align(ta_news_url, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_textarea_set_one_line(ta_news_url, true);
-    lv_textarea_set_placeholder_text(ta_news_url, tr("https://… RSS-feed", "https://… RSS feed"));
+    lv_textarea_set_placeholder_text(ta_news_url, tr("https://... RSS-feed", "https://... RSS feed"));
     lv_obj_t * addb = lv_btn_create(p);
     lv_obj_set_size(addb, SX(120), SY(44));
     lv_obj_align(addb, LV_ALIGN_TOP_LEFT, SX(484), y);
@@ -1933,9 +1911,9 @@ static lv_obj_t * sw_int_hide_offline;
 static void integ_dirty_hint(void) {
     if (!lbl_integ_hint) return;
     lv_label_set_text(lbl_integ_hint,
-        tr("Opgeslagen. Herstart toonui om toe te passen (Instellingen → Over → Herstart, "
+        tr("Opgeslagen. Herstart toonui om toe te passen (Instellingen -> Over -> Herstart, "
            "of trek de stekker er even uit).",
-           "Saved. Restart toonui to apply (Settings → About → Restart, "
+           "Saved. Restart toonui to apply (Settings -> About -> Restart, "
            "or just unplug+plug the screen)."));
     lv_obj_set_style_text_color(lbl_integ_hint, lv_color_hex(0xffcc66), 0);
 }
@@ -2261,9 +2239,9 @@ static void open_ha_entities_modal(lv_event_t * e) {
         lv_obj_t * hint = lv_label_create(p);
         lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
         lv_obj_set_style_text_font(hint, SF(18), 0);
-        lv_label_set_text(hint, tr("Lampen, zonwering, schakelaars, scripts en scènes —\n"
+        lv_label_set_text(hint, tr("Lampen, zonwering, schakelaars, scripts en scenes -\n"
                                     "te zien achter de Apparaten-knop op start.",
-                                    "Lights, covers, switches, scripts and scenes —\n"
+                                    "Lights, covers, switches, scripts and scenes -\n"
                                     "shown behind the home Devices button."));
         lv_obj_align(hint, LV_ALIGN_TOP_LEFT, SX(4), y);
         y += 52;
@@ -2507,65 +2485,7 @@ void screen_settings_open_tile_slots_modal(void) {
 
 static void open_about_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open(tr("Over", "About"), 490);
-
-    /* Same identity as the home ft-logo modal so both Abouts read identically:
-       freetoon · version · beta · author/MIT, then the live update status. */
-    lv_obj_t * t = lv_label_create(p);
-    lv_obj_set_style_text_color(t, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(t, SF(28), 0);
-    lv_label_set_text(t, "freetoon");
-    lv_obj_align(t, LV_ALIGN_TOP_LEFT, SX(4), SY(58));
-
-    lv_obj_t * ver = lv_label_create(p);
-    lv_obj_set_style_text_color(ver, lv_color_hex(0x88aabb), 0);
-    lv_obj_set_style_text_font(ver, SF(18), 0);
-    lv_label_set_text_fmt(ver, "%s  -  beta", BUILD_VERSION);
-    lv_obj_align(ver, LV_ALIGN_TOP_LEFT, SX(4), SY(94));
-
-    lv_obj_t * cred = lv_label_create(p);
-    lv_obj_set_style_text_color(cred, lv_color_hex(0x6f8aa0), 0);
-    lv_obj_set_style_text_font(cred, SF(14), 0);
-    lv_label_set_text(cred, tr("alternatieve UI door Ierlandfan  -  MIT-licentie", "alternative UI by Ierlandfan  -  MIT License"));
-    lv_obj_align(cred, LV_ALIGN_TOP_LEFT, SX(4), SY(120));
-
-    lbl_about_status = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_about_status, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_about_status, SF(18), 0);
-    lv_obj_align(lbl_about_status, LV_ALIGN_TOP_LEFT, SX(4), SY(150));
-
-    /* Version history (recent releases, newest first) — scrollable. This is the
-       theme-independent way to see the changelog in-app: the stock home has no
-       logo/banner entry to the rich home About modal, but Settings is reachable
-       on every theme. Populated by the update poll; shows a hint until then. */
-    lv_obj_t * hist_hdr = lv_label_create(p);
-    lv_obj_set_style_text_color(hist_hdr, lv_color_hex(0x88aabb), 0);
-    lv_obj_set_style_text_font(hist_hdr, SF(15), 0);
-    lv_label_set_text(hist_hdr, tr("Versiegeschiedenis", "Version history"));
-    lv_obj_align(hist_hdr, LV_ALIGN_TOP_LEFT, SX(4), SY(252));
-
-    lv_obj_t * clbox = lv_obj_create(p);
-    lv_obj_set_size(clbox, SX(300), SY(196));
-    lv_obj_align(clbox, LV_ALIGN_TOP_LEFT, SX(4), SY(278));
-    lv_obj_set_style_bg_color(clbox, lv_color_hex(0x0e1a2a), 0);
-    lv_obj_set_style_border_width(clbox, 0, 0);
-    lv_obj_set_style_radius(clbox, 8, 0);
-    lv_obj_set_style_pad_all(clbox, 10, 0);
-    lv_obj_set_scroll_dir(clbox, LV_DIR_VER);
-    lv_obj_set_scrollbar_mode(clbox, LV_SCROLLBAR_MODE_AUTO);
-    lv_obj_t * cl = lv_label_create(clbox);
-    lv_obj_set_style_text_font(cl, SF(15), 0);
-    lv_obj_set_style_text_color(cl, lv_color_hex(0xc8d4e0), 0);
-    lv_label_set_long_mode(cl, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(cl, SX(278));
-    lv_label_set_text(cl, g_update_state.changelog[0]
-        ? g_update_state.changelog
-        : tr("Verschijnt na de eerste update-controle.",
-             "Appears after the first update check."));
-
-    about_tick();
-    modal_tick_fn = about_tick;
-    modal_timer = lv_timer_create(modal_timer_cb, 1000, NULL);
+    update_modal_open(NULL);
 }
 
 /* ============================ OT Bridge modal ============================ *
@@ -2685,13 +2605,13 @@ static void * check_thread(void * arg) {
                  "WARN: otgwcommands setting not found in response");
     } else if (strstr(gw_value, "GW=1")) {
         snprintf(g_check_result_buf, sizeof(g_check_result_buf),
-                 "OK: %s (gateway/relay — correct for wired mode)", gw_value);
+                 "OK: %s (gateway/relay - correct for wired mode)", gw_value);
     } else if (strstr(gw_value, "GW=2")) {
         snprintf(g_check_result_buf, sizeof(g_check_result_buf),
-                 "INFO: %s (no-thermostat mode — needed for wireless mode)", gw_value);
+                 "INFO: %s (no-thermostat mode - needed for wireless mode)", gw_value);
     } else if (strstr(gw_value, "GW=0")) {
         snprintf(g_check_result_buf, sizeof(g_check_result_buf),
-                 "WARN: %s (monitor-only — won't drive boiler)", gw_value);
+                 "WARN: %s (monitor-only - won't drive boiler)", gw_value);
     } else {
         snprintf(g_check_result_buf, sizeof(g_check_result_buf),
                  "INFO: otgwcommands=\"%s\"", gw_value);
@@ -2702,7 +2622,7 @@ static void * check_thread(void * arg) {
 
 static void on_test_click(lv_event_t * e) {
     (void)e;
-    lv_label_set_text(lbl_test_result, tr("Testen…", "Testing…"));
+    lv_label_set_text(lbl_test_result, tr("Testen...", "Testing..."));
     pthread_t t;
     if (pthread_create(&t, NULL, test_thread, NULL) == 0) pthread_detach(t);
 }
@@ -2791,14 +2711,14 @@ static void * ket_thread(void * arg) {
 
 static void on_ket_click(lv_event_t * e) {
     (void)e;
-    lv_label_set_text(lbl_ket_result, tr("Keteladapter testen…", "Testing keteladapter…"));
+    lv_label_set_text(lbl_ket_result, tr("Keteladapter testen...", "Testing keteladapter..."));
     pthread_t t;
     if (pthread_create(&t, NULL, ket_thread, NULL) == 0) pthread_detach(t);
 }
 
 static void on_check_click(lv_event_t * e) {
     (void)e;
-    lv_label_set_text(lbl_check_result, tr("OTGW opvragen…", "Querying OTGW…"));
+    lv_label_set_text(lbl_check_result, tr("OTGW opvragen...", "Querying OTGW..."));
     pthread_t t;
     if (pthread_create(&t, NULL, check_thread, NULL) == 0) pthread_detach(t);
 }
@@ -2894,9 +2814,9 @@ static void on_apply_click(lv_event_t * e) {
         settings.ot_bridge_mode);
     system(cmd);
     lv_label_set_text(lbl_apply_warning,
-        tr("Toegepast — bridge/thermstat herstart. "
+        tr("Toegepast - bridge/thermstat herstart. "
            "Heropen dit venster over ~15s om te controleren.",
-           "Applied — bridge/thermstat restarting. "
+           "Applied - bridge/thermstat restarting. "
            "Re-open this modal in ~15s to verify."));
 }
 
@@ -3505,17 +3425,18 @@ static int topic_is_subscribed(const char * t) {
     return 0;
 }
 
-static void mqtt_test_thread_fn(void) { /* not used — kept for symmetry */ }
+typedef struct {
+    char host[64];
+    char user[32];
+    char pass[64];
+    int port;
+} mqtt_thread_params_t;
 
 static void * mqtt_test_thread(void * arg) {
-    (void)arg;
-    char host[64], user[32], pass[64];
-    snprintf(host, sizeof(host), "%s", lv_textarea_get_text(ta_mqtt_host));
-    snprintf(user, sizeof(user), "%s", lv_textarea_get_text(ta_mqtt_user));
-    snprintf(pass, sizeof(pass), "%s", lv_textarea_get_text(ta_mqtt_pass));
-    int port = atoi(lv_textarea_get_text(ta_mqtt_port));
+    mqtt_thread_params_t * p = (mqtt_thread_params_t *)arg;
     char err[128] = "";
-    int rc = mqtt_test_connection(host, port, user, pass, err, sizeof(err));
+    int rc = mqtt_test_connection(p->host, p->port, p->user, p->pass, err, sizeof(err));
+    free(p);
     pthread_mutex_lock(&g_disc_mtx);
     snprintf(g_test_result, sizeof(g_test_result), "%s: %s",
              rc == 0 ? "OK" : "FAIL", err);
@@ -3526,9 +3447,19 @@ static void * mqtt_test_thread(void * arg) {
 
 static void on_mqtt_test_click(lv_event_t * e) {
     (void)e;
-    lv_label_set_text(lbl_mqtt_result, tr("Verbinding testen…", "Testing connection…"));
+    lv_label_set_text(lbl_mqtt_result, tr("Verbinding testen...", "Testing connection..."));
+    mqtt_thread_params_t * p = malloc(sizeof(*p));
+    if (!p) return;
+    snprintf(p->host, sizeof(p->host), "%s", lv_textarea_get_text(ta_mqtt_host));
+    snprintf(p->user, sizeof(p->user), "%s", lv_textarea_get_text(ta_mqtt_user));
+    snprintf(p->pass, sizeof(p->pass), "%s", lv_textarea_get_text(ta_mqtt_pass));
+    p->port = atoi(lv_textarea_get_text(ta_mqtt_port));
     pthread_t t;
-    if (pthread_create(&t, NULL, mqtt_test_thread, NULL) == 0) pthread_detach(t);
+    if (pthread_create(&t, NULL, mqtt_test_thread, p) == 0) {
+        pthread_detach(t);
+    } else {
+        free(p);
+    }
 }
 
 static void on_disc_topic(const char * topic, void * arg) {
@@ -3545,19 +3476,15 @@ static void on_disc_topic(const char * topic, void * arg) {
 }
 
 static void * mqtt_discover_thread(void * arg) {
-    (void)arg;
-    char host[64], user[32], pass[64];
-    snprintf(host, sizeof(host), "%s", lv_textarea_get_text(ta_mqtt_host));
-    snprintf(user, sizeof(user), "%s", lv_textarea_get_text(ta_mqtt_user));
-    snprintf(pass, sizeof(pass), "%s", lv_textarea_get_text(ta_mqtt_pass));
-    int port = atoi(lv_textarea_get_text(ta_mqtt_port));
+    mqtt_thread_params_t * p = (mqtt_thread_params_t *)arg;
     pthread_mutex_lock(&g_disc_mtx);
     g_disc_count = 0; g_disc_dirty = 1;
     pthread_mutex_unlock(&g_disc_mtx);
     /* 5 second scan of "#" is enough to catch retained + a couple of
      * ticks of live traffic on a normal home broker. */
-    int n = mqtt_discover_topics(host, port, user, pass, "#", 5000,
+    int n = mqtt_discover_topics(p->host, p->port, p->user, p->pass, "#", 5000,
                                  on_disc_topic, NULL);
+    free(p);
     pthread_mutex_lock(&g_disc_mtx);
     snprintf(g_test_result, sizeof(g_test_result),
              n < 0 ? tr("Ontdekken mislukt (controleer inlog/host)", "Discovery failed (check creds/host)")
@@ -3575,9 +3502,27 @@ static void on_mqtt_discover_click(lv_event_t * e) {
     if (g_disc_running) { pthread_mutex_unlock(&g_disc_mtx); return; }
     g_disc_running = 1;
     pthread_mutex_unlock(&g_disc_mtx);
-    lv_label_set_text(lbl_mqtt_result, tr("5s op # abonneren…", "Subscribing to # for 5s…"));
+    lv_label_set_text(lbl_mqtt_result, tr("5s op # abonneren...", "Subscribing to # for 5s..."));
+    mqtt_thread_params_t * p = malloc(sizeof(*p));
+    if (!p) {
+        pthread_mutex_lock(&g_disc_mtx);
+        g_disc_running = 0;
+        pthread_mutex_unlock(&g_disc_mtx);
+        return;
+    }
+    snprintf(p->host, sizeof(p->host), "%s", lv_textarea_get_text(ta_mqtt_host));
+    snprintf(p->user, sizeof(p->user), "%s", lv_textarea_get_text(ta_mqtt_user));
+    snprintf(p->pass, sizeof(p->pass), "%s", lv_textarea_get_text(ta_mqtt_pass));
+    p->port = atoi(lv_textarea_get_text(ta_mqtt_port));
     pthread_t t;
-    if (pthread_create(&t, NULL, mqtt_discover_thread, NULL) == 0) pthread_detach(t);
+    if (pthread_create(&t, NULL, mqtt_discover_thread, p) == 0) {
+        pthread_detach(t);
+    } else {
+        free(p);
+        pthread_mutex_lock(&g_disc_mtx);
+        g_disc_running = 0;
+        pthread_mutex_unlock(&g_disc_mtx);
+    }
 }
 
 static void rebuild_topic_checkboxes(void) {
@@ -3672,8 +3617,8 @@ static void on_mqtt_apply_click(lv_event_t * e) {
     }
     mqtt_client_restart();
     lv_label_set_text(lbl_mqtt_result,
-        tr("Toegepast — abonnee verbindt opnieuw met de nieuwe instellingen.",
-           "Applied — subscriber reconnecting with new settings."));
+        tr("Toegepast - abonnee verbindt opnieuw met de nieuwe instellingen.",
+           "Applied - subscriber reconnecting with new settings."));
 }
 
 static void on_mqtt_enabled_change(lv_event_t * e) {

@@ -51,6 +51,11 @@ unsigned int  air_quality_color(int eco2, int tvoc);
 
 extern toon_state_t toon_state;
 
+/* Thread safety primitives */
+void boxtalk_lock(void);
+void boxtalk_unlock(void);
+void boxtalk_get_snapshot(toon_state_t * out);
+
 /* Start BoxTalk client in a background thread. Returns 0 on success. */
 int boxtalk_start(void);
 

@@ -477,7 +477,7 @@ static int handle_tile_proxy(int fd, const char * query) {
     char out[64];
     snprintf(out, sizeof out, "/tmp/_tile_%d_%d_%d.png", z, x, y);
     snprintf(cmd, sizeof cmd,
-        "curl -fsSL -m 12 -A 'freetoon-master/1.0 (+https://github.com/Ierlandfan/freetoon-lvgl)' "
+        "curl -fsSL -m 12 -A 'freetoon-master/1.0 (+https://github.com/ToonSoftwareCollective/freetoon-lvgl)' "
         "-o '%s' 'https://tile.openstreetmap.org/%d/%d/%d.png'",
         out, z, x, y);
     int rc = system(cmd);
@@ -582,31 +582,55 @@ static int handle_state_stream(int fd) {
     struct timeval tv = { .tv_sec = 2, .tv_usec = 0 };
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
-    char last[2048] = "";
+    /* Dynamically allocate buffers to protect 256KB thread stack and prevent
+     * buffer overflow (full state JSON routinely exceeds 4-16KB). */
+    char * last = malloc(32768);
+    char * body = malloc(32768);
+    char * ev   = malloc(33000);
+    if (!last || !body || !ev) {
+        free(last); free(body); free(ev);
+        return -1;
+    }
+    last[0] = '\0';
     int idle_ticks = 0;
+    int ret = 0;
+
     /* Push the first frame immediately so the client doesn't sit on default values. */
-    char body[32768], ev[33000];  /* full state incl. lights/schedule/inbox/calendar/news/dz arrays */
-    int n = render_state_json(body, sizeof(body));
+    int n = render_state_json(body, 32768);
     if (n > 0) {
-        int en = snprintf(ev, sizeof(ev), "data: %s\n\n", body);
-        if (sock_send_all(fd, ev, en) < 0) return -1;
-        memcpy(last, body, n + 1);
+        int en = snprintf(ev, 33000, "data: %s\n\n", body);
+        if (sock_send_all(fd, ev, en) < 0) {
+            ret = -1;
+            goto cleanup;
+        }
+        memcpy(last, body, (size_t)n + 1);
     }
     while (1) {
         usleep(1000 * 1000);   /* 1 Hz poll of shared state */
-        n = render_state_json(body, sizeof(body));
+        n = render_state_json(body, 32768);
         if (n <= 0) continue;
         if (strcmp(body, last) != 0) {
-            int en = snprintf(ev, sizeof(ev), "data: %s\n\n", body);
-            if (sock_send_all(fd, ev, en) < 0) return -1;
-            memcpy(last, body, n + 1);
+            int en = snprintf(ev, 33000, "data: %s\n\n", body);
+            if (sock_send_all(fd, ev, en) < 0) {
+                ret = -1;
+                break;
+            }
+            memcpy(last, body, (size_t)n + 1);
             idle_ticks = 0;
         } else if (++idle_ticks >= 10) {
             /* No state change for 10s — emit SSE comment line as a heartbeat. */
-            if (sock_send_all(fd, ": ka\n\n", 6) < 0) return -1;
+            if (sock_send_all(fd, ": ka\n\n", 6) < 0) {
+                ret = -1;
+                break;
+            }
             idle_ticks = 0;
         }
     }
+cleanup:
+    free(last);
+    free(body);
+    free(ev);
+    return ret;
 }
 
 /* Tiny extractor: find "key":<num> in flat JSON and return it as float.
@@ -1809,6 +1833,10 @@ static int dispatch(int fd, char * req) {
     return send_status(fd, 405, "Method Not Allowed", "no");
 }
 
+#define PWA_MAX_CLIENTS 6
+static int g_pwa_active_clients = 0;
+static pthread_mutex_t g_pwa_clients_mu = PTHREAD_MUTEX_INITIALIZER;
+
 /* Worker thread for a single accepted connection. Owns the fd. */
 static void * conn_thread(void * arg) {
     int fd = (int)(intptr_t)arg;
@@ -1831,6 +1859,9 @@ static void * conn_thread(void * arg) {
     }
     if (r > 0) dispatch(fd, req);
     close(fd);
+    pthread_mutex_lock(&g_pwa_clients_mu);
+    g_pwa_active_clients--;
+    pthread_mutex_unlock(&g_pwa_clients_mu);
     return NULL;
 }
 
@@ -1847,7 +1878,8 @@ static void * pwa_thread(void * arg) {
         perror("[pwa] bind"); close(srv); return NULL;
     }
     listen(srv, 8);
-    fprintf(stderr, "[pwa] listening on :%d  root=%s\n", PWA_PORT, PWA_ROOT);
+    fprintf(stderr, "[pwa] listening on :%d  root=%s (max %d clients)\n",
+            PWA_PORT, PWA_ROOT, PWA_MAX_CLIENTS);
 
     pthread_attr_t at;
     pthread_attr_init(&at);
@@ -1858,8 +1890,21 @@ static void * pwa_thread(void * arg) {
     while (1) {
         int c = accept(srv, NULL, NULL);
         if (c < 0) continue;
+        pthread_mutex_lock(&g_pwa_clients_mu);
+        if (g_pwa_active_clients >= PWA_MAX_CLIENTS) {
+            pthread_mutex_unlock(&g_pwa_clients_mu);
+            send_status(c, 503, "Service Unavailable", "Too many connections\n");
+            close(c);
+            continue;
+        }
+        g_pwa_active_clients++;
+        pthread_mutex_unlock(&g_pwa_clients_mu);
+
         pthread_t t;
         if (pthread_create(&t, &at, conn_thread, (void *)(intptr_t)c) != 0) {
+            pthread_mutex_lock(&g_pwa_clients_mu);
+            g_pwa_active_clients--;
+            pthread_mutex_unlock(&g_pwa_clients_mu);
             close(c);
         }
     }
