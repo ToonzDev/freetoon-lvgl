@@ -211,6 +211,19 @@ drop_row() {
     remote "grep -v '^${1}:' /etc/inittab > /etc/inittab.new && mv -f /etc/inittab.new /etc/inittab"
 }
 
+disable_stock_qt() {
+    # Comment out any stock Qt inittab rows (qtqt:, gui:, etc. running startqt or qt-gui)
+    # so they do not fight FreeToon for the framebuffer.
+    remote "sed -i -E 's~^([^#].*(startqt|qt-gui).*)~#FREETOON#\1~' /etc/inittab 2>/dev/null || true"
+}
+
+restore_stock_qt() {
+    # Restore stock Qt inittab rows upon uninstalling FreeToon
+    remote "sed -i 's~^#FREETOON#~~' /etc/inittab 2>/dev/null || true"
+    remote "if ! grep -qE '^[^#].*(startqt|qt-gui)' /etc/inittab 2>/dev/null; then sed -i -E 's~^#+[ \t]*(qtqt:.*)~\1~' /etc/inittab 2>/dev/null || true; fi"
+    remote "if ! grep -qE '^[^#].*(startqt|qt-gui)' /etc/inittab 2>/dev/null; then echo 'qtqt:245:respawn:/usr/bin/startqt >/var/log/qt 2>&1' >> /etc/inittab; fi"
+}
+
 check_artefacts() {
     resolve_artefacts
 
@@ -327,6 +340,7 @@ CFG
 
     drop_row qbri
     drop_row p1br
+    disable_stock_qt
     remote "pkill -x quby_bridge 2>/dev/null; pkill -x p1bridge 2>/dev/null; true"
     remote "umount -l /dev/ttymxc0 2>/dev/null; true"
     upsert_row "$TOON_ROW"
@@ -361,14 +375,16 @@ CFG
 }
 
 do_uninstall() {
-    echo "[1/3] Dropping inittab rows..."
+    echo "[1/4] Dropping inittab rows..."
     drop_row toon
     drop_row vncs
     drop_row p1br
     drop_row qbri
-    echo "[2/3] Stopping daemons..."
+    echo "[2/4] Restoring stock qt inittab row..."
+    restore_stock_qt
+    echo "[3/4] Stopping daemons..."
     remote "pkill -9 -x toonui 2>/dev/null; pkill -9 -x x11vnc 2>/dev/null; pkill -9 -x quby_bridge 2>/dev/null; pkill -9 -x p1bridge 2>/dev/null; true"
-    echo "[3/3] Removing files..."
+    echo "[4/4] Removing files..."
     remote "rm -f /mnt/data/toonui /mnt/data/ui_launcher.sh /mnt/data/companion_gate.sh /mnt/data/toonvnc.sh /mnt/data/ot_mode_switch.sh /mnt/data/fbvnc_input /mnt/data/ui_choice /mnt/data/toonvnc.plain /mnt/data/toonui.cfg"
     remote "rm -rf /mnt/data/pwa"
     remote "kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true"
