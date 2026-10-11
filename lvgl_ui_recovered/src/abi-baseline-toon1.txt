@@ -100,6 +100,7 @@ snprintf@GLIBC_2.4
 socket@GLIBC_2.4
 sprintf@GLIBC_2.4
 srand@GLIBC_2.4
+sscanf@GLIBC_2.4
 stpcpy@GLIBC_2.4
 strcasestr@GLIBC_2.4
 strchr@GLIBC_2.4
