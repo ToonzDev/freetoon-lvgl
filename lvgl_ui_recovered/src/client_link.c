@@ -15,6 +15,7 @@
 #include "client_link.h"
 #include "settings.h"
 #include "boxtalk.h"
+#include "http.h"
 #include "homeassistant.h"
 #include "homewizard.h"
 #include "meteradapter.h"
@@ -367,35 +368,149 @@ void client_link_apply_state(const char * j) {
     toon_state.connected = 1;
 }
 
+static int g_is_stock_master = 0;
+
+static int parse_json_val(const char * j, const char * key, int def) {
+    char pat[64];
+    snprintf(pat, sizeof pat, "\"%s\":", key);
+    const char * p = strstr(j, pat);
+    if (!p) return def;
+    p += strlen(pat);
+    while (*p == ' ' || *p == '\"') p++;
+    return atoi(p);
+}
+
+static int parse_rrd_val(const char * body, float * out) {
+    if (!body) return 0;
+    const char * colon = strchr(body, ':');
+    if (!colon) return 0;
+    colon++;
+    while (*colon == ' ' || *colon == '\t') colon++;
+    if (strncmp(colon, "NaN", 3) == 0 || strncmp(colon, "nan", 3) == 0) return 0;
+    *out = (float)atof(colon);
+    return 1;
+}
+
+static void poll_stock_master(void) {
+    char url[256];
+    char buf[4096];
+    int rrd_counter = 0;
+    int fails = 0;
+
+    fprintf(stderr, "[client_link] running in Stock Toon master mode for %s\n", settings.master_host);
+
+    while (settings.client_mode) {
+        if (!host_ok(settings.master_host)) {
+            toon_state.connected = 0;
+            sleep(2);
+            continue;
+        }
+
+        /* 1. Thermostat Info from happ_thermstat on port 10080 */
+        snprintf(url, sizeof url, "http://%s:10080/happ_thermstat?action=getThermostatInfo", settings.master_host);
+        if (http_fetch_to(url, buf, sizeof buf, 2) == 0 && strstr(buf, "\"currentTemp\"")) {
+            fails = 0;
+            int ct = parse_json_val(buf, "currentTemp", 0);
+            if (ct > 0) toon_state.indoor_temp = ct / 100.0f;
+
+            int sp = parse_json_val(buf, "currentSetpoint", 0);
+            if (sp > 0) toon_state.setpoint = sp / 100.0f;
+
+            toon_state.program_state = parse_json_val(buf, "programState", toon_state.program_state);
+            toon_state.active_state  = parse_json_val(buf, "activeState",  toon_state.active_state);
+
+            int bi = parse_json_val(buf, "burnerInfo", -1);
+            if (bi >= 0) {
+                toon_state.burner_on = (bi == 1);
+                toon_state.dhw_on    = (bi == 2);
+            }
+            toon_state.modulation_level = parse_json_val(buf, "currentModulationLevel", toon_state.modulation_level);
+            toon_state.ot_comm_error    = parse_json_val(buf, "otCommError", toon_state.ot_comm_error);
+
+            int chsp = parse_json_val(buf, "currentInternalBoilerSetpoint", -1);
+            if (chsp >= 0) toon_state.ch_setpoint = (float)chsp;
+
+            toon_state.connected = 1;
+        } else {
+            fails++;
+            if (fails >= 3) toon_state.connected = 0;
+        }
+
+        /* 2. Electricity & Gas from hcb_rrd every ~4 seconds */
+        rrd_counter++;
+        if (rrd_counter >= 2) {
+            rrd_counter = 0;
+            snprintf(url, sizeof url, "http://%s:10080/hcb_rrd?action=getRrdData&loggerName=elec_flow&rra=5min&samples=1", settings.master_host);
+            if (http_fetch_to(url, buf, sizeof buf, 2) == 0) {
+                float pw = 0.0f;
+                if (parse_rrd_val(buf, &pw)) {
+                    meter_state.power_w = pw;
+                    meter_state.connected = 1;
+                    hw_state.power_w = pw;
+                    hw_state.connected_p1 = 1;
+                }
+            }
+            snprintf(url, sizeof url, "http://%s:10080/hcb_rrd?action=getRrdData&loggerName=gas_flow&rra=5min&samples=1", settings.master_host);
+            if (http_fetch_to(url, buf, sizeof buf, 2) == 0) {
+                float gw = 0.0f;
+                if (parse_rrd_val(buf, &gw)) {
+                    hw_state.gas_m3 = gw;
+                    hw_state.connected_p1 = 1;
+                }
+            }
+        }
+
+        sleep(1);
+    }
+}
+
 static void * reader_thread(void * arg) {
     (void)arg;
-    char url[160], cmd[256], line[8192];
-    sleep(2);
+    char url[160], cmd[256], line[8192], probe_buf[2048];
+    sleep(1);
     for (;;) {
         if (!host_ok(settings.master_host)) {
             toon_state.connected = 0;
             sleep(3);
             continue;
         }
-        snprintf(url, sizeof url, "http://%s:%d/api/state/stream",
-                 settings.master_host, MASTER_PORT);
-        /* -N: no buffering (stream lines as they arrive). --connect-timeout
-         * bounds the initial dial; no --max-time so the stream stays open. */
-        snprintf(cmd, sizeof cmd,
-                 "curl -s -N --connect-timeout 8 -A freetoon-client '%s' 2>/dev/null",
-                 url);
-        FILE * f = popen(cmd, "r");
-        if (!f) { toon_state.connected = 0; sleep(3); continue; }
-        while (fgets(line, sizeof line, f)) {
-            if (strncmp(line, "data:", 5) == 0) {
-                char * j = line + 5;
-                while (*j == ' ') j++;
-                if (*j == '{') client_link_apply_state(j);
+
+        /* Probe master: check if FreeToon PWA port 10081 is open */
+        snprintf(url, sizeof url, "http://%s:%d/api/state", settings.master_host, MASTER_PORT);
+        if (http_fetch_to(url, probe_buf, sizeof probe_buf, 2) == 0 && strstr(probe_buf, "indoor_temp")) {
+            g_is_stock_master = 0;
+            fprintf(stderr, "[client_link] connected to FreeToon master %s\n", settings.master_host);
+            snprintf(url, sizeof url, "http://%s:%d/api/state/stream",
+                     settings.master_host, MASTER_PORT);
+            snprintf(cmd, sizeof cmd,
+                     "curl -s -N --connect-timeout 8 -A freetoon-client '%s' 2>/dev/null",
+                     url);
+            FILE * f = popen(cmd, "r");
+            if (!f) { toon_state.connected = 0; sleep(3); continue; }
+            while (fgets(line, sizeof line, f)) {
+                if (strncmp(line, "data:", 5) == 0) {
+                    char * j = line + 5;
+                    while (*j == ' ') j++;
+                    if (*j == '{') client_link_apply_state(j);
+                }
             }
+            pclose(f);
+            toon_state.connected = 0;
+            sleep(2);
+            continue;
         }
-        pclose(f);
-        toon_state.connected = 0;   /* stream dropped — reconnect shortly */
-        sleep(2);
+
+        /* Check if master is a stock Toon with happ_thermstat on port 10080 */
+        snprintf(url, sizeof url, "http://%s:10080/happ_thermstat?action=getThermostatInfo", settings.master_host);
+        if (http_fetch_to(url, probe_buf, sizeof probe_buf, 2) == 0 && strstr(probe_buf, "currentTemp")) {
+            g_is_stock_master = 1;
+            poll_stock_master();
+            sleep(2);
+            continue;
+        }
+
+        toon_state.connected = 0;
+        sleep(3);
     }
     return NULL;
 }
@@ -411,15 +526,72 @@ static int post_json(const char * path, const char * json) {
 }
 
 int client_link_setpoint(float temp) {
+    if (g_is_stock_master) {
+        int centi = (int)(temp * 100.0f + 0.5f);
+        char url[256], buf[256];
+        snprintf(url, sizeof url, "http://%s:10080/happ_thermstat?action=roomSetpoint&Setpoint=%d",
+                 settings.master_host, centi);
+        int rc = http_fetch_to(url, buf, sizeof buf, 3);
+        if (rc == 0) toon_state.setpoint = temp;
+        return rc;
+    }
     char b[48];
     snprintf(b, sizeof b, "{\"value\":\"%.2f\"}", (double)temp);
     return post_json("/api/setpoint", b);
 }
+
 int client_link_program(int state) {
+    if (g_is_stock_master) {
+        char url[256], buf[256];
+        int rc;
+        if (state < 0) {
+            /* Manual hold */
+            int ts = (toon_state.active_state >= 0 && toon_state.active_state <= 3) ? toon_state.active_state : 1;
+            snprintf(url, sizeof url, "http://%s:10080/happ_thermstat?action=changeSchemeState&state=0&temperatureState=%d",
+                     settings.master_host, ts);
+            rc = http_fetch_to(url, buf, sizeof buf, 3);
+            if (rc == 0) {
+                toon_state.program_state = 0;
+                toon_state.active_state  = -1;
+            }
+            return rc;
+        }
+        /* Presets 0..3: 0=Comfort 1=Home 2=Sleep 3=Away */
+        int mode;
+        if (toon_state.program_state == 8) mode = 2;       /* LOCKEDBASE -> TEMPOVERRIDE */
+        else if (toon_state.program_state == 0) mode = 0;  /* MANUAL -> MANUAL */
+        else if (toon_state.active_state == state) mode = 8;/* tap same -> LOCKEDBASE */
+        else mode = 2;                                     /* TEMPOVERRIDE */
+
+        snprintf(url, sizeof url, "http://%s:10080/happ_thermstat?action=changeSchemeState&state=%d&temperatureState=%d",
+                 settings.master_host, mode, state);
+        rc = http_fetch_to(url, buf, sizeof buf, 3);
+        if (rc == 0) {
+            toon_state.active_state  = state;
+            toon_state.program_state = mode;
+        }
+        return rc;
+    }
     char b[32];
     snprintf(b, sizeof b, "{\"state\":%d}", state);
     return post_json("/api/program", b);
 }
+
+int client_link_resume_schedule(void) {
+    if (g_is_stock_master) {
+        char url[256], buf[256];
+        int now_state = toon_state.active_state >= 0 ? toon_state.active_state : 1;
+        snprintf(url, sizeof url, "http://%s:10080/happ_thermstat?action=changeSchemeState&state=1&temperatureState=%d",
+                 settings.master_host, now_state);
+        int rc = http_fetch_to(url, buf, sizeof buf, 3);
+        if (rc == 0) toon_state.program_state = 1;
+        return rc;
+    }
+    char b[32];
+    snprintf(b, sizeof b, "{\"state\":-2}");
+    return post_json("/api/program", b);
+}
+
 int client_link_curtain(const char * action) {
     char b[48];
     snprintf(b, sizeof b, "{\"action\":\"%s\"}", action);

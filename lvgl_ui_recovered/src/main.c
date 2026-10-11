@@ -138,8 +138,8 @@ int main(int argc, char** argv) {
         fprintf(stderr, "[main] boxtalk_start failed\n");
 
     if (settings.client_mode) {
-        /* Slave: mirror a master Toon over its PWA API; start NO local
-         * integrations so we connect only to the master. */
+        /* Slave: mirror a master Toon over its PWA API or stock HTTP API; start NO local
+         * meter/boiler hardware integrations so we connect only to the master. */
         extern int client_link_start(void);
         if (client_link_start() != 0)
             fprintf(stderr, "[main] client_link_start failed\n");
@@ -152,12 +152,8 @@ int main(int argc, char** argv) {
         extern int meteradapter_start(void);
         if (meteradapter_start() != 0)
             fprintf(stderr, "[main] meteradapter_start failed\n");
-        if (weather_start() != 0)
-            fprintf(stderr, "[main] weather_start failed\n");
         if (otgw_start() != 0)
             fprintf(stderr, "[main] otgw_start failed\n");
-        if (waste_start() != 0)
-            fprintf(stderr, "[main] waste_start failed\n");
         if (vent_start() != 0)
             fprintf(stderr, "[main] vent_start failed\n");
         extern int efanlamp_start(void);
@@ -171,11 +167,16 @@ int main(int argc, char** argv) {
         extern int domoticz_start(void);
         if (domoticz_start() != 0)
             fprintf(stderr, "[main] domoticz_start failed\n");
-        extern int news_start(void);
-        news_start();
-        extern int calendar_start(void);
-        calendar_start();
     }
+    /* Cloud and internet integrations — enabled in both standalone and slave mode */
+    if (weather_start() != 0)
+        fprintf(stderr, "[main] weather_start failed\n");
+    if (waste_start() != 0)
+        fprintf(stderr, "[main] waste_start failed\n");
+    extern int news_start(void);
+    news_start();
+    extern int calendar_start(void);
+    calendar_start();
     if (healthcheck_start() != 0)
         fprintf(stderr, "[main] healthcheck_start failed\n");
     if (pwa_start() != 0)

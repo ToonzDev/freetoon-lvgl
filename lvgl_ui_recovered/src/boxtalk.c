@@ -920,6 +920,8 @@ static void send_initial_handshake(void) {
      * populated the registry from main.c. */
     tile_slots_subscribe_all();
 
+    /* Pro-actively query WiFi status so hcb_netcon is stimulated on boot */
+    boxtalk_wifi_get_status();
 
     fprintf(stderr, "[bxt] handshake + subscriptions sent\n");
 }
@@ -1091,7 +1093,14 @@ int boxtalk_get_state_value(int state) {
     char body[256];
     char q[64];
     snprintf(q, sizeof(q), "action=getStateValue&stateId=%d", state);
-    if (http_get_thermstat_full(q, body, sizeof(body)) != 0) return -1;
+    if (settings.client_mode) {
+        char url[256];
+        snprintf(url, sizeof url, "http://%s:10080/happ_thermstat?%s", settings.master_host, q);
+        extern int http_fetch_to(const char *, char *, size_t, int);
+        if (http_fetch_to(url, body, sizeof body, 3) != 0) return -1;
+    } else {
+        if (http_get_thermstat_full(q, body, sizeof(body)) != 0) return -1;
+    }
     const char * p = strstr(body, "stateValue");
     if (!p) return -1;
     /* skip "stateValue": then optional space + : (handles both ":1850" and ": 1850") */
@@ -1107,7 +1116,15 @@ int boxtalk_set_state_value(int state, int centi) {
     char q[80];
     snprintf(q, sizeof(q),
              "action=updateStateValue&stateId=%d&newValue=%d", state, centi);
-    int rc = http_get_thermstat(q);
+    int rc;
+    if (settings.client_mode) {
+        char url[256], body[256];
+        snprintf(url, sizeof url, "http://%s:10080/happ_thermstat?%s", settings.master_host, q);
+        extern int http_fetch_to(const char *, char *, size_t, int);
+        rc = http_fetch_to(url, body, sizeof body, 3);
+    } else {
+        rc = http_get_thermstat(q);
+    }
     fprintf(stderr, "[bxt] updateStateValue state=%d val=%d rc=%d\n",
             state, centi, rc);
     return rc;
@@ -1202,6 +1219,11 @@ int boxtalk_set_manual(void) {
 }
 
 int boxtalk_resume_schedule(void) {
+    if (settings.client_mode) {
+        temp_override_active = 0;
+        extern int client_link_resume_schedule(void);
+        return client_link_resume_schedule();
+    }
     /* "Program/Auto": resume the weekly schedule (programState=1, PROG_BASE).
      * Verified on a Toon 2: state=1 repopulates nextProgram/nextState/nextTime
      * and activeState from the schedule. set_program would instead pick an
@@ -1258,6 +1280,11 @@ int boxtalk_setpoint_decrease(void) {
 }
 
 void boxtalk_tick(void) {
+    static int wifi_poll_ticks = 0;
+    if (++wifi_poll_ticks >= 10) {
+        wifi_poll_ticks = 0;
+        boxtalk_wifi_get_status();
+    }
     /* Drive the temporary-override expiry from the UI's 1 s refresh.
      * When the weekly schedule advances past the program that was
      * active at the moment of the override, snap back to whatever the

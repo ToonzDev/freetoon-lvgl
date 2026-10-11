@@ -393,6 +393,9 @@ static void refresh_cb(lv_timer_t * t) {
             lv_label_set_text_fmt(lbl_status, "%s   %d%%   %s   %s",
                 g_cur_ssid, g_cur_quality < 0 ? 0 : g_cur_quality,
                 g_cur_ip[0] ? g_cur_ip : "-", net);
+        else if (g_cur_ip[0])
+            lv_label_set_text_fmt(lbl_status, "WiFi   %d%%   %s   %s",
+                g_cur_quality < 0 ? 0 : g_cur_quality, g_cur_ip, net);
         else if (g_status_known)
             /* Only declare "not connected" once a real status query has come
              * back empty — never in the gap between screen-load and the first
