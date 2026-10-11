@@ -17,6 +17,11 @@
 #include <unistd.h>
 #include <pthread.h>
 
+#if !defined(_GNU_SOURCE) || defined(__GLIBC__)
+/* Ensure memmem prototype is present even if features.h was pre-included */
+extern void *memmem(const void *haystack, size_t haystacklen, const void *needle, size_t needlelen);
+#endif
+
 typedef struct {
     char title[NEWS_TITLE_MAX];
     char link[NEWS_LINK_MAX];
