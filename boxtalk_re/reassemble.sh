@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # Reassemble 7-byte frames from the bytestream-style capture.
 # We treat the W and R streams independently as two byte streams,
 # emit consecutive bytes per direction, and group every 7 bytes

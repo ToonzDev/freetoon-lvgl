@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # Grab a screenshot of Toon's framebuffer over SSH and save as PNG.
 # Visible area: 1024x600 @ 32bpp BGRA, stride=4096 (== 1024*4, so contiguous).
 # Usage: ./toonshot.sh [output_path]

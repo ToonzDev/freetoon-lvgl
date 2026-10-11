@@ -7,6 +7,5 @@ if [ -f "$HERE/../install.sh" ]; then
     exec sh "$HERE/../install.sh" "$@"
 fi
 
-# Fallback for curl ... | sh execution: download install.sh and run
-curl -fsSL https://raw.githubusercontent.com/ToonSoftwareCollective/freetoon-lvgl/main/install.sh 2>/dev/null \
-    || curl -fsSL https://raw.githubusercontent.com/Ierlandfan/freetoon-lvgl/main/install.sh | sh
+# Fallback for curl ... | sh execution: download install.sh and run from ToonzDev
+curl -fsSL https://raw.githubusercontent.com/ToonzDev/freetoon-lvgl/main/install.sh | sh -s -- "$@"

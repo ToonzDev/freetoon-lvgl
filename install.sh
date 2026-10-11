@@ -45,111 +45,107 @@ say() { echo "[freetoon] $*"; }
 # Resolve each artefact — checks override var, then candidate paths
 pick() {
     _val="$1"; shift
-    if [ -n "$_val" ]; then echo "$_val"; return 0; fi
+    if [ -n "$_val" ] && [ -e "$_val" ]; then echo "$_val"; return 0; fi
     for _c in "$@"; do
-        if [ -e "$_c" ]; then echo "$_c"; return 0; fi
+        if [ -n "$_c" ] && [ -e "$_c" ]; then echo "$_c"; return 0; fi
     done
-    echo "$1"
+    echo ""
 }
 
 resolve_artefacts() {
     if [ "$IS_TOON1" = 1 ]; then
-        TOONUI_BIN="$(pick "${TOONUI_BIN:-}" "$HERE/toonui-toon1" "$HERE/toonui" "$HERE/lvgl_ui_recovered/build1/toonui" "$HERE/lvgl_ui_recovered/build/toonui")"
+        TOONUI_BIN="$(pick "${TOONUI_BIN:-}" "$DL_DIR/toonui" "$HERE/toonui-toon1" "$HERE/toonui" "$HERE/lvgl_ui_recovered/build1/toonui" "$HERE/lvgl_ui_recovered/build/toonui" "/mnt/data/toonui")"
     else
-        TOONUI_BIN="$(pick "${TOONUI_BIN:-}" "$HERE/toonui" "$HERE/lvgl_ui_recovered/build/toonui" "$HERE/lvgl_ui_recovered/build1/toonui" "$HERE/toonui-toon1")"
+        TOONUI_BIN="$(pick "${TOONUI_BIN:-}" "$DL_DIR/toonui" "$HERE/toonui" "$HERE/lvgl_ui_recovered/build/toonui" "$HERE/lvgl_ui_recovered/build1/toonui" "$HERE/toonui-toon1" "/mnt/data/toonui")"
     fi
-    UI_LAUNCHER="$(pick "${UI_LAUNCHER:-}"         "$HERE/ui_launcher.sh"         "$HERE/scripts/ui_launcher.sh")"
-    COMPANION_GATE="$(pick "${COMPANION_GATE:-}"   "$HERE/companion_gate.sh"     "$HERE/scripts/companion_gate.sh")"
-    INTEG_INSTALLER="$(pick "${INTEG_INSTALLER:-}" "$HERE/integrations-install.sh" "$HERE/scripts/integrations-install.sh")"
-    TOONVNC_SH="$(pick "${TOONVNC_SH:-}"           "$HERE/toonvnc.sh"             "$HERE/scripts/toonvnc.sh")"
-    OT_MODE_SH="$(pick "${OT_MODE_SH:-}"           "$HERE/ot_mode_switch.sh"      "$HERE/scripts/ot_mode_switch.sh")"
-    QUBY_BRIDGE_BIN="$(pick "${QUBY_BRIDGE_BIN:-}" "$HERE/quby_bridge"            "$HERE/quby_bridge/quby_bridge")"
-    FBVNC_INPUT="$(pick "${FBVNC_INPUT:-}"         "$HERE/fbvnc_input"            "$HERE/../qt_rebuild/fbvnc_input")"
+    UI_LAUNCHER="$(pick "${UI_LAUNCHER:-}"         "$DL_DIR/ui_launcher.sh"         "$HERE/ui_launcher.sh"         "$HERE/scripts/ui_launcher.sh"         "/mnt/data/ui_launcher.sh")"
+    COMPANION_GATE="$(pick "${COMPANION_GATE:-}"   "$DL_DIR/companion_gate.sh"     "$HERE/companion_gate.sh"     "$HERE/scripts/companion_gate.sh"     "/mnt/data/companion_gate.sh")"
+    INTEG_INSTALLER="$(pick "${INTEG_INSTALLER:-}" "$DL_DIR/integrations-install.sh" "$HERE/integrations-install.sh" "$HERE/scripts/integrations-install.sh" "/mnt/data/integrations-install.sh")"
+    TOONVNC_SH="$(pick "${TOONVNC_SH:-}"           "$DL_DIR/toonvnc.sh"             "$HERE/toonvnc.sh"             "$HERE/scripts/toonvnc.sh"             "/mnt/data/toonvnc.sh")"
+    OT_MODE_SH="$(pick "${OT_MODE_SH:-}"           "$DL_DIR/ot_mode_switch.sh"      "$HERE/ot_mode_switch.sh"      "$HERE/scripts/ot_mode_switch.sh"      "/mnt/data/ot_mode_switch.sh")"
+    QUBY_BRIDGE_BIN="$(pick "${QUBY_BRIDGE_BIN:-}" "$DL_DIR/quby_bridge"            "$HERE/quby_bridge"            "$HERE/quby_bridge/quby_bridge"       "/mnt/data/quby_bridge")"
+    FBVNC_INPUT="$(pick "${FBVNC_INPUT:-}"         "$DL_DIR/fbvnc_input"            "$HERE/fbvnc_input"            "$HERE/../qt_rebuild/fbvnc_input"     "/mnt/data/fbvnc_input")"
 
     PWA_DIR="${PWA_DIR:-}"
     if [ -z "$PWA_DIR" ]; then
-        for d in "$HERE/pwa/ui" "$HERE/web/build" "$HERE/build"; do
+        for d in "$DL_DIR/pwa/ui" "$HERE/pwa/ui" "$HERE/web/build" "$HERE/build" "/mnt/data/pwa/ui"; do
             if [ -f "$d/index.wasm" ]; then PWA_DIR="$d"; break; fi
         done
         : "${PWA_DIR:=$HERE/web/build}"
     fi
 }
 
-# Download matching release binaries & assets from GitHub
+# Download matching release binaries & assets from GitHub (ToonzDev repository)
 download_artefacts() {
-    say "Resolving latest release from GitHub..."
-    REPO="${REPO:-ToonSoftwareCollective/freetoon-lvgl}"
+    REPO="${REPO:-ToonzDev/freetoon-lvgl}"
+    say "Resolving latest release from GitHub ($REPO)..."
     TAG=$(curl -fsSL --connect-timeout 8 --max-time 30 \
             "https://api.github.com/repos/$REPO/releases?per_page=1" 2>/dev/null \
           | grep -m1 '"tag_name"' | sed 's/.*"tag_name"[^"]*"\([^"]*\)".*/\1/')
-    if [ -z "$TAG" ] && [ "$REPO" != "Ierlandfan/freetoon-lvgl" ]; then
-        TAG=$(curl -fsSL --connect-timeout 8 --max-time 30 \
-                "https://api.github.com/repos/Ierlandfan/freetoon-lvgl/releases?per_page=1" 2>/dev/null \
-              | grep -m1 '"tag_name"' | sed 's/.*"tag_name"[^"]*"\([^"]*\)".*/\1/')
-        [ -n "$TAG" ] && REPO="Ierlandfan/freetoon-lvgl"
-    fi
-    if [ -z "$TAG" ]; then
-        say "ERROR: could not resolve latest release tag (no internet connection?)."
-        return 1
-    fi
-    say "Latest release is $TAG (from $REPO)"
-    BASE="https://github.com/$REPO/releases/download/$TAG"
 
     mkdir -p "$DL_DIR"
+    RAW_BASE="https://raw.githubusercontent.com/$REPO/main"
 
-    # Main UI binary
-    if [ "$IS_TOON1" = 1 ]; then
-        BIN_ASSET="toonui-toon1"
-        say "Detected Toon 1 (ARMv5) — fetching $BIN_ASSET..."
-    else
-        BIN_ASSET="toonui"
-        say "Detected Toon 2 (ARMv7) — fetching $BIN_ASSET..."
-    fi
-    if ! curl -fSL --connect-timeout 8 --max-time 120 -o "$DL_DIR/toonui" "$BASE/$BIN_ASSET"; then
-        say "ERROR: Failed to download $BIN_ASSET from $BASE."
-        return 1
-    fi
-    chmod +x "$DL_DIR/toonui"
-    TOONUI_BIN="$DL_DIR/toonui"
-
-    # Helpers
+    # Helper scripts directly from user repository
     for s in ui_launcher.sh companion_gate.sh ot_mode_switch.sh toonvnc.sh integrations-install.sh; do
-        if [ ! -f "$HERE/scripts/$s" ] && [ ! -f "$HERE/$s" ]; then
-            say "Fetching $s..."
-            curl -fSL --connect-timeout 8 --max-time 60 -o "$DL_DIR/$s" "$BASE/$s" 2>/dev/null || true
+        if [ ! -f "$HERE/scripts/$s" ] && [ ! -f "$HERE/$s" ] && [ ! -f "/mnt/data/$s" ]; then
+            say "Fetching $s from $REPO..."
+            curl -fSL --connect-timeout 8 --max-time 60 -o "$DL_DIR/$s" "$RAW_BASE/scripts/$s" 2>/dev/null \
+                || curl -fSL --connect-timeout 8 --max-time 60 -o "$DL_DIR/$s" "$RAW_BASE/$s" 2>/dev/null || true
             [ -s "$DL_DIR/$s" ] && chmod +x "$DL_DIR/$s"
         fi
     done
 
-    # Optional VNC input bridge
-    if [ ! -f "$HERE/fbvnc_input" ]; then
-        curl -fSL --connect-timeout 8 --max-time 60 -o "$DL_DIR/fbvnc_input" "$BASE/fbvnc_input" 2>/dev/null || true
-        [ -s "$DL_DIR/fbvnc_input" ] && FBVNC_INPUT="$DL_DIR/fbvnc_input" && chmod +x "$FBVNC_INPUT"
-    fi
-
-    # Optional waste provider engine
-    WF_ASSET="wastefetch"
-    if [ "$IS_TOON1" = 1 ]; then WF_ASSET="wastefetch-toon1"; fi
-    if [ ! -f "$HERE/$WF_ASSET" ]; then
-        curl -fSL --connect-timeout 8 --max-time 60 -o "$DL_DIR/wastefetch" "$BASE/$WF_ASSET" 2>/dev/null || true
-        [ -s "$DL_DIR/wastefetch" ] && chmod +x "$DL_DIR/wastefetch"
-    fi
-
-    # WASM bundle for phone/browser UI
-    mkdir -p "$DL_DIR/pwa/ui"
-    for f in index.html index.wasm index.js; do
-        curl -fSL --connect-timeout 8 --max-time 60 -o "$DL_DIR/pwa/ui/$f" "$BASE/$f" 2>/dev/null || true
-    done
-    [ -s "$DL_DIR/pwa/ui/index.wasm" ] && PWA_DIR="$DL_DIR/pwa/ui"
-
-    # Bundled x11vnc if needed
-    if [ ! -x /usr/bin/x11vnc ] && ! which x11vnc >/dev/null 2>&1 && [ ! -x /mnt/data/x11vnc-bundle/bin/x11vnc ]; then
-        say "Fetching x11vnc bundle..."
-        if curl -fSL --connect-timeout 8 --max-time 120 -o "$DL_DIR/x11vnc-bundle.tgz" "$BASE/x11vnc-bundle.tgz" 2>/dev/null; then
-            mkdir -p /mnt/data/x11vnc-bundle
-            tar xzf "$DL_DIR/x11vnc-bundle.tgz" -C /mnt/data/x11vnc-bundle 2>/dev/null || true
-            chmod +x /mnt/data/x11vnc-bundle/bin/x11vnc 2>/dev/null || true
+    # Main UI binary from release if available
+    if [ -n "$TAG" ]; then
+        say "Latest release is $TAG (from $REPO)"
+        BASE="https://github.com/$REPO/releases/download/$TAG"
+        if [ "$IS_TOON1" = 1 ]; then
+            BIN_ASSET="toonui-toon1"
+            say "Detected Toon 1 (ARMv5) — fetching $BIN_ASSET..."
+        else
+            BIN_ASSET="toonui"
+            say "Detected Toon 2 (ARMv7) — fetching $BIN_ASSET..."
         fi
+        if curl -fSL --connect-timeout 8 --max-time 120 -o "$DL_DIR/toonui" "$BASE/$BIN_ASSET" 2>/dev/null; then
+            chmod +x "$DL_DIR/toonui"
+            TOONUI_BIN="$DL_DIR/toonui"
+        else
+            say "Note: could not download $BIN_ASSET from release $TAG on $REPO"
+        fi
+
+        # Optional VNC input bridge
+        if [ ! -f "$HERE/fbvnc_input" ] && [ ! -f "/mnt/data/fbvnc_input" ]; then
+            curl -fSL --connect-timeout 8 --max-time 60 -o "$DL_DIR/fbvnc_input" "$BASE/fbvnc_input" 2>/dev/null || true
+            [ -s "$DL_DIR/fbvnc_input" ] && FBVNC_INPUT="$DL_DIR/fbvnc_input" && chmod +x "$FBVNC_INPUT"
+        fi
+
+        # Optional waste provider engine
+        WF_ASSET="wastefetch"
+        if [ "$IS_TOON1" = 1 ]; then WF_ASSET="wastefetch-toon1"; fi
+        if [ ! -f "$HERE/$WF_ASSET" ] && [ ! -f "/mnt/data/wastefetch" ]; then
+            curl -fSL --connect-timeout 8 --max-time 60 -o "$DL_DIR/wastefetch" "$BASE/$WF_ASSET" 2>/dev/null || true
+            [ -s "$DL_DIR/wastefetch" ] && chmod +x "$DL_DIR/wastefetch"
+        fi
+
+        # WASM bundle for phone/browser UI
+        mkdir -p "$DL_DIR/pwa/ui"
+        for f in index.html index.wasm index.js; do
+            curl -fSL --connect-timeout 8 --max-time 60 -o "$DL_DIR/pwa/ui/$f" "$BASE/$f" 2>/dev/null || true
+        done
+        [ -s "$DL_DIR/pwa/ui/index.wasm" ] && PWA_DIR="$DL_DIR/pwa/ui"
+
+        # Bundled x11vnc if needed
+        if [ ! -x /usr/bin/x11vnc ] && ! which x11vnc >/dev/null 2>&1 && [ ! -x /mnt/data/x11vnc-bundle/bin/x11vnc ]; then
+            say "Fetching x11vnc bundle..."
+            if curl -fSL --connect-timeout 8 --max-time 120 -o "$DL_DIR/x11vnc-bundle.tgz" "$BASE/x11vnc-bundle.tgz" 2>/dev/null; then
+                mkdir -p /mnt/data/x11vnc-bundle
+                tar xzf "$DL_DIR/x11vnc-bundle.tgz" -C /mnt/data/x11vnc-bundle 2>/dev/null || true
+                chmod +x /mnt/data/x11vnc-bundle/bin/x11vnc 2>/dev/null || true
+            fi
+        fi
+    else
+        say "Notice: no release tag found on https://github.com/$REPO/releases (using local/existing binaries)."
     fi
 
     return 0
@@ -160,6 +156,20 @@ if [ "$IS_LOCAL" = 1 ]; then
     push() {
         _src="$1"
         _dest="$2"
+        [ -z "$_src" ] && return 0
+        if [ "$_src" = "$_dest" ]; then
+            chmod +x "$_dest" 2>/dev/null || true
+            return 0
+        fi
+        if [ ! -e "$_src" ]; then
+            if [ -e "$_dest" ]; then
+                say "Notice: $_src not found, keeping existing $_dest"
+                chmod +x "$_dest" 2>/dev/null || true
+                return 0
+            fi
+            say "Warning: $_src not found and $_dest does not exist"
+            return 1
+        fi
         echo "  → $_dest"
         cp -f "$_src" "${_dest}.new"
         mv -f "${_dest}.new" "$_dest"
@@ -172,6 +182,11 @@ else
     push() {
         _src="$1"
         _dest="$2"
+        [ -z "$_src" ] && return 0
+        if [ ! -e "$_src" ]; then
+            say "Notice: $_src not found locally, skipping remote copy to $_dest"
+            return 0
+        fi
         echo "  → $_dest"
         $SCP "$_src" "$TOON_USER@$TOON_HOST:${_dest}.new"
         remote "mv -f ${_dest}.new ${_dest} && chmod +x ${_dest}"
@@ -200,12 +215,9 @@ check_artefacts() {
     resolve_artefacts
 
     # If toonui binary is missing or forced download requested: fetch from GitHub
-    if [ ! -f "$TOONUI_BIN" ] || [ "$FORCE_DOWNLOAD" = 1 ]; then
+    if [ -z "$TOONUI_BIN" ] || [ ! -f "$TOONUI_BIN" ] || [ "$FORCE_DOWNLOAD" = 1 ]; then
         say "No pre-compiled toonui binary found locally (or --download was specified)."
-        download_artefacts || {
-            say "ERROR: Could not find local toonui binary and download failed."
-            exit 3
-        }
+        download_artefacts || true
         resolve_artefacts
     fi
 
@@ -215,22 +227,24 @@ check_artefacts() {
                 "ot_mode_switch.sh:$OT_MODE_SH"; do
         name="${pair%%:*}"
         path="${pair#*:}"
-        if [ ! -e "$path" ]; then
-            echo "  missing $name: $path" >&2
+        if [ -z "$path" ] || [ ! -e "$path" ]; then
+            echo "  missing $name: ${path:-not found}" >&2
             missing=1
         fi
     done
 
     if [ "$missing" -ne 0 ]; then
-        say "Some required scripts are missing. Attempting download..."
-        download_artefacts && resolve_artefacts
+        say "Some required scripts are missing. Attempting download from $REPO..."
+        download_artefacts || true
+        resolve_artefacts
     fi
 
-    if [ ! -f "$TOONUI_BIN" ]; then
+    if [ -z "$TOONUI_BIN" ] || [ ! -f "$TOONUI_BIN" ]; then
         say "FATAL: toonui binary could not be resolved or downloaded."
+        say "Please ensure a release exists on https://github.com/$REPO or place toonui at /mnt/data/toonui."
         exit 3
     fi
-    [ -x "$FBVNC_INPUT" ] || echo "  note: fbvnc_input absent — VNC will be view-only (not fatal)" >&2
+    [ -n "$FBVNC_INPUT" ] && [ -x "$FBVNC_INPUT" ] || echo "  note: fbvnc_input absent — VNC will be view-only (not fatal)" >&2
 }
 
 do_install() {
@@ -246,7 +260,7 @@ do_install() {
     push "$INTEG_INSTALLER" /mnt/data/integrations-install.sh
     push "$TOONVNC_SH"      /mnt/data/toonvnc.sh
     push "$OT_MODE_SH"      /mnt/data/ot_mode_switch.sh
-    [ -x "$FBVNC_INPUT" ] && push "$FBVNC_INPUT" /mnt/data/fbvnc_input
+    [ -n "$FBVNC_INPUT" ] && [ -x "$FBVNC_INPUT" ] && push "$FBVNC_INPUT" /mnt/data/fbvnc_input
     if [ -f "$DL_DIR/wastefetch" ]; then
         push "$DL_DIR/wastefetch" /mnt/data/wastefetch
     elif [ -f "$HERE/wastefetch" ]; then
@@ -254,21 +268,27 @@ do_install() {
     fi
 
     echo "[3/5] Setting up WASM slave UI bundle..."
-    remote "mkdir -p /mnt/data/pwa/ui"
-    for f in index.html index.js index.wasm; do
-        [ -f "$PWA_DIR/$f" ] || continue
-        echo "  → /mnt/data/pwa/ui/$f"
-        if [ "$IS_LOCAL" = 1 ]; then
-            cp -f "$PWA_DIR/$f" "/mnt/data/pwa/ui/${f}.new"
-            mv -f "/mnt/data/pwa/ui/${f}.new" "/mnt/data/pwa/ui/$f"
-        else
-            $SCP "$PWA_DIR/$f" "$TOON_USER@$TOON_HOST:/mnt/data/pwa/ui/${f}.new"
-            remote "mv -f /mnt/data/pwa/ui/${f}.new /mnt/data/pwa/ui/${f}"
-        fi
-    done
-    remote '[ -s /mnt/data/pwa/ui/index.wasm ] && cd /mnt/data/pwa && rm -f \
-        app.js sw.js manifest.json icon-192.png index.html index.js index.wasm \
-        index.html.bak index.html.staticbak index.js.bak index.wasm.bak || true'
+    if [ -n "$PWA_DIR" ] && [ -d "$PWA_DIR" ] && [ -f "$PWA_DIR/index.wasm" ]; then
+        remote "mkdir -p /mnt/data/pwa/ui"
+        for f in index.html index.js index.wasm; do
+            [ -f "$PWA_DIR/$f" ] || continue
+            echo "  → /mnt/data/pwa/ui/$f"
+            if [ "$IS_LOCAL" = 1 ]; then
+                if [ "$PWA_DIR/$f" != "/mnt/data/pwa/ui/$f" ]; then
+                    cp -f "$PWA_DIR/$f" "/mnt/data/pwa/ui/${f}.new"
+                    mv -f "/mnt/data/pwa/ui/${f}.new" "/mnt/data/pwa/ui/$f"
+                fi
+            else
+                $SCP "$PWA_DIR/$f" "$TOON_USER@$TOON_HOST:/mnt/data/pwa/ui/${f}.new"
+                remote "mv -f /mnt/data/pwa/ui/${f}.new /mnt/data/pwa/ui/${f}"
+            fi
+        done
+        remote '[ -s /mnt/data/pwa/ui/index.wasm ] && cd /mnt/data/pwa && rm -f \
+            app.js sw.js manifest.json icon-192.png index.html index.js index.wasm \
+            index.html.bak index.html.staticbak index.js.bak index.wasm.bak || true'
+    else
+        echo "  (skipping WASM bundle — not found or not built)"
+    fi
 
     echo "[4/5] Seeding default config..."
     # Toon 1 default to qt-gui on first install; Toon 2 default to freetoon
@@ -311,18 +331,22 @@ CFG
     remote "umount -l /dev/ttymxc0 2>/dev/null; true"
     upsert_row "$TOON_ROW"
     upsert_row "$VNCS_ROW"
-    if [ -x "$QUBY_BRIDGE_BIN" ]; then
+    if [ -n "$QUBY_BRIDGE_BIN" ] && [ -x "$QUBY_BRIDGE_BIN" ]; then
         echo "  → /mnt/data/quby_bridge"
         if [ "$IS_LOCAL" = 1 ]; then
-            cp -f "$QUBY_BRIDGE_BIN" /mnt/data/quby_bridge.new
-            mv -f /mnt/data/quby_bridge.new /mnt/data/quby_bridge && chmod +x /mnt/data/quby_bridge
+            if [ "$QUBY_BRIDGE_BIN" != "/mnt/data/quby_bridge" ]; then
+                cp -f "$QUBY_BRIDGE_BIN" /mnt/data/quby_bridge.new
+                mv -f /mnt/data/quby_bridge.new /mnt/data/quby_bridge && chmod +x /mnt/data/quby_bridge
+            else
+                chmod +x /mnt/data/quby_bridge 2>/dev/null || true
+            fi
         else
             $SCP "$QUBY_BRIDGE_BIN" "$TOON_USER@$TOON_HOST:/mnt/data/quby_bridge.new"
             remote "mv -f /mnt/data/quby_bridge.new /mnt/data/quby_bridge && chmod +x /mnt/data/quby_bridge"
         fi
         remote "/mnt/data/ot_mode_switch.sh proxy" || true
     else
-        echo "  (skipping bridge install — $QUBY_BRIDGE_BIN absent; OT bridge stays off)"
+        echo "  (skipping bridge install — quby_bridge absent; OT bridge stays off)"
     fi
     remote "pkill -9 -x toonui 2>/dev/null; pkill -9 -x x11vnc 2>/dev/null; pkill -9 -x qt-gui 2>/dev/null; pkill -9 -f /qmf/sbin/qt-gui 2>/dev/null; pkill -9 -x startqt 2>/dev/null; true"
     remote "kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true"

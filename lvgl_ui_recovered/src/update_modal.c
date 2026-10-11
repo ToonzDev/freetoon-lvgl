@@ -225,7 +225,7 @@ static void do_install_now(lv_event_t * e) {
     }
 
     system("nohup sh -c ': > " UPD_LOG_PATH "; sleep 1; curl -fsSL "
-           "https://raw.githubusercontent.com/ToonSoftwareCollective/freetoon-lvgl/main/scripts/toon-selfinstall.sh "
+           "https://raw.githubusercontent.com/ToonzDev/freetoon-lvgl/main/install.sh "
            "| sh' >> " UPD_LOG_PATH " 2>&1 &");
 
     if (!s_upd_prog_timer) {

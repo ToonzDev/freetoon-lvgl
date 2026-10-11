@@ -33,8 +33,8 @@
  * could run past the timeout on the Toon's slow link and fail the whole check.
  * 10 newest is more than enough to find the highest semver even when GitHub's
  * created_at order is scrambled by a re-created older release. */
-#define RELEASES_API_BETA   "https://api.github.com/repos/ToonSoftwareCollective/freetoon-lvgl/releases?per_page=10"
-#define RELEASES_API_STABLE "https://api.github.com/repos/ToonSoftwareCollective/freetoon-lvgl/releases/latest"
+#define RELEASES_API_BETA   "https://api.github.com/repos/ToonzDev/freetoon-lvgl/releases?per_page=10"
+#define RELEASES_API_STABLE "https://api.github.com/repos/ToonzDev/freetoon-lvgl/releases/latest"
 
 /* Lightweight connectivity probe used to tell "the GitHub API itself is
  * unreachable / rate-limited / blocked" apart from "the Toon has no internet

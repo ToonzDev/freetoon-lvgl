@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 #
 # connect_toon_tailscale.sh — ONE-CLICK Tailscale bring-up for a Toon.
 #
@@ -32,7 +32,7 @@
 # Revert everything:
 #   ./connect_toon_tailscale.sh <toon-ip> <user> <password> --uninstall
 #
-set -euo pipefail
+set -eu
 
 TS_VERSION="${TS_VERSION:-1.78.1}"
 AUTHKEY="${AUTHKEY:-}"
@@ -41,7 +41,7 @@ TS_HOSTNAME="${HOSTNAME:-}"
 log()  { echo "[oneclick] $*"; }
 err()  { echo "[oneclick] ERROR: $*" >&2; }
 
-is_ipv4() { [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; }
+is_ipv4() { echo "$1" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$'; }
 
 # ---------------------------------------------------------------------------
 # Argument parsing: first IP-looking arg = TOON_IP; "auto" forces discovery.
@@ -52,7 +52,9 @@ TOON_USER="root"
 TOON_PASS=""
 DO_UNINSTALL=0
 FORCE_DISCOVER=0
-POS=()
+POS1=""
+POS2=""
+POS_COUNT=0
 for a in "$@"; do
     case "$a" in
         -h|--help)   sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -62,13 +64,19 @@ for a in "$@"; do
             if [ -z "$TOON_IP" ] && is_ipv4 "$a"; then
                 TOON_IP="$a"
             else
-                POS+=("$a")
+                if [ "$POS_COUNT" -eq 0 ]; then
+                    POS1="$a"
+                    POS_COUNT=1
+                elif [ "$POS_COUNT" -eq 1 ]; then
+                    POS2="$a"
+                    POS_COUNT=2
+                fi
             fi
             ;;
     esac
 done
-[ "${#POS[@]}" -ge 1 ] && TOON_USER="${POS[0]}"
-[ "${#POS[@]}" -ge 2 ] && TOON_PASS="${POS[1]}"
+[ -n "$POS1" ] && TOON_USER="$POS1"
+[ -n "$POS2" ] && TOON_PASS="$POS2"
 
 # ---------------------------------------------------------------------------
 # LAN discovery helpers
@@ -126,43 +134,36 @@ is_toon() {  # ip → 0 if the HCB web server identifies this as a Toon
 discover_toons() {
     # Scan the local /24 for hosts answering on :80, confirm each is a Toon,
     # print confirmed IPs (one per line).
-    local sub; sub=$(detect_subnet)
+    sub=$(detect_subnet)
     if [ -z "$sub" ]; then
         err "could not detect your LAN subnet — set SUBNET=192.168.x or pass the IP."
         return 1
     fi
     log "scanning ${sub}.0/24 for a Toon (port 80 + HCB fingerprint) ..." >&2
-    local open=()
+    SCAN_TMP="/tmp/.toon_scan.$$"
+    : > "$SCAN_TMP"
     if command -v nmap >/dev/null 2>&1; then
-        # Fast path: one nmap sweep for open :80.
-        while read -r ip; do open+=("$ip"); done < <(
-            nmap -n -p 80 --open -oG - "${sub}.0/24" 2>/dev/null \
-            | sed -n 's/^Host: \([0-9.]*\).*80\/open.*/\1/p'
-        )
+        nmap -n -p 80 --open -oG - "${sub}.0/24" 2>/dev/null \
+            | sed -n 's/^Host: \([0-9.]*\).*80\/open.*/\1/p' > "$SCAN_TMP"
     else
-        # Portable path: parallel TCP probes, throttled to 64 at a time.
-        local i
         for i in $(seq 1 254); do
-            { port_open "${sub}.${i}" 80 && echo "${sub}.${i}"; } &
-            (( i % 64 == 0 )) && wait
-        done > /tmp/.toon_scan.$$ 2>/dev/null
+            { port_open "${sub}.${i}" 80 && echo "${sub}.${i}" >> "$SCAN_TMP"; } &
+            if [ $(( i % 64 )) -eq 0 ]; then wait; fi
+        done
         wait
-        while read -r ip; do open+=("$ip"); done < /tmp/.toon_scan.$$
-        rm -f /tmp/.toon_scan.$$
     fi
-    # Confirm Toon signature (sequential — usually only a handful of :80 hosts).
-    local found=()
-    local ip
-    for ip in "${open[@]}"; do
-        if is_toon "$ip"; then found+=("$ip"); fi
-    done
-    printf '%s\n' "${found[@]}"
+    if [ -s "$SCAN_TMP" ]; then
+        while read -r ip; do
+            if is_toon "$ip"; then echo "$ip"; fi
+        done < "$SCAN_TMP"
+    fi
+    rm -f "$SCAN_TMP"
 }
 
 prompt_manual_ip() {
-    local ip
     while :; do
-        read -rp "Enter the Toon's LAN IP: " ip
+        printf "Enter the Toon's LAN IP: "
+        read -r ip
         if is_ipv4 "$ip"; then echo "$ip"; return 0; fi
         err "not a valid IPv4 address — try again." >&2
     done
@@ -173,26 +174,34 @@ prompt_manual_ip() {
 # ---------------------------------------------------------------------------
 if [ "$FORCE_DISCOVER" = "1" ]; then TOON_IP=""; fi
 if [ -z "$TOON_IP" ]; then
-    mapfile -t CANDIDATES < <(discover_toons || true)
-    if [ "${#CANDIDATES[@]}" -eq 1 ]; then
-        TOON_IP="${CANDIDATES[0]}"
+    DISC_TMP="/tmp/.toon_disc.$$"
+    discover_toons > "$DISC_TMP" 2>/dev/null || true
+    c_count=$(wc -l < "$DISC_TMP" 2>/dev/null || echo 0)
+    c_count=$(echo "$c_count" | tr -d '[:space:]')
+    if [ "$c_count" -eq 1 ]; then
+        read -r TOON_IP < "$DISC_TMP"
         log "found Toon at ${TOON_IP}"
-    elif [ "${#CANDIDATES[@]}" -gt 1 ]; then
-        log "found ${#CANDIDATES[@]} Toons:"
+    elif [ "$c_count" -gt 1 ]; then
+        log "found $c_count Toons:"
         i=1
-        for c in "${CANDIDATES[@]}"; do echo "   $i) $c"; i=$((i+1)); done
-        read -rp "Pick one [1-${#CANDIDATES[@]}], or type an IP: " sel
+        while read -r c; do
+            echo "   $i) $c"
+            i=$((i + 1))
+        done < "$DISC_TMP"
+        printf "Pick one [1-%s], or type an IP: " "$c_count"
+        read -r sel
         if is_ipv4 "$sel"; then
             TOON_IP="$sel"
-        elif [[ "$sel" =~ ^[0-9]+$ ]] && [ "$sel" -ge 1 ] && [ "$sel" -le "${#CANDIDATES[@]}" ]; then
-            TOON_IP="${CANDIDATES[$((sel-1))]}"
+        elif echo "$sel" | grep -Eq '^[0-9]+$' && [ "$sel" -ge 1 ] && [ "$sel" -le "$c_count" ]; then
+            TOON_IP=$(sed -n "${sel}p" "$DISC_TMP")
         else
-            err "invalid selection"; exit 1
+            err "invalid selection"; rm -f "$DISC_TMP"; exit 1
         fi
     else
         log "no Toon auto-discovered on the LAN."
         TOON_IP=$(prompt_manual_ip)
     fi
+    rm -f "$DISC_TMP"
 fi
 log "target Toon: ${TOON_IP}"
 
@@ -206,23 +215,28 @@ command -v sshpass >/dev/null 2>&1 || {
     exit 2
 }
 if [ -z "$TOON_PASS" ]; then
-    read -rsp "SSH password for ${TOON_USER}@${TOON_IP}: " TOON_PASS
+    printf "SSH password for %s@%s: " "$TOON_USER" "$TOON_IP"
+    stty -echo 2>/dev/null || true
+    read -r TOON_PASS
+    stty echo 2>/dev/null || true
     echo
 fi
 
-# -tt forces a pseudo-tty so `tailscale up`'s login URL streams live.
-SSH=(sshpass -p "$TOON_PASS" ssh -tt
-     -o StrictHostKeyChecking=no
-     -o UserKnownHostsFile=/dev/null
-     -o LogLevel=ERROR
-     "${TOON_USER}@${TOON_IP}")
+# Helper function to run commands over SSH
+run_ssh() {
+    sshpass -p "$TOON_PASS" ssh -tt \
+        -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null \
+        -o LogLevel=ERROR \
+        "${TOON_USER}@${TOON_IP}" "$@"
+}
 
 # ---------------------------------------------------------------------------
 # Uninstall path
 # ---------------------------------------------------------------------------
 if [ "$DO_UNINSTALL" = "1" ]; then
     log "uninstalling Tailscale from ${TOON_IP} ..."
-    "${SSH[@]}" 'sh -s' <<'REMOTE'
+    run_ssh 'sh -s' <<'REMOTE'
 set -eu
 ID=tsd
 [ -f /etc/inittab ] && {
@@ -243,8 +257,7 @@ fi
 # Install + bring-up (all on-device logic in one here-doc).
 # ---------------------------------------------------------------------------
 log "connecting to ${TOON_USER}@${TOON_IP} ..."
-"${SSH[@]}" \
-    "AUTHKEY='${AUTHKEY}' TS_HOSTNAME='${TS_HOSTNAME}' TS_VERSION='${TS_VERSION}' sh -s" <<'REMOTE'
+run_ssh "AUTHKEY='${AUTHKEY}' TS_HOSTNAME='${TS_HOSTNAME}' TS_VERSION='${TS_VERSION}' sh -s" <<'REMOTE'
 set -eu
 
 INSTALL_DIR=/mnt/data/tailscale
