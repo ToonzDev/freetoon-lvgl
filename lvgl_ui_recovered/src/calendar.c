@@ -32,7 +32,7 @@ calendar_state_t calendar_state = {0};
 
 #define CAL_SCRATCH (4 * 1024 * 1024)  /* iCal feeds carry full history+recurrence — can be >1 MB */
 #define CAL_TMP_MAX 256                 /* parse capacity before trim to CAL_MAX */
-#define CAL_HORIZON_DAYS 31             /* how far ahead recurrences are expanded */
+#define CAL_HORIZON_DAYS 92             /* how far ahead recurrences are expanded (3 months) */
 
 /* ------------------------------------------------------------------ time math */
 
@@ -242,7 +242,7 @@ static void cal_now_hhmm(char * out, size_t n) {
 
 /* Append one event to tmp[] if it's today-or-future and not a duplicate. */
 static void add_event(calendar_event_t * tmp, int * n, const char * today,
-                      const char * date, const char * time, const char * summary) {
+                      const char * date, const char * time, const char * end_time, const char * summary) {
     if (!date[0] || !summary[0]) return;
     if (strcmp(date, today) < 0) return;            /* past day */
     if (time[0] && !strcmp(date, today)) {          /* timed event already finished earlier today */
@@ -256,6 +256,7 @@ static void add_event(calendar_event_t * tmp, int * n, const char * today,
     calendar_event_t * e = &tmp[*n];
     snprintf(e->date, sizeof e->date, "%s", date);
     snprintf(e->time, sizeof e->time, "%s", time);
+    snprintf(e->end_time, sizeof e->end_time, "%s", end_time ? end_time : "");
     snprintf(e->summary, sizeof e->summary, "%s", summary);
     (*n)++;
 }
@@ -273,7 +274,7 @@ static void copy_text(const char * src, char * out, size_t osz) {
     out[n] = 0;
 }
 
-/* ---- Home Assistant: array of {"start":{"dateTime"|"date":..},"summary":..} */
+/* ---- Home Assistant: array of {"start":{"dateTime"|"date":..},"end":...,"summary":..} */
 static void parse_ha(const char * body, calendar_event_t * tmp, int * n, const char * today) {
     const char * p = body;
     const char * s;
@@ -281,7 +282,7 @@ static void parse_ha(const char * body, calendar_event_t * tmp, int * n, const c
         const char * next = strstr(s + 7, "\"start\"");
         const char * wend = next ? next : s + strlen(s);
 
-        char date[12] = "", tm[8] = "";
+        char date[12] = "", tm[8] = "", end_tm[8] = "";
         const char * dt = strstr(s, "\"dateTime\"");
         if (dt && dt < wend) {
             const char * c = strchr(dt, ':');
@@ -317,13 +318,42 @@ static void parse_ha(const char * body, calendar_event_t * tmp, int * n, const c
                     if (strlen(c) >= 10 && c[4] == '-') snprintf(date, sizeof date, "%.10s", c); }
             }
         }
+        /* Parse end time if available */
+        const char * ed = strstr(s, "\"end\"");
+        if (ed && ed < wend) {
+            const char * dt_e = strstr(ed, "\"dateTime\"");
+            if (dt_e && dt_e < wend) {
+                const char * c = strchr(dt_e, ':');
+                if (c) { c++; while (*c == ' ' || *c == '"') c++;
+                    if (strlen(c) >= 16 && c[4] == '-' && c[10] == 'T') {
+                        ics_dt_t de; memset(&de, 0, sizeof de);
+                        de.y = atoin(c, 4); de.mo = atoin(c + 5, 2); de.d = atoin(c + 8, 2);
+                        de.h = atoin(c + 11, 2); de.mi = atoin(c + 14, 2); de.has_time = 1;
+                        const char * z = c + 16;
+                        while (*z && *z != 'Z' && *z != '+' && *z != '-' &&
+                               *z != '"' && *z != '\r' && *z != '\n') z++;
+                        if (*z == 'Z') { de.utc = 1; ics_dt_to_local(&de); }
+                        else if (*z == '+' || *z == '-') {
+                            int sgn = (*z == '-') ? -1 : 1;
+                            int oh = atoin(z + 1, 2), om = atoin(z + 4, 2);
+                            struct tm tm0; memset(&tm0, 0, sizeof tm0);
+                            tm0.tm_year = de.y - 1900; tm0.tm_mon = de.mo - 1; tm0.tm_mday = de.d;
+                            tm0.tm_hour = de.h; tm0.tm_min = de.mi - sgn * (oh * 60 + om);
+                            time_t t = timegm(&tm0); struct tm lo; localtime_r(&t, &lo);
+                            de.y = lo.tm_year + 1900; de.mo = lo.tm_mon + 1; de.d = lo.tm_mday;
+                            de.h = lo.tm_hour; de.mi = lo.tm_min;
+                        }
+                        snprintf(end_tm, sizeof end_tm, "%02d:%02d", de.h, de.mi);
+                    } }
+            }
+        }
         char summary[80] = "";
         const char * sm = strstr(s, "\"summary\"");
         if (sm && sm < wend) {
             const char * c = strchr(sm, ':');
             if (c) { c++; while (*c == ' ') c++; if (*c == '"') c++; copy_text(c, summary, sizeof summary); }
         }
-        add_event(tmp, n, today, date, tm, summary);
+        add_event(tmp, n, today, date, tm, end_tm, summary);
         p = wend;
     }
 }
@@ -331,6 +361,7 @@ static void parse_ha(const char * body, calendar_event_t * tmp, int * n, const c
 /* ---- iCal: one parsed VEVENT */
 typedef struct {
     ics_dt_t ds;   int has_ds;
+    ics_dt_t de;   int has_de;
     rrule_t  rr;
     char     summary[80];
     char     uid[96];
@@ -357,6 +388,7 @@ static void gather_event(const char * p, const char * evend, vevent_t * ev) {
          * exactly regardless of DST; conversion to local is done per-occurrence
          * at display time (see occ_local / dt_local_str). */
         if      (line_is(q, le, "DTSTART"))       { if (ics_parse_dt(val, le, &ev->ds) == 0)    ev->has_ds = 1; }
+        else if (line_is(q, le, "DTEND"))         { if (ics_parse_dt(val, le, &ev->de) == 0)    ev->has_de = 1; }
         else if (line_is(q, le, "SUMMARY"))       { copy_text(val, ev->summary, sizeof ev->summary); }
         else if (line_is(q, le, "UID"))           { copy_text(val, ev->uid, sizeof ev->uid); }
         else if (line_is(q, le, "RRULE"))         { parse_rrule(val, le, &ev->rr); }
@@ -421,10 +453,20 @@ static void rec_occ(long dn, const vevent_t * ev, calendar_event_t * tmp, int * 
     char k2[160]; snprintf(k2, sizeof k2, "%s\t%s", ev->uid, k1);
     for (int i = 0; i < ovrn; i++) if (!strcmp(ovr[i], k2)) return;
 
-    char date[12], tm[8];
+    char date[12], tm[8], end_tm[8] = "";
     occ_local(dn, &ev->ds, date, sizeof date, tm, sizeof tm);
     if (horizon[0] && strcmp(date, horizon) > 0) return;     /* fell past the window after tz shift */
-    add_event(tmp, n, today, date, tm, ev->summary);
+    if (ev->has_de && ev->de.has_time && ev->ds.has_time) {
+        int dur_m = (ev->de.h * 60 + ev->de.mi) - (ev->ds.h * 60 + ev->ds.mi);
+        long days_diff = days_from_civil(ev->de.y, ev->de.mo, ev->de.d) - days_from_civil(ev->ds.y, ev->ds.mo, ev->ds.d);
+        if (days_diff > 0) dur_m += (int)(days_diff * 1440);
+        if (dur_m > 0 && tm[0]) {
+            int sh = atoin(tm, 2), sm = atoin(tm + 3, 2);
+            int total_m = (sh * 60 + sm + dur_m) % 1440;
+            snprintf(end_tm, sizeof end_tm, "%02d:%02d", total_m / 60, total_m % 60);
+        }
+    }
+    add_event(tmp, n, today, date, tm, end_tm, ev->summary);
 }
 
 /* Expand a recurring VEVENT over [today, today+CAL_HORIZON_DAYS]. */
@@ -553,9 +595,13 @@ static void parse_ics_cal(const char * body, calendar_event_t * tmp, int * n, co
                 expand_rrule(&ev, tmp, n, today, ovr, ovrn);
             } else {
                 /* point event or moved single occurrence — convert to local for display */
-                char date[12], tm[8];
+                char date[12], tm[8], end_tm[8] = "";
                 dt_local_str(&ev.ds, date, sizeof date, tm, sizeof tm);
-                add_event(tmp, n, today, date, tm, ev.summary);
+                if (ev.has_de && ev.de.has_time) {
+                    char edate[12];
+                    dt_local_str(&ev.de, edate, sizeof edate, end_tm, sizeof end_tm);
+                }
+                add_event(tmp, n, today, date, tm, end_tm, ev.summary);
             }
         }
         p = evend;
@@ -583,7 +629,7 @@ void calendar_refresh_now(void) {
     if (settings.calendar_ha_entity[0]) {
         char start[24], end[24];
         iso_at(start, sizeof start, 0);
-        iso_at(end, sizeof end, 31);
+        iso_at(end, sizeof end, 92);
         if (ha_fetch_calendar(settings.calendar_ha_entity, start, end, buf, CAL_SCRATCH) == 0) {
             parse_ha(buf, tmp, &n, today); ok = 1;
         }

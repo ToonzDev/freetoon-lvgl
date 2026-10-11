@@ -444,6 +444,11 @@ static void on_tile_longpress(lv_event_t * e) {
 
 static void open_placeholder(lv_event_t * e) {
     (void)e;  /* TODO: per-tile detail screens */
+    const char * b = tile_slots_binding(3);
+    if (b && !strcmp(b, "local:agenda")) {
+        screen_calendar_show();
+        return;
+    }
 }
 
 static void on_update_modal_open_cb(lv_event_t * e) {
@@ -695,6 +700,11 @@ static void open_settings(lv_event_t * e) {
 }
 static void open_stats(lv_event_t * e) {
     (void)e;
+    const char * b = tile_slots_binding(0);
+    if (b && !strcmp(b, "local:agenda")) {
+        screen_calendar_show();
+        return;
+    }
     ui_push(screen_stats_create());
 }
 static void open_forecast(lv_event_t * e) {
@@ -755,6 +765,11 @@ static int render_tile_slot(int slot, lv_obj_t * lbl_main, lv_obj_t * lbl_sub); 
  * when that slot is bound to "local:agenda" — shown/hidden in refresh_cb. */
 static lv_obj_t * slot_agenda[4] = {0};
 
+static void on_slot_agenda_tap(lv_event_t * e) {
+    (void)e;
+    screen_calendar_show();
+}
+
 static lv_obj_t * make_slot_agenda(lv_obj_t * tile, uint32_t bg) {
     if (!tile) return NULL;
     lv_obj_t * l = lv_label_create(tile);
@@ -768,6 +783,8 @@ static lv_obj_t * make_slot_agenda(lv_obj_t * tile, uint32_t bg) {
     lv_obj_set_size(l, LV_PCT(100), LV_PCT(100));
     lv_obj_align(l, LV_ALIGN_TOP_LEFT, 0, 0);
     lv_obj_add_flag(l, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(l, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(l, on_slot_agenda_tap, LV_EVENT_CLICKED, NULL);
     lv_obj_move_foreground(l);                 /* cover the tile's own widgets */
     return l;
 }
@@ -864,10 +881,13 @@ static void render_local_into(const char * id, lv_obj_t * title,
         if (main)  lv_label_set_text_fmt(main, "%.0f W", energy_power_w());
     } else if (!strcmp(id, "local:water")) {
         if (title) lv_label_set_text(title, tr("Water", "Water"));
-        if (hw_state.connected_water) {
+        if (settings.enable_p1_water && hw_state.connected_water) {
             if (main) lv_label_set_text_fmt(main, "%.1f L/min", hw_state.water_lpm);
             if (sub)  lv_label_set_text_fmt(sub, "%.2f m3", hw_state.water_total_m3);
-        } else if (main) lv_label_set_text(main, tr("offline", "offline"));
+        } else {
+            if (main) lv_label_set_text(main, "--");
+            if (sub)  lv_label_set_text(sub, "");
+        }
     } else if (!strcmp(id, "local:vent")) {
         if (title) lv_label_set_text(title, tr("Ventilatie", "Ventilation"));
         if (vent_state.connected) {
@@ -1151,25 +1171,38 @@ static void refresh_cb(lv_timer_t * t) {
     int ps = toon_state.program_state;
     int on_program = (ps == 1 || ps == 2 || ps == 3 || ps == 8);
 
-    if (tile_btn_mode_manual)
-        lv_obj_set_style_border_width(tile_btn_mode_manual,  on_program ? 0 : 2, 0);
-    if (tile_btn_mode_program)
+    if (tile_btn_mode_manual) {
+        lv_obj_set_style_border_width(tile_btn_mode_manual, on_program ? 0 : 2, 0);
+        lv_obj_set_style_bg_color(tile_btn_mode_manual, lv_color_hex(on_program ? 0x243242 : 0x6a5424), 0);
+        lv_obj_t * ml = lv_obj_get_child(tile_btn_mode_manual, 0);
+        if (ml) lv_obj_set_style_text_color(ml, lv_color_hex(on_program ? 0x88aabb : 0xffffff), 0);
+    }
+    if (tile_btn_mode_program) {
         lv_obj_set_style_border_width(tile_btn_mode_program, on_program ? 2 : 0, 0);
-    if (lbl_t_program)
-        lv_label_set_text(lbl_t_program, tr("Programma", "Program"));
+        lv_obj_set_style_bg_color(tile_btn_mode_program, lv_color_hex(on_program ? 0x2f6b6b : 0x243242), 0);
+        if (lbl_t_program) {
+            lv_label_set_text(lbl_t_program, tr("Programma", "Program"));
+            lv_obj_set_style_text_color(lbl_t_program, lv_color_hex(on_program ? 0xffffff : 0x88aabb), 0);
+        }
+    }
 
-    /* Preset row: white border on activeState's preset — always (stock). The
-     * whole row is DIMMED in Manual (freetoon choice, not stock) to signal the
-     * presets aren't driving the setpoint right now; full opacity on program. */
+    /* Preset row: selected preset in full colour with white border,
+     * unselected presets in grey values. */
     {
+        static const uint32_t preset_cols[4] = {0xcc7733, 0x3377cc, 0x553388, 0x557788};
         int hi = (toon_state.active_state >= 0 && toon_state.active_state <= 3)
                      ? toon_state.active_state : -1;
-        lv_opa_t row_opa = on_program ? LV_OPA_COVER : LV_OPA_40;
         for (int i = 0; i < 4; i++) {
             if (!tile_btn_preset[i]) continue;
-            lv_obj_set_style_border_width(tile_btn_preset[i],
-                                          (i == hi) ? 2 : 0, 0);
-            lv_obj_set_style_opa(tile_btn_preset[i], row_opa, 0);
+            int sel = (i == hi);
+            lv_obj_set_style_border_width(tile_btn_preset[i], sel ? 2 : 0, 0);
+            lv_obj_set_style_bg_color(tile_btn_preset[i],
+                                      lv_color_hex(sel ? preset_cols[i] : 0x243242), 0);
+            lv_obj_set_style_opa(tile_btn_preset[i], LV_OPA_COVER, 0);
+            lv_obj_t * bl = lv_obj_get_child(tile_btn_preset[i], 0);
+            if (bl) {
+                lv_obj_set_style_text_color(bl, lv_color_hex(sel ? 0xffffff : 0x88aabb), 0);
+            }
         }
     }
 
@@ -1307,9 +1340,8 @@ static void refresh_cb(lv_timer_t * t) {
                 lv_label_set_text(lbl_energy_w, energy_offline_label());
         }
         if (lbl_energy_gas) {
-            float g = energy_gas_m3();
-            if (g >= 0) lv_label_set_text_fmt(lbl_energy_gas, tr("%.0f m3 gas", "%.0f m3 gas"), g);
-            else if (energy_connected()) lv_label_set_text(lbl_energy_gas, tr("via meter", "via meter"));
+            lv_label_set_text(lbl_energy_gas, "");
+            lv_obj_add_flag(lbl_energy_gas, LV_OBJ_FLAG_HIDDEN);
         }
     }
     /* NILM transient device label — visible for 10 s after a step-change event */
@@ -1505,15 +1537,10 @@ static void refresh_cb(lv_timer_t * t) {
     }
 
 
-    /* Energy bottom tile: live power + cumulative gas. */
+    /* Energy bottom tile: live power only (gas removed per CR10) */
     if (lbl_bot_energy) {
         if (energy_connected()) {
-            float g = energy_gas_m3();
-            if (g >= 0)
-                lv_label_set_text_fmt(lbl_bot_energy, tr("%.0f W\n%.0f m3 gas", "%.0f W\n%.0f m3 gas"),
-                                      energy_power_w(), g);
-            else
-                lv_label_set_text_fmt(lbl_bot_energy, "%.0f W", energy_power_w());
+            lv_label_set_text_fmt(lbl_bot_energy, "%.0f W", energy_power_w());
         } else {
             lv_label_set_text(lbl_bot_energy, energy_offline_label());
         }
@@ -1538,34 +1565,24 @@ static void refresh_cb(lv_timer_t * t) {
         }
     }
 
-    /* Water tile: cumulative m³ on top, per-pour line below. Live L/min
-     * while flowing; right after the tap closes the session total stays
-     * visible ("+1.4 L just poured") for ~60 s so the user gets immediate
-     * feedback that the pour registered. Skip when a marketplace
-     * integration owns this slot. */
+    /* Water tile: only show values when water meter is connected (CR10) */
     if (!slot_active[TILE_SLOT_WATER]) {
-        if (lbl_inbox_main) {
-            if (!settings.enable_p1_water)
-                lv_label_set_text(lbl_inbox_main, tr("offline", "offline"));
-            else if (hw_state.connected_water)
+        if (!settings.enable_p1_water || !hw_state.connected_water) {
+            if (lbl_inbox_main) lv_label_set_text(lbl_inbox_main, "--");
+            if (lbl_inbox_sub)  lv_label_set_text(lbl_inbox_sub, "");
+        } else {
+            if (lbl_inbox_main)
                 lv_label_set_text_fmt(lbl_inbox_main, "%.3f m3", hw_state.water_total_m3);
-            else
-                lv_label_set_text(lbl_inbox_main,
-                                  hw_state.polled_water ? tr("WTR offline", "WTR offline")
-                                                        : tr("Initialiseren...", "Initializing..."));
-        }
-        if (lbl_inbox_sub) {
-            if (!settings.enable_p1_water || !hw_state.connected_water) {
-                lv_label_set_text(lbl_inbox_sub, "");
-            } else if (hw_state.water_lpm > 0.05f) {
-                lv_label_set_text_fmt(lbl_inbox_sub, "%.1f L/min  +%.1f L",
-                                      hw_state.water_lpm,
-                                      hw_state.water_session_l);
-            } else if (hw_state.water_session_l > 0) {
-                lv_label_set_text_fmt(lbl_inbox_sub, tr("+%.1f L zojuist getapt", "+%.1f L just poured"),
-                                      hw_state.water_session_l);
-            } else {
-                lv_label_set_text(lbl_inbox_sub, "0.0 L/min");
+            if (lbl_inbox_sub) {
+                if (hw_state.water_lpm > 0.05f)
+                    lv_label_set_text_fmt(lbl_inbox_sub, "%.1f L/min  +%.1f L",
+                                          hw_state.water_lpm,
+                                          hw_state.water_session_l);
+                else if (hw_state.water_session_l > 0)
+                    lv_label_set_text_fmt(lbl_inbox_sub, tr("+%.1f L zojuist getapt", "+%.1f L just poured"),
+                                          hw_state.water_session_l);
+                else
+                    lv_label_set_text(lbl_inbox_sub, "0.0 L/min");
             }
         }
     }
@@ -1770,14 +1787,10 @@ static void refresh_cb(lv_timer_t * t) {
     }
 
     /* Energy bottom tile: live power + cumulative gas. */
+    /* Energy bottom tile: live power only (gas removed per CR10) */
     if (lbl_bot_energy) {
         if (energy_connected()) {
-            float g = energy_gas_m3();
-            if (g >= 0)
-                lv_label_set_text_fmt(lbl_bot_energy, tr("%.0f W\n%.0f m3 gas", "%.0f W\n%.0f m3 gas"),
-                                      energy_power_w(), g);
-            else
-                lv_label_set_text_fmt(lbl_bot_energy, "%.0f W", energy_power_w());
+            lv_label_set_text_fmt(lbl_bot_energy, "%.0f W", energy_power_w());
         } else {
             lv_label_set_text(lbl_bot_energy, energy_offline_label());
         }
@@ -1802,34 +1815,24 @@ static void refresh_cb(lv_timer_t * t) {
         }
     }
 
-    /* Water tile: cumulative m³ on top, per-pour line below. Live L/min
-     * while flowing; right after the tap closes the session total stays
-     * visible ("+1.4 L just poured") for ~60 s so the user gets immediate
-     * feedback that the pour registered. Skip when a marketplace
-     * integration owns this slot. */
+    /* Water tile: only show values when water meter is connected (CR10) */
     if (!slot_active[TILE_SLOT_WATER]) {
-        if (lbl_inbox_main) {
-            if (!settings.enable_p1_water)
-                lv_label_set_text(lbl_inbox_main, tr("offline", "offline"));
-            else if (hw_state.connected_water)
+        if (!settings.enable_p1_water || !hw_state.connected_water) {
+            if (lbl_inbox_main) lv_label_set_text(lbl_inbox_main, "--");
+            if (lbl_inbox_sub)  lv_label_set_text(lbl_inbox_sub, "");
+        } else {
+            if (lbl_inbox_main)
                 lv_label_set_text_fmt(lbl_inbox_main, "%.3f m3", hw_state.water_total_m3);
-            else
-                lv_label_set_text(lbl_inbox_main,
-                                  hw_state.polled_water ? tr("WTR offline", "WTR offline")
-                                                        : tr("Initialiseren...", "Initializing..."));
-        }
-        if (lbl_inbox_sub) {
-            if (!settings.enable_p1_water || !hw_state.connected_water) {
-                lv_label_set_text(lbl_inbox_sub, "");
-            } else if (hw_state.water_lpm > 0.05f) {
-                lv_label_set_text_fmt(lbl_inbox_sub, "%.1f L/min  +%.1f L",
-                                      hw_state.water_lpm,
-                                      hw_state.water_session_l);
-            } else if (hw_state.water_session_l > 0) {
-                lv_label_set_text_fmt(lbl_inbox_sub, tr("+%.1f L zojuist getapt", "+%.1f L just poured"),
-                                      hw_state.water_session_l);
-            } else {
-                lv_label_set_text(lbl_inbox_sub, "0.0 L/min");
+            if (lbl_inbox_sub) {
+                if (hw_state.water_lpm > 0.05f)
+                    lv_label_set_text_fmt(lbl_inbox_sub, "%.1f L/min  +%.1f L",
+                                          hw_state.water_lpm,
+                                          hw_state.water_session_l);
+                else if (hw_state.water_session_l > 0)
+                    lv_label_set_text_fmt(lbl_inbox_sub, tr("+%.1f L zojuist getapt", "+%.1f L just poured"),
+                                          hw_state.water_session_l);
+                else
+                    lv_label_set_text(lbl_inbox_sub, "0.0 L/min");
             }
         }
     }
@@ -1886,15 +1889,10 @@ static void refresh_cb(lv_timer_t * t) {
         }
     }
 
-    /* Energy bottom tile: live power + cumulative gas. */
+    /* Energy bottom tile: live power only (gas removed per CR10) */
     if (lbl_bot_energy) {
         if (energy_connected()) {
-            float g = energy_gas_m3();
-            if (g >= 0)
-                lv_label_set_text_fmt(lbl_bot_energy, tr("%.0f W\n%.0f m3 gas", "%.0f W\n%.0f m3 gas"),
-                                      energy_power_w(), g);
-            else
-                lv_label_set_text_fmt(lbl_bot_energy, "%.0f W", energy_power_w());
+            lv_label_set_text_fmt(lbl_bot_energy, "%.0f W", energy_power_w());
         } else {
             lv_label_set_text(lbl_bot_energy, energy_offline_label());
         }
@@ -1903,15 +1901,16 @@ static void refresh_cb(lv_timer_t * t) {
        clobbering the real waste-pickup text written earlier in this
        refresh callback.) */
 
-    /* Water tile (replaces Inbox placeholder) — total + live l/min.
-     * Splat-recovered duplicate of the earlier guarded block; same
-     * marketplace-slot guard applies here. */
+    /* Water tile: only show values when water meter is connected (CR10) */
     if (!slot_active[TILE_SLOT_WATER]) {
-        if (lbl_inbox_main && hw_state.connected_water) {
-            lv_label_set_text_fmt(lbl_inbox_main, "%.3f m3", hw_state.water_total_m3);
-        }
-        if (lbl_inbox_sub && hw_state.connected_water) {
-            lv_label_set_text_fmt(lbl_inbox_sub, "%.1f L/min", hw_state.water_lpm);
+        if (!settings.enable_p1_water || !hw_state.connected_water) {
+            if (lbl_inbox_main) lv_label_set_text(lbl_inbox_main, "--");
+            if (lbl_inbox_sub)  lv_label_set_text(lbl_inbox_sub, "");
+        } else {
+            if (lbl_inbox_main)
+                lv_label_set_text_fmt(lbl_inbox_main, "%.3f m3", hw_state.water_total_m3);
+            if (lbl_inbox_sub)
+                lv_label_set_text_fmt(lbl_inbox_sub, "%.1f L/min", hw_state.water_lpm);
         }
     }
 
@@ -1978,6 +1977,16 @@ static void home_show_page(int n) {
 }
 static void on_page1_slot(lv_event_t * e) {
     lv_obj_t * tapped = lv_event_get_current_target(e);
+    for (int i = 0; i < g_p1_count; i++) {
+        if (p1_main[i] && tapped == lv_obj_get_parent(p1_main[i])) {
+            const char * b = tile_slots_binding(4 + i);
+            if (b && !strcmp(b, "local:agenda")) {
+                screen_calendar_show();
+                return;
+            }
+            break;
+        }
+    }
     /* Slot 0: efanlamp tile when configured */
     if (p1_main[0] && tapped == lv_obj_get_parent(p1_main[0]) && settings.efanlamp_host[0]) {
         ui_push(screen_efanlamp_create());
@@ -2175,10 +2184,10 @@ static void on_news_tap(lv_event_t * e) {
     lv_obj_add_event_cb(news_modal, news_modal_close, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t * card = lv_obj_create(news_modal);
-    lv_obj_set_size(card, SX(900), SY(500));
-    lv_obj_center(card);
+    lv_obj_set_size(card, LV_HOR_RES, LV_VER_RES);
+    lv_obj_set_pos(card, 0, 0);
     lv_obj_set_style_bg_color(card, lv_color_hex(0x16243a), 0);
-    lv_obj_set_style_radius(card, 16, 0);
+    lv_obj_set_style_radius(card, 0, 0);
     lv_obj_set_style_border_width(card, 0, 0);
     lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(card, LV_OBJ_FLAG_CLICKABLE);   /* swallow taps */
@@ -2187,11 +2196,23 @@ static void on_news_tap(lv_event_t * e) {
     lv_obj_set_style_text_font(t, SF(28), 0);
     lv_obj_set_style_text_color(t, lv_color_hex(0xffffff), 0);
     lv_label_set_text(t, tr("Nieuws", "News"));
-    lv_obj_align(t, LV_ALIGN_TOP_LEFT, SX(16), SY(12));
+    lv_obj_align(t, LV_ALIGN_TOP_LEFT, SX(24), SY(16));
+
+    /* Top-right "X" close button */
+    lv_obj_t * x = lv_btn_create(card);
+    lv_obj_set_size(x, SX(56), SY(56));
+    lv_obj_align(x, LV_ALIGN_TOP_RIGHT, SX(-16), SY(10));
+    lv_obj_set_style_bg_color(x, lv_color_hex(0x33445a), 0);
+    lv_obj_set_style_radius(x, 12, 0);
+    lv_obj_add_event_cb(x, news_modal_close, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * xl = lv_label_create(x);
+    lv_label_set_text(xl, LV_SYMBOL_CLOSE);
+    lv_obj_set_style_text_color(xl, lv_color_hex(0xffffff), 0);
+    lv_obj_center(xl);
 
     news_list = lv_list_create(card);
-    lv_obj_set_size(news_list, SX(430), SY(432));
-    lv_obj_align(news_list, LV_ALIGN_TOP_LEFT, SX(12), SY(52));
+    lv_obj_set_size(news_list, SX(460), SY(510));
+    lv_obj_align(news_list, LV_ALIGN_TOP_LEFT, SX(16), SY(70));
     lv_obj_set_style_bg_color(news_list, lv_color_hex(0x0e1a2a), 0);
     /* Start with every feed expanded; headers collapse/expand on tap. */
     for (int f = 0; f < NEWS_MAX_FEEDS; f++) news_collapsed[f] = false;
@@ -2202,12 +2223,12 @@ static void on_news_tap(lv_event_t * e) {
     lv_obj_set_style_text_font(news_body_title, SF(22), 0);
     lv_obj_set_style_text_color(news_body_title, lv_color_hex(0xffffff), 0);
     lv_label_set_long_mode(news_body_title, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(news_body_title, SX(420));
-    lv_obj_align(news_body_title, LV_ALIGN_TOP_LEFT, SX(458), SY(50));
+    lv_obj_set_width(news_body_title, SX(510));
+    lv_obj_align(news_body_title, LV_ALIGN_TOP_LEFT, SX(490), SY(70));
 
     lv_obj_t * pane = lv_obj_create(card);
-    lv_obj_set_size(pane, SX(432), SY(320));
-    lv_obj_align(pane, LV_ALIGN_TOP_LEFT, SX(452), SY(132));
+    lv_obj_set_size(pane, SX(514), SY(440));
+    lv_obj_align(pane, LV_ALIGN_TOP_LEFT, SX(490), SY(140));
     lv_obj_set_style_bg_color(pane, lv_color_hex(0x0e1a2a), 0);
     lv_obj_set_style_border_width(pane, 0, 0);
     lv_obj_set_style_radius(pane, 10, 0);
@@ -2216,15 +2237,9 @@ static void on_news_tap(lv_event_t * e) {
     lv_obj_set_style_text_font(news_body_lbl, SF(18), 0);
     lv_obj_set_style_text_color(news_body_lbl, lv_color_hex(0xcdd9e6), 0);
     lv_label_set_long_mode(news_body_lbl, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(news_body_lbl, SX(400));
+    lv_obj_set_width(news_body_lbl, SX(480));
 
     news_show_body(0);
-
-    lv_obj_t * x = lv_btn_create(card);
-    lv_obj_set_size(x, SX(130), SY(48));
-    lv_obj_align(x, LV_ALIGN_BOTTOM_RIGHT, SX(-16), SY(-12));
-    lv_obj_add_event_cb(x, news_modal_close, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * xl = lv_label_create(x); lv_label_set_text(xl, tr("Sluiten", "Close")); lv_obj_center(xl);
     lv_obj_move_foreground(news_modal);
 }
 
@@ -2421,6 +2436,11 @@ static void on_map_zoom_out(lv_event_t * e) { (void)e; if (g_map_zoom > 9)  { g_
 
 static void open_family_map(lv_event_t * e) {
     (void)e;
+    const char * b = tile_slots_binding(1);
+    if (b && !strcmp(b, "local:agenda")) {
+        screen_calendar_show();
+        return;
+    }
     if (map_modal) return;
 
     map_modal = lv_obj_create(lv_scr_act());
@@ -2451,7 +2471,7 @@ static void open_family_map(lv_event_t * e) {
     lv_obj_set_style_text_font(map_top_lbl, SF(18), 0);
     lv_obj_set_style_text_color(map_top_lbl, lv_color_hex(0x9fd0ff), 0);
     lv_label_set_long_mode(map_top_lbl, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(map_top_lbl, SX(596));
+    lv_obj_set_width(map_top_lbl, SX(420));
     lv_obj_align(map_top_lbl, LV_ALIGN_TOP_LEFT, SX(150), SY(18));
     lv_label_set_text(map_top_lbl, "");
 
@@ -2536,11 +2556,15 @@ static void open_family_map(lv_event_t * e) {
     }
 
     lv_obj_t * x = lv_btn_create(card);
-    lv_obj_set_size(x, SX(150), SY(50));
-    lv_obj_align(x, LV_ALIGN_BOTTOM_RIGHT, SX(-14), SY(-12));
-    lv_obj_set_style_bg_color(x, lv_color_hex(0x3a6090), 0);
+    lv_obj_set_size(x, SX(50), SY(50));
+    lv_obj_align(x, LV_ALIGN_TOP_RIGHT, SX(-12), SY(8));
+    lv_obj_set_style_bg_color(x, lv_color_hex(0x33445a), 0);
+    lv_obj_set_style_radius(x, 12, 0);
     lv_obj_add_event_cb(x, map_close, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * xl = lv_label_create(x); lv_label_set_text(xl, tr("Sluiten", "Close")); lv_obj_center(xl);
+    lv_obj_t * xl = lv_label_create(x);
+    lv_label_set_text(xl, LV_SYMBOL_CLOSE);
+    lv_obj_set_style_text_color(xl, lv_color_hex(0xffffff), 0);
+    lv_obj_center(xl);
 
     start_map_fetch(0);
 }
@@ -2988,7 +3012,8 @@ lv_obj_t * screen_home_create(void) {
     lbl_energy_gas = lv_label_create(energy_t.tile);
     lv_obj_set_style_text_color(lbl_energy_gas, lv_color_hex(COL_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_energy_gas, SF(18), 0);
-    lv_label_set_text(lbl_energy_gas, "-- m3 gas");
+    lv_label_set_text(lbl_energy_gas, "");
+    lv_obj_add_flag(lbl_energy_gas, LV_OBJ_FLAG_HIDDEN);
     lv_obj_align(lbl_energy_gas, LV_ALIGN_BOTTOM_LEFT, 0, -4);
 
     lbl_energy_today = lv_label_create(energy_t.tile);
@@ -3141,7 +3166,7 @@ lv_obj_t * screen_home_create(void) {
      * the grid); content is filled in refresh_cb. */
     if (settings.custom_layout_enabled) {
         tile_t nt, ct;
-        make_tile(scr_root, 0, 0, 200, 150, LT_NEWS_SUMMARY, tr("Nieuws", "News"), 0x6666aa, NULL, &nt);
+        make_tile(scr_root, 0, 0, 200, 150, LT_NEWS_SUMMARY, tr("Nieuws", "News"), 0x6666aa, on_news_tap, &nt);
         tile_news_sum_lbl = lv_label_create(nt.tile);
         lv_obj_set_style_text_color(tile_news_sum_lbl, lv_color_hex(COL_TEXT_HI), 0);
         lv_obj_set_style_text_font(tile_news_sum_lbl, SF(14), 0);
@@ -3150,13 +3175,15 @@ lv_obj_t * screen_home_create(void) {
         lv_obj_align(tile_news_sum_lbl, LV_ALIGN_TOP_LEFT, 0, 38);
         lv_label_set_text(tile_news_sum_lbl, "...");
 
-        make_tile(scr_root, 0, 0, 200, 150, LT_CALENDAR, tr("Agenda", "Calendar"), 0x4477cc, NULL, &ct);
+        make_tile(scr_root, 0, 0, 200, 150, LT_CALENDAR, tr("Agenda", "Calendar"), 0x4477cc, on_slot_agenda_tap, &ct);
         tile_cal_lbl = lv_label_create(ct.tile);
         lv_obj_set_style_text_color(tile_cal_lbl, lv_color_hex(COL_TEXT_HI), 0);
         lv_obj_set_style_text_font(tile_cal_lbl, SF(14), 0);
         lv_label_set_long_mode(tile_cal_lbl, LV_LABEL_LONG_WRAP);
         lv_obj_set_width(tile_cal_lbl, LV_PCT(94));
         lv_obj_align(tile_cal_lbl, LV_ALIGN_TOP_LEFT, 0, 38);
+        lv_obj_add_flag(tile_cal_lbl, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(tile_cal_lbl, on_slot_agenda_tap, LV_EVENT_CLICKED, NULL);
         lv_label_set_text(tile_cal_lbl, "...");
 
         /* Lights: a placeable button tile that opens the lights screen (the same

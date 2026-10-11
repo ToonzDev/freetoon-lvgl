@@ -59,34 +59,35 @@ void screen_calendar_show(void) {
     lv_obj_clear_flag(modal, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t * close = lv_btn_create(modal);
-    lv_obj_set_size(close, SX(140), SY(70));
-    lv_obj_align(close, LV_ALIGN_TOP_LEFT, SX(12), SY(12));
-    lv_obj_set_style_bg_color(close, lv_color_hex(0x223344), 0);
+    lv_obj_set_size(close, SX(56), SY(56));
+    lv_obj_align(close, LV_ALIGN_TOP_RIGHT, SX(-16), SY(12));
+    lv_obj_set_style_bg_color(close, lv_color_hex(0x33445a), 0);
     lv_obj_set_style_radius(close, 12, 0);
     lv_obj_set_ext_click_area(close, 20);
     lv_obj_add_event_cb(close, on_close, LV_EVENT_CLICKED, NULL);
     lv_obj_t * cl = lv_label_create(close);
-    lv_label_set_text(cl, tr("Sluit", "Close"));
+    lv_label_set_text(cl, LV_SYMBOL_CLOSE);
     lv_obj_set_style_text_color(cl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(cl, SF(22), 0);
     lv_obj_center(cl);
 
     lv_obj_t * title = lv_label_create(modal);
     lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(title, SF(28), 0);
     lv_label_set_text(title, tr("Agenda", "Calendar"));
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, SX(180), SY(26));
+    lv_obj_align(title, LV_ALIGN_TOP_LEFT, SX(24), SY(20));
 
-    lv_obj_t * list = lv_obj_create(modal);
-    lv_obj_set_size(list, SX(960), SY(480));
-    lv_obj_set_pos(list, SX(30), SY(100));
-    lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(list, 0, 0);
-    lv_obj_set_style_pad_row(list, 6, 0);
-    lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_t * cont = lv_obj_create(modal);
+    lv_obj_set_size(cont, SX(976), SY(500));
+    lv_obj_set_pos(cont, SX(24), SY(84));
+    lv_obj_set_style_bg_opa(cont, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(cont, 0, 0);
+    lv_obj_set_style_pad_all(cont, 0, 0);
+    lv_obj_add_flag(cont, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(cont, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(cont, LV_SCROLLBAR_MODE_AUTO);
 
     if (!settings.calendar_enabled || (!settings.calendar_ha_entity[0] && !settings.calendar_ics_url[0])) {
-        lv_obj_t * m = lv_label_create(list);
+        lv_obj_t * m = lv_label_create(cont);
         lv_label_set_text(m, tr("Agenda niet ingesteld.\nZet een HA-agenda of een iCal-URL in Instellingen.",
                                 "Calendar not set up.\nSet a HA calendar or iCal URL in Settings."));
         lv_obj_set_style_text_color(m, lv_color_hex(0x99aabb), 0);
@@ -94,7 +95,7 @@ void screen_calendar_show(void) {
         return;
     }
     if (calendar_state.count == 0) {
-        lv_obj_t * m = lv_label_create(list);
+        lv_obj_t * m = lv_label_create(cont);
         lv_label_set_text(m, calendar_state.connected
             ? tr("Geen aankomende afspraken.", "No upcoming events.")
             : tr("Agenda laden... (of geen verbinding)", "Loading calendar... (or no connection)"));
@@ -103,25 +104,65 @@ void screen_calendar_show(void) {
         return;
     }
 
-    char last_date[12] = "";
+    /* 2 columns (left and right) to show double the amount of appointments (CR8) */
+    lv_obj_t * col_left = lv_obj_create(cont);
+    lv_obj_set_pos(col_left, 0, 0);
+    lv_obj_set_size(col_left, SX(476), LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(col_left, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(col_left, 0, 0);
+    lv_obj_set_style_pad_all(col_left, 0, 0);
+    lv_obj_set_style_pad_row(col_left, 6, 0);
+    lv_obj_clear_flag(col_left, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(col_left, LV_FLEX_FLOW_COLUMN);
+
+    lv_obj_t * col_right = lv_obj_create(cont);
+    lv_obj_set_pos(col_right, SX(496), 0);
+    lv_obj_set_size(col_right, SX(476), LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(col_right, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(col_right, 0, 0);
+    lv_obj_set_style_pad_all(col_right, 0, 0);
+    lv_obj_set_style_pad_row(col_right, 6, 0);
+    lv_obj_clear_flag(col_right, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(col_right, LV_FLEX_FLOW_COLUMN);
+
+    int half = (calendar_state.count + 1) / 2;
+    char last_date_left[12] = "";
+    char last_date_right[12] = "";
+
     for (int i = 0; i < calendar_state.count; i++) {
         calendar_event_t * ev = &calendar_state.ev[i];
-        /* Date header whenever the day changes. */
-        if (strcmp(ev->date, last_date) != 0) {
-            snprintf(last_date, sizeof last_date, "%s", ev->date);
+        int in_left = (i < half);
+        lv_obj_t * target_col = in_left ? col_left : col_right;
+        char * last_d = in_left ? last_date_left : last_date_right;
+        int is_col_first = in_left ? (i == 0) : (i == half);
+
+        /* Date header whenever the day changes in this column */
+        if (strcmp(ev->date, last_d) != 0) {
+            snprintf(last_d, 12, "%s", ev->date);
             char pd[32]; pretty_date(ev->date, pd, sizeof pd);
-            lv_obj_t * h = lv_label_create(list);
+            lv_obj_t * h = lv_label_create(target_col);
             lv_label_set_text(h, pd);
             lv_obj_set_style_text_color(h, lv_color_hex(0x66ccff), 0);
             lv_obj_set_style_text_font(h, SF(22), 0);
-            lv_obj_set_style_pad_top(h, i ? 10 : 0, 0);
+            lv_obj_set_style_pad_top(h, is_col_first ? 0 : 10, 0);
         }
-        lv_obj_t * row = lv_label_create(list);
-        lv_obj_set_width(row, SX(900));
+
+        /* Format time string: start time - end time (CR8) */
+        char time_str[32];
+        if (ev->time[0]) {
+            if (ev->end_time[0] && strcmp(ev->time, ev->end_time) != 0)
+                snprintf(time_str, sizeof time_str, "%s - %s", ev->time, ev->end_time);
+            else
+                snprintf(time_str, sizeof time_str, "%s", ev->time);
+        } else {
+            snprintf(time_str, sizeof time_str, "%s", tr("hele dag", "all day"));
+        }
+
+        lv_obj_t * row = lv_label_create(target_col);
+        lv_obj_set_width(row, SX(470));
         lv_label_set_long_mode(row, LV_LABEL_LONG_DOT);
-        char line[120];
-        snprintf(line, sizeof line, "   %s  %s",
-                 ev->time[0] ? ev->time : tr("hele dag", "all day"), ev->summary);
+        char line[160];
+        snprintf(line, sizeof line, "  %s  %s", time_str, ev->summary);
         lv_label_set_text(row, line);
         lv_obj_set_style_text_color(row, lv_color_hex(0xdddddd), 0);
         lv_obj_set_style_text_font(row, SF(18), 0);

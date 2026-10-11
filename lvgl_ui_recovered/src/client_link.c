@@ -380,13 +380,25 @@ static int parse_json_val(const char * j, const char * key, int def) {
     return atoi(p);
 }
 
+static int parse_json_float(const char * j, const char * key, float * out) {
+    char pat[64];
+    snprintf(pat, sizeof pat, "\"%s\":", key);
+    const char * p = strstr(j, pat);
+    if (!p) return 0;
+    p += strlen(pat);
+    while (*p == ' ' || *p == '\"') p++;
+    if (strncmp(p, "null", 4) == 0 || strncmp(p, "NaN", 3) == 0 || strncmp(p, "nan", 3) == 0) return 0;
+    *out = (float)atof(p);
+    return 1;
+}
+
 static int parse_rrd_val(const char * body, float * out) {
     if (!body) return 0;
     const char * colon = strchr(body, ':');
     if (!colon) return 0;
     colon++;
     while (*colon == ' ' || *colon == '\t') colon++;
-    if (strncmp(colon, "NaN", 3) == 0 || strncmp(colon, "nan", 3) == 0) return 0;
+    if (strncmp(colon, "NaN", 3) == 0 || strncmp(colon, "nan", 3) == 0 || strncmp(colon, "null", 4) == 0) return 0;
     *out = (float)atof(colon);
     return 1;
 }
@@ -430,13 +442,24 @@ static void poll_stock_master(void) {
             int chsp = parse_json_val(buf, "currentInternalBoilerSetpoint", -1);
             if (chsp >= 0) toon_state.ch_setpoint = (float)chsp;
 
+            float fval = 0.0f;
+            if (parse_json_float(buf, "boilerPressure", &fval) || parse_json_float(buf, "chPressure", &fval)) {
+                if (fval > 0.05f) toon_state.water_pressure = (fval > 10.0f) ? fval / 100.0f : fval;
+            }
+            if (parse_json_float(buf, "boilerOutTemp", &fval) || parse_json_float(buf, "currentBoilerTemperature", &fval)) {
+                if (fval > 0.0f) toon_state.boiler_out_temp = (fval > 150.0f) ? fval / 100.0f : fval;
+            }
+            if (parse_json_float(buf, "boilerInTemp", &fval) || parse_json_float(buf, "currentBoilerReturnTemperature", &fval)) {
+                if (fval > 0.0f) toon_state.boiler_in_temp = (fval > 150.0f) ? fval / 100.0f : fval;
+            }
+
             toon_state.connected = 1;
         } else {
             fails++;
             if (fails >= 3) toon_state.connected = 0;
         }
 
-        /* 2. Electricity & Gas from hcb_rrd every ~4 seconds */
+        /* 2. Electricity, Gas, Pressure & Boiler Temps from hcb_rrd every ~4 seconds */
         rrd_counter++;
         if (rrd_counter >= 2) {
             rrd_counter = 0;
@@ -456,6 +479,48 @@ static void poll_stock_master(void) {
                 if (parse_rrd_val(buf, &gw)) {
                     hw_state.gas_m3 = gw;
                     hw_state.connected_p1 = 1;
+                }
+            }
+
+            /* Water pressure from hcb_rrd */
+            static const char * press_loggers[] = { "ch_pressure", "boiler_pressure", "water_pressure", "pressure" };
+            static int press_idx = 0;
+            snprintf(url, sizeof url, "http://%s:10080/hcb_rrd?action=getRrdData&loggerName=%s&rra=5min&samples=1",
+                     settings.master_host, press_loggers[press_idx]);
+            if (http_fetch_to(url, buf, sizeof buf, 2) == 0) {
+                float bp = 0.0f;
+                if (parse_rrd_val(buf, &bp) && bp > 0.05f) {
+                    toon_state.water_pressure = (bp > 10.0f) ? bp / 100.0f : bp;
+                } else {
+                    press_idx = (press_idx + 1) % 4;
+                }
+            }
+
+            /* Boiler outgoing (flow) temperature from hcb_rrd */
+            static const char * flow_loggers[] = { "ch_temp", "boiler_temp", "ch_flow_temp", "boiler_out_temp" };
+            static int flow_idx = 0;
+            snprintf(url, sizeof url, "http://%s:10080/hcb_rrd?action=getRrdData&loggerName=%s&rra=5min&samples=1",
+                     settings.master_host, flow_loggers[flow_idx]);
+            if (http_fetch_to(url, buf, sizeof buf, 2) == 0) {
+                float tf = 0.0f;
+                if (parse_rrd_val(buf, &tf) && tf > 0.0f) {
+                    toon_state.boiler_out_temp = (tf > 150.0f) ? tf / 100.0f : tf;
+                } else {
+                    flow_idx = (flow_idx + 1) % 4;
+                }
+            }
+
+            /* Boiler incoming (return) temperature from hcb_rrd */
+            static const char * ret_loggers[] = { "ch_return_temp", "boiler_return_temp", "boiler_in_temp" };
+            static int ret_idx = 0;
+            snprintf(url, sizeof url, "http://%s:10080/hcb_rrd?action=getRrdData&loggerName=%s&rra=5min&samples=1",
+                     settings.master_host, ret_loggers[ret_idx]);
+            if (http_fetch_to(url, buf, sizeof buf, 2) == 0) {
+                float tr = 0.0f;
+                if (parse_rrd_val(buf, &tr) && tr > 0.0f) {
+                    toon_state.boiler_in_temp = (tr > 150.0f) ? tr / 100.0f : tr;
+                } else {
+                    ret_idx = (ret_idx + 1) % 3;
                 }
             }
         }

@@ -3,6 +3,7 @@
  * `{"DD-MM-YYYY HH:MM:SS": value, ...}` into a stats_series_t.
  */
 #include "stats.h"
+#include "settings.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,6 +13,8 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <netdb.h>
+#include <sys/time.h>
 
 #ifdef WASM_BUILD
 #include <emscripten.h>
@@ -59,16 +62,42 @@ static int http_get_body(const char * path_qs, char * out, size_t outsz) {
 }
 #else
 static int http_get_body(const char * path_qs, char * out, size_t outsz) {
-    int s = socket(AF_INET, SOCK_STREAM, 0);
+    const char * host = "127.0.0.1";
+    char host_buf[64];
+    if (settings.client_mode && settings.master_host[0]) {
+        snprintf(host_buf, sizeof(host_buf), "%s", settings.master_host);
+        char * colon = strchr(host_buf, ':');
+        if (colon) *colon = '\0';
+        host = host_buf;
+    }
+
+    struct addrinfo hints, *res = NULL, *rp;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+
+    if (getaddrinfo(host, "10080", &hints, &res) != 0 || !res) {
+        return -1;
+    }
+
+    int s = -1;
+    for (rp = res; rp != NULL; rp = rp->ai_next) {
+        s = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+        if (s < 0) continue;
+        struct timeval tv = { .tv_sec = 4, .tv_usec = 0 };
+        setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+        if (connect(s, rp->ai_addr, rp->ai_addrlen) == 0) break;
+        close(s);
+        s = -1;
+    }
+    freeaddrinfo(res);
     if (s < 0) return -1;
-    struct sockaddr_in a = {0};
-    a.sin_family = AF_INET; a.sin_port = htons(10080);
-    a.sin_addr.s_addr = htonl(0x7f000001);
-    if (connect(s, (struct sockaddr*)&a, sizeof(a)) != 0) { close(s); return -1; }
+
     char req[1024];
     int n = snprintf(req, sizeof(req),
-        "GET /%s HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n",
-        path_qs);
+        "GET /%s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n",
+        path_qs, host);
     if (send(s, req, n, 0) != n) { close(s); return -1; }
     /* Read everything we can; the hcb_rrd response is small JSON for 5min
        archives (<10 KB). */

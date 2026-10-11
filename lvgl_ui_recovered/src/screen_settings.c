@@ -361,36 +361,60 @@ static lv_obj_t * modal_open(const char * title, int panel_h) {
     lv_obj_add_event_cb(cur_modal, modal_close, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t * panel = lv_obj_create(cur_modal);
-    /* Clamp height to screen minus margin so the panel doesn't run off the
-     * bottom. Always enable vertical scrolling — even when content nominally
-     * fits — to stop scroll events propagating to the scrollable settings
-     * screen behind the backdrop (especially on Toon 1 at 480px). */
     int h = SY(panel_h);
     if (h > DISP_VER - SUNI(20))
         h = DISP_VER - SUNI(20);
-    lv_obj_add_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_scroll_dir(panel, LV_DIR_VER);
-    lv_obj_set_scrollbar_mode(panel, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_size(panel, SX(860), h);
     lv_obj_center(panel);
     lv_obj_set_style_bg_color(panel, lv_color_hex(0x16243a), 0);
     lv_obj_set_style_border_width(panel, 0, 0);
     lv_obj_set_style_radius(panel, 18, 0);
-    lv_obj_set_style_pad_all(panel, 20, 0);
-    lv_obj_set_style_pad_bottom(panel, SUNI(40), 0);
+    lv_obj_set_style_clip_corner(panel, true, 0);
+    lv_obj_set_style_pad_all(panel, 0, 0);
     lv_obj_add_flag(panel, LV_OBJ_FLAG_CLICKABLE);              /* stop taps reaching backdrop */
 
-    lv_obj_t * t = lv_label_create(panel);
+    /* Scrollable body hosting caller controls.
+     * Starts at (0,0) so existing callers' y-offsets (e.g. y=70) place content
+     * cleanly below the fixed 64px header. */
+    lv_obj_t * body = lv_obj_create(panel);
+    lv_obj_set_size(body, SX(860), h);
+    lv_obj_set_pos(body, 0, 0);
+    lv_obj_set_style_bg_opa(body, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(body, 0, 0);
+    lv_obj_set_style_radius(body, 0, 0);
+    lv_obj_set_style_pad_hor(body, 20, 0);
+    lv_obj_set_style_pad_top(body, 0, 0);
+    lv_obj_set_style_pad_bottom(body, SUNI(40), 0);
+    lv_obj_add_flag(body, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(body, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(body, LV_SCROLLBAR_MODE_AUTO);
+
+    /* Fixed top header bar on top of the scrolling body so title & "X" never scroll off. */
+    lv_obj_t * hdr = lv_obj_create(panel);
+    lv_obj_set_size(hdr, SX(860), SY(64));
+    lv_obj_set_pos(hdr, 0, 0);
+    lv_obj_set_style_bg_color(hdr, lv_color_hex(0x16243a), 0);
+    lv_obj_set_style_bg_opa(hdr, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(hdr, 0, 0);
+    lv_obj_set_style_radius(hdr, 18, 0);
+    lv_obj_set_style_pad_hor(hdr, 20, 0);
+    lv_obj_set_style_pad_ver(hdr, 0, 0);
+    lv_obj_clear_flag(hdr, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(hdr, LV_OBJ_FLAG_CLICKABLE);
+
+    lv_obj_t * t = lv_label_create(hdr);
     lv_obj_set_style_text_font(t, SF(28), 0);
     lv_obj_set_style_text_color(t, lv_color_hex(0xffffff), 0);
     lv_label_set_text(t, title);
-    lv_obj_align(t, LV_ALIGN_TOP_LEFT, SX(4), SY(4));
+    lv_obj_align(t, LV_ALIGN_LEFT_MID, SX(4), 0);
 
-    lv_obj_t * x = lv_btn_create(panel);
-    lv_obj_set_size(x, SX(56), SY(56));
-    lv_obj_align(x, LV_ALIGN_TOP_RIGHT, SX(4), SY(-4));
+    lv_obj_t * x = lv_btn_create(hdr);
+    lv_obj_set_size(x, SX(56), SY(48));
+    lv_obj_align(x, LV_ALIGN_RIGHT_MID, SX(-4), 0);
     lv_obj_set_style_bg_color(x, lv_color_hex(0x33445a), 0);
     lv_obj_set_style_radius(x, 12, 0);
+    lv_obj_set_ext_click_area(x, 20);
     lv_obj_add_event_cb(x, modal_close, LV_EVENT_CLICKED, NULL);
     lv_obj_t * xl = lv_label_create(x);
     lv_label_set_text(xl, LV_SYMBOL_CLOSE);
@@ -400,7 +424,7 @@ static lv_obj_t * modal_open(const char * title, int panel_h) {
     /* After the caller fills this panel, wire a pop-up keyboard to every
      * textarea it created (runs on the next LVGL tick). */
     lv_async_call(settings_attach_kb_async, panel);
-    return panel;
+    return body;
 }
 
 /* ====================== boiler-type confirm dialog ====================== */
@@ -3152,9 +3176,11 @@ static void open_clean_modal(lv_event_t * e) {
  * title so the whole grid fits in ~4 rows with minimal scrolling. */
 #define SETT_TILE_W 232
 #define SETT_TILE_H 104
+static lv_obj_t * scr_tiles_cont = NULL;
 static void make_tile(int x, int y, const lv_img_dsc_t * icon, const char * sym,
                       const char * title, const char * caption, lv_event_cb_t cb) {
-    lv_obj_t * tile = lv_btn_create(scr_root);
+    lv_obj_t * parent = scr_tiles_cont ? scr_tiles_cont : scr_root;
+    lv_obj_t * tile = lv_btn_create(parent);
     lv_obj_set_size(tile, SX(SETT_TILE_W), SY(SETT_TILE_H));
     lv_obj_set_pos(tile, x, y);
     lv_obj_set_style_bg_color(tile, lv_color_hex(0x1a2a44), 0);
@@ -3817,14 +3843,9 @@ lv_obj_t * screen_settings_create(void) {
 
     scr_root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(0x0f1a2a), 0);
-    /* Used to be SCROLLABLE-cleared. Row 3 already overflows the 600 px
-     * viewport; adding the Integrations tile pushes content further, so
-     * we enable vertical scroll and a thin scrollbar on the screen itself. */
-    lv_obj_add_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_scroll_dir(scr_root, LV_DIR_VER);
-    lv_obj_set_scrollbar_mode(scr_root, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* header */
+    /* Header — permanently fixed at top so back button never scrolls away */
     lv_obj_t * btn_back = lv_btn_create(scr_root);
     lv_obj_set_size(btn_back, SX(140), SY(80));
     lv_obj_align(btn_back, LV_ALIGN_TOP_LEFT, SX(12), SY(12));
@@ -3844,73 +3865,81 @@ lv_obj_t * screen_settings_create(void) {
     lv_label_set_text(title, tr("Instellingen", "Settings"));
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, SX(180), SY(30));
 
-    /* Category tiles in a compact 4-column grid. 232x104 each, so 4 rows
-     * of 4 (13 tiles) fit in ~4 rows starting below the header — the first
-     * ~3.5 rows are on-screen and the rest is a short scroll. Placement is
-     * index-driven via the GX macro so adding a tile doesn't need manual
-     * row/column arithmetic. */
-    const int COLS = 4, MX = 20, TOP = 112, GAPX = 14, GAPY = 12;
+    /* Scrollable container for category tiles below the header */
+    scr_tiles_cont = lv_obj_create(scr_root);
+    lv_obj_set_pos(scr_tiles_cont, 0, SY(104));
+    lv_obj_set_size(scr_tiles_cont, LV_HOR_RES, LV_VER_RES - SY(104));
+    lv_obj_set_style_bg_opa(scr_tiles_cont, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(scr_tiles_cont, 0, 0);
+    lv_obj_set_style_pad_all(scr_tiles_cont, 0, 0);
+    lv_obj_set_style_pad_bottom(scr_tiles_cont, SY(24), 0);
+    lv_obj_add_flag(scr_tiles_cont, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(scr_tiles_cont, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(scr_tiles_cont, LV_SCROLLBAR_MODE_AUTO);
+
+    /* Category tiles in a compact 4-column grid, sorted alphabetically (CR9) */
+    const int COLS = 4, MX = 20, TOP = 8, GAPX = 14, GAPY = 12;
     #define GX(i) (SX(MX + ((i) % COLS) * (SETT_TILE_W + GAPX)))
     #define GY(i) (SY(TOP + ((i) / COLS) * (SETT_TILE_H + GAPY)))
     int n = 0;
-    make_tile(GX(n), GY(n), &icon_wx_sun, NULL, tr("Scherm", "Display"),
-              tr("dimmen, wachttijd, helderheid", "dim, timeout, brightness"), open_display_modal); n++;
-    make_tile(GX(n), GY(n), &icon_wx_cloud, NULL, tr("Weer", "Weather"),
-              tr("weer op dimscherm", "weather on dim"), open_weather_modal); n++;
-    make_tile(GX(n), GY(n), &icon_trash, NULL, tr("Afval", "Waste"),
-              tr("ophaalmeldingen", "pickup alerts"), open_waste_modal); n++;
-    make_tile(GX(n), GY(n), &icon_flame, NULL, tr("Verwarming", "Heating"),
-              tr("correctie, keteltype", "offset, boiler type"), open_heating_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_GPS, "OT Bridge",
-              tr("uit / proxy / draadloos", "off / proxy / wireless"), open_otbridge_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_WIFI, "MQTT",
-              tr("broker + topics", "broker + topics"), open_mqtt_modal); n++;
-    make_tile(GX(n), GY(n), &icon_radiator, NULL, tr("Voorkeuren", "Presets"),
-              tr("schema-streefwaarden", "scheme setpoints"), open_presets_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, tr("Over", "About"),
-              tr("status & diagnose", "status & diagnostics"), open_about_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_EYE_CLOSE, tr("Schoonmaken", "Clean"),
-              tr("30 s schermvergrendeling", "30 s screen lock"), open_clean_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_PLUS, tr("Integraties", "Integrations"),
-              tr("P1 / water / vent / HA", "P1 / water / vent / HA"), open_integrations_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_POWER, tr("UI-modus", "UI mode"),
-              tr("freetoon vs qt-gui", "freetoon vs qt-gui"), open_uimode_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_DOWNLOAD, "Marketplace",
-              tr("integraties installeren", "install integrations"), open_marketplace); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, "Crypto",
-              tr("kies munten", "pick coins"), open_crypto_picker); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_HOME, tr("Tegels", "Tiles"),
-              tr("starttegels toewijzen", "assign home tiles"), open_tile_slots_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_SETTINGS, "Z-Wave",
-              tr("ingebouwde apparaten", "built-in devices"), open_zwave); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_WIFI, "WiFi",
-              tr("zoeken & verbinden", "scan & connect"), open_wifi); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_CHARGE, tr("Adapters", "Adapters"),
               tr("meter & ketel", "meter & boiler"), open_adapters); n++;
+    make_tile(GX(n), GY(n), &icon_trash, NULL, tr("Afval", "Waste"),
+              tr("ophaalmeldingen", "pickup alerts"), open_waste_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, tr("Agenda", "Calendar"),
+              tr("HA + iCal-afspraken", "HA + iCal events"), open_calendar_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_SETTINGS, tr("Apparaten", "Appliances"),
               tr("NILM stap-detectie namen", "NILM step-change names"), open_appliances); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LOOP, tr("Auto-wisselen", "Auto-rotate"),
+              tr("inhoud van een tegel wisselen", "cycle a tile's content"), open_rotate_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_COPY, tr("Clientmodus", "Client mode"),
+              tr("een master-Toon spiegelen", "mirror a master Toon"), open_client_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, "Crypto",
+              tr("kies munten", "pick coins"), open_crypto_picker); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_EDIT, tr("Dim indeling", "Dim layout"),
+              tr("dim-blokken (opt-in)", "dim blocks (opt-in)"), open_dim_layout_editor); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_HOME, "Domoticz",
               tr("licht & zonwering", "lights & blinds"), open_domoticz); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_HOME, "Home Assistant",
               tr("host, token, entiteiten", "host, token, entities"), open_ha_entities_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_COPY, tr("Clientmodus", "Client mode"),
-              tr("een master-Toon spiegelen", "mirror a master Toon"), open_client_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LOOP, tr("Auto-wisselen", "Auto-rotate"),
-              tr("inhoud van een tegel wisselen", "cycle a tile's content"), open_rotate_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, tr("Nieuwslezer", "Newsreader"),
-              tr("RSS-koppenticker", "RSS headlines ticker"), open_news_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, tr("Agenda", "Calendar"),
-              tr("HA + iCal-afspraken", "HA + iCal events"), open_calendar_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_EDIT, tr("Indeling", "Layout"),
               tr("tegelindeling bewerken", "tile layout editor"), open_layout_editor); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_EDIT, tr("Dim indeling", "Dim layout"),
-              tr("dim-blokken (opt-in)", "dim blocks (opt-in)"), open_dim_layout_editor); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_REFRESH, tr("UI herstarten", "Restart UI"),
-              tr("instellingen herladen", "reload settings"), open_restart_confirm); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_WIFI, tr("Webtoegang", "Web Access"),
-              tr("browser-login", "browser login"), open_web_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_PLUS, tr("Integraties", "Integrations"),
+              tr("P1 / water / vent / HA", "P1 / water / vent / HA"), open_integrations_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_DOWNLOAD, "Marketplace",
+              tr("integraties installeren", "install integrations"), open_marketplace); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_WIFI, "MQTT",
+              tr("broker + topics", "broker + topics"), open_mqtt_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, tr("Nieuwslezer", "Newsreader"),
+              tr("RSS-koppenticker", "RSS headlines ticker"), open_news_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_GPS, "OT Bridge",
+              tr("uit / proxy / draadloos", "off / proxy / wireless"), open_otbridge_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, tr("Over", "About"),
+              tr("status & diagnose", "status & diagnostics"), open_about_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_OK, tr("Pincode", "PIN code"),
               tr("wijzigingen vergrendelen", "lock changes"), open_pin_settings_modal); n++;
+    make_tile(GX(n), GY(n), &icon_wx_sun, NULL, tr("Scherm", "Display"),
+              tr("dimmen, wachttijd, helderheid", "dim, timeout, brightness"), open_display_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_EYE_CLOSE, tr("Schoonmaken", "Clean"),
+              tr("30 s schermvergrendeling", "30 s screen lock"), open_clean_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_HOME, tr("Tegels", "Tiles"),
+              tr("starttegels toewijzen", "assign home tiles"), open_tile_slots_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_REFRESH, tr("UI herstarten", "Restart UI"),
+              tr("instellingen herladen", "reload settings"), open_restart_confirm); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_POWER, tr("UI-modus", "UI mode"),
+              tr("freetoon vs qt-gui", "freetoon vs qt-gui"), open_uimode_modal); n++;
+    make_tile(GX(n), GY(n), &icon_flame, NULL, tr("Verwarming", "Heating"),
+              tr("correctie, keteltype", "offset, boiler type"), open_heating_modal); n++;
+    make_tile(GX(n), GY(n), &icon_radiator, NULL, tr("Voorkeuren", "Presets"),
+              tr("schema-streefwaarden", "scheme setpoints"), open_presets_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_WIFI, tr("Webtoegang", "Web Access"),
+              tr("browser-login", "browser login"), open_web_modal); n++;
+    make_tile(GX(n), GY(n), &icon_wx_cloud, NULL, tr("Weer", "Weather"),
+              tr("weer op dimscherm", "weather on dim"), open_weather_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_WIFI, "WiFi",
+              tr("zoeken & verbinden", "scan & connect"), open_wifi); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_SETTINGS, "Z-Wave",
+              tr("ingebouwde apparaten", "built-in devices"), open_zwave); n++;
     #undef GX
     #undef GY
 

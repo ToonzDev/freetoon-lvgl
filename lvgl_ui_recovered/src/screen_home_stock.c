@@ -58,7 +58,7 @@
 #define N_ESEG  12
 
 /* ---- tile types ---------------------------------------------------------- */
-enum { LINK_NONE = 0, LINK_STATS, LINK_FORECAST, LINK_HEATER, LINK_VENT, LINK_TRACKERS, LINK_EFAN };
+enum { LINK_NONE = 0, LINK_STATS, LINK_FORECAST, LINK_HEATER, LINK_VENT, LINK_TRACKERS, LINK_EFAN, LINK_AGENDA };
 typedef enum {
     TT_EMPTY = 0, TT_CLOCK, TT_HUMID, TT_POWER, TT_WATERP, TT_INDOOR,
     TT_CO2, TT_TVOC, TT_WEATHER, TT_BOILIN, TT_BOILOUT, TT_GAS, TT_VENT,
@@ -78,7 +78,7 @@ static const struct { const char * key; const char * nl; const char * en; int li
     { "boilout", "Ketel retour",  "Boiler return",LINK_HEATER   },
     { "gas",     "Gas",           "Gas",          LINK_STATS    },
     { "vent",    "Ventilatie",    "Ventilation",  LINK_VENT     },
-    { "agenda",  "Agenda",        "Calendar",     LINK_NONE     },
+    { "agenda",  "Agenda",        "Calendar",     LINK_AGENDA   },
     { "trackers","Trackers",      "Trackers",     LINK_TRACKERS },
     { "efan",    "Ventilator",    "Fan + Lamp",   LINK_EFAN     },
     { "solar",   "Zonnepanelen",  "Solar",        LINK_STATS    },
@@ -377,7 +377,7 @@ static void refresh_slot(slot_t * s) {
     case TT_TVOC:    snprintf(b, sizeof b, "%d ppb", toon_state.tvoc);                     lv_label_set_text(s->val, b); break;
     case TT_BOILIN:  snprintf(b, sizeof b, "%.1f°", toon_state.boiler_in_temp);  comma(b); lv_label_set_text(s->val, b); break;
     case TT_BOILOUT: snprintf(b, sizeof b, "%.1f°", toon_state.boiler_out_temp); comma(b); lv_label_set_text(s->val, b); break;
-    case TT_GAS:     snprintf(b, sizeof b, "%.2f m3", hw_state.gas_hour_m3);     comma(b); lv_label_set_text(s->val, b); break;
+    case TT_GAS:     strcpy(b, "--"); lv_label_set_text(s->val, b); break;
     case TT_VENT:
         if (vent_state.connected) { snprintf(b, sizeof b, "%d%%", vent_state.speed_pct); lv_label_set_text(s->val, b); }
         else lv_label_set_text(s->val, "--");
@@ -482,6 +482,7 @@ static void on_slot_click(lv_event_t * e) {
         case LINK_VENT:     ui_push(screen_vent_remote_create());     break;
         case LINK_TRACKERS: life360_map_open();                       break;
         case LINK_EFAN:     ui_push(screen_efanlamp_create());        break;
+        case LINK_AGENDA:   screen_calendar_show();                   break;
     }
 }
 
@@ -495,7 +496,7 @@ static void load_layout(int out[N_SLOTS]) {
         TT_CLOCK, TT_HUMID, TT_POWER, TT_WATERP,
         TT_INDOOR, TT_BOILIN, TT_BOILOUT, TT_WATERP,
         TT_WEATHER, TT_CO2, TT_TVOC, TT_VENT,
-        TT_GAS, TT_AGENDA, TT_EMPTY, TT_EMPTY };
+        TT_EMPTY, TT_AGENDA, TT_EMPTY, TT_EMPTY };
     for (int i = 0; i < N_SLOTS; i++) out[i] = def[i];
     if (settings.stock_tiles[0]) {
         char buf[256]; snprintf(buf, sizeof buf, "%s", settings.stock_tiles);

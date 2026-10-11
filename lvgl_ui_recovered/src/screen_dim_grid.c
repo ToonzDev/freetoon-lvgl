@@ -674,11 +674,8 @@ lv_obj_t * screen_dim_grid_create(void) {
     lv_obj_set_style_text_font(lbl_outside, &lv_font_montserrat_22, 0);
     lv_label_set_text(lbl_outside, tr("Buiten", "Outside"));
 
-    dim_moon_img = lv_img_create(bx_w);
-    lv_img_set_src(dim_moon_img, moon_phase_icon(80));
-    lv_obj_set_style_img_recolor(dim_moon_img, lv_color_hex(0xe8edf2), 0);
-    lv_obj_set_style_img_recolor_opa(dim_moon_img, 255, 0);
-    lv_obj_align(dim_moon_img, LV_ALIGN_BOTTOM_LEFT, 6, -6);
+    /* Moon phase icon removed per CR11 */
+    dim_moon_img = NULL;
 
     /* ---- WASTE: bin icon(s) centred top, label centred below ---- */
     int sbw = 0, sbh = 0; lv_obj_t * bx_s = dim_box(DB_WASTE, &sbw, &sbh); (void)sbh;

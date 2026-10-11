@@ -107,11 +107,21 @@ static void refresh_cb(lv_timer_t * t) {
     } else {
         preset = temp_origin;
     }
-    int preset_idx = (preset >= 0) ? preset + 2 : -1;
+    int preset_idx = (preset >= 0 && preset <= 3) ? (2 + preset) : -1;
+    static const uint32_t prog_cols[6] = {
+        0x2f6b6b, 0x6a5424,
+        0xcc7733, 0x3377cc, 0x553388, 0x557788
+    };
     for (int i = 0; i < 6; i++) {
         if (!btn_prog[i]) continue;
         int active = (i == mode_idx) || (i == preset_idx);
         lv_obj_set_style_border_width(btn_prog[i], active ? 2 : 0, 0);
+        lv_obj_set_style_bg_color(btn_prog[i],
+                                  lv_color_hex(active ? prog_cols[i] : 0x243242), 0);
+        lv_obj_t * bl = lv_obj_get_child(btn_prog[i], 0);
+        if (bl) {
+            lv_obj_set_style_text_color(bl, lv_color_hex(active ? 0xffffff : 0x88aabb), 0);
+        }
     }
     if (toon_state.humidity > 0)
         lv_label_set_text_fmt(lbl_humidity, tr("RV %.0f%%", "RH %.0f%%"), toon_state.humidity);

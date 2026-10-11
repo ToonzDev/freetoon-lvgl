@@ -685,17 +685,8 @@ lv_obj_t * screen_dim_create(void) {
     lv_label_set_text(lbl_date, "");
     lv_obj_align(lbl_date, LV_ALIGN_CENTER, 0, SY(-50));
 
-    /* Moon phase — paired with the weather icon to form one tidy "sky" cluster
-     * in the top-right, instead of floating orphaned in the gap between the
-     * clock and the corner. Sits just left of the weather icon (TOP_RIGHT,
-     * -60,50) on the same baseline. Keep the 80-px size identical at create
-     * *and* refresh — mismatched sizes make LVGL redraw at a recomputed
-     * position that ends up off-screen. */
-    dim_moon_img = lv_img_create(scr_root);
-    lv_img_set_src(dim_moon_img, moon_phase_icon(80));
-    lv_obj_set_style_img_recolor(dim_moon_img, lv_color_hex(0xe8edf2), 0);
-    lv_obj_set_style_img_recolor_opa(dim_moon_img, 255, 0);
-    lv_obj_align(dim_moon_img, LV_ALIGN_TOP_RIGHT, SX(-50), SY(52));
+    /* Moon phase icon removed per CR11 */
+    dim_moon_img = NULL;
 
     lbl_temp = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_temp, lv_color_hex(0xffffff), 0);
