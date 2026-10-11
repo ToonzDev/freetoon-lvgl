@@ -32,3 +32,4 @@ linaro/
 __pycache__/
 *.pyc
 build-*/
+release_*/
