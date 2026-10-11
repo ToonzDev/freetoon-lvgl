@@ -115,7 +115,7 @@ BUILD_VERSION := $(shell cd ../.. && git describe --tags --always --dirty 2>/dev
 
 # LVGL needs LV_CONF_INCLUDE_SIMPLE so it picks up lv_conf.h from current dir
 CFLAGS  := $(SYSROOTFLAG) $(ARCHFLAGS) -O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function \
-           -DLV_CONF_INCLUDE_SIMPLE -DLV_LVGL_H_INCLUDE_SIMPLE $(TARGET_DEF) \
+           -DLV_CONF_INCLUDE_SIMPLE -DLV_LVGL_H_INCLUDE_SIMPLE $(TARGET_DEF) -D_GNU_SOURCE \
            -DBUILD_VERSION=\"$(BUILD_VERSION)\" \
            -I. -Ilvgl -Ilv_drivers -pthread $(GLIBC_CFLAGS) \
            -MMD -MP

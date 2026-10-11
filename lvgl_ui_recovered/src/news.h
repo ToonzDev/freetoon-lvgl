@@ -12,7 +12,8 @@
 #define NEWS_LINK_MAX    256
 #define NEWS_BODY_MAX    900   /* article summary from RSS <description> */
 
-int  news_start(void);                 /* spawn fetch thread if news_enabled */
+int  news_start(void);                 /* spawn fetch thread */
+void news_wake_fetch(void);            /* wake or trigger immediate feed fetch */
 /* Synchronously fetch+parse `url` (for the settings Test button). Returns the
  * headline count (>=0) or -1 on error; writes a human message into `msg`. */
 int  news_test_feed(const char * url, char * msg, size_t msgsz);

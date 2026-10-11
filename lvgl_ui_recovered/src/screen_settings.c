@@ -1543,37 +1543,72 @@ static void news_feeds_rebuild(void);   /* defined below */
 static void on_news_apply(lv_event_t * e) {
     (void)e;
     if (sw_news) settings.news_enabled = lv_obj_has_state(sw_news, LV_STATE_CHECKED) ? 1 : 0;
-    /* The feed LIST (settings.news_rss_url) is the source of truth, maintained
-     * by the Add/Remove buttons (each of which already saves). ta_news_url is
-     * only the "add a feed" input box. Earlier this OVERWROTE news_rss_url with
-     * that box's text — so tapping Apply after Add (box now empty) wiped every
-     * feed. Instead, fold in any URL still typed in the box, then save. */
     if (ta_news_url) {
-        const char * u = lv_textarea_get_text(ta_news_url);
-        if (u && u[0]) {
-            if (settings.news_rss_url[0])
-                strncat(settings.news_rss_url, "\n",
+        const char * raw = lv_textarea_get_text(ta_news_url);
+        if (raw && raw[0]) {
+            while (*raw == ' ' || *raw == '\t' || *raw == '\r' || *raw == '\n') raw++;
+            char u[300];
+            size_t len = strlen(raw);
+            while (len > 0 && (raw[len - 1] == ' ' || raw[len - 1] == '\t' || raw[len - 1] == '\r' || raw[len - 1] == '\n'))
+                len--;
+            if (len >= sizeof(u)) len = sizeof(u) - 1;
+            memcpy(u, raw, len);
+            u[len] = 0;
+            if (u[0]) {
+                if (settings.news_rss_url[0])
+                    strncat(settings.news_rss_url, "\n",
+                            sizeof settings.news_rss_url - strlen(settings.news_rss_url) - 1);
+                strncat(settings.news_rss_url, u,
                         sizeof settings.news_rss_url - strlen(settings.news_rss_url) - 1);
-            strncat(settings.news_rss_url, u,
-                    sizeof settings.news_rss_url - strlen(settings.news_rss_url) - 1);
-            lv_textarea_set_text(ta_news_url, "");
-            news_feeds_rebuild();
+                lv_textarea_set_text(ta_news_url, "");
+                news_feeds_rebuild();
+            }
         }
     }
     settings_save();
-    open_restart_confirm(NULL);   /* the fetch thread starts on restart */
+    news_wake_fetch();
+    if (lbl_news_status)
+        lv_label_set_text(lbl_news_status, tr("Instellingen opgeslagen - feeds worden ververst", "Settings saved - refreshing feeds"));
 }
 static void on_news_test(lv_event_t * e) {
     (void)e;
-    if (!ta_news_url || !lbl_news_status) return;
+    if (!lbl_news_status) return;
+    const char * raw = ta_news_url ? lv_textarea_get_text(ta_news_url) : NULL;
+    char target_url[300] = "";
+    if (raw && raw[0]) {
+        while (*raw == ' ' || *raw == '\t' || *raw == '\r' || *raw == '\n') raw++;
+        size_t len = strlen(raw);
+        while (len > 0 && (raw[len - 1] == ' ' || raw[len - 1] == '\t' || raw[len - 1] == '\r' || raw[len - 1] == '\n'))
+            len--;
+        if (len >= sizeof(target_url)) len = sizeof(target_url) - 1;
+        memcpy(target_url, raw, len);
+        target_url[len] = 0;
+    } else if (settings.news_rss_url[0]) {
+        /* If input box is empty, test the first active feed from configured list */
+        char tmp[sizeof settings.news_rss_url];
+        snprintf(tmp, sizeof tmp, "%s", settings.news_rss_url);
+        char * sv = NULL;
+        for (char * l = strtok_r(tmp, "\n", &sv); l; l = strtok_r(NULL, "\n", &sv)) {
+            while (*l == ' ' || *l == '\t' || *l == '\r') l++;
+            if (!*l || *l == '#') continue;
+            snprintf(target_url, sizeof target_url, "%s", l);
+            break;
+        }
+    }
+    if (!target_url[0]) {
+        lv_label_set_text(lbl_news_status, tr("Voer eerst een RSS-feed URL in", "Enter an RSS feed URL first"));
+        return;
+    }
     lv_label_set_text(lbl_news_status, tr("Testen...", "Testing..."));
     char msg[160];
-    news_test_feed(lv_textarea_get_text(ta_news_url), msg, sizeof msg);
+    news_test_feed(target_url, msg, sizeof msg);
     lv_label_set_text(lbl_news_status, msg);
 }
 static void on_news_open_click(lv_event_t * e) { (void)e; screen_home_open_news(); }
 static void on_news_enabled_change(lv_event_t * e) {
     settings.news_enabled = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    settings_save();
+    if (settings.news_enabled) news_wake_fetch();
 }
 static void on_news_feed_remove(lv_event_t * e);   /* fwd */
 static void on_news_feed_toggle(lv_event_t * e);   /* fwd */
@@ -1633,6 +1668,7 @@ static void on_news_feed_toggle(lv_event_t * e) {
     }
     snprintf(settings.news_rss_url, sizeof settings.news_rss_url, "%s", out);
     settings_save();
+    news_wake_fetch();
     news_feeds_rebuild();
 }
 static void on_news_feed_remove(lv_event_t * e) {
@@ -1647,18 +1683,36 @@ static void on_news_feed_remove(lv_event_t * e) {
     }
     snprintf(settings.news_rss_url, sizeof settings.news_rss_url, "%s", out);
     settings_save();
+    news_wake_fetch();
     news_feeds_rebuild();
 }
 static void on_news_add_click(lv_event_t * e) {
     (void)e;
-    const char * u = ta_news_url ? lv_textarea_get_text(ta_news_url) : NULL;
-    if (!u || !u[0]) return;
+    const char * raw = ta_news_url ? lv_textarea_get_text(ta_news_url) : NULL;
+    if (!raw || !raw[0]) return;
+    while (*raw == ' ' || *raw == '\t' || *raw == '\r' || *raw == '\n') raw++;
+    char u[300];
+    size_t len = strlen(raw);
+    while (len > 0 && (raw[len - 1] == ' ' || raw[len - 1] == '\t' || raw[len - 1] == '\r' || raw[len - 1] == '\n'))
+        len--;
+    if (len >= sizeof(u)) len = sizeof(u) - 1;
+    memcpy(u, raw, len);
+    u[len] = 0;
+    if (!u[0]) return;
+    if (strncmp(u, "http://", 7) != 0 && strncmp(u, "https://", 8) != 0) {
+        if (lbl_news_status)
+            lv_label_set_text(lbl_news_status, tr("Ongeldige URL (moet beginnen met http:// of https://)", "Invalid URL (must start with http:// or https://)"));
+        return;
+    }
     if (settings.news_rss_url[0])
         strncat(settings.news_rss_url, "\n", sizeof settings.news_rss_url - strlen(settings.news_rss_url) - 1);
     strncat(settings.news_rss_url, u, sizeof settings.news_rss_url - strlen(settings.news_rss_url) - 1);
     settings_save();
+    news_wake_fetch();
     if (ta_news_url) lv_textarea_set_text(ta_news_url, "");
     news_feeds_rebuild();
+    if (lbl_news_status)
+        lv_label_set_text(lbl_news_status, tr("Feed toegevoegd! Bezig met ophalen...", "Feed added! Fetching..."));
 }
 static void on_news_speed_change(lv_event_t * e) {
     int v = lv_slider_get_value(lv_event_get_target(e));

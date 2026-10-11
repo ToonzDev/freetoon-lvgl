@@ -48,27 +48,40 @@ static char            g_feeds[NEWS_MAX_FEEDS][64];  /* feed display names */
 static int             g_feed_n = 0;
 static pthread_mutex_t g_mtx = PTHREAD_MUTEX_INITIALIZER;
 
-static int url_ok(const char * u) {
-    if (!u || !*u) return 0;
-    if (strncmp(u, "http://", 7) && strncmp(u, "https://", 8)) return 0;
-    for (const char * p = u; *p; p++)
+static int url_ok(const char * raw) {
+    if (!raw) return 0;
+    while (*raw == ' ' || *raw == '\t' || *raw == '\r' || *raw == '\n') raw++;
+    if (!*raw) return 0;
+    if (strncmp(raw, "http://", 7) != 0 && strncmp(raw, "https://", 8) != 0) return 0;
+    const char * end = raw + strlen(raw);
+    while (end > raw && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r' || end[-1] == '\n')) end--;
+    for (const char * p = raw; p < end; p++) {
         if (*p == '\'' || *p == '`' || *p == '"' || (unsigned char)*p < 0x20 || *p == ' ')
             return 0;
+    }
     return 1;
 }
 
 /* UTF-8 C3-xx (Latin-1 supplement) trail byte → base ASCII letter, or 0.
    So "Oekraïne" → "Oekraine", "café" → "cafe" instead of "??" boxes. */
 static char latin1_to_ascii(unsigned char n) {
-    if (n >= 0xA0 && n <= 0xA5) return 'a';  if (n == 0xA6) return 0;
+    if (n >= 0xA0 && n <= 0xA5) return 'a';
+    if (n == 0xA6) return 0;
     if (n == 0xA7) return 'c';
-    if (n >= 0xA8 && n <= 0xAB) return 'e';  if (n >= 0xAC && n <= 0xAF) return 'i';
-    if (n == 0xB0) return 'd';  if (n == 0xB1) return 'n';
-    if (n >= 0xB2 && n <= 0xB6) return 'o';  if (n == 0xB8) return 'o';
-    if (n >= 0xB9 && n <= 0xBC) return 'u';  if (n == 0xBD || n == 0xBF) return 'y';
-    if (n >= 0x80 && n <= 0x85) return 'A';  if (n == 0x87) return 'C';
-    if (n >= 0x88 && n <= 0x8B) return 'E';  if (n >= 0x8C && n <= 0x8F) return 'I';
-    if (n == 0x91) return 'N';  if (n >= 0x92 && n <= 0x96) return 'O';
+    if (n >= 0xA8 && n <= 0xAB) return 'e';
+    if (n >= 0xAC && n <= 0xAF) return 'i';
+    if (n == 0xB0) return 'd';
+    if (n == 0xB1) return 'n';
+    if (n >= 0xB2 && n <= 0xB6) return 'o';
+    if (n == 0xB8) return 'o';
+    if (n >= 0xB9 && n <= 0xBC) return 'u';
+    if (n == 0xBD || n == 0xBF) return 'y';
+    if (n >= 0x80 && n <= 0x85) return 'A';
+    if (n == 0x87) return 'C';
+    if (n >= 0x88 && n <= 0x8B) return 'E';
+    if (n >= 0x8C && n <= 0x8F) return 'I';
+    if (n == 0x91) return 'N';
+    if (n >= 0x92 && n <= 0x96) return 'O';
     if (n >= 0x99 && n <= 0x9C) return 'U';
     return 0;
 }
@@ -215,6 +228,9 @@ static int parse_feed(const char * xml, size_t len, int start, const char * feed
     return n;
 }
 
+static volatile int g_wake_fetch = 0;
+static pthread_t    g_fetch_thread = 0;
+
 static void * fetch_thread(void * arg) {
     (void)arg;
     static char buf[131072];     /* RSS feeds fit comfortably in 128 KB */
@@ -252,7 +268,7 @@ static void * fetch_thread(void * arg) {
                 if (!url_ok(u)) continue;
                 char cmd[600];
                 snprintf(cmd, sizeof cmd,
-                    "curl -s -L -m 20 -A 'freetoon-news/1.0' '%s' 2>/dev/null", u);
+                    "curl -k -s -L -m 20 -A 'Mozilla/5.0 (freetoon-news)' '%s' 2>/dev/null", u);
                 FILE * f = popen(cmd, "r");
                 if (!f) continue;
                 size_t got = fread(buf, 1, sizeof buf - 1, f);
@@ -268,31 +284,47 @@ static void * fetch_thread(void * arg) {
             }
             (void)did;
         }
-        sleep(900);   /* refresh every 15 min */
+        for (int s = 0; s < 900 && !g_wake_fetch; s += 2) {
+            sleep(2);
+        }
+        g_wake_fetch = 0;
     }
     return NULL;
 }
 
 int news_start(void) {
-    if (!settings.news_enabled) return 0;
-    pthread_t t;
-    if (pthread_create(&t, NULL, fetch_thread, NULL) != 0) return -1;
-    pthread_detach(t);
+    if (g_fetch_thread) return 0;
+    if (pthread_create(&g_fetch_thread, NULL, fetch_thread, NULL) != 0) return -1;
+    pthread_detach(g_fetch_thread);
     return 0;
 }
 
-int news_test_feed(const char * url, char * msg, size_t msgsz) {
+void news_wake_fetch(void) {
+    g_wake_fetch = 1;
+    if (!g_fetch_thread) news_start();
+}
+
+int news_test_feed(const char * raw_url, char * msg, size_t msgsz) {
+    if (!raw_url) { snprintf(msg, msgsz, "Geen URL opgegeven"); return -1; }
+    while (*raw_url == ' ' || *raw_url == '\t' || *raw_url == '\r' || *raw_url == '\n') raw_url++;
+    char url[300];
+    size_t len = strlen(raw_url);
+    while (len > 0 && (raw_url[len - 1] == ' ' || raw_url[len - 1] == '\t' || raw_url[len - 1] == '\r' || raw_url[len - 1] == '\n'))
+        len--;
+    if (len >= sizeof(url)) len = sizeof(url) - 1;
+    memcpy(url, raw_url, len);
+    url[len] = 0;
     if (!url_ok(url)) { snprintf(msg, msgsz, "Ongeldige URL (http/https, geen spaties)"); return -1; }
-    char cmd[400];
+    char cmd[600];
     snprintf(cmd, sizeof cmd,
-        "curl -s -L -m 12 -A 'freetoon-news/1.0' '%s' 2>/dev/null", url);
+        "curl -k -s -L -m 15 -A 'Mozilla/5.0 (freetoon-news)' '%s' 2>/dev/null", url);
     FILE * f = popen(cmd, "r");
     if (!f) { snprintf(msg, msgsz, "Kon curl niet starten"); return -1; }
     static char buf[131072];
     size_t got = fread(buf, 1, sizeof buf - 1, f);
     pclose(f);
     buf[got] = 0;
-    if (got < 32) { snprintf(msg, msgsz, "Geen data ontvangen"); return -1; }
+    if (got < 32) { snprintf(msg, msgsz, "Geen data ontvangen (controleer verbinding)"); return -1; }
 
     /* Count items + grab the first title. */
     int n = 0;

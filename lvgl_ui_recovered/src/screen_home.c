@@ -2071,6 +2071,13 @@ static void news_modal_close(lv_event_t * e) {
 }
 /* Show the i-th article's title + summary in the reading pane. */
 static void news_show_body(int i) {
+    if (news_count() == 0) {
+        if (news_body_title) lv_label_set_text(news_body_title, tr("Geen artikelen geladen", "No articles loaded"));
+        if (news_body_lbl)   lv_label_set_text(news_body_lbl,
+            tr("Er zijn nog geen nieuwsberichten opgehaald.\n\nControleer of de Toon verbinding heeft met internet en of de RSS-feed URL klopt in Instellingen -> Nieuwslezer.",
+               "No news articles loaded yet.\n\nCheck if Toon is connected to the internet and verify the RSS feed URL in Settings -> Newsreader."));
+        return;
+    }
     char title[NEWS_TITLE_MAX] = "", body[NEWS_BODY_MAX] = "";
     news_item(i, title, sizeof title, NULL, 0);
     news_body(i, body, sizeof body);
@@ -2121,6 +2128,12 @@ static void news_list_rebuild(void) {
     lv_obj_clean(news_list);
     int nf = news_feed_count();
     int n  = news_count();
+    if (n == 0) {
+        lv_obj_t * empty = lv_list_add_text(news_list, tr("Geen artikelen geladen", "No articles loaded"));
+        lv_obj_set_style_text_font(empty, SF(16), 0);
+        lv_obj_set_style_text_color(empty, lv_color_hex(0x8899aa), 0);
+        return;
+    }
     for (int f = 0; f < nf; f++) {
         char fname[64]; news_feed_name(f, fname, sizeof fname);
         int cnt = 0;
@@ -2145,7 +2158,8 @@ static void news_list_rebuild(void) {
 
 static void on_news_tap(lv_event_t * e) {
     (void)e;
-    if (news_modal || news_count() == 0) return;
+    if (news_modal) return;
+    news_wake_fetch();
     news_modal = lv_obj_create(lv_scr_act());
     lv_obj_remove_style_all(news_modal);
     lv_obj_set_size(news_modal, LV_HOR_RES, LV_VER_RES);
