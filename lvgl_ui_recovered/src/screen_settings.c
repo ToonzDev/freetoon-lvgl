@@ -324,6 +324,7 @@ static void modal_timer_cb(lv_timer_t * t) { (void)t; if (modal_tick_fn) modal_t
 
 static void modal_close(lv_event_t * e) {
     (void)e;
+    kb_hide();
     if (confirm_box) { lv_obj_del_async(confirm_box); confirm_box = NULL; }
     if (modal_timer) { lv_timer_del(modal_timer); modal_timer = NULL; }
     modal_tick_fn = NULL;
@@ -1604,7 +1605,10 @@ static void on_news_test(lv_event_t * e) {
     news_test_feed(target_url, msg, sizeof msg);
     lv_label_set_text(lbl_news_status, msg);
 }
-static void on_news_open_click(lv_event_t * e) { (void)e; screen_home_open_news(); }
+static void on_news_open_click(lv_event_t * e) {
+    modal_close(e);
+    screen_home_open_news();
+}
 static void on_news_enabled_change(lv_event_t * e) {
     settings.news_enabled = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
     settings_save();

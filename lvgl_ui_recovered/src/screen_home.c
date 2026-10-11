@@ -2063,11 +2063,15 @@ static void on_home_gesture(lv_event_t * e) {
     }
 }
 
-/* ---- news ticker tap → headline list + per-article QR ---- */
 static void news_modal_close(lv_event_t * e) {
-    (void)e;
-    if (news_modal) { lv_obj_del(news_modal); news_modal = NULL;
-                      news_body_lbl = NULL; news_body_title = NULL; news_list = NULL; }
+    if (e) lv_event_stop_bubbling(e);
+    if (news_modal) {
+        lv_obj_del_async(news_modal);
+        news_modal = NULL;
+        news_body_lbl = NULL;
+        news_body_title = NULL;
+        news_list = NULL;
+    }
 }
 /* Show the i-th article's title + summary in the reading pane. */
 static void news_show_body(int i) {
@@ -2160,11 +2164,13 @@ static void on_news_tap(lv_event_t * e) {
     (void)e;
     if (news_modal) return;
     news_wake_fetch();
-    news_modal = lv_obj_create(lv_scr_act());
+    news_modal = lv_obj_create(lv_layer_top());
     lv_obj_remove_style_all(news_modal);
     lv_obj_set_size(news_modal, LV_HOR_RES, LV_VER_RES);
+    lv_obj_set_pos(news_modal, 0, 0);
     lv_obj_set_style_bg_color(news_modal, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_opa(news_modal, LV_OPA_70, 0);
+    lv_obj_clear_flag(news_modal, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(news_modal, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(news_modal, news_modal_close, LV_EVENT_CLICKED, NULL);
 
@@ -2219,6 +2225,7 @@ static void on_news_tap(lv_event_t * e) {
     lv_obj_align(x, LV_ALIGN_BOTTOM_RIGHT, SX(-16), SY(-12));
     lv_obj_add_event_cb(x, news_modal_close, LV_EVENT_CLICKED, NULL);
     lv_obj_t * xl = lv_label_create(x); lv_label_set_text(xl, tr("Sluiten", "Close")); lv_obj_center(xl);
+    lv_obj_move_foreground(news_modal);
 }
 
 /* Open the news reader from elsewhere (e.g. Settings → News) so it's reachable
