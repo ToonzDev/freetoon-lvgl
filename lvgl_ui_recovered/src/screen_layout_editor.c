@@ -69,7 +69,7 @@ static lv_obj_t * name_ta;                   /* its text area */
 /* tile types offerable in the insert palette (LT_SLOT is page-1 only). */
 static const int PALETTE[] = {
     LT_THERMOSTAT, LT_FORECAST, LT_NEWS_TICKER, LT_NEWS_SUMMARY, LT_CALENDAR,
-    LT_ENERGY, LT_WATER, LT_VENT, LT_FAMILY, LT_WASTE, LT_LIGHTS,
+    LT_ENERGY, LT_WATER, LT_VENT, LT_FAMILY, LT_WASTE, LT_LIGHTS, LT_SONOS,
 };
 #define N_PALETTE ((int)(sizeof PALETTE / sizeof PALETTE[0]))
 
@@ -78,6 +78,7 @@ static const uint32_t TYPE_COL[LT_COUNT] = {
     [LT_NEWS_SUMMARY]=0x6666aa, [LT_CALENDAR]=0x4477cc, [LT_ENERGY]=0xaa77ff,
     [LT_WATER]=0x44aaff, [LT_VENT]=0x66bbdd, [LT_FAMILY]=0xff8866,
     [LT_WASTE]=0x88dd66, [LT_LIGHTS]=0xddaa44, [LT_SLOT]=0x778899,
+    [LT_SONOS]=0x2077a0,
 };
 
 static void place_rect(int i);
@@ -433,6 +434,27 @@ static void on_resize(lv_event_t * e) {
         edit = s;
         for (int k = 0; k < edit.count; k++) if (rects[k]) place_rect(k);
         select_tile(sel);   /* keep the selection visible on the resized tile */
+    } else {
+        /* Fallback: if growing right/down failed to fit, try extending left/up if there is room */
+        int alt_ok = 0;
+        if (d == 1 && t->col > 0) {
+            s = edit;
+            s.tiles[sel].col = t->col - 1; s.tiles[sel].w = t->w + 1;
+            s.tiles[sel].row = t->row;     s.tiles[sel].h = t->h;
+            if (layout_reflow_push(&s, sel)) alt_ok = 1;
+        } else if (d == 3 && t->row > 0) {
+            s = edit;
+            s.tiles[sel].row = t->row - 1; s.tiles[sel].h = t->h + 1;
+            s.tiles[sel].col = t->col;     s.tiles[sel].w = t->w;
+            if (layout_reflow_push(&s, sel)) alt_ok = 1;
+        }
+        if (alt_ok) {
+            edit = s;
+            for (int k = 0; k < edit.count; k++) if (rects[k]) place_rect(k);
+            select_tile(sel);
+        } else {
+            lv_label_set_text(sel_lbl, tr("Kan niet verder - geen ruimte om te vergroten", "Can't go further - no room to enlarge"));
+        }
     }
     update_sel_label();
 }

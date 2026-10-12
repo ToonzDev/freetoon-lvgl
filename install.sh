@@ -66,8 +66,8 @@ find_cand() {
 
 resolve_artefacts() {
     if [ "$IS_TOON1" = 1 ]; then
-        TOONUI_BIN="$(pick "${TOONUI_BIN:-}" "$DL_DIR/toonui" "$(find_cand toonui-toon1 "$HERE/toonui-toon1" "$HERE/lvgl_ui_recovered/build1/toonui")" "$HERE/toonui" "/mnt/data/toonui")"
-        WASTEFETCH_BIN="$(pick "${WASTEFETCH_BIN:-}" "$DL_DIR/wastefetch" "$(find_cand wastefetch-toon1 "$HERE/wastefetch-toon1" "$HERE/lvgl_ui_recovered/build1/wastefetch")" "$HERE/wastefetch" "/mnt/data/wastefetch")"
+        TOONUI_BIN="$(pick "${TOONUI_BIN:-}" "$DL_DIR/toonui" "$(find_cand toonui-toon1 "$HERE/toonui-toon1" "$HERE/lvgl_ui_recovered/build-toon1/toonui-toon1" "$HERE/lvgl_ui_recovered/build1/toonui")" "$HERE/toonui-toon1" "/mnt/data/toonui")"
+        WASTEFETCH_BIN="$(pick "${WASTEFETCH_BIN:-}" "$DL_DIR/wastefetch" "$(find_cand wastefetch-toon1 "$HERE/wastefetch-toon1" "$HERE/lvgl_ui_recovered/build-toon1/wastefetch" "$HERE/lvgl_ui_recovered/build1/wastefetch")" "$HERE/wastefetch-toon1" "/mnt/data/wastefetch")"
         QUBY_BRIDGE_BIN="$(pick "${QUBY_BRIDGE_BIN:-}" "$DL_DIR/quby_bridge" "$(find_cand quby_bridge-toon1 "$HERE/quby_bridge-toon1")" "$HERE/quby_bridge" "$HERE/quby_bridge/quby_bridge" "/mnt/data/quby_bridge")"
         P1_BRIDGE_BIN="$(pick "${P1_BRIDGE_BIN:-}" "$DL_DIR/p1bridge" "$(find_cand p1bridge-toon1 "$HERE/p1bridge-toon1")" "$HERE/p1bridge" "$HERE/p1bridge/p1bridge" "/mnt/data/p1bridge")"
     else

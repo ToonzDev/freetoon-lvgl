@@ -45,7 +45,8 @@ static lv_obj_t * sel_lbl;
 static const uint32_t DB_COL[DB_COUNT] = {
     [DB_THERMO]=0x335577, [DB_WEATHER]=0x4488aa, [DB_FORECAST]=0x66bbdd,
     [DB_WASTE]=0x88dd66,  [DB_FAMILY]=0xff8866,  [DB_VENT]=0x6666aa,
-    [DB_ENERGY]=0xaa77ff, [DB_GAS]=0xffaa33,
+    [DB_ENERGY]=0xaa77ff, [DB_GAS]=0xffaa33,     [DB_CLOCK]=0x2b7bbb,
+    [DB_DATE]=0x486b88,
 };
 
 static void place_rect(int i);
@@ -138,9 +139,11 @@ static void on_resize(lv_event_t * e) {
     if (sel < 0) return;
     int d = (int)(intptr_t)lv_event_get_user_data(e);   /* 0:w- 1:w+ 2:h- 3:h+ */
     dim_block_t * b = &edit_dim[sel];
+    int min_h = DIM_MIN_H;
+    if (sel == DB_DATE || sel == DB_ENERGY || sel == DB_GAS) min_h = 1;
     if (d == 0 && b->w > DIM_MIN_W) b->w--;
     if (d == 1) { if (b->col + b->w < LAYOUT_COLS) b->w++; else if (b->col > 0) { b->col--; b->w++; } }
-    if (d == 2 && b->h > DIM_MIN_H) b->h--;
+    if (d == 2 && b->h > min_h) b->h--;
     if (d == 3) { if (b->row + b->h < LAYOUT_ROWS) b->h++; else if (b->row > 0) { b->row--; b->h++; } }
     place_rect(sel);
     update_sel_label();
@@ -241,13 +244,6 @@ void screen_dim_layout_editor_show(void) {
         lv_obj_set_style_bg_opa(ln, LV_OPA_50, 0);
         lv_obj_clear_flag(ln, LV_OBJ_FLAG_CLICKABLE);
     }
-
-    /* clock/date are fixed-centre and not editable — show a ghost hint. */
-    lv_obj_t * ghost = lv_label_create(modal);
-    lv_obj_set_style_text_color(ghost, lv_color_hex(0x33506e), 0);
-    lv_obj_set_style_text_font(ghost, SF(18), 0);
-    lv_label_set_text(ghost, tr("(klok blijft in het midden)", "(clock stays centered)"));
-    lv_obj_align(ghost, LV_ALIGN_CENTER, 0, -SY(40));
 
     for (int i = 0; i < DB_COUNT; i++) create_rect(i);
 

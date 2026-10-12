@@ -103,6 +103,12 @@ typedef struct {
     char domoticz_user[32];
     char domoticz_pass[48];
 
+    /* Sonos HTTP API integration (node-sonos-http-api) */
+    int  sonos_enabled;
+    char sonos_host[64];
+    int  sonos_port;
+    char sonos_zone[48];
+
     /* Z-Wave control — gates the Settings → Z-Wave management screen's
      * write actions (include/exclude/on-off/rename). Default 0. Flipping it
      * on also writes <supportControl>1</supportControl> into the stock

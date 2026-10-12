@@ -140,6 +140,7 @@ static const struct { const char * id; const char * label; } g_locals[] = {
     { "local:vent",   "Ventilatie" },
     { "local:family", "Familie" },
     { "local:air",    "Luchtkwaliteit" },
+    { "local:sonos",  "Sonos" },
 };
 int tile_slots_local_count(void) {
     return (int)(sizeof g_locals / sizeof g_locals[0]);
@@ -157,6 +158,7 @@ int tile_slots_local_enabled(int i) {
         case 2: return settings.enable_vent;
         case 3: return settings.enable_ha && (settings.life360_a_entity[0] || settings.life360_b_entity[0] || settings.life360_c_entity[0]);
         case 4: return 1;                                 /* air quality — core sensor */
+        case 5: return settings.sonos_enabled;
         default: return 0;
     }
 }

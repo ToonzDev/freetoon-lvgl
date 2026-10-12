@@ -69,6 +69,10 @@ settings_t settings = {
     .enable_vent         = 0,
     .enable_ha           = 0,
     .enable_domoticz     = 0,
+    .sonos_enabled       = 0,
+    .sonos_host          = "",
+    .sonos_port          = 5005,
+    .sonos_zone          = "",
     .tile_rotate_enabled = 0,
     .tile_rotate_seconds = 10,
     .news_enabled        = 0,
@@ -271,6 +275,10 @@ void settings_load(void) {
         else if (strcmp(k, "enable_domoticz") == 0) settings.enable_domoticz = iv;
         else if (strcmp(k, "domoticz_host")   == 0)
             snprintf(settings.domoticz_host, sizeof settings.domoticz_host, "%s", v);
+        else if (strcmp(k, "sonos_enabled")   == 0) settings.sonos_enabled = iv;
+        else if (strcmp(k, "sonos_host")      == 0) snprintf(settings.sonos_host, sizeof settings.sonos_host, "%s", v);
+        else if (strcmp(k, "sonos_port")      == 0) settings.sonos_port = iv;
+        else if (strcmp(k, "sonos_zone")      == 0) snprintf(settings.sonos_zone, sizeof settings.sonos_zone, "%s", v);
         else if (strcmp(k, "client_mode")     == 0) settings.client_mode = iv;
         else if (strcmp(k, "master_host")     == 0)
             snprintf(settings.master_host, sizeof settings.master_host, "%s", v);
@@ -448,6 +456,62 @@ autodetect:
         }
     }
 
+    if (settings.sonos_port <= 0) settings.sonos_port = 5005;
+    /* Auto-seed Sonos from legacy QML app settings if present and not yet configured */
+    if (!settings.sonos_host[0]) {
+        FILE * sf = fopen("/mnt/data/tsc/sonos.userSettings.json", "r");
+        if (sf) {
+            char sbuf[2048];
+            size_t n = fread(sbuf, 1, sizeof(sbuf) - 1, sf);
+            fclose(sf);
+            if (n > 0) {
+                sbuf[n] = 0;
+                char * p = strstr(sbuf, "\"path\"");
+                if (p) {
+                    p = strchr(p, ':');
+                    if (p) {
+                        p = strchr(p, '"');
+                        if (p) {
+                            p++;
+                            char * q = strchr(p, '"');
+                            if (q) {
+                                char path[64];
+                                size_t len = q - p;
+                                if (len >= sizeof(path)) len = sizeof(path) - 1;
+                                memcpy(path, p, len);
+                                path[len] = 0;
+                                char * col = strchr(path, ':');
+                                if (col) {
+                                    *col = 0;
+                                    settings.sonos_port = atoi(col + 1);
+                                }
+                                snprintf(settings.sonos_host, sizeof(settings.sonos_host), "%s", path);
+                            }
+                        }
+                    }
+                }
+                char * zn = strstr(sbuf, "\"sonosName\"");
+                if (zn) {
+                    zn = strchr(zn, ':');
+                    if (zn) {
+                        zn = strchr(zn, '"');
+                        if (zn) {
+                            zn++;
+                            char * q = strchr(zn, '"');
+                            if (q) {
+                                size_t len = q - zn;
+                                if (len >= sizeof(settings.sonos_zone)) len = sizeof(settings.sonos_zone) - 1;
+                                memcpy(settings.sonos_zone, zn, len);
+                                settings.sonos_zone[len] = 0;
+                            }
+                        }
+                    }
+                }
+                if (settings.sonos_host[0]) settings.sonos_enabled = 1;
+            }
+        }
+    }
+
     /* First boot: write the cfg now so users have an editable file even
      * before they ever open Settings. Especially important on Toon 1 —
      * if the resistive panel is mis-mapped, the GUI is unreachable and
@@ -491,6 +555,7 @@ static void sanitize_all_strings(void) {
         settings.doorbell_camera, settings.doorbell_stream_url, settings.vent_host,
         settings.efanlamp_host, settings.efanlamp_psk,
         settings.opnsense_host, settings.domoticz_user, settings.domoticz_pass,
+        settings.sonos_host, settings.sonos_zone,
         settings.tile_slot_energy, settings.tile_slot_family, settings.tile_slot_vent,
         settings.tile_slot_water, settings.life360_a_entity, settings.life360_a_name,
         settings.life360_b_entity, settings.life360_b_name,
@@ -624,6 +689,10 @@ void settings_save(void) {
     fprintf(f, "enable_ha=%d\n",       settings.enable_ha);
     fprintf(f, "enable_domoticz=%d\n", settings.enable_domoticz);
     fprintf(f, "domoticz_host=%s\n",   settings.domoticz_host);
+    fprintf(f, "sonos_enabled=%d\n",   settings.sonos_enabled);
+    fprintf(f, "sonos_host=%s\n",      settings.sonos_host);
+    fprintf(f, "sonos_port=%d\n",      settings.sonos_port);
+    fprintf(f, "sonos_zone=%s\n",      settings.sonos_zone);
     fprintf(f, "client_mode=%d\n",     settings.client_mode);
     fprintf(f, "master_host=%s\n",     settings.master_host);
     for (int i = 0; i < 12; i++)

@@ -72,6 +72,8 @@ lv_obj_t * screen_efanlamp_create(void);  /* BLE ceiling fan+light control */
 /* Open the Tile-slots picker modal — used both by the Settings → Tiles
  * tile and the long-press handler on the four right-column home tiles. */
 void screen_settings_open_tile_slots_modal(void);
+/* Open the Sonos configuration modal. */
+void screen_settings_open_sonos_modal(void);
 
 /* Called once at boot. Loads home as root. */
 void ui_init(void);

@@ -600,28 +600,28 @@ lv_obj_t * screen_dim_grid_create(void) {
     lv_obj_add_flag(scr_root, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(scr_root, on_wake_tap, LV_EVENT_CLICKED, NULL);
 
-    /* Clock — custom 96pt Montserrat (digits + ':' + space only,
-       generated via lv_font_conv into lv_font_montserrat_96_custom.c). */
-    lbl_clock = lv_label_create(scr_root);
+    /* Clock — custom 96pt Montserrat inside its customizable dim box (DB_CLOCK) */
+    lv_obj_t * bx_clock = dim_box(DB_CLOCK, NULL, NULL);
+    lbl_clock = lv_label_create(bx_clock);
     lv_obj_set_style_text_color(lbl_clock, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl_clock, &lv_font_montserrat_96_custom, 0);
     lv_label_set_text(lbl_clock, "-- --");
-    lv_obj_align(lbl_clock, LV_ALIGN_CENTER, 0, SY(-130));
+    lv_obj_align(lbl_clock, LV_ALIGN_CENTER, 0, 0);
 
-    lbl_clock_colon = lv_label_create(scr_root);
+    lbl_clock_colon = lv_label_create(bx_clock);
     lv_obj_set_style_text_color(lbl_clock_colon, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl_clock_colon, &lv_font_montserrat_96_custom, 0);
     lv_label_set_text(lbl_clock_colon, ":");
-    lv_obj_align(lbl_clock_colon, LV_ALIGN_CENTER, 0, SY(-130));
+    lv_obj_align(lbl_clock_colon, LV_ALIGN_CENTER, 0, 0);
     clock_colon_pulse(lbl_clock_colon);
 
-    /* All labels positioned against screen center with explicit Y offsets so
-       different content widths can't drift them out of alignment. */
-    lbl_date = lv_label_create(scr_root);
+    /* Date — inside its customizable dim box (DB_DATE) */
+    lv_obj_t * bx_date = dim_box(DB_DATE, NULL, NULL);
+    lbl_date = lv_label_create(bx_date);
     lv_obj_set_style_text_color(lbl_date, lv_color_hex(0xbbbbbb), 0);
     lv_obj_set_style_text_font(lbl_date, &lv_font_montserrat_22, 0);
     lv_label_set_text(lbl_date, "");
-    lv_obj_align(lbl_date, LV_ALIGN_CENTER, 0, SY(-50));
+    lv_obj_align(lbl_date, LV_ALIGN_CENTER, 0, 0);
 
     /* ===== peripheral blocks — each rendered INSIDE its grid cell so the
      * "Dim indeling" editor is true WYSIWYG (content lands where the cell is).

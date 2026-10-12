@@ -30,6 +30,7 @@
 #include "wastecollection.h"
 #include "update_check.h"
 #include "update_modal.h"
+#include "sonos.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -269,7 +270,15 @@ static const lv_btnmatrix_ctrl_t kb_num_ctrl[] = {
     1, 1, 1, 1, 1
 };
 
-static void kb_hide(void) { if (g_kb) lv_obj_add_flag(g_kb, LV_OBJ_FLAG_HIDDEN); }
+static lv_obj_t * s_last_scroll_parent = NULL;
+
+static void kb_hide(void) {
+    if (g_kb) lv_obj_add_flag(g_kb, LV_OBJ_FLAG_HIDDEN);
+    if (s_last_scroll_parent && lv_obj_is_valid(s_last_scroll_parent)) {
+        lv_obj_set_style_pad_bottom(s_last_scroll_parent, SUNI(40), 0);
+        s_last_scroll_parent = NULL;
+    }
+}
 
 static void kb_event(lv_event_t * e) {
     lv_event_code_t c = lv_event_get_code(e);
@@ -297,6 +306,24 @@ static void ta_kb_event(lv_event_t * e) {
                              ? LV_KEYBOARD_MODE_NUMBER : LV_KEYBOARD_MODE_TEXT_LOWER);
         lv_obj_clear_flag(g_kb, LV_OBJ_FLAG_HIDDEN);
         lv_obj_move_foreground(g_kb);
+
+        /* Scroll the textarea up so it is never obscured by the keyboard */
+        lv_obj_t * p = lv_obj_get_parent(ta);
+        while (p && !lv_obj_has_flag(p, LV_OBJ_FLAG_SCROLLABLE)) {
+            p = lv_obj_get_parent(p);
+        }
+        if (p) {
+            s_last_scroll_parent = p;
+            lv_obj_set_style_pad_bottom(p, SY(260), 0);
+            lv_obj_update_layout(p);
+            lv_area_t ta_area;
+            lv_obj_get_coords(ta, &ta_area);
+            lv_coord_t kb_top = DISP_VER - SY(240);
+            if (ta_area.y2 >= kb_top - SY(10)) {
+                lv_coord_t shift = ta_area.y2 - (kb_top - SY(25));
+                lv_obj_scroll_by_bounded(p, 0, -shift, LV_ANIM_ON);
+            }
+        }
     } else if (c == LV_EVENT_DEFOCUSED) {
         kb_hide();
     } else if (c == LV_EVENT_DELETE) {
@@ -2441,8 +2468,8 @@ static lv_obj_t * dd_tile_slot[TILE_SLOT_COUNT];
 /* Index 0 = "Built-in" (empty binding), index 1 = the calendar agenda
  * ("local:agenda"), then the marketplace integrations. */
 static void build_slot_options(char * out, size_t cap) {
-    size_t n = snprintf(out, cap, "%s\n%s", tr("Ingebouwd", "Built-in"),
-                        tr("Agenda", "Calendar"));
+    size_t n = snprintf(out, cap, "%s\n%s\n%s", tr("Ingebouwd", "Built-in"),
+                        tr("Agenda", "Calendar"), "Sonos");
     int total = tile_slots_integration_count();
     for (int i = 0; i < total && n + INTEG_NAME_MAX + 2 < cap; i++) {
         const integration_meta_t * m = tile_slots_integration_at(i);
@@ -2452,21 +2479,23 @@ static void build_slot_options(char * out, size_t cap) {
 }
 
 /* Resolve dropdown index → binding id for the given slot. 0 = Built-in (empty),
- * 1 = "local:agenda", 2.. = integrations. */
+ * 1 = "local:agenda", 2 = "local:sonos", 3.. = integrations. */
 static const char * slot_dropdown_to_id(int idx) {
     if (idx <= 0) return "";
     if (idx == 1) return "local:agenda";
-    const integration_meta_t * m = tile_slots_integration_at(idx - 2);
+    if (idx == 2) return "local:sonos";
+    const integration_meta_t * m = tile_slots_integration_at(idx - 3);
     return m ? m->id : "";
 }
 
 static int slot_dropdown_from_id(const char * id) {
     if (!id || !id[0]) return 0;
     if (strcmp(id, "local:agenda") == 0) return 1;
+    if (strcmp(id, "local:sonos") == 0) return 2;
     int total = tile_slots_integration_count();
     for (int i = 0; i < total; i++) {
         const integration_meta_t * m = tile_slots_integration_at(i);
-        if (strcmp(m->id, id) == 0) return i + 2;
+        if (strcmp(m->id, id) == 0) return i + 3;
     }
     return 0;
 }
@@ -3838,6 +3867,231 @@ static void open_mqtt_modal(lv_event_t * e) {
     modal_timer = lv_timer_create(modal_timer_cb, 500, NULL);
 }
 
+/* ==================== Sonos modal ==================== */
+static lv_obj_t * sw_sonos_en = NULL;
+static lv_obj_t * ta_sonos_host = NULL;
+static lv_obj_t * ta_sonos_port = NULL;
+static lv_obj_t * ta_sonos_zone = NULL;
+static lv_obj_t * dd_sonos_zone = NULL;
+static lv_obj_t * lbl_sonos_result = NULL;
+
+static char       g_sonos_probe_status[256] = "";
+static char       g_sonos_probe_zones[SONOS_MAX_ZONES][48];
+static int        g_sonos_probe_count = 0;
+static volatile int g_sonos_probe_done = 0;
+static pthread_mutex_t g_sonos_ui_mtx = PTHREAD_MUTEX_INITIALIZER;
+
+static void * sonos_probe_worker(void * arg) {
+    (void)arg;
+    char rooms[SONOS_MAX_ZONES][48];
+    int n = sonos_probe(rooms, SONOS_MAX_ZONES);
+    pthread_mutex_lock(&g_sonos_ui_mtx);
+    g_sonos_probe_count = n;
+    if (n > 0) {
+        for (int i = 0; i < n; i++) {
+            snprintf(g_sonos_probe_zones[i], sizeof g_sonos_probe_zones[i], "%s", rooms[i]);
+        }
+        snprintf(g_sonos_probe_status, sizeof g_sonos_probe_status,
+                 "Gevonden: %d kamer(s)", n);
+    } else if (n == 0) {
+        snprintf(g_sonos_probe_status, sizeof g_sonos_probe_status,
+                 "Geen kamers gevonden op dit adres/poort");
+    } else {
+        snprintf(g_sonos_probe_status, sizeof g_sonos_probe_status,
+                 "Verbinding mislukt met http://%s:%d/zones",
+                 settings.sonos_host, settings.sonos_port > 0 ? settings.sonos_port : 5005);
+    }
+    g_sonos_probe_done = 1;
+    pthread_mutex_unlock(&g_sonos_ui_mtx);
+    return NULL;
+}
+
+static void sonos_modal_tick(void) {
+    if (g_sonos_probe_done) {
+        g_sonos_probe_done = 0;
+        pthread_mutex_lock(&g_sonos_ui_mtx);
+        if (lbl_sonos_result) lv_label_set_text(lbl_sonos_result, g_sonos_probe_status);
+        if (g_sonos_probe_count > 0 && dd_sonos_zone) {
+            char opts[1024] = "";
+            for (int i = 0; i < g_sonos_probe_count; i++) {
+                if (opts[0]) strncat(opts, "\n", sizeof opts - strlen(opts) - 1);
+                strncat(opts, g_sonos_probe_zones[i], sizeof opts - strlen(opts) - 1);
+            }
+            lv_dropdown_set_options(dd_sonos_zone, opts);
+            if (ta_sonos_zone) {
+                const char * cur = lv_textarea_get_text(ta_sonos_zone);
+                if (!cur || !cur[0]) {
+                    lv_textarea_set_text(ta_sonos_zone, g_sonos_probe_zones[0]);
+                }
+            }
+        }
+        pthread_mutex_unlock(&g_sonos_ui_mtx);
+    }
+}
+
+static void on_sonos_enabled_change(lv_event_t * e) {
+    settings.sonos_enabled = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+}
+
+static void on_sonos_dd_change(lv_event_t * e) {
+    lv_obj_t * dd = lv_event_get_target(e);
+    char buf[48];
+    lv_dropdown_get_selected_str(dd, buf, sizeof buf);
+    if (ta_sonos_zone && buf[0]) lv_textarea_set_text(ta_sonos_zone, buf);
+}
+
+static void on_sonos_discover_click(lv_event_t * e) {
+    (void)e;
+    if (ta_sonos_host) {
+        snprintf(settings.sonos_host, sizeof settings.sonos_host, "%s", lv_textarea_get_text(ta_sonos_host));
+    }
+    if (ta_sonos_port) {
+        int p = atoi(lv_textarea_get_text(ta_sonos_port));
+        settings.sonos_port = (p > 0) ? p : 5005;
+    }
+    if (!settings.sonos_host[0]) {
+        if (lbl_sonos_result)
+            lv_label_set_text(lbl_sonos_result, tr("Voer eerst een host of IP in", "Enter host or IP first"));
+        return;
+    }
+    if (lbl_sonos_result)
+        lv_label_set_text(lbl_sonos_result, tr("Kamers zoeken...", "Searching for rooms..."));
+
+    pthread_t tid;
+    if (pthread_create(&tid, NULL, sonos_probe_worker, NULL) == 0) {
+        pthread_detach(tid);
+    }
+}
+
+static void on_sonos_apply_click(lv_event_t * e) {
+    (void)e;
+    if (sw_sonos_en)
+        settings.sonos_enabled = lv_obj_has_state(sw_sonos_en, LV_STATE_CHECKED) ? 1 : 0;
+    if (ta_sonos_host)
+        snprintf(settings.sonos_host, sizeof settings.sonos_host, "%s", lv_textarea_get_text(ta_sonos_host));
+    if (ta_sonos_port) {
+        int p = atoi(lv_textarea_get_text(ta_sonos_port));
+        settings.sonos_port = (p > 0) ? p : 5005;
+    }
+    if (ta_sonos_zone)
+        snprintf(settings.sonos_zone, sizeof settings.sonos_zone, "%s", lv_textarea_get_text(ta_sonos_zone));
+    settings_save();
+    sonos_start();
+    if (lbl_sonos_result)
+        lv_label_set_text(lbl_sonos_result, tr("Instellingen opgeslagen! Sonos actief.", "Settings saved! Sonos active."));
+}
+
+static void open_sonos_modal(lv_event_t * e) {
+    (void)e;
+    lv_obj_t * p = modal_open("Sonos", 620);
+    lv_obj_add_flag(p, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(p, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(p, LV_SCROLLBAR_MODE_AUTO);
+    int y = 70;
+
+    /* Inschakelen switch */
+    lv_obj_t * r_en = panel_row(p, y, tr("Sonos inschakelen", "Sonos enabled"), NULL);
+    sw_sonos_en = row_switch(r_en, settings.sonos_enabled, on_sonos_enabled_change);
+    y += 82;
+
+    /* Host */
+    lv_obj_t * lbl_h = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl_h, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lbl_h, SF(22), 0);
+    lv_label_set_text(lbl_h, tr("Sonos API Host:", "Sonos API Host:"));
+    lv_obj_align(lbl_h, LV_ALIGN_TOP_LEFT, SX(4), y);
+    ta_sonos_host = lv_textarea_create(p);
+    lv_obj_set_size(ta_sonos_host, SX(380), SY(44));
+    lv_obj_align(ta_sonos_host, LV_ALIGN_TOP_LEFT, SX(240), y - 4);
+    lv_textarea_set_one_line(ta_sonos_host, true);
+    lv_textarea_set_placeholder_text(ta_sonos_host, "192.168.2.26");
+    lv_textarea_set_text(ta_sonos_host, settings.sonos_host);
+
+    /* Port */
+    lv_obj_t * lbl_p = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl_p, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lbl_p, SF(22), 0);
+    lv_label_set_text(lbl_p, tr("Poort:", "Port:"));
+    lv_obj_align(lbl_p, LV_ALIGN_TOP_LEFT, SX(640), y);
+    ta_sonos_port = lv_textarea_create(p);
+    ta_make_numeric(ta_sonos_port);
+    lv_obj_set_size(ta_sonos_port, SX(100), SY(44));
+    lv_obj_align(ta_sonos_port, LV_ALIGN_TOP_LEFT, SX(720), y - 4);
+    lv_textarea_set_one_line(ta_sonos_port, true);
+    char portbuf[12];
+    snprintf(portbuf, sizeof(portbuf), "%d", settings.sonos_port > 0 ? settings.sonos_port : 5005);
+    lv_textarea_set_text(ta_sonos_port, portbuf);
+    y += 60;
+
+    /* Zone / Kamer text area */
+    lv_obj_t * lbl_z = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl_z, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lbl_z, SF(22), 0);
+    lv_label_set_text(lbl_z, tr("Kamer / Zone:", "Room / Zone:"));
+    lv_obj_align(lbl_z, LV_ALIGN_TOP_LEFT, SX(4), y);
+    ta_sonos_zone = lv_textarea_create(p);
+    lv_obj_set_size(ta_sonos_zone, SX(380), SY(44));
+    lv_obj_align(ta_sonos_zone, LV_ALIGN_TOP_LEFT, SX(240), y - 4);
+    lv_textarea_set_one_line(ta_sonos_zone, true);
+    lv_textarea_set_placeholder_text(ta_sonos_zone, "Keuken");
+    lv_textarea_set_text(ta_sonos_zone, settings.sonos_zone);
+    y += 60;
+
+    /* Discovered zones dropdown */
+    lv_obj_t * lbl_dd = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl_dd, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lbl_dd, SF(22), 0);
+    lv_label_set_text(lbl_dd, tr("Kies kamer:", "Select room:"));
+    lv_obj_align(lbl_dd, LV_ALIGN_TOP_LEFT, SX(4), y);
+    dd_sonos_zone = lv_dropdown_create(p);
+    lv_obj_set_size(dd_sonos_zone, SX(380), SY(44));
+    lv_obj_align(dd_sonos_zone, LV_ALIGN_TOP_LEFT, SX(240), y - 4);
+    lv_obj_set_style_text_font(dd_sonos_zone, SF(18), 0);
+    if (settings.sonos_zone[0]) {
+        lv_dropdown_set_options(dd_sonos_zone, settings.sonos_zone);
+    } else {
+        lv_dropdown_set_options(dd_sonos_zone, tr("(nog geen kamers)", "(no rooms yet)"));
+    }
+    lv_obj_add_event_cb(dd_sonos_zone, on_sonos_dd_change, LV_EVENT_VALUE_CHANGED, NULL);
+    y += 64;
+
+    /* Buttons: Discover & Apply */
+    lv_obj_t * b_disc = lv_btn_create(p);
+    lv_obj_set_size(b_disc, SX(240), SY(50));
+    lv_obj_align(b_disc, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_set_style_bg_color(b_disc, lv_color_hex(0x2a4060), 0);
+    lv_obj_add_event_cb(b_disc, on_sonos_discover_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * bdl = lv_label_create(b_disc);
+    lv_label_set_text(bdl, tr(LV_SYMBOL_REFRESH "  Kamers zoeken", LV_SYMBOL_REFRESH "  Discover rooms"));
+    lv_obj_center(bdl);
+
+    lv_obj_t * b_save = lv_btn_create(p);
+    lv_obj_set_size(b_save, SX(220), SY(50));
+    lv_obj_align(b_save, LV_ALIGN_TOP_LEFT, SX(270), y);
+    lv_obj_set_style_bg_color(b_save, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_add_event_cb(b_save, on_sonos_apply_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * bsl = lv_label_create(b_save);
+    lv_label_set_text(bsl, tr(LV_SYMBOL_OK "  Opslaan", LV_SYMBOL_OK "  Save"));
+    lv_obj_center(bsl);
+    y += 64;
+
+    /* Status feedback line */
+    lbl_sonos_result = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl_sonos_result, lv_color_hex(0xa8c4dc), 0);
+    lv_obj_set_style_text_font(lbl_sonos_result, SF(18), 0);
+    lv_obj_set_width(lbl_sonos_result, SX(770));
+    lv_label_set_long_mode(lbl_sonos_result, LV_LABEL_LONG_WRAP);
+    lv_obj_align(lbl_sonos_result, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_label_set_text(lbl_sonos_result, tr("Klaar. Vul host in en kies 'Kamers zoeken'.", "Ready. Fill host and tap 'Discover rooms'."));
+
+    modal_tick_fn = sonos_modal_tick;
+    modal_timer = lv_timer_create(modal_timer_cb, 300, NULL);
+}
+
+void screen_settings_open_sonos_modal(void) {
+    open_sonos_modal(NULL);
+}
+
 lv_obj_t * screen_settings_create(void) {
     if (scr_root) return scr_root;
 
@@ -3922,6 +4176,8 @@ lv_obj_t * screen_settings_create(void) {
               tr("dimmen, wachttijd, helderheid", "dim, timeout, brightness"), open_display_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_EYE_CLOSE, tr("Schoonmaken", "Clean"),
               tr("30 s schermvergrendeling", "30 s screen lock"), open_clean_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_AUDIO, "Sonos",
+              tr("host, poort & kamers", "host, port & rooms"), open_sonos_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_HOME, tr("Tegels", "Tiles"),
               tr("starttegels toewijzen", "assign home tiles"), open_tile_slots_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_REFRESH, tr("UI herstarten", "Restart UI"),

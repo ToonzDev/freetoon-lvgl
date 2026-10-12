@@ -145,6 +145,29 @@ void fbdev_init(void)
     }
 #endif /* USE_BSD_FBDEV */
 
+#if defined(TOON1)
+    /* Toon 1 (i.MX27): configure framebuffer parameters to 800x480, 16bpp (RGB565), zero offsets */
+    vinfo.xres = 800;
+    vinfo.yres = 480;
+    vinfo.xres_virtual = 800;
+    vinfo.yres_virtual = 480;
+    vinfo.xoffset = 0;
+    vinfo.yoffset = 0;
+    vinfo.bits_per_pixel = 16;
+    vinfo.activate = FB_ACTIVATE_NOW;
+    if(ioctl(fbfd, FBIOPUT_VSCREENINFO, &vinfo) == -1) {
+        perror("ioctl(FBIOPUT_VSCREENINFO) 16bpp");
+    }
+    ioctl(fbfd, FBIOGET_FSCREENINFO, &finfo);
+    ioctl(fbfd, FBIOGET_VSCREENINFO, &vinfo);
+#else
+    if (vinfo.xoffset != 0 || vinfo.yoffset != 0) {
+        vinfo.xoffset = 0;
+        vinfo.yoffset = 0;
+        ioctl(fbfd, FBIOPAN_DISPLAY, &vinfo);
+    }
+#endif
+
     LV_LOG_INFO("%dx%d, %dbpp", vinfo.xres, vinfo.yres, vinfo.bits_per_pixel);
 
     // Figure out the size of the screen in bytes
@@ -165,6 +188,15 @@ void fbdev_init(void)
 
 void fbdev_exit(void)
 {
+#if defined(TOON1)
+    if (fbfd != -1) {
+        vinfo.bits_per_pixel = 32;
+        vinfo.xoffset = 0;
+        vinfo.yoffset = 0;
+        vinfo.activate = FB_ACTIVATE_NOW;
+        ioctl(fbfd, FBIOPUT_VSCREENINFO, &vinfo);
+    }
+#endif
     close(fbfd);
 }
 
@@ -245,8 +277,21 @@ void fbdev_flush(lv_disp_drv_t * drv, const lv_area_t * area, lv_color_t * color
         int32_t y;
         for(y = act_y1; y <= act_y2; y++) {
             location = (act_x1 + vinfo.xoffset) + (y + vinfo.yoffset) * finfo.line_length / 4;
+#if LV_COLOR_DEPTH == 16
+            for(int32_t x = 0; x < w; x++) {
+                uint16_t c = color_p[x].full;
+                uint32_t r = (c >> 11) & 0x1F;
+                uint32_t g = (c >> 5) & 0x3F;
+                uint32_t b = c & 0x1F;
+                fbp32[location + x] = 0xFF000000 |
+                    (((r * 527 + 23) >> 6) << 16) |
+                    (((g * 259 + 33) >> 6) << 8) |
+                    ((b * 527 + 23) >> 6);
+            }
+#else
             fbflush_row((uint8_t *)&fbp32[location], (const uint8_t *)color_p,
                         act_x1, act_x2 - act_x1 + 1, y, 4);
+#endif
             color_p += w;
         }
     }

@@ -167,6 +167,9 @@ int main(int argc, char** argv) {
         extern int domoticz_start(void);
         if (domoticz_start() != 0)
             fprintf(stderr, "[main] domoticz_start failed\n");
+        extern int sonos_start(void);
+        if (sonos_start() != 0)
+            fprintf(stderr, "[main] sonos_start failed\n");
     }
     /* Cloud and internet integrations — enabled in both standalone and slave mode */
     if (weather_start() != 0)

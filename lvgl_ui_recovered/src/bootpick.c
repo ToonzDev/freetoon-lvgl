@@ -12,7 +12,7 @@
 #include "i18n.h"
 #include "settings.h"
 #include "lvgl/lvgl.h"
-#include "lv_drivers/display/fbdev.h"
+#include "fbdev.h"
 #include "lv_drivers/indev/evdev.h"
 
 #include <stdio.h>
@@ -324,6 +324,7 @@ int bootpick_run(void) {
             usleep(5000);
             lv_tick_inc(5);
         }
+        fbdev_exit();
         return pick_to_rc(bp_default_choice);
     }
 
@@ -376,5 +377,6 @@ int bootpick_run(void) {
      * default). */
     int rc = pick_to_rc(bp_final_choice);
     write_choice_file(rc);
+    fbdev_exit();
     return rc;
 }

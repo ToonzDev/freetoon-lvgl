@@ -34,6 +34,7 @@ typedef enum {
     LT_WASTE,           /* waste pickup */
     LT_LIGHTS,          /* lights shortcut */
     LT_SLOT,            /* assignable marketplace-integration slot (uses .slot) */
+    LT_SONOS,           /* Sonos controller tile */
     LT_COUNT
 } layout_tile_type_t;
 
@@ -54,12 +55,12 @@ typedef struct {
 extern layout_t g_layout;
 
 /* ---- DIM-screen block layout -------------------------------------------------
- * The dim/ambient screen has a FIXED set of peripheral blocks (clock + date stay
- * centered and are NOT part of this). Unlike the home grid (a dynamic tile list
- * with reflow), each dim block is just a cell on the same LAYOUT_COLS×LAYOUT_ROWS
- * grid, indexed by id — no insert/delete/reflow. Persisted to
- * toonui_dim_layout.cfg ("dim=<id>,<col>,<row>,<w>,<h>,<visible>"); a missing file
- * seeds defaults that reproduce the built-in dim arrangement. */
+ * The dim/ambient screen has a FIXED set of blocks (clock + date are movable boxes
+ * on the same grid). Unlike the home grid (a dynamic tile list with reflow), each
+ * dim block is just a cell on the same LAYOUT_COLS×LAYOUT_ROWS grid, indexed by id
+ * — no insert/delete/reflow. Persisted to toonui_dim_layout.cfg
+ * ("dim=<id>,<col>,<row>,<w>,<h>,<visible>"); a missing file seeds defaults that
+ * reproduce the built-in dim arrangement. */
 typedef enum {
     DB_THERMO = 0,   /* indoor temp + setpoint + program + CH/air metrics */
     DB_WEATHER,      /* current weather: icon + outside temp + "Buiten" + moon */
@@ -69,6 +70,8 @@ typedef enum {
     DB_VENT,         /* Itho ventilation fan + mode/% */
     DB_ENERGY,       /* electricity power (W) value + mini-bar */
     DB_GAS,          /* gas (m³/h) value + mini-bar */
+    DB_CLOCK,        /* Time (clock) */
+    DB_DATE,         /* Date */
     DB_COUNT
 } dim_block_id_t;
 

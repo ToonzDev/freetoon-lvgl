@@ -71,11 +71,9 @@ static const layout_tile_t DEFAULTS[] = {
     { LT_ENERGY,        0,   9,  0,  3, 2, 1, -1 },
     { LT_FAMILY,        0,   9,  2,  3, 2, 1, -1 },
     { LT_WATER,         0,   9,  4,  3, 2, 1, -1 },
-    { LT_THERMOSTAT,    0,   0,  0,  7, 6, 1, -1 },
-    /* Ticker overlays the thermostat's bottom row (row 5); the forecast is a
-     * 2-row bar across the bottom (rows 6-7). The forecast needs 2 rows so its
-     * (un-zoomable) weather icons have vertical room next to time/temp/wind —
-     * a 1-row tile collides on the short Toon 1 panel. */
+    { LT_THERMOSTAT,    0,   0,  0,  7, 5, 1, -1 },
+    /* Thermostat is 5 rows tall (rows 0-4); ticker is row 5; forecast is a
+     * 2-row bar across the bottom (rows 6-7). Exactly 8 rows with no overlap. */
     { LT_NEWS_TICKER,   0,   0,  5,  7, 1, 1, -1 },
     { LT_FORECAST,      0,   0,  6, 12, 2, 1, -1 },
     /* news-summary + calendar are NOT preplaced (the grid is full) — add them
@@ -120,6 +118,11 @@ void layout_load_named(const char * name) {
             t->h = 2;
             if (t->row + t->h > LAYOUT_ROWS) t->row = LAYOUT_ROWS - t->h;
             if (t->row < 0) t->row = 0;
+        }
+        /* Also heal older layouts where thermostat was 6 rows tall and overlapped
+         * the ticker at row 5, which breaks all reflow/drag repositioning. */
+        if (t->type == LT_THERMOSTAT && t->page == 0 && t->row == 0 && t->h > 5) {
+            t->h = 5;
         }
     }
 }
@@ -350,6 +353,7 @@ void layout_type_min(int type, int * min_w, int * min_h) {
         case LT_WASTE:        w = 2; h = 3; break;
         case LT_LIGHTS:       w = 2; h = 2; break;
         case LT_SLOT:         w = 3; h = 3; break;
+        case LT_SONOS:        w = 3; h = 2; break;
         default:              w = 0; h = 0; break;
     }
     if (min_w) *min_w = w;
@@ -370,6 +374,7 @@ const char * layout_type_name(int type) {
         case LT_WASTE:       return "Afval";
         case LT_LIGHTS:      return "Verlichting";
         case LT_SLOT:        return "Integratie";
+        case LT_SONOS:       return "Sonos";
         default:             return "?";
     }
 }
@@ -383,12 +388,13 @@ dim_block_t g_dim_blocks[DB_COUNT];
 
 /* col,row,w,h,visible — indexed by dim_block_id_t (order must match the enum):
  * THERMO (centre, under the clock), WEATHER (top-right), FORECAST (bottom strip),
- * WASTE (top-left), FAMILY (right, under weather), VENT (left of centre). */
+ * WASTE (top-left), FAMILY (right, under weather), VENT (left of centre),
+ * CLOCK (centre-top), DATE (under clock). */
 static const dim_block_t DIM_DEFAULTS[DB_COUNT] = {
     /* col,row,w,h,vis. Top zone (rows 0-2): waste left, weather right, clock
-     * centered (not gridded). Middle band (rows 4-5): vent | thermo | family.
+     * & date centered. Middle band (rows 4-5): vent | thermo | family.
      * Bottom (rows 6-7): forecast strip. Non-overlapping so the editor + render
-     * agree. THERMO is wide (w7) so its metrics row fits. */
+     * agree. THERMO is wide (w6) so its metrics row fits. */
     [DB_WASTE]    = { 0, 0, 3, 3, 1 },
     [DB_WEATHER]  = { 9, 0, 3, 3, 1 },
     [DB_VENT]     = { 0, 4, 2, 2, 1 },
@@ -398,6 +404,8 @@ static const dim_block_t DIM_DEFAULTS[DB_COUNT] = {
     [DB_FORECAST] = { 0, 6, 9, 2, 1 },   /* narrowed to make room for energy/gas */
     [DB_ENERGY]   = { 9, 6, 3, 1, 1 },   /* bottom-right, stacked over gas */
     [DB_GAS]      = { 9, 7, 3, 1, 1 },
+    [DB_CLOCK]    = { 3, 0, 6, 2, 1 },   /* large time clock */
+    [DB_DATE]     = { 3, 2, 6, 1, 1 },   /* date line below clock */
 };
 
 void dim_layout_reset_default(void) {
@@ -458,6 +466,8 @@ const char * dim_block_name(int id) {
         case DB_VENT:     return "Ventilatie";
         case DB_ENERGY:   return "Stroom";
         case DB_GAS:      return "Gas";
+        case DB_CLOCK:    return "Klok";
+        case DB_DATE:     return "Datum";
     }
     return "?";
 }
