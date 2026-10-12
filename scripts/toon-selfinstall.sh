@@ -8,4 +8,5 @@ if [ -f "$HERE/../install.sh" ]; then
 fi
 
 # Fallback for curl ... | sh execution: download install.sh and run from ToonzDev
-curl -fsSL https://raw.githubusercontent.com/ToonzDev/freetoon-lvgl/main/install.sh | sh -s -- "$@"
+ARGS="${*:-"--update"}"
+curl -fsSL -4 https://raw.githubusercontent.com/ToonzDev/freetoon-lvgl/main/install.sh | env FORCE_DOWNLOAD=1 sh -s -- $ARGS

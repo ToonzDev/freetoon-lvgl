@@ -33,7 +33,7 @@
  * could run past the timeout on the Toon's slow link and fail the whole check.
  * 10 newest is more than enough to find the highest semver even when GitHub's
  * created_at order is scrambled by a re-created older release. */
-#define RELEASES_API_BETA   "https://api.github.com/repos/ToonzDev/freetoon-lvgl/releases?per_page=10"
+#define RELEASES_API_BETA   "https://api.github.com/repos/ToonzDev/freetoon-lvgl/releases?per_page=5"
 #define RELEASES_API_STABLE "https://api.github.com/repos/ToonzDev/freetoon-lvgl/releases/latest"
 
 /* Lightweight connectivity probe used to tell "the GitHub API itself is
@@ -231,7 +231,7 @@ void update_check_now(void) {
              * matching release object out of the array (brittle with nested
              * author/assets objects). */
             snprintf(url, sizeof url,
-                "https://github.com/ToonSoftwareCollective/freetoon-lvgl/releases/tag/%s", tag);
+                "https://github.com/ToonzDev/freetoon-lvgl/releases/tag/%s", tag);
             /* notes = the "body" field that follows this release's tag_name. */
             if (best_at) json_extract_str(best_at, "body", notes, sizeof notes);
         }
@@ -264,9 +264,9 @@ void update_install_now(void) {
              g_update_state.latest_version[0] ? g_update_state.latest_version : "nieuwste versie");
     notify_show("update", "freetoon", msg);
     fprintf(stderr, "[update] installing now: %s\n", g_update_state.latest_version);
-    system("nohup sh -c 'sleep 2; curl -fsSL "
-           "https://raw.githubusercontent.com/ToonSoftwareCollective/freetoon-lvgl/main/scripts/toon-selfinstall.sh "
-           "| sh' >/var/volatile/tmp/selfinstall.log 2>&1 &");
+    system("nohup sh -c ': > /var/volatile/tmp/selfinstall.log; sleep 2; curl -fsSL -4 "
+           "https://raw.githubusercontent.com/ToonzDev/freetoon-lvgl/main/install.sh "
+           "| env FORCE_DOWNLOAD=1 sh -s -- --update' >> /var/volatile/tmp/selfinstall.log 2>&1 &");
 }
 
 static void * update_thread(void * arg) {

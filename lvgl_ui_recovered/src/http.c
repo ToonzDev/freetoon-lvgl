@@ -151,7 +151,7 @@ int http_fetch_to(const char * url, char * out, size_t out_max, int timeout_s) {
 
     char cmd[1024];
     snprintf(cmd, sizeof(cmd),
-        "/usr/bin/curl -s -k -L --max-time %d --connect-timeout 4 "
+        "/usr/bin/curl -s -4 -k -L --compressed --max-time %d --connect-timeout 4 "
         "-A 'toonui/1.0' '%s'", timeout_s, url);
     FILE * fp = popen(cmd, "r");
     if (!fp) return -1;
@@ -197,7 +197,7 @@ int http_fetch_cookies(const char * url, const char * jar, char * out, size_t ou
 
     char cmd[1400];
     snprintf(cmd, sizeof(cmd),
-        "/usr/bin/curl -s -k -L --max-time 8 --connect-timeout 4 "
+        "/usr/bin/curl -s -4 -k -L --compressed --max-time 8 --connect-timeout 4 "
         "-A 'toonui/1.0' -c '%s' -b '%s' '%s'", jar, jar, url);
     FILE * fp = popen(cmd, "r");
     if (!fp) return -1;
