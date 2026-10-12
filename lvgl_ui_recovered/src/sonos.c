@@ -349,3 +349,88 @@ void sonos_set_zone(const char * zone) {
     settings_save();
     g_force_poll = 1;
 }
+
+int sonos_get_favorites(char favs[][64], int max_favs) {
+    if (!settings.sonos_host[0] || max_favs <= 0) return 0;
+    int port = settings.sonos_port > 0 ? settings.sonos_port : 5005;
+    char enc_zone[96] = "";
+    if (settings.sonos_zone[0]) url_encode(settings.sonos_zone, enc_zone, sizeof enc_zone);
+    char url[256];
+    if (enc_zone[0])
+        snprintf(url, sizeof url, "http://%s:%d/%s/favorites", settings.sonos_host, port, enc_zone);
+    else
+        snprintf(url, sizeof url, "http://%s:%d/favorites", settings.sonos_host, port);
+
+    char buf[16384];
+    buf[0] = 0;
+    int rc = http_fetch_to(url, buf, sizeof buf, 3);
+    if (rc != 0 || buf[0] == 0) {
+        snprintf(url, sizeof url, "http://%s:%d/favorites", settings.sonos_host, port);
+        rc = http_fetch_to(url, buf, sizeof buf, 3);
+        if (rc != 0 || buf[0] == 0) return 0;
+    }
+
+    int count = 0;
+    char * p = strchr(buf, '[');
+    if (!p) return 0;
+    p++;
+    while (*p && *p != ']' && count < max_favs) {
+        while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n' || *p == ',') p++;
+        if (*p == ']') break;
+        if (*p == '"') {
+            p++;
+            char * q = strchr(p, '"');
+            if (!q) break;
+            size_t len = q - p;
+            if (len >= 64) len = 63;
+            memcpy(favs[count], p, len);
+            favs[count][len] = 0;
+            count++;
+            p = q + 1;
+        } else if (*p == '{') {
+            char * end_obj = strchr(p, '}');
+            if (!end_obj) break;
+            char * t = strstr(p, "\"title\"");
+            if (t && t < end_obj) {
+                t = strchr(t, ':');
+                if (t && t < end_obj) {
+                    t = strchr(t, '"');
+                    if (t && t < end_obj) {
+                        t++;
+                        char * q = strchr(t, '"');
+                        if (q && q <= end_obj) {
+                            size_t len = q - t;
+                            if (len >= 64) len = 63;
+                            memcpy(favs[count], t, len);
+                            favs[count][len] = 0;
+                            count++;
+                        }
+                    }
+                }
+            }
+            p = end_obj + 1;
+        } else {
+            p++;
+        }
+    }
+    return count;
+}
+
+void sonos_play_favorite(const char * name) {
+    if (!name || !name[0]) return;
+    char enc[128];
+    url_encode(name, enc, sizeof enc);
+    char cmd[160];
+    snprintf(cmd, sizeof cmd, "favorite/%s", enc);
+    send_cmd(cmd);
+}
+
+void sonos_play_playlist(const char * name) {
+    if (!name || !name[0]) return;
+    char enc[128];
+    url_encode(name, enc, sizeof enc);
+    char cmd[160];
+    snprintf(cmd, sizeof cmd, "playlist/%s", enc);
+    send_cmd(cmd);
+}
+

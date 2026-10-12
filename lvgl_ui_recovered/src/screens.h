@@ -74,6 +74,8 @@ lv_obj_t * screen_efanlamp_create(void);  /* BLE ceiling fan+light control */
 void screen_settings_open_tile_slots_modal(void);
 /* Open the Sonos configuration modal. */
 void screen_settings_open_sonos_modal(void);
+/* Open the Sonos player & favorites modal. */
+void screen_sonos_show(void);
 
 /* Called once at boot. Loads home as root. */
 void ui_init(void);

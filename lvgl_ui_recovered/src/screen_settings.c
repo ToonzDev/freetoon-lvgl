@@ -3965,16 +3965,38 @@ static void on_sonos_discover_click(lv_event_t * e) {
 
 static void on_sonos_apply_click(lv_event_t * e) {
     (void)e;
-    if (sw_sonos_en)
-        settings.sonos_enabled = lv_obj_has_state(sw_sonos_en, LV_STATE_CHECKED) ? 1 : 0;
-    if (ta_sonos_host)
-        snprintf(settings.sonos_host, sizeof settings.sonos_host, "%s", lv_textarea_get_text(ta_sonos_host));
+    if (ta_sonos_host) {
+        const char * h = lv_textarea_get_text(ta_sonos_host);
+        if (h) snprintf(settings.sonos_host, sizeof settings.sonos_host, "%s", h);
+    }
     if (ta_sonos_port) {
         int p = atoi(lv_textarea_get_text(ta_sonos_port));
         settings.sonos_port = (p > 0) ? p : 5005;
     }
-    if (ta_sonos_zone)
-        snprintf(settings.sonos_zone, sizeof settings.sonos_zone, "%s", lv_textarea_get_text(ta_sonos_zone));
+    char z[48] = "";
+    if (ta_sonos_zone) {
+        const char * t = lv_textarea_get_text(ta_sonos_zone);
+        if (t && t[0]) snprintf(z, sizeof z, "%s", t);
+    }
+    if (!z[0] && dd_sonos_zone) {
+        lv_dropdown_get_selected_str(dd_sonos_zone, z, sizeof z);
+        if (z[0] && strcmp(z, tr("(nog geen kamers)", "(no rooms yet)")) != 0) {
+            if (ta_sonos_zone) lv_textarea_set_text(ta_sonos_zone, z);
+        } else {
+            z[0] = 0;
+        }
+    }
+    if (z[0]) snprintf(settings.sonos_zone, sizeof settings.sonos_zone, "%s", z);
+
+    if (sw_sonos_en) {
+        settings.sonos_enabled = lv_obj_has_state(sw_sonos_en, LV_STATE_CHECKED) ? 1 : 0;
+        if (!settings.sonos_enabled && settings.sonos_host[0]) {
+            settings.sonos_enabled = 1;
+            lv_obj_add_state(sw_sonos_en, LV_STATE_CHECKED);
+        }
+    } else if (settings.sonos_host[0]) {
+        settings.sonos_enabled = 1;
+    }
     settings_save();
     sonos_start();
     if (lbl_sonos_result)

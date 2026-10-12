@@ -451,7 +451,7 @@ static void open_placeholder(lv_event_t * e) {
         return;
     }
     if (b && !strcmp(b, "local:sonos")) {
-        screen_settings_open_sonos_modal();
+        screen_sonos_show();
         return;
     }
 }
@@ -473,7 +473,7 @@ static void open_vent(lv_event_t * e) {
         return;
     }
     if (b && !strcmp(b, "local:sonos")) {
-        screen_settings_open_sonos_modal();
+        screen_sonos_show();
         return;
     }
     ui_push(screen_vent_remote_create());
@@ -720,7 +720,7 @@ static void open_stats(lv_event_t * e) {
         return;
     }
     if (b && !strcmp(b, "local:sonos")) {
-        screen_settings_open_sonos_modal();
+        screen_sonos_show();
         return;
     }
     ui_push(screen_stats_create());
@@ -805,7 +805,11 @@ static sonos_view_t * tile_sonos_view = NULL;
 
 static void on_sonos_tile_tap(lv_event_t * e) {
     (void)e;
-    screen_settings_open_sonos_modal();
+    if (!settings.sonos_host[0]) {
+        screen_settings_open_sonos_modal();
+    } else {
+        screen_sonos_show();
+    }
 }
 
 static void on_sonos_voldn(lv_event_t * e) {
@@ -2250,7 +2254,7 @@ static void on_page1_slot(lv_event_t * e) {
                 return;
             }
             if (b && !strcmp(b, "local:sonos")) {
-                screen_settings_open_sonos_modal();
+                screen_sonos_show();
                 return;
             }
             break;
@@ -2711,7 +2715,7 @@ static void open_family_map(lv_event_t * e) {
         return;
     }
     if (b && !strcmp(b, "local:sonos")) {
-        screen_settings_open_sonos_modal();
+        screen_sonos_show();
         return;
     }
     if (map_modal) return;

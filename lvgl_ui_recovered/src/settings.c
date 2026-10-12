@@ -480,12 +480,18 @@ autodetect:
                                 if (len >= sizeof(path)) len = sizeof(path) - 1;
                                 memcpy(path, p, len);
                                 path[len] = 0;
-                                char * col = strchr(path, ':');
+                                char * hp = path;
+                                if (strncmp(hp, "http://", 7) == 0) hp += 7;
+                                else if (strncmp(hp, "https://", 8) == 0) hp += 8;
+                                size_t hplen = strlen(hp);
+                                while (hplen > 0 && hp[hplen - 1] == '/') hp[--hplen] = 0;
+                                char * col = strchr(hp, ':');
                                 if (col) {
                                     *col = 0;
-                                    settings.sonos_port = atoi(col + 1);
+                                    int port = atoi(col + 1);
+                                    if (port > 0) settings.sonos_port = port;
                                 }
-                                snprintf(settings.sonos_host, sizeof(settings.sonos_host), "%s", path);
+                                if (hp[0]) snprintf(settings.sonos_host, sizeof(settings.sonos_host), "%s", hp);
                             }
                         }
                     }
@@ -781,5 +787,7 @@ void settings_save(void) {
                 settings.nilm_sig_name[i],
                 (double)settings.nilm_sig_lo[i],
                 (double)settings.nilm_sig_hi[i]);
+    fflush(f);
+    fsync(fileno(f));
     fclose(f);
 }

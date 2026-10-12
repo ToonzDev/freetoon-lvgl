@@ -46,4 +46,8 @@ void sonos_volume_down(void);     /* -2 */
 void sonos_set_volume(int vol);
 void sonos_set_zone(const char * zone);
 
+int  sonos_get_favorites(char favs[][64], int max_favs);
+void sonos_play_favorite(const char * name);
+void sonos_play_playlist(const char * name);
+
 #endif
