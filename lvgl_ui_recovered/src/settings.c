@@ -788,6 +788,5 @@ void settings_save(void) {
                 (double)settings.nilm_sig_lo[i],
                 (double)settings.nilm_sig_hi[i]);
     fflush(f);
-    fsync(fileno(f));
     fclose(f);
 }

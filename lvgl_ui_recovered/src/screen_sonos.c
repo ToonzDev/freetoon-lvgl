@@ -509,3 +509,4 @@ void screen_sonos_show(void) {
     s_refresh_timer = lv_timer_create(sonos_modal_tick_cb, 500, NULL);
     sonos_modal_tick_cb(s_refresh_timer);
 }
+
