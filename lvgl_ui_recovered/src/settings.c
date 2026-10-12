@@ -172,6 +172,7 @@ void settings_load(void) {
      * step below — keeps existing installs from suddenly losing pollers
      * after the upgrade. */
     int seen_p1_elec = 0, seen_p1_water = 0, seen_vent = 0, seen_ha = 0;
+    int seen_domoticz = 0, seen_sonos = 0;
     int cfg_existed = 0;
 
     FILE * f = fopen(CFG_PATH, "r");
@@ -272,10 +273,10 @@ void settings_load(void) {
         else if (strcmp(k, "enable_p1_water") == 0) { settings.enable_p1_water = iv; seen_p1_water = 1; }
         else if (strcmp(k, "enable_vent")     == 0) { settings.enable_vent     = iv; seen_vent     = 1; }
         else if (strcmp(k, "enable_ha")       == 0) { settings.enable_ha       = iv; seen_ha       = 1; }
-        else if (strcmp(k, "enable_domoticz") == 0) settings.enable_domoticz = iv;
+        else if (strcmp(k, "enable_domoticz") == 0) { settings.enable_domoticz = iv; seen_domoticz = 1; }
         else if (strcmp(k, "domoticz_host")   == 0)
             snprintf(settings.domoticz_host, sizeof settings.domoticz_host, "%s", v);
-        else if (strcmp(k, "sonos_enabled")   == 0) settings.sonos_enabled = iv;
+        else if (strcmp(k, "sonos_enabled")   == 0) { settings.sonos_enabled = iv; seen_sonos = 1; }
         else if (strcmp(k, "sonos_host")      == 0) snprintf(settings.sonos_host, sizeof settings.sonos_host, "%s", v);
         else if (strcmp(k, "sonos_port")      == 0) settings.sonos_port = iv;
         else if (strcmp(k, "sonos_zone")      == 0) snprintf(settings.sonos_zone, sizeof settings.sonos_zone, "%s", v);
@@ -425,6 +426,10 @@ autodetect:
         settings.enable_vent     = legacy ? 1 : file_has_content("/mnt/data/vent.conf");
     if (!seen_ha)
         settings.enable_ha       = legacy ? 1 : file_has_content("/mnt/data/ha.cfg");
+    if (!seen_domoticz)
+        settings.enable_domoticz = (settings.domoticz_host[0] != 0);
+    if (!seen_sonos)
+        settings.sonos_enabled   = (settings.sonos_host[0] != 0);
     }
 
     /* Migration: if mqtt_pass is still empty, try to read /mnt/data/mqtt.cfg

@@ -154,21 +154,24 @@ int main(int argc, char** argv) {
             fprintf(stderr, "[main] meteradapter_start failed\n");
         if (otgw_start() != 0)
             fprintf(stderr, "[main] otgw_start failed\n");
-        if (vent_start() != 0)
-            fprintf(stderr, "[main] vent_start failed\n");
-        extern int efanlamp_start(void);
-        if (efanlamp_start() != 0)
-            fprintf(stderr, "[main] efanlamp_start failed\n");
-        if (ha_start() != 0)
-            fprintf(stderr, "[main] ha_start failed\n");
-        extern int ha_mqtt_start(void);
-        if (ha_mqtt_start() != 0)
-            fprintf(stderr, "[main] ha_mqtt_start failed\n");
-        extern int domoticz_start(void);
-        if (domoticz_start() != 0)
-            fprintf(stderr, "[main] domoticz_start failed\n");
     }
-    /* Cloud and internet integrations — enabled in both standalone and slave mode */
+    /* Network, cloud & local smart home integrations — enabled in both standalone and slave mode */
+    if (vent_start() != 0)
+        fprintf(stderr, "[main] vent_start failed\n");
+    extern int efanlamp_start(void);
+    if (efanlamp_start() != 0)
+        fprintf(stderr, "[main] efanlamp_start failed\n");
+    if (ha_start() != 0)
+        fprintf(stderr, "[main] ha_start failed\n");
+    extern int ha_mqtt_start(void);
+    if (ha_mqtt_start() != 0)
+        fprintf(stderr, "[main] ha_mqtt_start failed\n");
+    extern int domoticz_start(void);
+    if (domoticz_start() != 0)
+        fprintf(stderr, "[main] domoticz_start failed\n");
+    extern int sonos_start(void);
+    if (sonos_start() != 0)
+        fprintf(stderr, "[main] sonos_start failed\n");
     if (weather_start() != 0)
         fprintf(stderr, "[main] weather_start failed\n");
     if (waste_start() != 0)
@@ -177,17 +180,13 @@ int main(int argc, char** argv) {
     news_start();
     extern int calendar_start(void);
     calendar_start();
-    extern int sonos_start(void);
-    if (sonos_start() != 0)
-        fprintf(stderr, "[main] sonos_start failed\n");
     if (healthcheck_start() != 0)
         fprintf(stderr, "[main] healthcheck_start failed\n");
     if (pwa_start() != 0)
         fprintf(stderr, "[main] pwa_start failed\n");
     if (update_check_start() != 0)
         fprintf(stderr, "[main] update_check_start failed\n");
-    if (!settings.client_mode)
-        packages_start();
+    packages_start();
 
     extern void airhist_start(void);
     airhist_start();   /* record eCO2/TVOC history (RRD doesn't) for Stats graphs */
@@ -215,8 +214,7 @@ int main(int argc, char** argv) {
 
     /* Doorbell snapshot overlay — watches ha_state.doorbell_seq and shows the
      * camera snapshot fullscreen over any screen. No-op unless configured. */
-    if (!settings.client_mode)
-        doorbell_ui_init();
+    doorbell_ui_init();
 
     fprintf(stderr, "[main] entering LVGL loop\n");
     uint32_t last_idle_check = 0;

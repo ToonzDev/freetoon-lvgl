@@ -1305,6 +1305,7 @@ static lv_obj_t * lbl_domoticz_result = NULL;
 static void on_domoticz_enabled_change(lv_event_t * e) {
     settings.enable_domoticz =
         lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    settings_save();
 }
 static void on_domoticz_view_click(lv_event_t * e) {
     (void)e;
@@ -1316,6 +1317,7 @@ static void on_domoticz_apply_click(lv_event_t * e) {
     const char * u = lv_textarea_get_text(ta_domoticz_user);
     snprintf(settings.domoticz_host, sizeof(settings.domoticz_host), "%s", h ? h : "");
     snprintf(settings.domoticz_user, sizeof(settings.domoticz_user), "%s", u ? u : "");
+    if (settings.domoticz_host[0]) settings.enable_domoticz = 1;
     settings_save();
     extern int domoticz_start(void);
     domoticz_start();    /* (re)connect with the new host */

@@ -34,6 +34,7 @@
 #include "update_modal.h"
 #include "efanlamp.h"
 #include "sonos.h"
+#include "domoticz.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
@@ -215,6 +216,9 @@ static lv_obj_t * tile_waste    = NULL;
 /* Custom-layout-only info tiles (content labels; NULL unless created). */
 static lv_obj_t * tile_news_sum_lbl = NULL;
 static lv_obj_t * tile_cal_lbl      = NULL;
+static lv_obj_t * lights_handle     = NULL;
+static lv_obj_t * lights_handle_lbl = NULL;
+static lv_obj_t * lights_handle_img = NULL;   /* backend logo (HA / Domoticz) */
 
 /* Swipeable tile pages. The five built-in tiles (Waste/Energy/Vent/Family/
  * Water) are "page 0". Swiping left in the tile zone reveals page 1 — an
@@ -746,12 +750,9 @@ static void open_inbox(lv_event_t * e) {
 static void apply_offline_tile_visibility(void) {
     int hide = settings.hide_offline_tiles;
     int energy_live = energy_connected();
-    int water_live  = settings.enable_p1_water && hw_state.connected_water;
-    int vent_live   = settings.enable_vent     && vent_state.connected;
-    int family_live = settings.enable_ha;   /* family tile only needs the
-                                             * HA poller running; absent
-                                             * Life360 data falls through
-                                             * to "?" naturally. */
+    int water_live  = (settings.enable_p1_water || settings.client_mode) && hw_state.connected_water;
+    int vent_live   = (settings.enable_vent     || settings.client_mode) && vent_state.connected;
+    int family_live = settings.enable_ha || (settings.client_mode && (ha_state.connected || ha_state.loc_a[0]));
     struct { lv_obj_t * tile; int live; int ltype; } v[] = {
         { tile_energy,   energy_live, LT_ENERGY },
         { tile_water,    water_live,  LT_WATER  },
@@ -1117,7 +1118,7 @@ static void render_local_into(const char * id, lv_obj_t * title,
         if (main)  lv_label_set_text_fmt(main, "%.0f W", energy_power_w());
     } else if (!strcmp(id, "local:water")) {
         if (title) lv_label_set_text(title, tr("Water", "Water"));
-        if (settings.enable_p1_water && hw_state.connected_water) {
+        if ((settings.enable_p1_water || settings.client_mode) && hw_state.connected_water) {
             if (main) lv_label_set_text_fmt(main, "%.1f L/min", hw_state.water_lpm);
             if (sub)  lv_label_set_text_fmt(sub, "%.2f m3", hw_state.water_total_m3);
         } else {
@@ -1631,7 +1632,7 @@ static void refresh_cb(lv_timer_t * t) {
        when a marketplace integration has taken over the slot — the labels
        were already rewritten by render_tile_slot. */
     if (!slot_active[TILE_SLOT_VENT] && lbl_boiler_state) {
-        if (!settings.enable_vent) {
+        if (!settings.enable_vent && (!settings.client_mode || !vent_state.connected)) {
             /* Integration turned off in Settings → keep the tile visible
              * (unless hide_offline_tiles is on, in which case the whole
              * tile is already hidden by apply_offline_tile_visibility) but
@@ -1836,7 +1837,7 @@ static void refresh_cb(lv_timer_t * t) {
 
     /* Water tile: only show values when water meter is connected (CR10) */
     if (!slot_active[TILE_SLOT_WATER]) {
-        if (!settings.enable_p1_water || !hw_state.connected_water) {
+        if ((!settings.enable_p1_water && !settings.client_mode) || !hw_state.connected_water) {
             if (lbl_inbox_main) lv_label_set_text(lbl_inbox_main, "--");
             if (lbl_inbox_sub)  lv_label_set_text(lbl_inbox_sub, "");
         } else {
@@ -2011,8 +2012,9 @@ static void refresh_cb(lv_timer_t * t) {
      * that could be mistaken for "in transit" or "out of range".
      * Skip when a marketplace integration owns this slot. */
     if (!slot_active[TILE_SLOT_FAMILY]) {
+        int ha_up = settings.enable_ha || (settings.client_mode && (ha_state.connected || ha_state.loc_a[0]));
         if (lbl_life360_a) {
-            if (!settings.enable_ha)
+            if (!ha_up)
                 lv_label_set_text(lbl_life360_a, tr("HA offline", "HA offline"));
             else
                 lv_label_set_text_fmt(lbl_life360_a, "%s: %s",
@@ -2020,7 +2022,7 @@ static void refresh_cb(lv_timer_t * t) {
                     ha_state.loc_a[0] ? ha_state.loc_a : "?");
         }
         if (lbl_life360_b) {
-            if (!settings.enable_ha)
+            if (!ha_up)
                 lv_label_set_text(lbl_life360_b, "");
             else
                 lv_label_set_text_fmt(lbl_life360_b, "%s: %s",
@@ -2028,7 +2030,7 @@ static void refresh_cb(lv_timer_t * t) {
                     ha_state.loc_b[0]   ? ha_state.loc_b   : "?");
         }
         if (lbl_life360_c) {
-            if (!settings.enable_ha || !settings.life360_c_entity[0])
+            if (!ha_up || !settings.life360_c_entity[0])
                 lv_label_set_text(lbl_life360_c, "");
             else
                 lv_label_set_text_fmt(lbl_life360_c, "%s: %s",
@@ -2086,7 +2088,7 @@ static void refresh_cb(lv_timer_t * t) {
 
     /* Water tile: only show values when water meter is connected (CR10) */
     if (!slot_active[TILE_SLOT_WATER]) {
-        if (!settings.enable_p1_water || !hw_state.connected_water) {
+        if ((!settings.enable_p1_water && !settings.client_mode) || !hw_state.connected_water) {
             if (lbl_inbox_main) lv_label_set_text(lbl_inbox_main, "--");
             if (lbl_inbox_sub)  lv_label_set_text(lbl_inbox_sub, "");
         } else {
@@ -2172,7 +2174,7 @@ static void refresh_cb(lv_timer_t * t) {
 
     /* Water tile: only show values when water meter is connected (CR10) */
     if (!slot_active[TILE_SLOT_WATER]) {
-        if (!settings.enable_p1_water || !hw_state.connected_water) {
+        if ((!settings.enable_p1_water && !settings.client_mode) || !hw_state.connected_water) {
             if (lbl_inbox_main) lv_label_set_text(lbl_inbox_main, "--");
             if (lbl_inbox_sub)  lv_label_set_text(lbl_inbox_sub, "");
         } else {
@@ -2180,6 +2182,31 @@ static void refresh_cb(lv_timer_t * t) {
                 lv_label_set_text_fmt(lbl_inbox_main, "%.3f m3", hw_state.water_total_m3);
             if (lbl_inbox_sub)
                 lv_label_set_text_fmt(lbl_inbox_sub, "%.1f L/min", hw_state.water_lpm);
+        }
+    }
+
+    /* Refresh lights handle logo dynamically if backend becomes active or changes */
+    if (lights_handle) {
+        const lv_img_dsc_t * want_logo = (settings.enable_domoticz || (settings.client_mode && domoticz_state.count > 0)) ? &icon_domoticz
+                                       : (settings.enable_ha || (settings.client_mode && ha_light_count > 0)) ? &icon_ha
+                                       : NULL;
+        if (want_logo) {
+            if (!lights_handle_img) {
+                lights_handle_img = lv_img_create(lights_handle);
+                lv_img_set_zoom(lights_handle_img, 224);   /* 48px -> ~42px */
+                lv_obj_center(lights_handle_img);
+            }
+            if (lv_img_get_src(lights_handle_img) != want_logo) {
+                lv_img_set_src(lights_handle_img, want_logo);
+            }
+            if (lv_obj_get_width(lights_handle) <= 60) {   /* collapsed state */
+                lv_obj_clear_flag(lights_handle_img, LV_OBJ_FLAG_HIDDEN);
+                if (lights_handle_lbl) lv_obj_add_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
+            }
+        } else if (lights_handle_img) {
+            lv_obj_add_flag(lights_handle_img, LV_OBJ_FLAG_HIDDEN);
+            if (lights_handle_lbl && lv_obj_get_width(lights_handle) <= 60)
+                lv_obj_clear_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
         }
     }
 
@@ -2192,8 +2219,10 @@ static void refresh_cb(lv_timer_t * t) {
 /* Route to whichever lights backend is enabled: Domoticz if configured,
  * otherwise the Home Assistant lights page. */
 static void open_lights_backend(void) {
-    if (settings.enable_domoticz) ui_push(screen_domoticz_create());
-    else                          ui_push(screen_lights_create());
+    if (settings.enable_domoticz || (settings.client_mode && domoticz_state.count > 0))
+        ui_push(screen_domoticz_create());
+    else
+        ui_push(screen_lights_create());
 }
 /* Click handler for the optional LT_LIGHTS grid tile (custom layout). */
 static void on_lights_tile(lv_event_t * e) { (void)e; open_lights_backend(); }
@@ -2285,10 +2314,6 @@ static void on_home_gesture_to_lights(lv_event_t * e) {
 /* Collapsible lights handle: idles as a slim half-circle tab peeking from the
  * left edge, expands into a horizontal "Lights" button while pressed, and
  * opens the lights backend on release. */
-static lv_obj_t * lights_handle     = NULL;
-static lv_obj_t * lights_handle_lbl = NULL;
-static lv_obj_t * lights_handle_img = NULL;   /* backend logo (HA / Domoticz) */
-
 static void lights_handle_set(bool open) {
     if (!lights_handle) return;
     lv_obj_set_size(lights_handle, open ? 160 : 56, open ? 56 : 80);
@@ -3909,8 +3934,8 @@ lv_obj_t * screen_home_create(void) {
         /* Collapsed handle shows the active backend's logo: Domoticz if that's
          * configured (matches open_lights_backend's priority), else HA. The
          * charge glyph stays as the fallback when neither is enabled. */
-        const lv_img_dsc_t * logo = settings.enable_domoticz ? &icon_domoticz
-                                  : settings.enable_ha       ? &icon_ha
+        const lv_img_dsc_t * logo = (settings.enable_domoticz || (settings.client_mode && domoticz_state.count > 0)) ? &icon_domoticz
+                                  : (settings.enable_ha || (settings.client_mode && ha_light_count > 0)) ? &icon_ha
                                   : NULL;
         if (logo) {
             lights_handle_img = lv_img_create(lights_handle);

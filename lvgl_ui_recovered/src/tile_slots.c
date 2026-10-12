@@ -151,12 +151,17 @@ const char * tile_slots_local_id(int i) {
 const char * tile_slots_local_label(int i) {
     return (i >= 0 && i < tile_slots_local_count()) ? g_locals[i].label : "";
 }
+#include "homewizard.h"
+#include "ventilation.h"
+#include "homeassistant.h"
+
 int tile_slots_local_enabled(int i) {
     switch (i) {
         case 0: return 1;                                 /* energy — core (meteradapter/P1) */
-        case 1: return settings.enable_p1_water;
-        case 2: return settings.enable_vent;
-        case 3: return settings.enable_ha && (settings.life360_a_entity[0] || settings.life360_b_entity[0] || settings.life360_c_entity[0]);
+        case 1: return settings.enable_p1_water || (settings.client_mode && hw_state.connected_water);
+        case 2: return settings.enable_vent     || (settings.client_mode && vent_state.connected);
+        case 3: return (settings.enable_ha || (settings.client_mode && ha_state.connected)) &&
+                       (settings.life360_a_entity[0] || settings.life360_b_entity[0] || settings.life360_c_entity[0] || ha_state.loc_a[0]);
         case 4: return 1;                                 /* air quality — core sensor */
         case 5: return settings.sonos_enabled;
         default: return 0;
