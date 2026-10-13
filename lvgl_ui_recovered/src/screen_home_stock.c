@@ -449,7 +449,7 @@ static void refresh_slot(slot_t * s) {
             lv_label_set_text(s->sub, tr("Geen weerdata", "No weather data"));
             break;
         }
-        snprintf(b, sizeof b, "%.1f°", weather_state.current_temp); comma(b); lv_label_set_text(s->val, b);
+        snprintf(b, sizeof b, "%.1f°", weather_display_temp()); comma(b); lv_label_set_text(s->val, b);
         lv_label_set_text(s->sub, weather_state.current_desc[0] ? weather_state.current_desc : tr("Buiten", "Outside"));
         if (s->icon && weather_state.current_icon[0]) {
             lv_img_set_src(s->icon, weather_icon_for_lg(weather_state.current_icon));

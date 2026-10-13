@@ -456,19 +456,35 @@ lv_obj_t * screen_appliances_create(void) {
     lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(scr_root, on_scr_event, LV_EVENT_ALL, NULL);
 
-    /* ── Back button ── */
+    /* ── Back button (top-left) ── */
     lv_obj_t *back_btn = lv_btn_create(scr_root);
-    lv_obj_set_size(back_btn, SX(100), SY(48));
+    lv_obj_set_size(back_btn, SX(110), SY(48));
     lv_obj_align(back_btn, LV_ALIGN_TOP_LEFT, SX(8), SY(8));
     lv_obj_set_style_bg_color(back_btn, lv_color_hex(0x1e3050), 0);
     lv_obj_set_style_radius(back_btn, 10, 0);
     lv_obj_set_style_border_width(back_btn, 0, 0);
+    lv_obj_set_ext_click_area(back_btn, 25);
     lv_obj_add_event_cb(back_btn, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t *back_lbl = lv_label_create(back_btn);
     lv_obj_set_style_text_color(back_lbl, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(back_lbl, SF(20), 0);
     lv_label_set_text_fmt(back_lbl, LV_SYMBOL_LEFT " %s", tr("Terug", "Back"));
     lv_obj_center(back_lbl);
+
+    /* ── Close ("X") button in top-right corner ── */
+    lv_obj_t *close_btn = lv_btn_create(scr_root);
+    lv_obj_set_size(close_btn, DISP_VER < 600 ? 76 : 84, DISP_VER < 600 ? 50 : 56);
+    lv_obj_align(close_btn, LV_ALIGN_TOP_RIGHT, 0, 0);
+    lv_obj_set_style_bg_color(close_btn, lv_color_hex(0x1e3050), 0);
+    lv_obj_set_style_radius(close_btn, 8, 0);
+    lv_obj_set_style_border_width(close_btn, 0, 0);
+    lv_obj_set_ext_click_area(close_btn, 30);
+    lv_obj_add_event_cb(close_btn, on_back, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *close_lbl = lv_label_create(close_btn);
+    lv_obj_set_style_text_color(close_lbl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(close_lbl, SF(22), 0);
+    lv_label_set_text(close_lbl, "X");
+    lv_obj_center(close_lbl);
 
     /* ── Title ── */
     lv_obj_t *title = lv_label_create(scr_root);

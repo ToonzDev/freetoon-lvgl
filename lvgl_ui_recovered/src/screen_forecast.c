@@ -72,7 +72,7 @@ static void refresh_cb(lv_timer_t * t) {
             const weather_hour_t * h = &wx.hours[i];
             lv_label_set_text(fc_day_lbl[i], h->label);
             lv_label_set_text_fmt(fc_temp_lbl[i], "%.0f\xc2\xb0",
-                                  h->temperature);
+                                  weather_hour_display_temp(h));
             if (fc_icon[i]) {
                 lv_img_set_src(fc_icon[i], weather_icon_for_lg(h->icon));
                 lv_obj_set_style_img_recolor(fc_icon[i],

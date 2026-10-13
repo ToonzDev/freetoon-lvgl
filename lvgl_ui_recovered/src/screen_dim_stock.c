@@ -201,7 +201,7 @@ static void d_refresh(lv_timer_t * t) {
     if (d_wx_icon && d_wx_temp) {
         if (settings.show_dim_weather && weather_state.connected) {
             lv_img_set_src(d_wx_icon, weather_icon_for_lg(weather_state.current_icon));
-            snprintf(b, sizeof b, "%.0f°C", weather_state.current_temp);
+            snprintf(b, sizeof b, "%.0f°C", weather_display_temp());
             lv_label_set_text(d_wx_temp, b);
             lv_obj_clear_flag(d_wx_icon, LV_OBJ_FLAG_HIDDEN);
         } else {

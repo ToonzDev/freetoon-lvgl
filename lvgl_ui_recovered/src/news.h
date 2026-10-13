@@ -7,10 +7,12 @@
  * periodically and keeps a small list of headline + link pairs that the home
  * screen renders as a scrolling ticker. */
 
-#define NEWS_MAX_ITEMS   12
-#define NEWS_TITLE_MAX   160
-#define NEWS_LINK_MAX    256
-#define NEWS_BODY_MAX    900   /* article summary from RSS <description> */
+#define NEWS_MAX_FEEDS    8
+#define NEWS_MAX_PER_FEED 12
+#define NEWS_MAX_ITEMS    96   /* up to 12 items per feed across 8 feeds */
+#define NEWS_TITLE_MAX    160
+#define NEWS_LINK_MAX     256
+#define NEWS_BODY_MAX     4096  /* full article text from RSS <description> */
 
 int  news_start(void);                 /* spawn fetch thread */
 void news_wake_fetch(void);            /* wake or trigger immediate feed fetch */
@@ -18,6 +20,7 @@ void news_wake_fetch(void);            /* wake or trigger immediate feed fetch *
  * headline count (>=0) or -1 on error; writes a human message into `msg`. */
 int  news_test_feed(const char * url, char * msg, size_t msgsz);
 int  news_count(void);                 /* number of headlines currently held */
+int  news_seq(void);                   /* monotonic counter incremented on each update */
 /* Copy the i-th headline + link into the given buffers. Returns 0 on success. */
 int  news_item(int i, char * title, size_t tsz, char * link, size_t lsz);
 /* Copy the i-th article body (RSS <description>, HTML-stripped). 0 on success. */
@@ -29,7 +32,6 @@ void news_set_count(int n);
 void news_set_item_data(int i, const char * title, const char * link,
                         const char * body, int feed);
 
-#define NEWS_MAX_FEEDS   8
 /* Per-feed grouping for the detailed reader. */
 int  news_feed_count(void);                          /* number of distinct feeds */
 int  news_feed_name(int f, char * name, size_t nsz); /* feed f's channel title */

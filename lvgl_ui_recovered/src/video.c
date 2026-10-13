@@ -163,6 +163,8 @@ static void video_init_poll_cb(lv_timer_t * t)
     if (s_pid > 0) return;
     if (access("/dev/mxc_vpu", R_OK | W_OK) != 0)
         return;
+    if (access(VPU_STREAM_BIN, X_OK) != 0)
+        return;
     resolve_rect();
     if (spawn_warm() < 0) {
         fprintf(stderr, "[video] warm-spawn failed; will retry next tick\n");

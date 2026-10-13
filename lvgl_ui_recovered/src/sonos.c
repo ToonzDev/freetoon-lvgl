@@ -416,12 +416,251 @@ int sonos_get_favorites(char favs[][64], int max_favs) {
     return count;
 }
 
+static int get_sonos_playlists(sonos_item_t items[], int max_items) {
+    if (!settings.sonos_host[0] || max_items <= 0) return 0;
+    int port = settings.sonos_port > 0 ? settings.sonos_port : 5005;
+    char enc_zone[96] = "";
+    if (settings.sonos_zone[0]) url_encode(settings.sonos_zone, enc_zone, sizeof enc_zone);
+    char url[256];
+    if (enc_zone[0])
+        snprintf(url, sizeof url, "http://%s:%d/%s/playlists", settings.sonos_host, port, enc_zone);
+    else
+        snprintf(url, sizeof url, "http://%s:%d/playlists", settings.sonos_host, port);
+
+    char buf[16384];
+    buf[0] = 0;
+    int rc = http_fetch_to(url, buf, sizeof buf, 3);
+    if (rc != 0 || buf[0] == 0) {
+        snprintf(url, sizeof url, "http://%s:%d/playlists", settings.sonos_host, port);
+        rc = http_fetch_to(url, buf, sizeof buf, 3);
+        if (rc != 0 || buf[0] == 0) return 0;
+    }
+
+    int count = 0;
+    char * p = strchr(buf, '[');
+    if (!p) return 0;
+    p++;
+    while (*p && *p != ']' && count < max_items) {
+        while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n' || *p == ',') p++;
+        if (*p == ']') break;
+        if (*p == '"') {
+            p++;
+            char * q = strchr(p, '"');
+            if (!q) break;
+            size_t len = (size_t)(q - p);
+            if (len >= sizeof items[0].name) len = sizeof items[0].name - 1;
+            memcpy(items[count].name, p, len);
+            items[count].name[len] = 0;
+            items[count].uri[0] = 0;
+            count++;
+            p = q + 1;
+        } else {
+            p++;
+        }
+    }
+    return count;
+}
+
+void sonos_get_spotify_config(sonos_spotify_cfg_t * cfg) {
+    if (!cfg) return;
+    memset(cfg, 0, sizeof *cfg);
+    FILE * f = fopen("/mnt/data/tsc/sonos.userSettings.json", "r");
+    if (!f) return;
+    char buf[4096];
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    if (n == 0) return;
+    buf[n] = 0;
+
+    extract_json_str(buf, "spotifyClientId", cfg->client_id, sizeof cfg->client_id);
+    extract_json_str(buf, "spotifyClientSecret", cfg->client_secret, sizeof cfg->client_secret);
+    extract_json_int(buf, "selectedPlaylistUser", &cfg->selected_user);
+
+    if (cfg->client_id[0] && cfg->client_secret[0]) {
+        cfg->configured = 1;
+    }
+
+    /* Extract user names */
+    const char * un = strstr(buf, "\"spotifyUserNames\"");
+    if (un) {
+        const char * p = strchr(un, '[');
+        if (p) {
+            p++;
+            while (*p && *p != ']' && cfg->user_count < 8) {
+                while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n' || *p == ',') p++;
+                if (*p == '"') {
+                    p++;
+                    const char * q = strchr(p, '"');
+                    if (!q) break;
+                    size_t len = (size_t)(q - p);
+                    if (len >= sizeof cfg->user_names[0]) len = sizeof cfg->user_names[0] - 1;
+                    memcpy(cfg->user_names[cfg->user_count], p, len);
+                    cfg->user_names[cfg->user_count][len] = 0;
+                    cfg->user_count++;
+                    p = q + 1;
+                } else {
+                    p++;
+                }
+            }
+        }
+    }
+
+    /* Extract user IDs */
+    const char * ui = strstr(buf, "\"spotifyUserIDs\"");
+    if (ui) {
+        const char * p = strchr(ui, '[');
+        if (p) {
+            p++;
+            int idx = 0;
+            while (*p && *p != ']' && idx < 8) {
+                while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n' || *p == ',') p++;
+                if (*p == '"') {
+                    p++;
+                    const char * q = strchr(p, '"');
+                    if (!q) break;
+                    size_t len = (size_t)(q - p);
+                    if (len >= sizeof cfg->user_ids[0]) len = sizeof cfg->user_ids[0] - 1;
+                    memcpy(cfg->user_ids[idx], p, len);
+                    cfg->user_ids[idx][len] = 0;
+                    idx++;
+                    p = q + 1;
+                } else {
+                    p++;
+                }
+            }
+        }
+    }
+}
+
+static char   s_spot_token[300] = {0};
+static time_t s_spot_token_expiry = 0;
+
+static int get_spotify_token(const sonos_spotify_cfg_t * cfg, char * out, size_t outsz) {
+    time_t now = time(NULL);
+    if (s_spot_token[0] && now < s_spot_token_expiry - 60) {
+        snprintf(out, outsz, "%s", s_spot_token);
+        return 0;
+    }
+    if (!cfg || !cfg->configured) return -1;
+
+    char cmd[512];
+    snprintf(cmd, sizeof cmd,
+        "/usr/bin/curl -s -4 -k --max-time 6 --connect-timeout 4 "
+        "-X POST 'https://accounts.spotify.com/api/token' "
+        "-d 'grant_type=client_credentials' -u '%s:%s'",
+        cfg->client_id, cfg->client_secret);
+
+    FILE * fp = popen(cmd, "r");
+    if (!fp) return -1;
+    char resp[1024];
+    size_t got = fread(resp, 1, sizeof(resp) - 1, fp);
+    pclose(fp);
+    resp[got] = 0;
+
+    char tok[300] = "";
+    if (extract_json_str(resp, "access_token", tok, sizeof tok) && tok[0]) {
+        int exp = 3600;
+        extract_json_int(resp, "expires_in", &exp);
+        snprintf(s_spot_token, sizeof s_spot_token, "%s", tok);
+        s_spot_token_expiry = now + exp;
+        snprintf(out, outsz, "%s", tok);
+        return 0;
+    }
+    return -1;
+}
+
+static int parse_spotify_playlists(const char * json, sonos_item_t items[], int max_items) {
+    if (!json || !items || max_items <= 0) return 0;
+    int count = 0;
+    const char * cur = json;
+    while ((cur = strstr(cur, "\"uri\":\"spotify:playlist:")) != NULL && count < max_items) {
+        cur += 7; /* skip "uri":" */
+        const char * q = strchr(cur, '"');
+        if (!q) break;
+        size_t ulen = (size_t)(q - cur);
+        char uri[128];
+        if (ulen >= sizeof uri) ulen = sizeof uri - 1;
+        memcpy(uri, cur, ulen);
+        uri[ulen] = 0;
+
+        /* Look backwards before cur for "name":" */
+        const char * search_start = (cur - 1500 > json) ? cur - 1500 : json;
+        const char * nm = cur;
+        while (nm > search_start) {
+            if (strncmp(nm, "\"name\":\"", 8) == 0) break;
+            nm--;
+        }
+        char name[64] = "";
+        if (strncmp(nm, "\"name\":\"", 8) == 0) {
+            nm += 8;
+            const char * nq = strchr(nm, '"');
+            if (nq && nq < cur) {
+                size_t nlen = (size_t)(nq - nm);
+                if (nlen >= sizeof name) nlen = sizeof name - 1;
+                memcpy(name, nm, nlen);
+                name[nlen] = 0;
+            }
+        }
+        if (name[0] && uri[0]) {
+            snprintf(items[count].name, sizeof items[count].name, "%s", name);
+            snprintf(items[count].uri, sizeof items[count].uri, "%s", uri);
+            count++;
+        }
+        cur = q + 1;
+    }
+    return count;
+}
+
+int sonos_get_source_items(sonos_source_t src, int spotify_user_idx, sonos_item_t items[], int max_items) {
+    if (!items || max_items <= 0) return 0;
+    if (src == SONOS_SRC_FAVORITES) {
+        char favs[SONOS_MAX_ITEMS][64];
+        int n = sonos_get_favorites(favs, max_items);
+        for (int i = 0; i < n; i++) {
+            snprintf(items[i].name, sizeof items[i].name, "%s", favs[i]);
+            items[i].uri[0] = 0;
+        }
+        return n;
+    } else if (src == SONOS_SRC_PLAYLISTS) {
+        return get_sonos_playlists(items, max_items);
+    } else if (src == SONOS_SRC_SPOTIFY) {
+        sonos_spotify_cfg_t cfg;
+        sonos_get_spotify_config(&cfg);
+        if (!cfg.configured || spotify_user_idx < 0 || spotify_user_idx >= cfg.user_count)
+            return 0;
+        char token[300] = "";
+        if (get_spotify_token(&cfg, token, sizeof token) != 0 || !token[0])
+            return 0;
+
+        char cmd[512];
+        snprintf(cmd, sizeof cmd,
+            "/usr/bin/curl -s -4 -k --max-time 6 --connect-timeout 4 "
+            "-H 'Authorization: Bearer %s' "
+            "'https://api.spotify.com/v1/users/%s/playlists'",
+            token, cfg.user_ids[spotify_user_idx]);
+
+        FILE * fp = popen(cmd, "r");
+        if (!fp) return 0;
+        char * resp = malloc(32768);
+        if (!resp) { pclose(fp); return 0; }
+        size_t got = fread(resp, 1, 32767, fp);
+        pclose(fp);
+        resp[got] = 0;
+        int count = parse_spotify_playlists(resp, items, max_items);
+        free(resp);
+        return count;
+    }
+    return 0;
+}
+
 void sonos_play_favorite(const char * name) {
     if (!name || !name[0]) return;
     char enc[128];
     url_encode(name, enc, sizeof enc);
     char cmd[160];
     snprintf(cmd, sizeof cmd, "favorite/%s", enc);
+    send_cmd("clearqueue");
+    usleep(80000);
     send_cmd(cmd);
 }
 
@@ -431,6 +670,17 @@ void sonos_play_playlist(const char * name) {
     url_encode(name, enc, sizeof enc);
     char cmd[160];
     snprintf(cmd, sizeof cmd, "playlist/%s", enc);
+    send_cmd("clearqueue");
+    usleep(80000);
+    send_cmd(cmd);
+}
+
+void sonos_play_spotify(const char * uri) {
+    if (!uri || !uri[0]) return;
+    char cmd[200];
+    snprintf(cmd, sizeof cmd, "spotify/now/%s", uri);
+    send_cmd("clearqueue");
+    usleep(80000);
     send_cmd(cmd);
 }
 

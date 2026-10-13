@@ -86,7 +86,7 @@ settings_t settings = {
     .stock_big_indoor         = 1,
     .calendar_ha_entity  = "",
     .calendar_ics_url    = "",
-    .custom_layout_enabled = 0,
+    .custom_layout_enabled = 1,
     .auto_update_enabled = 0,
     .auto_update_hour    = 2,
     .ha_host             = "",
@@ -106,7 +106,7 @@ settings_t settings = {
     .doorbell_camera     = "",
     .doorbell_seconds    = 30,
     .doorbell_stream_url = "",
-    .video_enabled       = 1,
+    .video_enabled       = 0,
     .video_size_pct      = 50,
     .video_src_w         = 640,
     .video_src_h         = 480,
@@ -178,16 +178,15 @@ void settings_load(void) {
     FILE * f = fopen(CFG_PATH, "r");
     if (!f) goto autodetect;
     cfg_existed = 1;
-    char line[768];
+    char line[1200];
     while (fgets(line, sizeof(line), f)) {
-        char k[64], v[704];
+        char k[64], v[1088];
         /* Value runs to end-of-line, not the first space: city names like
          * "Sint Pancras" must survive (%63s would truncate to "Sint").
-         * v[] is 704 (and line[] 768) so multi-feed news_rss_url (640B,
-         * tab-encoded) and the 256B ICS/stream/rotate fields survive the
-         * load round-trip instead of being truncated — added feeds vanished
-         * after restart because the old 63-char capture dropped them. */
-        if (sscanf(line, "%63[^=]=%703[^\n]", k, v) != 2) continue;
+         * v[] is 1088 (and line[] 1200) so multi-feed news_rss_url (640B)
+         * and calendar_ics_url (1024B, tab-encoded) survive the load
+         * round-trip instead of being truncated. */
+        if (sscanf(line, "%63[^=]=%1087[^\n]", k, v) != 2) continue;
         /* Trim a trailing CR (CRLF cfg files) so values stay clean. */
         size_t vlen = strlen(v);
         if (vlen && v[vlen - 1] == '\r') v[vlen - 1] = 0;
@@ -230,6 +229,7 @@ void settings_load(void) {
         else if (strcmp(k, "temp_offset_centi") == 0) settings.temp_offset_centi = iv;
         else if (strcmp(k, "weather_location_id") == 0) settings.weather_location_id = iv;
         else if (strcmp(k, "forecast_mode")     == 0) settings.forecast_mode       = iv;
+        else if (strcmp(k, "weather_use_feel")  == 0) settings.weather_use_feel    = iv;
         else if (strcmp(k, "weather_location")  == 0)
             snprintf(settings.weather_location,
                      sizeof settings.weather_location, "%s", v);
@@ -307,8 +307,30 @@ void settings_load(void) {
         else if (strcmp(k, "stock_tiles")        == 0) snprintf(settings.stock_tiles, sizeof settings.stock_tiles, "%s", v);
         else if (strcmp(k, "stock_big_indoor")   == 0) settings.stock_big_indoor = iv;
         else if (strcmp(k, "calendar_ha_entity") == 0) snprintf(settings.calendar_ha_entity, sizeof settings.calendar_ha_entity, "%s", v);
-        else if (strcmp(k, "calendar_ics_url")   == 0) snprintf(settings.calendar_ics_url, sizeof settings.calendar_ics_url, "%s", v);
-        else if (strcmp(k, "custom_layout_enabled") == 0) settings.custom_layout_enabled = iv;
+        else if (strcmp(k, "calendar_ics_url")   == 0) {
+            snprintf(settings.calendar_ics_url, sizeof settings.calendar_ics_url, "%s", v);
+            for (char * p = settings.calendar_ics_url; *p; p++) if (*p == '\t') *p = '\n';
+            /* Self-heal configs where sanitize_all_strings() previously stripped
+             * '\n' separators, concatenating URLs like "...basic.icshttps://...". */
+            for (char * p = settings.calendar_ics_url + 1; *p; p++) {
+                if ((strncmp(p, "http://", 7) == 0 || strncmp(p, "https://", 8) == 0) &&
+                    p[-1] != '\n' && p[-1] != '=' && p[-1] != '?') {
+                    size_t cur_len = strlen(settings.calendar_ics_url);
+                    if (cur_len + 1 < sizeof settings.calendar_ics_url) {
+                        memmove(p + 1, p, strlen(p) + 1);
+                        *p = '\n';
+                        p++;
+                    }
+                }
+            }
+        }
+        else if (strcmp(k, "custom_layout_enabled") == 0) {
+#ifdef TOON1
+            settings.custom_layout_enabled = 1;
+#else
+            settings.custom_layout_enabled = iv;
+#endif
+        }
         else if (strcmp(k, "active_layout")       == 0) snprintf(settings.active_layout, sizeof settings.active_layout, "%s", v);
         else if (strcmp(k, "auto_update_enabled") == 0) settings.auto_update_enabled = iv;
         else if (strcmp(k, "auto_update_hour")    == 0) settings.auto_update_hour = (iv < 0 || iv > 23) ? 2 : iv;
@@ -523,6 +545,50 @@ autodetect:
         }
     }
 
+    /* Auto-seed Calendar URLs from legacy QML calendar settings if present and not yet configured */
+    if (!settings.calendar_ics_url[0]) {
+        FILE * cf = fopen("/mnt/data/tsc/calendar.userSettings.json", "r");
+        if (cf) {
+            char cbuf[8192];
+            size_t n = fread(cbuf, 1, sizeof(cbuf) - 1, cf);
+            fclose(cf);
+            if (n > 0) {
+                cbuf[n] = 0;
+                const char * cu = strstr(cbuf, "\"Calendar_URL\"");
+                if (cu) {
+                    const char * p = strchr(cu, '[');
+                    if (p) {
+                        p++;
+                        while (*p && *p != ']') {
+                            while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n' || *p == ',') p++;
+                            if (*p == '"') {
+                                p++;
+                                const char * q = strchr(p, '"');
+                                if (!q) break;
+                                size_t ulen = (size_t)(q - p);
+                                char u[300];
+                                if (ulen >= sizeof(u)) ulen = sizeof(u) - 1;
+                                memcpy(u, p, ulen);
+                                u[ulen] = 0;
+                                if (strncmp(u, "http://", 7) == 0 || strncmp(u, "https://", 8) == 0) {
+                                    if (settings.calendar_ics_url[0])
+                                        strncat(settings.calendar_ics_url, "\n", sizeof(settings.calendar_ics_url) - strlen(settings.calendar_ics_url) - 1);
+                                    strncat(settings.calendar_ics_url, u, sizeof(settings.calendar_ics_url) - strlen(settings.calendar_ics_url) - 1);
+                                }
+                                p = q + 1;
+                            } else {
+                                p++;
+                            }
+                        }
+                        if (settings.calendar_ics_url[0]) {
+                            settings.calendar_enabled = 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /* First boot: write the cfg now so users have an editable file even
      * before they ever open Settings. Especially important on Toon 1 —
      * if the resistive panel is mis-mapped, the GUI is unreachable and
@@ -550,7 +616,8 @@ void settings_sanitize_str(char * s) {
 
 /* Sanitize every free-text setting before persisting, regardless of whether it
  * came from the LVGL textareas, the PWA, or a client-mode mirror. news_rss_url
- * is excluded — it is newline-separated in memory and tab-encoded on write. */
+ * and calendar_ics_url are excluded — they are newline-separated in memory and
+ * tab-encoded on write. */
 static void sanitize_all_strings(void) {
     char * fields[] = {
         settings.waste_postcode, settings.waste_housenr, settings.waste_ics_url,
@@ -560,7 +627,7 @@ static void sanitize_all_strings(void) {
         settings.otgw_pass, settings.mqtt_host, settings.mqtt_user,
         settings.mqtt_pass, settings.domoticz_host, settings.master_host,
         settings.tile_rotate_members, settings.calendar_ha_entity,
-        settings.calendar_ics_url, settings.ha_host, settings.curtain_entity,
+        settings.ha_host, settings.curtain_entity,
         settings.curtain_bat_a, settings.curtain_bat_b, settings.blinds_entity,
         settings.blinds_bat_a, settings.blinds_bat_b, settings.doorbell_entity,
         settings.doorbell_camera, settings.doorbell_stream_url, settings.vent_host,
@@ -682,6 +749,7 @@ void settings_save(void) {
     fprintf(f, "weather_location=%s\n",    settings.weather_location);
     fprintf(f, "weather_location_id=%d\n", settings.weather_location_id);
     fprintf(f, "forecast_mode=%d\n",       settings.forecast_mode);
+    fprintf(f, "weather_use_feel=%d\n",    settings.weather_use_feel);
     fprintf(f, "ot_bridge_mode=%s\n",      settings.ot_bridge_mode);
     fprintf(f, "otgw_host=%s\n",           settings.otgw_host);
     fprintf(f, "otgw_user=%s\n",           settings.otgw_user);
@@ -728,7 +796,12 @@ void settings_save(void) {
     fprintf(f, "stock_big_indoor=%d\n", settings.stock_big_indoor);
     fprintf(f, "calendar_notify_lead_min=%d\n", settings.calendar_notify_lead_min);
     fprintf(f, "calendar_ha_entity=%s\n", settings.calendar_ha_entity);
-    fprintf(f, "calendar_ics_url=%s\n", settings.calendar_ics_url);
+    {
+        char cal_enc[sizeof settings.calendar_ics_url];
+        snprintf(cal_enc, sizeof cal_enc, "%s", settings.calendar_ics_url);
+        for (char * p = cal_enc; *p; p++) if (*p == '\n') *p = '\t';
+        fprintf(f, "calendar_ics_url=%s\n", cal_enc);
+    }
     fprintf(f, "custom_layout_enabled=%d\n", settings.custom_layout_enabled);
     fprintf(f, "active_layout=%s\n", settings.active_layout);
     fprintf(f, "news_scroll_speed=%d\n", settings.news_scroll_speed);

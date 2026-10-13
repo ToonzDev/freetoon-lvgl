@@ -237,11 +237,17 @@ static int        g_p1_count = 4;   /* active page-2 slots (4 fixed, or N from a
 /* RSS news ticker (above the forecast). Tap → headline list; tapping a headline
  * shows its article summary (from the RSS body) in the reading pane. */
 static lv_obj_t * news_ticker    = NULL;
+static lv_obj_t * news_box       = NULL;
 static lv_obj_t * news_modal     = NULL;
-static lv_obj_t * news_body_lbl  = NULL;   /* reading pane (was a QR) */
+static lv_obj_t * news_pane      = NULL;   /* scrollable right reading pane */
+static lv_obj_t * news_body_lbl  = NULL;   /* reading pane article text */
 static lv_obj_t * news_body_title = NULL;
 static lv_obj_t * news_list      = NULL;   /* collapsible per-feed headline list */
 static bool       news_collapsed[NEWS_MAX_FEEDS];  /* per-feed collapse state */
+static int        news_modal_seq = -1;     /* last news_seq() rendered in news_modal */
+static int        news_had_items = 0;      /* whether news_modal had items on last render */
+static void news_list_rebuild(void);
+static void news_show_body(int i);
 /* Small banner at the top of the home screen — shown when the update
  * checker finds a newer freetoon-lvgl release. Tapping it opens a modal
  * with the release notes + the one-line install command. */
@@ -286,6 +292,7 @@ static void make_tile(lv_obj_t * parent, int x, int y, int w, int h, int ltype,
         const layout_tile_t * L = layout_find(ltype);
         if (L) {
             layout_cell_px(L->col, L->row, L->w, L->h, &x, &y, &w, &h);
+            x += 4; y += 4; w -= 8; h -= 8;     /* inter-tile margin */
             if (!L->visible) start_hidden = 1;
         } else {
             start_hidden = 1;   /* not in the user's layout → don't show */
@@ -458,6 +465,9 @@ static void open_placeholder(lv_event_t * e) {
         screen_sonos_show();
         return;
     }
+    if (b && !strcmp(b, "local:waste")) {
+        return;
+    }
 }
 
 static void on_update_modal_open_cb(lv_event_t * e) {
@@ -478,6 +488,9 @@ static void open_vent(lv_event_t * e) {
     }
     if (b && !strcmp(b, "local:sonos")) {
         screen_sonos_show();
+        return;
+    }
+    if (b && !strcmp(b, "local:waste")) {
         return;
     }
     ui_push(screen_vent_remote_create());
@@ -727,6 +740,9 @@ static void open_stats(lv_event_t * e) {
         screen_sonos_show();
         return;
     }
+    if (b && !strcmp(b, "local:waste")) {
+        return;
+    }
     ui_push(screen_stats_create());
 }
 static void open_forecast(lv_event_t * e) {
@@ -802,6 +818,7 @@ typedef struct {
 } sonos_view_t;
 
 static sonos_view_t * slot_sonos[4] = {0};
+static lv_obj_t *      slot_waste[4] = {0};
 static sonos_view_t * tile_sonos_view = NULL;
 
 static void on_sonos_tile_tap(lv_event_t * e) {
@@ -1032,14 +1049,61 @@ static void fill_agenda_overlay(lv_obj_t * l) {
     lv_label_set_text(l, out);
 }
 
+static void on_slot_waste_tap(lv_event_t * e) {
+    (void)e;
+}
+
+static lv_obj_t * make_slot_waste(lv_obj_t * tile, uint32_t bg) {
+    if (!tile) return NULL;
+    lv_obj_t * l = lv_label_create(tile);
+    lv_obj_set_style_bg_color(l, lv_color_hex(bg), 0);
+    lv_obj_set_style_bg_opa(l, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(l, 10, 0);
+    lv_obj_set_style_pad_all(l, SX(8), 0);
+    lv_obj_set_style_text_color(l, lv_color_hex(COL_TEXT_HI), 0);
+    lv_obj_set_style_text_font(l, SF(15), 0);
+    lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
+    lv_obj_set_size(l, LV_PCT(100), LV_PCT(100));
+    lv_obj_align(l, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_add_flag(l, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(l, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(l, on_slot_waste_tap, LV_EVENT_CLICKED, NULL);
+    lv_obj_move_foreground(l);                 /* cover the tile's own widgets */
+    return l;
+}
+
+static void fill_waste_overlay(lv_obj_t * l) {
+    if (!l) return;
+    waste_pickup_t p1 = {0}, p2 = {0};
+    int n = waste_state.connected ? waste_next_2_pickups(&p1, &p2) : 0;
+    char out[384] = "";
+    if (n >= 1) {
+        int mo = atoi(p1.date + 5), d = atoi(p1.date + 8);
+        if (n >= 2) {
+            int mo2 = atoi(p2.date + 5), d2 = atoi(p2.date + 8);
+            snprintf(out, sizeof out, "%s\n%d-%d  %s\n%d-%d  %s",
+                     tr("Afval", "Waste"), d, mo, p1.labels, d2, mo2, p2.labels);
+        } else {
+            snprintf(out, sizeof out, "%s\n%d-%d  %s",
+                     tr("Afval", "Waste"), d, mo, p1.labels);
+        }
+    } else {
+        snprintf(out, sizeof out, "%s\n%s",
+                 tr("Afval", "Waste"),
+                 waste_state.connected ? tr("Geen ophaaldata", "No pickups") : "...");
+    }
+    lv_label_set_text(l, out);
+}
+
 /* Either render the agenda overlay (when the slot is bound to "local:agenda")
- * or the Sonos overlay (when bound to "local:sonos") or fall back to the
- * normal integration/built-in render. Returns 1 when the slot is "active"
- * (built-in refresh should be skipped). */
+ * or the Sonos overlay (when bound to "local:sonos") or the Waste overlay
+ * (when bound to "local:waste") or fall back to the normal integration/built-in
+ * render. Returns 1 when the slot is "active" (built-in refresh should be skipped). */
 static int slot_render_or_agenda(int slot, int ai, lv_obj_t * lbl_main, lv_obj_t * lbl_sub) {
     const char * b = tile_slots_binding(slot);
     if (b && !strcmp(b, "local:agenda")) {
         if (slot_sonos[ai]) lv_obj_add_flag(slot_sonos[ai]->root, LV_OBJ_FLAG_HIDDEN);
+        if (slot_waste[ai]) lv_obj_add_flag(slot_waste[ai], LV_OBJ_FLAG_HIDDEN);
         fill_agenda_overlay(slot_agenda[ai]);
         if (slot_agenda[ai]) { lv_obj_clear_flag(slot_agenda[ai], LV_OBJ_FLAG_HIDDEN); lv_obj_move_foreground(slot_agenda[ai]); }
         return 1;
@@ -1047,6 +1111,7 @@ static int slot_render_or_agenda(int slot, int ai, lv_obj_t * lbl_main, lv_obj_t
     if (slot_agenda[ai]) lv_obj_add_flag(slot_agenda[ai], LV_OBJ_FLAG_HIDDEN);
 
     if (b && !strcmp(b, "local:sonos")) {
+        if (slot_waste[ai]) lv_obj_add_flag(slot_waste[ai], LV_OBJ_FLAG_HIDDEN);
         if (slot_sonos[ai]) {
             update_sonos_view(slot_sonos[ai]);
             lv_obj_clear_flag(slot_sonos[ai]->root, LV_OBJ_FLAG_HIDDEN);
@@ -1055,6 +1120,16 @@ static int slot_render_or_agenda(int slot, int ai, lv_obj_t * lbl_main, lv_obj_t
         return 1;
     }
     if (slot_sonos[ai]) lv_obj_add_flag(slot_sonos[ai]->root, LV_OBJ_FLAG_HIDDEN);
+
+    if (b && !strcmp(b, "local:waste")) {
+        fill_waste_overlay(slot_waste[ai]);
+        if (slot_waste[ai]) {
+            lv_obj_clear_flag(slot_waste[ai], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_move_foreground(slot_waste[ai]);
+        }
+        return 1;
+    }
+    if (slot_waste[ai]) lv_obj_add_flag(slot_waste[ai], LV_OBJ_FLAG_HIDDEN);
 
     return render_tile_slot(slot, lbl_main, lbl_sub);
 }
@@ -1148,6 +1223,35 @@ static void render_local_into(const char * id, lv_obj_t * title,
             if (sub)  lv_label_set_text(sub, st.title[0] ? st.title : "");
         } else {
             if (main) lv_label_set_text(main, tr("offline", "offline"));
+            if (sub)  lv_label_set_text(sub, "");
+        }
+    } else if (!strcmp(id, "local:waste")) {
+        if (title) lv_label_set_text(title, tr("Afval", "Waste"));
+        waste_pickup_t p1 = {0}, p2 = {0};
+        int n = waste_state.connected ? waste_next_2_pickups(&p1, &p2) : 0;
+        if (n >= 1) {
+            int mo = atoi(p1.date + 5), d = atoi(p1.date + 8);
+            if (main) lv_label_set_text_fmt(main, "%d-%d %s", d, mo, p1.labels);
+            if (sub) {
+                if (n >= 2) {
+                    int mo2 = atoi(p2.date + 5), d2 = atoi(p2.date + 8);
+                    lv_label_set_text_fmt(sub, "%d-%d %s", d2, mo2, p2.labels);
+                } else {
+                    lv_label_set_text(sub, "");
+                }
+            }
+        } else {
+            if (main) lv_label_set_text(main, waste_state.connected ? tr("geen", "none") : "...");
+            if (sub)  lv_label_set_text(sub, "");
+        }
+    } else if (!strcmp(id, "local:agenda")) {
+        if (title) lv_label_set_text(title, tr("Agenda", "Calendar"));
+        if (calendar_state.count > 0) {
+            calendar_event_t * ev = &calendar_state.ev[0];
+            if (main) lv_label_set_text(main, ev->summary);
+            if (sub)  lv_label_set_text_fmt(sub, "%s %s", ev->date + 5, ev->time[0] ? ev->time : "");
+        } else {
+            if (main) lv_label_set_text(main, tr("Geen afspraken", "No events"));
             if (sub)  lv_label_set_text(sub, "");
         }
     }
@@ -1272,6 +1376,39 @@ static void refresh_cb(lv_timer_t * t) {
             }
             continue;
         }
+        if (b && !strcmp(b, "local:agenda")) {
+            if (p1_title[i]) lv_label_set_text(p1_title[i], tr("Agenda", "Calendar"));
+            if (calendar_state.count > 0) {
+                calendar_event_t * ev = &calendar_state.ev[0];
+                if (p1_main[i]) lv_label_set_text(p1_main[i], ev->summary);
+                if (p1_sub[i])  lv_label_set_text_fmt(p1_sub[i], "%s %s", ev->date + 5, ev->time[0] ? ev->time : "");
+            } else {
+                if (p1_main[i]) lv_label_set_text(p1_main[i], tr("Geen afspraken", "No events"));
+                if (p1_sub[i])  lv_label_set_text(p1_sub[i], "");
+            }
+            continue;
+        }
+        if (b && !strcmp(b, "local:waste")) {
+            if (p1_title[i]) lv_label_set_text(p1_title[i], tr("Afval", "Waste"));
+            waste_pickup_t p1 = {0}, p2 = {0};
+            int n = waste_state.connected ? waste_next_2_pickups(&p1, &p2) : 0;
+            if (n >= 1) {
+                int mo = atoi(p1.date + 5), d = atoi(p1.date + 8);
+                if (p1_main[i]) lv_label_set_text_fmt(p1_main[i], "%d-%d %s", d, mo, p1.labels);
+                if (p1_sub[i]) {
+                    if (n >= 2) {
+                        int mo2 = atoi(p2.date + 5), d2 = atoi(p2.date + 8);
+                        lv_label_set_text_fmt(p1_sub[i], "%d-%d %s", d2, mo2, p2.labels);
+                    } else {
+                        lv_label_set_text(p1_sub[i], "");
+                    }
+                }
+            } else {
+                if (p1_main[i]) lv_label_set_text(p1_main[i], waste_state.connected ? tr("geen", "none") : "...");
+                if (p1_sub[i])  lv_label_set_text(p1_sub[i], "");
+            }
+            continue;
+        }
         const integration_meta_t * m = tile_slots_meta_for(TILE_SLOT_P1_0 + i);
         if (m) {
             if (p1_title[i]) lv_label_set_text(p1_title[i],
@@ -1295,24 +1432,46 @@ static void refresh_cb(lv_timer_t * t) {
             layout_hides_ticker = (!L || !L->visible);
         }
         if (settings.news_enabled && news_count() > 0 && home_tile_page == 0 && !layout_hides_ticker) {
+            if (news_box) lv_obj_clear_flag(news_box, LV_OBJ_FLAG_HIDDEN);
             lv_obj_clear_flag(news_ticker, LV_OBJ_FLAG_HIDDEN);
             static char last_first[NEWS_TITLE_MAX] = "";
+            static int  last_nn = 0;
             char t0[NEWS_TITLE_MAX], l0[NEWS_LINK_MAX];
             news_item(0, t0, sizeof t0, l0, sizeof l0);
-            if (strcmp(t0, last_first) != 0) {
+            int nn = news_count();
+            if (strcmp(t0, last_first) != 0 || nn != last_nn) {
                 snprintf(last_first, sizeof last_first, "%s", t0);
+                last_nn = nn;
                 char buf[1400]; buf[0] = 0;
-                int nn = news_count();
-                for (int i = 0; i < nn; i++) {
+                int nf = news_feed_count();
+                int per_feed = nf > 0 ? (12 + nf - 1) / nf : 12;
+                int feed_cnt[NEWS_MAX_FEEDS] = {0};
+                int added = 0;
+                for (int i = 0; i < nn && added < 12; i++) {
+                    int f = news_item_feed(i);
+                    if (f >= 0 && f < NEWS_MAX_FEEDS) {
+                        if (feed_cnt[f] >= per_feed) continue;
+                        feed_cnt[f]++;
+                    }
                     char ti[NEWS_TITLE_MAX], li[NEWS_LINK_MAX];
                     if (news_item(i, ti, sizeof ti, li, sizeof li) != 0) continue;
+                    if (added > 0) strncat(buf, "    -    ", sizeof buf - strlen(buf) - 1);
                     strncat(buf, ti, sizeof buf - strlen(buf) - 1);
-                    if (i < nn - 1) strncat(buf, "    -    ", sizeof buf - strlen(buf) - 1);
+                    added++;
                 }
                 lv_label_set_text(news_ticker, buf);
             }
         } else {
+            if (news_box) lv_obj_add_flag(news_box, LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(news_ticker, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    if (news_modal && news_seq() != news_modal_seq) {
+        news_modal_seq = news_seq();
+        news_list_rebuild();
+        if (!news_had_items && news_count() > 0) {
+            news_had_items = 1;
+            news_show_body(0);
         }
     }
 
@@ -1561,33 +1720,57 @@ static void refresh_cb(lv_timer_t * t) {
             int mo = atoi(p1.date + 5), d = atoi(p1.date + 8);
             lv_label_set_text_fmt(lbl_waste_date, "%d-%d", d, mo);
             lv_label_set_text(lbl_waste_type, p1.labels);
-            if (tile_waste)   /* shrink to fit, never truncate, in narrow tiles */
+            if (tile_waste) {
+#ifdef TOON1
+                fit_font(lbl_waste_type, p1.labels,
+                         lv_obj_get_content_width(tile_waste) - 8, 18);
+#else
                 fit_font(lbl_waste_type, p1.labels,
                          lv_obj_get_content_width(tile_waste) - 80, 18);
+#endif
+            }
             if (waste_icon_1) {
                 lv_img_set_src(waste_icon_1, waste_icon_for_label(p1.labels));
                 lv_obj_set_style_img_recolor(waste_icon_1,
                     lv_color_hex(waste_accent_for_label(p1.labels)), 0);
             }
+#ifdef TOON1
+            if (lbl_waste_type)
+                lv_obj_set_style_text_color(lbl_waste_type,
+                    lv_color_hex(waste_accent_for_label(p1.labels)), 0);
+#endif
         } else {
             lv_label_set_text(lbl_waste_date,
                               waste_state.connected ? "--" : "...");
             lv_label_set_text(lbl_waste_type,
                               waste_state.connected ? tr("geen", "none") : "");
         }
-        if (n >= 2 && lbl_waste_date_2 && lbl_waste_type_2 && waste_icon_2) {
+        if (n >= 2 && lbl_waste_date_2 && lbl_waste_type_2) {
             int mo = atoi(p2.date + 5), d = atoi(p2.date + 8);
             lv_label_set_text_fmt(lbl_waste_date_2, "%d-%d", d, mo);
             lv_label_set_text(lbl_waste_type_2, p2.labels);
-            if (tile_waste)
+            if (tile_waste) {
+#ifdef TOON1
+                fit_font(lbl_waste_type_2, p2.labels,
+                         lv_obj_get_content_width(tile_waste) - 8, 14);
+#else
                 fit_font(lbl_waste_type_2, p2.labels,
                          lv_obj_get_content_width(tile_waste) - 80, 14);
-            lv_img_set_src(waste_icon_2, waste_icon_for_label(p2.labels));
-            lv_obj_set_style_img_recolor(waste_icon_2,
-                lv_color_hex(waste_accent_for_label(p2.labels)), 0);
-            lv_obj_clear_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
-        } else if (waste_icon_2) {
-            lv_obj_add_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
+#endif
+            }
+            if (waste_icon_2) {
+                lv_img_set_src(waste_icon_2, waste_icon_for_label(p2.labels));
+                lv_obj_set_style_img_recolor(waste_icon_2,
+                    lv_color_hex(waste_accent_for_label(p2.labels)), 0);
+                lv_obj_clear_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
+            }
+#ifdef TOON1
+            if (lbl_waste_type_2)
+                lv_obj_set_style_text_color(lbl_waste_type_2,
+                    lv_color_hex(waste_accent_for_label(p2.labels)), 0);
+#endif
+        } else {
+            if (waste_icon_2) lv_obj_add_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
             if (lbl_waste_date_2) lv_label_set_text(lbl_waste_date_2, "");
             if (lbl_waste_type_2) lv_label_set_text(lbl_waste_type_2, "");
         }
@@ -1885,7 +2068,7 @@ static void refresh_cb(lv_timer_t * t) {
     /* Outside tile — current temp + short description. */
     if (lbl_outside_main) {
         if (weather_state.connected)
-            lv_label_set_text_fmt(lbl_outside_main, "%.1f°C", weather_state.current_temp);
+            lv_label_set_text_fmt(lbl_outside_main, "%.1f°C", weather_display_temp());
         else
             lv_label_set_text(lbl_outside_main, "-- C");
     }
@@ -1905,7 +2088,7 @@ static void refresh_cb(lv_timer_t * t) {
                 const weather_hour_t * h = &weather_state.hours[si];
                 lv_label_set_text(fc_day_lbl[i], h->label);
                 lv_label_set_text_fmt(fc_temp_lbl[i], "%.0f\xc2\xb0",
-                                      h->temperature);
+                                      weather_hour_display_temp(h));
                 set_forecast_icon(fc_icon[i], fc_icon_sun[i], h->icon);
                 if (h->wind_dir[0]) {
                     lv_label_set_text_fmt(fc_wind_lbl[i], "%s %d Bft",
@@ -1993,7 +2176,7 @@ static void refresh_cb(lv_timer_t * t) {
     /* Outside tile — current temp + short description on second line. */
     if (lbl_outside_main && weather_state.connected) {
         lv_label_set_text_fmt(lbl_outside_main, "%.1f°C",
-                              weather_state.current_temp);
+                              weather_display_temp());
     }
     /* "Medemblik - 14.7 C now" header above the forecast strip. Life360
      * moved to its own tile so this stays purely weather. */
@@ -2001,7 +2184,7 @@ static void refresh_cb(lv_timer_t * t) {
         const char * city = settings.weather_location[0] ? settings.weather_location : tr("Weer", "Forecast");
         if (weather_state.connected)
             lv_label_set_text_fmt(lbl_forecast_city, tr("%s  -  %.1f°C nu", "%s  -  %.1f°C now"),
-                                  city, weather_state.current_temp);
+                                  city, weather_display_temp());
         else
             lv_label_set_text(lbl_forecast_city, city);
     }
@@ -2136,7 +2319,7 @@ static void refresh_cb(lv_timer_t * t) {
     /* Outside tile — current temp + short description. */
     if (lbl_outside_main) {
         if (weather_state.connected)
-            lv_label_set_text_fmt(lbl_outside_main, "%.1f°C", weather_state.current_temp);
+            lv_label_set_text_fmt(lbl_outside_main, "%.1f°C", weather_display_temp());
         else
             lv_label_set_text(lbl_outside_main, "-- C");
     }
@@ -2254,10 +2437,13 @@ static void home_show_page(int n) {
          * custom layout hasn't hidden it). */
         if (news_ticker && settings.news_enabled) {
             const layout_tile_t * L = settings.custom_layout_enabled ? layout_find(LT_NEWS_TICKER) : NULL;
-            if (!settings.custom_layout_enabled || (L && L->visible))
+            if (!settings.custom_layout_enabled || (L && L->visible)) {
+                if (news_box) lv_obj_clear_flag(news_box, LV_OBJ_FLAG_HIDDEN);
                 lv_obj_clear_flag(news_ticker, LV_OBJ_FLAG_HIDDEN);
-            else
+            } else {
+                if (news_box) lv_obj_add_flag(news_box, LV_OBJ_FLAG_HIDDEN);
                 lv_obj_add_flag(news_ticker, LV_OBJ_FLAG_HIDDEN);
+            }
         }
         apply_offline_tile_visibility();   /* re-hide offline tiles after un-hiding */
     } else {
@@ -2269,6 +2455,7 @@ static void home_show_page(int n) {
             lv_obj_move_foreground(home_page1);
         }
         /* hide the page-0 ticker so it doesn't draw over the page-2 slots */
+        if (news_box) lv_obj_add_flag(news_box, LV_OBJ_FLAG_HIDDEN);
         if (news_ticker) lv_obj_add_flag(news_ticker, LV_OBJ_FLAG_HIDDEN);
     }
     home_set_dot(n);
@@ -2375,6 +2562,7 @@ static void news_modal_close(lv_event_t * e) {
     if (news_modal) {
         lv_obj_del_async(news_modal);
         news_modal = NULL;
+        news_pane = NULL;
         news_body_lbl = NULL;
         news_body_title = NULL;
         news_list = NULL;
@@ -2382,6 +2570,7 @@ static void news_modal_close(lv_event_t * e) {
 }
 /* Show the i-th article's title + summary in the reading pane. */
 static void news_show_body(int i) {
+    if (news_pane) lv_obj_scroll_to_y(news_pane, 0, LV_ANIM_OFF);
     if (news_count() == 0) {
         if (news_body_title) lv_label_set_text(news_body_title, tr("Geen artikelen geladen", "No articles loaded"));
         if (news_body_lbl)   lv_label_set_text(news_body_lbl,
@@ -2413,7 +2602,6 @@ void screen_home_set_ticker_speed(int spd) {
        change is visible immediately rather than at the next headline rotation. */
     lv_label_set_long_mode(news_ticker, LV_LABEL_LONG_SCROLL_CIRCULAR);
 }
-static void news_list_rebuild(void);
 
 /* Tap a feed header → toggle that feed's section collapsed/expanded. */
 static void on_news_feed_toggle(lv_event_t * e) {
@@ -2427,10 +2615,13 @@ static void news_add_item_row(int i) {
     char ti[NEWS_TITLE_MAX];
     if (news_item(i, ti, sizeof ti, NULL, 0) != 0) return;
     lv_obj_t * b = lv_list_add_btn(news_list, NULL, ti);
-    lv_obj_set_style_text_font(b, SF(18), 0);
+    lv_obj_set_style_text_font(b, SF(16), 0);
     lv_obj_add_event_cb(b, on_news_item, LV_EVENT_CLICKED, (void *)(intptr_t)i);
     lv_obj_t * bl = lv_obj_get_child(b, lv_obj_get_child_cnt(b) - 1);
-    if (bl) { lv_label_set_long_mode(bl, LV_LABEL_LONG_DOT); lv_obj_set_width(bl, 360); }
+    if (bl) {
+        lv_label_set_long_mode(bl, LV_LABEL_LONG_DOT);
+        lv_obj_set_width(bl, lv_pct(100));
+    }
 }
 
 /* Rebuild the headline list grouped by feed, honouring per-feed collapse. */
@@ -2453,7 +2644,7 @@ static void news_list_rebuild(void) {
         snprintf(hdr, sizeof hdr, "%s  %s  (%d)",
                  news_collapsed[f] ? LV_SYMBOL_RIGHT : LV_SYMBOL_DOWN, fname, cnt);
         lv_obj_t * h = lv_list_add_btn(news_list, NULL, hdr);
-        lv_obj_set_style_text_font(h, SF(18), 0);
+        lv_obj_set_style_text_font(h, SF(16), 0);
         lv_obj_set_style_bg_color(h, lv_color_hex(0x24364f), 0);
         lv_obj_set_style_bg_opa(h, LV_OPA_COVER, 0);
         lv_obj_set_style_text_color(h, lv_color_hex(0x9fd0ff), 0);
@@ -2470,7 +2661,9 @@ static void news_list_rebuild(void) {
 static void on_news_tap(lv_event_t * e) {
     (void)e;
     if (news_modal) return;
-    news_wake_fetch();
+    if (news_count() == 0) news_wake_fetch();
+    news_modal_seq = news_seq();
+    news_had_items = (news_count() > 0);
     news_modal = lv_obj_create(lv_layer_top());
     lv_obj_remove_style_all(news_modal);
     lv_obj_set_size(news_modal, LV_HOR_RES, LV_VER_RES);
@@ -2487,55 +2680,76 @@ static void on_news_tap(lv_event_t * e) {
     lv_obj_set_style_bg_color(card, lv_color_hex(0x16243a), 0);
     lv_obj_set_style_radius(card, 0, 0);
     lv_obj_set_style_border_width(card, 0, 0);
+    lv_obj_set_style_pad_all(card, 0, 0);
     lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(card, LV_OBJ_FLAG_CLICKABLE);   /* swallow taps */
 
+    int margin_x = SX(12);
+    int top_y    = (DISP_VER < 600) ? 50 : 56;
+    int bot_pad  = SY(12);
+    int avail_w  = LV_HOR_RES - (margin_x * 3);
+    int list_w   = (avail_w * 44) / 100;
+    int pane_w   = avail_w - list_w;
+    int content_h = LV_VER_RES - top_y - bot_pad;
+
     lv_obj_t * t = lv_label_create(card);
-    lv_obj_set_style_text_font(t, SF(28), 0);
+    lv_obj_set_style_text_font(t, SF(24), 0);
     lv_obj_set_style_text_color(t, lv_color_hex(0xffffff), 0);
     lv_label_set_text(t, tr("Nieuws", "News"));
-    lv_obj_align(t, LV_ALIGN_TOP_LEFT, SX(24), SY(16));
-
-    /* Top-right "X" close button */
-    lv_obj_t * x = lv_btn_create(card);
-    lv_obj_set_size(x, SX(56), SY(56));
-    lv_obj_align(x, LV_ALIGN_TOP_RIGHT, SX(-16), SY(10));
-    lv_obj_set_style_bg_color(x, lv_color_hex(0x33445a), 0);
-    lv_obj_set_style_radius(x, 12, 0);
-    lv_obj_add_event_cb(x, news_modal_close, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * xl = lv_label_create(x);
-    lv_label_set_text(xl, LV_SYMBOL_CLOSE);
-    lv_obj_set_style_text_color(xl, lv_color_hex(0xffffff), 0);
-    lv_obj_center(xl);
+    lv_obj_align(t, LV_ALIGN_TOP_LEFT, SX(16), (top_y - 24) / 2);
 
     news_list = lv_list_create(card);
-    lv_obj_set_size(news_list, SX(460), SY(510));
-    lv_obj_align(news_list, LV_ALIGN_TOP_LEFT, SX(16), SY(70));
+    lv_obj_set_size(news_list, list_w, content_h);
+    lv_obj_set_pos(news_list, margin_x, top_y);
     lv_obj_set_style_bg_color(news_list, lv_color_hex(0x0e1a2a), 0);
     /* Start with every feed expanded; headers collapse/expand on tap. */
     for (int f = 0; f < NEWS_MAX_FEEDS; f++) news_collapsed[f] = false;
     news_list_rebuild();
 
-    /* Reading pane (right) — selected article's title + summary; tap a headline. */
-    news_body_title = lv_label_create(card);
-    lv_obj_set_style_text_font(news_body_title, SF(22), 0);
+    /* Reading pane (right) — full-height vertically scrollable column holding
+       both the selected article's title and full body text. */
+    news_pane = lv_obj_create(card);
+    lv_obj_set_size(news_pane, pane_w, content_h);
+    lv_obj_set_pos(news_pane, margin_x + list_w + margin_x, top_y);
+    lv_obj_set_style_bg_color(news_pane, lv_color_hex(0x0e1a2a), 0);
+    lv_obj_set_style_border_width(news_pane, 0, 0);
+    lv_obj_set_style_radius(news_pane, 10, 0);
+    lv_obj_set_style_pad_all(news_pane, SX(12), 0);
+    lv_obj_set_style_pad_row(news_pane, SY(10), 0);
+    lv_obj_set_flex_flow(news_pane, LV_FLEX_FLOW_COLUMN);
+    lv_obj_add_flag(news_pane, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(news_pane, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(news_pane, LV_SCROLLBAR_MODE_AUTO);
+
+    news_body_title = lv_label_create(news_pane);
+    lv_obj_set_style_text_font(news_body_title, SF(20), 0);
     lv_obj_set_style_text_color(news_body_title, lv_color_hex(0xffffff), 0);
     lv_label_set_long_mode(news_body_title, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(news_body_title, SX(510));
-    lv_obj_align(news_body_title, LV_ALIGN_TOP_LEFT, SX(490), SY(70));
+    lv_obj_set_width(news_body_title, lv_pct(100));
 
-    lv_obj_t * pane = lv_obj_create(card);
-    lv_obj_set_size(pane, SX(514), SY(440));
-    lv_obj_align(pane, LV_ALIGN_TOP_LEFT, SX(490), SY(140));
-    lv_obj_set_style_bg_color(pane, lv_color_hex(0x0e1a2a), 0);
-    lv_obj_set_style_border_width(pane, 0, 0);
-    lv_obj_set_style_radius(pane, 10, 0);
-    lv_obj_set_scroll_dir(pane, LV_DIR_VER);
-    news_body_lbl = lv_label_create(pane);
-    lv_obj_set_style_text_font(news_body_lbl, SF(18), 0);
+    news_body_lbl = lv_label_create(news_pane);
+    lv_obj_set_style_text_font(news_body_lbl, SF(16), 0);
     lv_obj_set_style_text_color(news_body_lbl, lv_color_hex(0xcdd9e6), 0);
+    lv_obj_set_style_text_line_space(news_body_lbl, SY(4), 0);
     lv_label_set_long_mode(news_body_lbl, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(news_body_lbl, SX(480));
+    lv_obj_set_width(news_body_lbl, lv_pct(100));
+
+    /* Top-right "X" close button — created last and moved to foreground so it is
+       unconditionally on top of the reading pane and everything else */
+    lv_obj_t * x = lv_btn_create(card);
+    int x_w = (DISP_HOR < 1000) ? 80 : 88;
+    lv_obj_set_size(x, x_w, top_y);
+    lv_obj_align(x, LV_ALIGN_TOP_RIGHT, 0, 0);
+    lv_obj_set_style_bg_color(x, lv_color_hex(0x33445a), 0);
+    lv_obj_set_style_radius(x, 0, 0);
+    lv_obj_set_ext_click_area(x, 25);
+    lv_obj_add_event_cb(x, news_modal_close, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * xl = lv_label_create(x);
+    lv_label_set_text(xl, LV_SYMBOL_CLOSE);
+    lv_obj_set_style_text_font(xl, SF(22), 0);
+    lv_obj_set_style_text_color(xl, lv_color_hex(0xffffff), 0);
+    lv_obj_center(xl);
+    lv_obj_move_foreground(x);
 
     news_show_body(0);
     lv_obj_move_foreground(news_modal);
@@ -2743,6 +2957,9 @@ static void open_family_map(lv_event_t * e) {
         screen_sonos_show();
         return;
     }
+    if (b && !strcmp(b, "local:waste")) {
+        return;
+    }
     if (map_modal) return;
 
     map_modal = lv_obj_create(lv_scr_act());
@@ -2858,13 +3075,17 @@ static void open_family_map(lv_event_t * e) {
     }
 
     lv_obj_t * x = lv_btn_create(card);
-    lv_obj_set_size(x, SX(50), SY(50));
-    lv_obj_align(x, LV_ALIGN_TOP_RIGHT, SX(-12), SY(8));
+    int x_w = (DISP_HOR < 1000) ? 68 : 76;
+    int x_h = (DISP_VER < 600) ? 46 : 50;
+    lv_obj_set_size(x, x_w, x_h);
+    lv_obj_align(x, LV_ALIGN_TOP_RIGHT, SX(-10), SY(6));
     lv_obj_set_style_bg_color(x, lv_color_hex(0x33445a), 0);
     lv_obj_set_style_radius(x, 12, 0);
+    lv_obj_set_ext_click_area(x, 30);
     lv_obj_add_event_cb(x, map_close, LV_EVENT_CLICKED, NULL);
     lv_obj_t * xl = lv_label_create(x);
     lv_label_set_text(xl, LV_SYMBOL_CLOSE);
+    lv_obj_set_style_text_font(xl, SF(22), 0);
     lv_obj_set_style_text_color(xl, lv_color_hex(0xffffff), 0);
     lv_obj_center(xl);
 
@@ -2914,6 +3135,7 @@ lv_obj_t * screen_home_create(void) {
         const layout_tile_t * L = layout_find(LT_THERMOSTAT);
         if (L && L->visible) { int x, y, w, h;
             layout_cell_px(L->col, L->row, L->w, L->h, &x, &y, &w, &h);
+            x += 4; y += 4; w -= 8; h -= 8;     /* inter-tile margin */
             lv_obj_set_pos(th, x, y);
             lv_obj_set_size(th, w, h);
             /* The "ft" logo badge is a fixed 40px box at screen (8,6). A custom
@@ -3049,7 +3271,7 @@ lv_obj_t * screen_home_create(void) {
      * below, so the Program button doesn't need to carry it. An asterisk
      * appears on Program while a +/- temporary override is in flight. */
     {
-        const int manual_w = 110, prog_w = 140, btn_h = 38, gap = 6;
+        const int manual_w = 135, prog_w = 160, btn_h = 42, gap = 8;
         const int total   = manual_w + prog_w + gap;
         const int left_x  = -total / 2 + manual_w / 2;
         const int right_x = -total / 2 + manual_w + gap + prog_w / 2;
@@ -3058,32 +3280,34 @@ lv_obj_t * screen_home_create(void) {
         lv_obj_set_size(tile_btn_mode_manual, manual_w, btn_h);
         lv_obj_align(tile_btn_mode_manual, LV_ALIGN_CENTER, left_x, 70);
         lv_obj_set_style_bg_color(tile_btn_mode_manual, lv_color_hex(0x6a5424), 0);
-        lv_obj_set_style_radius(tile_btn_mode_manual, 19, 0);
+        lv_obj_set_style_radius(tile_btn_mode_manual, 21, 0);
         lv_obj_set_style_border_color(tile_btn_mode_manual, lv_color_hex(0xffffff), 0);
         lv_obj_set_style_border_width(tile_btn_mode_manual, 0, 0);
+        lv_obj_set_style_pad_hor(tile_btn_mode_manual, 4, 0);
         lv_obj_set_ext_click_area(tile_btn_mode_manual, 8);
         lv_obj_add_event_cb(tile_btn_mode_manual, on_mode_manual,
                             LV_EVENT_CLICKED, NULL);
         lv_obj_t * ml = lv_label_create(tile_btn_mode_manual);
         lv_label_set_text(ml, tr("Handmatig", "Manual"));
         lv_obj_set_style_text_color(ml, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(ml, SF(22), 0);
+        lv_obj_set_style_text_font(ml, SF(20), 0);
         lv_obj_center(ml);
 
         tile_btn_mode_program = lv_btn_create(th);
         lv_obj_set_size(tile_btn_mode_program, prog_w, btn_h);
         lv_obj_align(tile_btn_mode_program, LV_ALIGN_CENTER, right_x, 70);
         lv_obj_set_style_bg_color(tile_btn_mode_program, lv_color_hex(0x2f6b6b), 0);
-        lv_obj_set_style_radius(tile_btn_mode_program, 19, 0);
+        lv_obj_set_style_radius(tile_btn_mode_program, 21, 0);
         lv_obj_set_style_border_color(tile_btn_mode_program, lv_color_hex(0xffffff), 0);
         lv_obj_set_style_border_width(tile_btn_mode_program, 0, 0);
+        lv_obj_set_style_pad_hor(tile_btn_mode_program, 4, 0);
         lv_obj_set_ext_click_area(tile_btn_mode_program, 8);
         lv_obj_add_event_cb(tile_btn_mode_program, on_mode_program,
                             LV_EVENT_CLICKED, NULL);
         lbl_t_program = lv_label_create(tile_btn_mode_program);
         lv_label_set_text(lbl_t_program, tr("Programma", "Program"));
         lv_obj_set_style_text_color(lbl_t_program, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(lbl_t_program, SF(22), 0);
+        lv_obj_set_style_text_font(lbl_t_program, SF(20), 0);
         lv_obj_center(lbl_t_program);
     }
 
@@ -3249,6 +3473,33 @@ lv_obj_t * screen_home_create(void) {
               open_placeholder, &waste_big);
     tile_waste = waste_big.tile;
 
+#ifdef TOON1
+    waste_icon_1 = NULL;
+    lbl_waste_date = lv_label_create(waste_big.tile);
+    lv_obj_set_style_text_color(lbl_waste_date, lv_color_hex(COL_TEXT_HI), 0);
+    lv_obj_set_style_text_font(lbl_waste_date, SF(24), 0);
+    lv_label_set_text(lbl_waste_date, "--");
+    lv_obj_align(lbl_waste_date, LV_ALIGN_TOP_LEFT, 4, 38);
+
+    lbl_waste_type = lv_label_create(waste_big.tile);
+    lv_obj_set_style_text_color(lbl_waste_type, lv_color_hex(COL_TEXT_DIM), 0);
+    lv_obj_set_style_text_font(lbl_waste_type, SF(16), 0);
+    lv_label_set_text(lbl_waste_type, "");
+    lv_obj_align(lbl_waste_type, LV_ALIGN_TOP_LEFT, 4, 68);
+
+    waste_icon_2 = NULL;
+    lbl_waste_date_2 = lv_label_create(waste_big.tile);
+    lv_obj_set_style_text_color(lbl_waste_date_2, lv_color_hex(COL_TEXT_DIM), 0);
+    lv_obj_set_style_text_font(lbl_waste_date_2, SF(20), 0);
+    lv_label_set_text(lbl_waste_date_2, "");
+    lv_obj_align(lbl_waste_date_2, LV_ALIGN_BOTTOM_LEFT, 4, -28);
+
+    lbl_waste_type_2 = lv_label_create(waste_big.tile);
+    lv_obj_set_style_text_color(lbl_waste_type_2, lv_color_hex(COL_TEXT_DIM), 0);
+    lv_obj_set_style_text_font(lbl_waste_type_2, SF(14), 0);
+    lv_label_set_text(lbl_waste_type_2, "");
+    lv_obj_align(lbl_waste_type_2, LV_ALIGN_BOTTOM_LEFT, 4, -8);
+#else
     waste_icon_1 = lv_img_create(waste_big.tile);
     lv_img_set_src(waste_icon_1, &icon_trash);
     lv_obj_set_style_img_recolor_opa(waste_icon_1, 255, 0);
@@ -3292,6 +3543,7 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_text_font(lbl_waste_type_2, SF(14), 0);
     lv_label_set_text(lbl_waste_type_2, "");
     lv_obj_align(lbl_waste_type_2, LV_ALIGN_BOTTOM_LEFT, 72, -8);
+#endif
 
     /* Live Energy tile (replaces the old Humidity tile — humidity is now
        on the Heater bottom strip). Big live power on top, gas total below,
@@ -3302,6 +3554,7 @@ lv_obj_t * screen_home_create(void) {
     tile_energy = energy_t.tile;
     slot_agenda[0] = make_slot_agenda(tile_energy, 0x4477cc);
     slot_sonos[0]  = make_sonos_view(tile_energy);
+    slot_waste[0]  = make_slot_waste(tile_energy, 0x1e3a24);
     if (slot_sonos[0]) lv_obj_add_flag(slot_sonos[0]->root, LV_OBJ_FLAG_HIDDEN);
     /* Compressed for the new 130-px tile: 28-pt W value (was 48), gas
      * total on the same baseline range below. */
@@ -3343,6 +3596,7 @@ lv_obj_t * screen_home_create(void) {
     tile_vent = vent.tile;
     slot_agenda[2] = make_slot_agenda(tile_vent, 0x4477cc);
     slot_sonos[2]  = make_sonos_view(tile_vent);
+    slot_waste[2]  = make_slot_waste(tile_vent, 0x1e3a24);
     if (slot_sonos[2]) lv_obj_add_flag(slot_sonos[2]->root, LV_OBJ_FLAG_HIDDEN);
 
     /* Speed % shares the title row with the "Vent" label so the
@@ -3430,6 +3684,7 @@ lv_obj_t * screen_home_create(void) {
     tile_family = family_t.tile;
     slot_agenda[1] = make_slot_agenda(tile_family, 0x4477cc);
     slot_sonos[1]  = make_sonos_view(tile_family);
+    slot_waste[1]  = make_slot_waste(tile_family, 0x1e3a24);
     if (slot_sonos[1]) lv_obj_add_flag(slot_sonos[1]->root, LV_OBJ_FLAG_HIDDEN);
     /* Two scrolling labels — the formatted address ("City > Street > Num")
      * almost always exceeds the 194-px tile width, so we use
@@ -3512,6 +3767,7 @@ lv_obj_t * screen_home_create(void) {
     tile_water = water_t.tile;
     slot_agenda[3] = make_slot_agenda(tile_water, 0x4477cc);
     slot_sonos[3]  = make_sonos_view(tile_water);
+    slot_waste[3]  = make_slot_waste(tile_water, 0x1e3a24);
     if (slot_sonos[3]) lv_obj_add_flag(slot_sonos[3]->root, LV_OBJ_FLAG_HIDDEN);
 
     /* Long-press on any of the four right-column tiles → tile-slots picker.
@@ -3664,21 +3920,79 @@ lv_obj_t * screen_home_create(void) {
        right of x=22 to leave room for the night-moon glyph that precedes it. */
     lv_obj_align(lbl_forecast_city, LV_ALIGN_TOP_LEFT, 54, 457);
 
-    /* News ticker — full-width strip at the top of the bottom band, above the
-     * location + forecast. Tap opens the headline list + QR. */
-    news_ticker = lv_label_create(scr_root);
-    lv_label_set_long_mode(news_ticker, LV_LABEL_LONG_SCROLL_CIRCULAR);
-    lv_obj_set_style_anim_speed(news_ticker,
-        settings.news_scroll_speed >= 30 ? settings.news_scroll_speed : 30, 0);
-    lv_obj_set_width(news_ticker, SX(1000));
-    lv_obj_align(news_ticker, LV_ALIGN_TOP_LEFT, SX(12), SY(432));
-    lv_obj_set_style_text_color(news_ticker, lv_color_hex(0xcfe0f0), 0);
-    lv_obj_set_style_text_font(news_ticker, SF(18), 0);
-    lv_label_set_text(news_ticker, "");
-    lv_obj_add_flag(news_ticker, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_ext_click_area(news_ticker, 12);
-    lv_obj_add_event_cb(news_ticker, on_news_tap, LV_EVENT_CLICKED, NULL);
-    if (!settings.news_enabled) lv_obj_add_flag(news_ticker, LV_OBJ_FLAG_HIDDEN);
+    /* News ticker — in custom layout, rendered inside its own tile box adhering
+     * to the grid cell bounds (width & height); in default layout, full-width strip
+     * at the top of the bottom band. Tap opens the headline list + QR. */
+    int ntx = SX(12), nty = SY(432), ntw = SX(1000), nth = SY(36);
+    int custom_nt = 0;
+    int nt_show = settings.news_enabled;
+    if (settings.custom_layout_enabled) {
+        const layout_tile_t * Lt = layout_find(LT_NEWS_TICKER);
+        if (!Lt || !Lt->visible) {
+            nt_show = 0;
+        } else {
+            layout_cell_px(Lt->col, Lt->row, Lt->w, Lt->h, &ntx, &nty, &ntw, &nth);
+            ntx += 4; nty += 4; ntw -= 8; nth -= 8;     /* inter-tile margin */
+            custom_nt = 1;
+        }
+    }
+
+    if (custom_nt) {
+        news_box = lv_obj_create(scr_root);
+        lv_obj_set_pos(news_box, ntx, nty);
+        lv_obj_set_size(news_box, ntw, nth);
+        lv_obj_set_style_bg_color(news_box, lv_color_hex(COL_TILE_BG), 0);
+        lv_obj_set_style_radius(news_box, 14, 0);
+        lv_obj_set_style_border_width(news_box, 0, 0);
+        lv_obj_set_style_pad_all(news_box, 0, 0);
+        lv_obj_clear_flag(news_box, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(news_box, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(news_box, on_news_tap, LV_EVENT_CLICKED, NULL);
+
+        /* Accent bar on top */
+        lv_obj_t * bar = lv_obj_create(news_box);
+        lv_obj_set_size(bar, ntw > 20 ? ntw - 20 : ntw, 4);
+        lv_obj_align(bar, LV_ALIGN_TOP_MID, 0, 0);
+        lv_obj_set_style_bg_color(bar, lv_color_hex(0x666688), 0);
+        lv_obj_set_style_border_width(bar, 0, 0);
+        lv_obj_set_style_radius(bar, 2, 0);
+
+        /* Title */
+        lv_obj_t * tlbl = lv_label_create(news_box);
+        lv_obj_set_style_text_color(tlbl, lv_color_hex(COL_TEXT_DIM), 0);
+        lv_obj_set_style_text_font(tlbl, SF(15), 0);
+        lv_label_set_text(tlbl, tr("Nieuws", "News"));
+        lv_obj_align(tlbl, LV_ALIGN_TOP_LEFT, 10, 8);
+
+        /* News ticker text scrolling within tile width */
+        news_ticker = lv_label_create(news_box);
+        lv_label_set_long_mode(news_ticker, LV_LABEL_LONG_SCROLL_CIRCULAR);
+        lv_obj_set_style_anim_speed(news_ticker,
+            settings.news_scroll_speed >= 30 ? settings.news_scroll_speed : 30, 0);
+        lv_obj_set_width(news_ticker, ntw > 20 ? ntw - 20 : ntw);
+        lv_obj_set_style_text_color(news_ticker, lv_color_hex(COL_TEXT_HI), 0);
+        lv_obj_set_style_text_font(news_ticker, SF(20), 0);
+        lv_label_set_text(news_ticker, "");
+        lv_obj_align(news_ticker, LV_ALIGN_TOP_LEFT, 10, nth >= 80 ? 38 : 30);
+        lv_obj_add_flag(news_ticker, LV_OBJ_FLAG_EVENT_BUBBLE);
+
+        if (!nt_show) lv_obj_add_flag(news_box, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        news_box = NULL;
+        news_ticker = lv_label_create(scr_root);
+        lv_label_set_long_mode(news_ticker, LV_LABEL_LONG_SCROLL_CIRCULAR);
+        lv_obj_set_style_anim_speed(news_ticker,
+            settings.news_scroll_speed >= 30 ? settings.news_scroll_speed : 30, 0);
+        lv_obj_set_width(news_ticker, SX(1000));
+        lv_obj_align(news_ticker, LV_ALIGN_TOP_LEFT, SX(12), SY(432));
+        lv_obj_set_style_text_color(news_ticker, lv_color_hex(0xcfe0f0), 0);
+        lv_obj_set_style_text_font(news_ticker, SF(18), 0);
+        lv_label_set_text(news_ticker, "");
+        lv_obj_add_flag(news_ticker, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_ext_click_area(news_ticker, 12);
+        lv_obj_add_event_cb(news_ticker, on_news_tap, LV_EVENT_CLICKED, NULL);
+        if (!nt_show) lv_obj_add_flag(news_ticker, LV_OBJ_FLAG_HIDDEN);
+    }
 
     /* --- Forecast band — fills the area below the upper-row tiles.
            5 day columns; each shows day label + min/max temp + a big
@@ -3702,8 +4016,6 @@ lv_obj_t * screen_home_create(void) {
     int fbx = SX(10), fby = SY(480), fbw = SX(1004), fbh = SY(116);
     int fc_show = 1;
     if (settings.custom_layout_enabled) {
-        const layout_tile_t * Lt = layout_find(LT_NEWS_TICKER);
-        if (news_ticker && (!Lt || !Lt->visible)) lv_obj_add_flag(news_ticker, LV_OBJ_FLAG_HIDDEN);
         const layout_tile_t * Lf = layout_find(LT_FORECAST);
         if (!Lf || !Lf->visible) fc_show = 0;
         else {

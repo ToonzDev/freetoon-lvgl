@@ -261,15 +261,91 @@ static void add_event(calendar_event_t * tmp, int * n, const char * today,
     (*n)++;
 }
 
-/* Copy a JSON/ICS string value, unescaping the common ICS/JSON escapes. */
+/* UTF-8 C3-xx (Latin-1 supplement) trail byte → base ASCII letter, or 0.
+ * LVGL's built-in Montserrat fonts only include ASCII 0x20-0x7E (+ ° and •),
+ * so unmapped Latin-1 glyphs would otherwise render as empty missing-glyph boxes. */
+static char cal_latin1_to_ascii(unsigned char n) {
+    if (n >= 0xA0 && n <= 0xA5) return 'a';
+    if (n == 0xA7) return 'c';
+    if (n >= 0xA8 && n <= 0xAB) return 'e';
+    if (n >= 0xAC && n <= 0xAF) return 'i';
+    if (n == 0xB0) return 'd';
+    if (n == 0xB1) return 'n';
+    if ((n >= 0xB2 && n <= 0xB6) || n == 0xB8) return 'o';
+    if (n >= 0xB9 && n <= 0xBC) return 'u';
+    if (n == 0xBD || n == 0xBF) return 'y';
+    if (n >= 0x80 && n <= 0x85) return 'A';
+    if (n == 0x87) return 'C';
+    if (n >= 0x88 && n <= 0x8B) return 'E';
+    if (n >= 0x8C && n <= 0x8F) return 'I';
+    if (n == 0x90) return 'D';
+    if (n == 0x91) return 'N';
+    if ((n >= 0x92 && n <= 0x96) || n == 0x98) return 'O';
+    if (n >= 0x99 && n <= 0x9C) return 'U';
+    if (n == 0x9D) return 'Y';
+    return 0;
+}
+
+static int hex_val(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+/* Copy a JSON/ICS string value, unescaping common ICS/JSON escapes and folding
+ * accented UTF-8 characters into ASCII glyphs supported by the LVGL font. */
 static void copy_text(const char * src, char * out, size_t osz) {
     size_t n = 0;
     while (*src && *src != '"' && *src != '\r' && *src != '\n' && n + 1 < osz) {
-        if (*src == '\\' && src[1]) {
+        unsigned char c = (unsigned char)*src;
+        if (c == '\\' && src[1]) {
             src++;
-            out[n++] = (*src == 'n' || *src == 'N') ? ' ' : *src;
+            if (*src == 'n' || *src == 'N') {
+                out[n++] = ' ';
+                src++;
+            } else if (*src == 'u' &&
+                       hex_val(src[1]) >= 0 && hex_val(src[2]) >= 0 &&
+                       hex_val(src[3]) >= 0 && hex_val(src[4]) >= 0) {
+                unsigned int cp = (unsigned int)((hex_val(src[1]) << 12) |
+                                                 (hex_val(src[2]) << 8)  |
+                                                 (hex_val(src[3]) << 4)  |
+                                                  hex_val(src[4]));
+                src += 5;
+                if (cp >= 0x20 && cp < 0x7F) {
+                    out[n++] = (char)cp;
+                } else if (cp >= 0xC0 && cp <= 0xFF) {
+                    char a = cal_latin1_to_ascii((unsigned char)(cp - 0x40));
+                    if (a) out[n++] = a;
+                } else if (cp == 0x2018 || cp == 0x2019) {
+                    out[n++] = '\'';
+                } else if (cp == 0x201C || cp == 0x201D) {
+                    out[n++] = '"';
+                } else if (cp == 0x2013 || cp == 0x2014) {
+                    out[n++] = '-';
+                }
+            } else {
+                out[n++] = *src++;
+            }
+        } else if (c >= 0xC0) {
+            char a = 0;
+            if (c == 0xC3 && src[1]) {
+                a = cal_latin1_to_ascii((unsigned char)src[1]);
+            } else if (c == 0xC2 && (unsigned char)src[1] == 0xA0) {
+                a = ' ';
+            } else if (c == 0xE2 && (unsigned char)src[1] == 0x80 && src[2]) {
+                unsigned char t = (unsigned char)src[2];
+                if (t == 0x98 || t == 0x99) a = '\'';      /* ' ' */
+                else if (t == 0x9C || t == 0x9D) a = '"';  /* " " */
+                else if (t == 0x93 || t == 0x94) a = '-';  /* – — */
+                else if (t == 0xA6) a = '.';               /* … */
+            }
+            if (a) out[n++] = a;
             src++;
-        } else out[n++] = *src++;
+            while (((unsigned char)*src & 0xC0) == 0x80) src++;
+        } else {
+            out[n++] = *src++;
+        }
     }
     out[n] = 0;
 }
@@ -635,9 +711,32 @@ void calendar_refresh_now(void) {
         }
     }
     if (settings.calendar_ics_url[0]) {
-        /* 20 s — a full year-of-history .ics can be a megabyte or two. */
-        if (http_fetch_to(settings.calendar_ics_url, buf, CAL_SCRATCH, 20) == 0 && strstr(buf, "VEVENT")) {
-            parse_ics_cal(buf, tmp, &n, today); ok = 1;
+        char urls[sizeof settings.calendar_ics_url];
+        snprintf(urls, sizeof urls, "%s", settings.calendar_ics_url);
+        char * saveptr = NULL;
+        for (char * u = strtok_r(urls, "\r\n;,", &saveptr); u; u = strtok_r(NULL, "\r\n;,", &saveptr)) {
+            while (*u == ' ' || *u == '\t') u++;
+            size_t ulen = strlen(u);
+            while (ulen > 0 && (u[ulen - 1] == ' ' || u[ulen - 1] == '\t')) u[--ulen] = 0;
+            if (strncmp(u, "http://", 7) != 0 && strncmp(u, "https://", 8) != 0) continue;
+
+            buf[0] = 0;
+            if (http_fetch_to(u, buf, CAL_SCRATCH, 20) == 0 && strstr(buf, "VEVENT")) {
+                /* RFC 5545: unfold lines broken with CRLF/LF followed by space or tab */
+                char * r = buf, * w = buf;
+                while (*r) {
+                    if (r[0] == '\r' && r[1] == '\n' && (r[2] == ' ' || r[2] == '\t')) {
+                        r += 3;
+                    } else if (r[0] == '\n' && (r[1] == ' ' || r[1] == '\t')) {
+                        r += 2;
+                    } else {
+                        *w++ = *r++;
+                    }
+                }
+                *w = 0;
+                parse_ics_cal(buf, tmp, &n, today);
+                ok = 1;
+            }
         }
     }
 
@@ -651,7 +750,11 @@ void calendar_refresh_now(void) {
 
 /* One-shot refresh on a detached thread — safe to call from the LVGL/UI thread
  * (the fetch does blocking curl I/O and must never run on the UI thread). */
-static void * kick_thread(void * arg) { (void)arg; calendar_refresh_now(); return NULL; }
+static void * kick_thread(void * arg) {
+    (void)arg;
+    calendar_refresh_now();
+    return NULL;
+}
 void calendar_refresh_async(void) {
     pthread_t t;
     if (pthread_create(&t, NULL, kick_thread, NULL) == 0) pthread_detach(t);

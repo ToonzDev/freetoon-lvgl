@@ -23,7 +23,8 @@ typedef struct {
    forecast.buienradar.nl/2.0/forecast/<id>/days[]/hours[]. */
 typedef struct {
     char  label[8];          /* "15:00" — local time of the slot */
-    float temperature;       /* °C */
+    float temperature;       /* °C (real temperature_2m) */
+    float feel_temp;         /* °C (apparent_temperature) */
     int   wind_bft;
     char  wind_dir[6];
     char  icon[8];           /* first letter compatible with weather_icon_for */
@@ -46,12 +47,17 @@ typedef struct {
 
 extern weather_state_t weather_state;
 
+/* Returns either real temperature (default) or feel temperature per settings.weather_use_feel */
+float weather_display_temp(void);
+float weather_hour_display_temp(const weather_hour_t * h);
+
 /* Thread safety primitives */
 void weather_lock(void);
 void weather_unlock(void);
 void weather_get_snapshot(weather_state_t * out);
 
-int weather_start(void);
+int  weather_start(void);
+void weather_refresh_async(void);
 
 /* Resolve a city name to a Buienradar/GeoNames location id (Open-Meteo
  * geocoding). Returns the id or 0 if not found. */

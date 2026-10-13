@@ -46,8 +46,34 @@ void sonos_volume_down(void);     /* -2 */
 void sonos_set_volume(int vol);
 void sonos_set_zone(const char * zone);
 
+#define SONOS_MAX_ITEMS 48
+
+typedef enum {
+    SONOS_SRC_FAVORITES = 0,
+    SONOS_SRC_PLAYLISTS = 1,
+    SONOS_SRC_SPOTIFY   = 2
+} sonos_source_t;
+
+typedef struct {
+    char name[64];
+    char uri[128];      /* For Spotify: spotify:playlist:... */
+} sonos_item_t;
+
+typedef struct {
+    int  configured;
+    char client_id[64];
+    char client_secret[64];
+    int  user_count;
+    char user_names[8][32];
+    char user_ids[8][64];
+    int  selected_user;    /* 0 = Sonos Playlists, 1..N = Spotify user */
+} sonos_spotify_cfg_t;
+
+void sonos_get_spotify_config(sonos_spotify_cfg_t * cfg);
+int  sonos_get_source_items(sonos_source_t src, int spotify_user_idx, sonos_item_t items[], int max_items);
 int  sonos_get_favorites(char favs[][64], int max_favs);
 void sonos_play_favorite(const char * name);
 void sonos_play_playlist(const char * name);
+void sonos_play_spotify(const char * uri);
 
 #endif

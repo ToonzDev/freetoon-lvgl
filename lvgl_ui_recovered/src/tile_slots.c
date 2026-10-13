@@ -8,6 +8,7 @@
 #include "settings.h"
 #include "boxtalk.h"
 #include "notify.h"
+#include "i18n.h"
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,11 +22,13 @@ static integration_meta_t g_integ[MAX_INSTALLED_INTEGRATIONS];
 static int                g_integ_count = 0;
 
 const char * tile_slot_label(int slot) {
-    static const char * base[4] = { "Energy", "Family", "Vent", "Water" };
-    static char buf[16];
-    if (slot >= 0 && slot < 4) return base[slot];
+    static char buf[32];
+    if (slot == 0) return tr("Energie", "Energy");
+    if (slot == 1) return tr("Familie", "Family");
+    if (slot == 2) return tr("Ventilatie", "Vent");
+    if (slot == 3) return tr("Water", "Water");
     if (slot >= TILE_SLOT_P1_0 && slot < TILE_SLOT_COUNT) {
-        snprintf(buf, sizeof buf, "Page 2 - %d", slot - TILE_SLOT_P1_0 + 1);
+        snprintf(buf, sizeof buf, "%s %d", tr("Pagina 2 -", "Page 2 -"), slot - TILE_SLOT_P1_0 + 1);
         return buf;
     }
     return "?";
@@ -141,6 +144,8 @@ static const struct { const char * id; const char * label; } g_locals[] = {
     { "local:family", "Familie" },
     { "local:air",    "Luchtkwaliteit" },
     { "local:sonos",  "Sonos" },
+    { "local:waste",  "Afval" },
+    { "local:agenda", "Agenda" },
 };
 int tile_slots_local_count(void) {
     return (int)(sizeof g_locals / sizeof g_locals[0]);
@@ -164,6 +169,8 @@ int tile_slots_local_enabled(int i) {
                        (settings.life360_a_entity[0] || settings.life360_b_entity[0] || settings.life360_c_entity[0] || ha_state.loc_a[0]);
         case 4: return 1;                                 /* air quality — core sensor */
         case 5: return settings.sonos_enabled;
+        case 6: return 1;                                 /* waste pickup */
+        case 7: return settings.calendar_enabled;
         default: return 0;
     }
 }

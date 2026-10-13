@@ -60,7 +60,7 @@ static lv_obj_t * sl_home_timeout, * lbl_home_timeout_val;
 static lv_obj_t * sl_act,      * lbl_act_val;
 static lv_obj_t * sl_dim,      * lbl_dim_val;
 static lv_obj_t * sw_dim_wx;
-static lv_obj_t * sl_forecast_mode, * lbl_forecast_mode;
+static lv_obj_t * sw_forecast_mode, * sw_weather_feel;
 static lv_obj_t * sw_dim_waste;
 static lv_obj_t * sw_dim_bars, * sw_dim_bars_swap;
 static lv_obj_t * sl_waste_lead, * lbl_waste_lead;
@@ -84,15 +84,14 @@ static void on_dim_bars_change(lv_event_t * e) {
 static void on_dim_bars_swap_change(lv_event_t * e) {
     settings.dim_bars_swap = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
 }
-static const char * forecast_mode_label(int m) {
-    if (m == FORECAST_HOURLY) return tr("altijd per uur", "always hourly");
-    if (m == FORECAST_DAILY)  return tr("altijd per dag", "always daily");
-    return tr("auto (per uur indien mogelijk)", "auto (hourly if available)");
-}
 static void on_forecast_mode_change(lv_event_t * e) {
-    int v = lv_slider_get_value(lv_event_get_target(e));
-    settings.forecast_mode = v;
-    lv_label_set_text(lbl_forecast_mode, forecast_mode_label(v));
+    int daily = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    settings.forecast_mode = daily ? FORECAST_DAILY : FORECAST_HOURLY;
+    settings_save();
+}
+static void on_weather_feel_change(lv_event_t * e) {
+    settings.weather_use_feel = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    settings_save();
 }
 
 /* Weather modal: free-text city label + GeoNames id, both persisted via
@@ -139,6 +138,7 @@ static void on_weather_apply(lv_event_t * e) {
         if (id > 0) settings.weather_location_id = id;
     }
     settings_save();
+    weather_refresh_async();
     if (lbl_wx_status)
         lv_label_set_text_fmt(lbl_wx_status,
             tr("Opgeslagen. %s = %d", "Saved. %s = %d"), settings.weather_location,
@@ -437,14 +437,17 @@ static lv_obj_t * modal_open(const char * title, int panel_h) {
     lv_obj_align(t, LV_ALIGN_LEFT_MID, SX(4), 0);
 
     lv_obj_t * x = lv_btn_create(hdr);
-    lv_obj_set_size(x, SX(56), SY(48));
-    lv_obj_align(x, LV_ALIGN_RIGHT_MID, SX(-4), 0);
+    int x_w = (DISP_HOR < 1000) ? 68 : 74;
+    int x_h = (DISP_VER < 600) ? 46 : 50;
+    lv_obj_set_size(x, x_w, x_h);
+    lv_obj_align(x, LV_ALIGN_RIGHT_MID, 0, 0);
     lv_obj_set_style_bg_color(x, lv_color_hex(0x33445a), 0);
     lv_obj_set_style_radius(x, 12, 0);
-    lv_obj_set_ext_click_area(x, 20);
+    lv_obj_set_ext_click_area(x, 25);
     lv_obj_add_event_cb(x, modal_close, LV_EVENT_CLICKED, NULL);
     lv_obj_t * xl = lv_label_create(x);
     lv_label_set_text(xl, LV_SYMBOL_CLOSE);
+    lv_obj_set_style_text_font(xl, SF(22), 0);
     lv_obj_set_style_text_color(xl, lv_color_hex(0xffffff), 0);
     lv_obj_center(xl);
 
@@ -679,21 +682,23 @@ static void open_display_modal(lv_event_t * e) {
 
 static void open_weather_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open(tr("Weer", "Weather"), 560);
+    lv_obj_t * p = modal_open(tr("Weer", "Weather"), 580);
+    lv_obj_add_flag(p, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(p, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(p, LV_SCROLLBAR_MODE_AUTO);
     int y = 70;
 
     lv_obj_t * r = panel_row(p, y, tr("Weer tonen op dimscherm", "Show weather on dim screen"), NULL);
     sw_dim_wx = row_switch(r, settings.show_dim_weather, on_dim_wx_change);
     y += 82;
 
-    /* 3-position slider: 0=auto, 1=hourly, 2=daily. Current label updates
-       in-place via on_forecast_mode_change. */
-    r = panel_row(p, y, tr("Verwachtingsbalk", "Forecast strip"), &lbl_forecast_mode);
-    lv_label_set_text(lbl_forecast_mode,
-                      forecast_mode_label(settings.forecast_mode));
-    sl_forecast_mode = row_slider(r, 0, 2, settings.forecast_mode,
-                                  on_forecast_mode_change);
-    y += 90;
+    r = panel_row(p, y, tr("5-daagse verwachting (i.p.v. per 3 uur)", "5-day forecast (instead of 3-hourly)"), NULL);
+    sw_forecast_mode = row_switch(r, settings.forecast_mode == FORECAST_DAILY, on_forecast_mode_change);
+    y += 82;
+
+    r = panel_row(p, y, tr("Gevoelstemperatuur tonen", "Show feel temperature"), NULL);
+    sw_weather_feel = row_switch(r, settings.weather_use_feel, on_weather_feel_change);
+    y += 82;
 
     /* City name (cosmetic) + Buienradar GeoNames id (used by the API). */
     lv_obj_t * lbl_city = lv_label_create(p);
@@ -1778,12 +1783,17 @@ static void on_news_speed_change(lv_event_t * e) {
     screen_home_set_ticker_speed(v);   /* live */
 }
 
-/* ---- Calendar (agenda): enable + HA entity + iCal URL + open-agenda. ---- */
+/* ---- Calendar (agenda): enable + HA entity + multi-iCal URLs + open-agenda. ---- */
 static lv_obj_t * sw_cal = NULL;
 static lv_obj_t * ta_cal_ha = NULL;
 static lv_obj_t * ta_cal_ics = NULL;
+static lv_obj_t * cal_feeds_list = NULL;
+static lv_obj_t * lbl_cal_status = NULL;
 static lv_obj_t * sw_cal_notify = NULL;
 static lv_obj_t * ta_cal_lead = NULL;
+
+static void cal_feeds_rebuild(void);
+
 static void on_cal_enabled_change(lv_event_t * e) {
     settings.calendar_enabled = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
 }
@@ -1793,18 +1803,152 @@ static void on_cal_notify_change(lv_event_t * e) {
 static void on_cal_open_click(lv_event_t * e) { (void)e; screen_calendar_show(); }
 static void open_layout_editor(lv_event_t * e) { (void)e; screen_layout_editor_show(); }
 static void open_dim_layout_editor(lv_event_t * e) { (void)e; screen_dim_layout_editor_show(); }
+
 static void on_cal_save_click(lv_event_t * e) {
     (void)e;
     if (ta_cal_ha) { const char * v = lv_textarea_get_text(ta_cal_ha);
         snprintf(settings.calendar_ha_entity, sizeof settings.calendar_ha_entity, "%s", v ? v : ""); }
-    if (ta_cal_ics) { const char * v = lv_textarea_get_text(ta_cal_ics);
-        snprintf(settings.calendar_ics_url, sizeof settings.calendar_ics_url, "%s", v ? v : ""); }
     if (ta_cal_lead) { const char * v = lv_textarea_get_text(ta_cal_lead);
         int m = v ? atoi(v) : 15; if (m < 1) m = 1; if (m > 1440) m = 1440;
         settings.calendar_notify_lead_min = m; }
     settings_save();
     calendar_refresh_async();          /* off-thread fetch so the UI stays responsive */
 }
+
+static void on_cal_feed_remove(lv_event_t * e) {
+    int idx = (int)(intptr_t)lv_event_get_user_data(e);
+    char tmp[sizeof settings.calendar_ics_url], out[sizeof settings.calendar_ics_url] = "";
+    snprintf(tmp, sizeof tmp, "%s", settings.calendar_ics_url);
+    int i = 0; char * save = NULL;
+    for (char * u = strtok_r(tmp, "\n", &save); u; u = strtok_r(NULL, "\n", &save)) {
+        if (i++ == idx) continue;
+        if (out[0]) strncat(out, "\n", sizeof out - strlen(out) - 1);
+        strncat(out, u, sizeof out - strlen(out) - 1);
+    }
+    snprintf(settings.calendar_ics_url, sizeof settings.calendar_ics_url, "%s", out);
+    settings_save();
+    calendar_refresh_async();
+    cal_feeds_rebuild();
+}
+
+static void cal_feeds_rebuild(void) {
+    if (!cal_feeds_list) return;
+    lv_obj_clean(cal_feeds_list);
+    char tmp[sizeof settings.calendar_ics_url];
+    snprintf(tmp, sizeof tmp, "%s", settings.calendar_ics_url);
+    int i = 0; char * save = NULL;
+    for (char * u = strtok_r(tmp, "\n", &save); u; u = strtok_r(NULL, "\n", &save)) {
+        while (*u == ' ' || *u == '\t') u++;
+        if (!*u) continue;
+        char display[64];
+        if (strlen(u) > 52) {
+            snprintf(display, sizeof display, "%.49s...", u);
+        } else {
+            snprintf(display, sizeof display, "%s", u);
+        }
+
+        lv_obj_t * btn = lv_list_add_btn(cal_feeds_list, LV_SYMBOL_BULLET, display);
+        lv_obj_set_style_text_font(btn, SF(16), 0);
+        lv_obj_set_style_bg_color(btn, lv_color_hex(0x132135), 0);
+        lv_obj_set_style_pad_right(btn, SX(56), 0);
+
+        lv_obj_t * tr_btn = lv_btn_create(btn);
+        lv_obj_add_flag(tr_btn, LV_OBJ_FLAG_IGNORE_LAYOUT);
+        lv_obj_set_size(tr_btn, SX(46), SY(34));
+        lv_obj_align(tr_btn, LV_ALIGN_RIGHT_MID, 0, 0);
+        lv_obj_set_style_bg_color(tr_btn, lv_color_hex(0x882222), 0);
+        lv_obj_set_style_radius(tr_btn, 8, 0);
+        lv_obj_add_event_cb(tr_btn, on_cal_feed_remove, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+        lv_obj_t * tl = lv_label_create(tr_btn);
+        lv_label_set_text(tl, LV_SYMBOL_TRASH);
+        lv_obj_center(tl);
+        i++;
+    }
+    if (i == 0) lv_list_add_text(cal_feeds_list, tr("(geen kalenders - voeg er een toe)", "(no calendars - add one)"));
+}
+
+static void on_cal_add_click(lv_event_t * e) {
+    (void)e;
+    const char * raw = ta_cal_ics ? lv_textarea_get_text(ta_cal_ics) : NULL;
+    if (!raw || !raw[0]) return;
+    while (*raw == ' ' || *raw == '\t' || *raw == '\r' || *raw == '\n') raw++;
+    char u[300];
+    size_t len = strlen(raw);
+    while (len > 0 && (raw[len - 1] == ' ' || raw[len - 1] == '\t' || raw[len - 1] == '\r' || raw[len - 1] == '\n'))
+        len--;
+    if (len >= sizeof(u)) len = sizeof(u) - 1;
+    memcpy(u, raw, len);
+    u[len] = 0;
+    if (!u[0]) return;
+    if (strncmp(u, "http://", 7) != 0 && strncmp(u, "https://", 8) != 0) {
+        if (lbl_cal_status)
+            lv_label_set_text(lbl_cal_status, tr("Ongeldige URL (moet http:// of https:// zijn)", "Invalid URL (must start with http:// or https://)"));
+        return;
+    }
+    if (settings.calendar_ics_url[0])
+        strncat(settings.calendar_ics_url, "\n", sizeof settings.calendar_ics_url - strlen(settings.calendar_ics_url) - 1);
+    strncat(settings.calendar_ics_url, u, sizeof settings.calendar_ics_url - strlen(settings.calendar_ics_url) - 1);
+    settings_save();
+    calendar_refresh_async();
+    if (ta_cal_ics) lv_textarea_set_text(ta_cal_ics, "");
+    cal_feeds_rebuild();
+    if (lbl_cal_status)
+        lv_label_set_text(lbl_cal_status, tr("Kalender toegevoegd! Bezig met laden...", "Calendar added! Fetching..."));
+}
+
+static void on_cal_import_click(lv_event_t * e) {
+    (void)e;
+    FILE * cf = fopen("/mnt/data/tsc/calendar.userSettings.json", "r");
+    if (!cf) {
+        if (lbl_cal_status) lv_label_set_text(lbl_cal_status, tr("Geen Toon-instellingen gevonden", "No Toon settings found"));
+        return;
+    }
+    char cbuf[8192];
+    size_t n = fread(cbuf, 1, sizeof(cbuf) - 1, cf);
+    fclose(cf);
+    cbuf[n] = 0;
+    int added = 0;
+    const char * cu = strstr(cbuf, "\"Calendar_URL\"");
+    if (cu) {
+        const char * p = strchr(cu, '[');
+        if (p) {
+            p++;
+            while (*p && *p != ']') {
+                while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n' || *p == ',') p++;
+                if (*p == '"') {
+                    p++;
+                    const char * q = strchr(p, '"');
+                    if (!q) break;
+                    size_t ulen = (size_t)(q - p);
+                    char u[300];
+                    if (ulen >= sizeof(u)) ulen = sizeof(u) - 1;
+                    memcpy(u, p, ulen);
+                    u[ulen] = 0;
+                    if (strncmp(u, "http://", 7) == 0 || strncmp(u, "https://", 8) == 0) {
+                        if (!strstr(settings.calendar_ics_url, u)) {
+                            if (settings.calendar_ics_url[0])
+                                strncat(settings.calendar_ics_url, "\n", sizeof(settings.calendar_ics_url) - strlen(settings.calendar_ics_url) - 1);
+                            strncat(settings.calendar_ics_url, u, sizeof(settings.calendar_ics_url) - strlen(settings.calendar_ics_url) - 1);
+                            added++;
+                        }
+                    }
+                    p = q + 1;
+                } else {
+                    p++;
+                }
+            }
+        }
+    }
+    if (added > 0) {
+        settings_save();
+        calendar_refresh_async();
+        cal_feeds_rebuild();
+        if (lbl_cal_status) lv_label_set_text_fmt(lbl_cal_status, tr("%d kalenders geïmporteerd!", "%d calendars imported!"), added);
+    } else {
+        if (lbl_cal_status) lv_label_set_text(lbl_cal_status, tr("Alle kalenders al aanwezig", "All calendars already present"));
+    }
+}
+
 static void open_calendar_modal(lv_event_t * e) {
     (void)e;
     lv_obj_t * p = modal_open(tr("Agenda", "Calendar"), 560);
@@ -1815,38 +1959,67 @@ static void open_calendar_modal(lv_event_t * e) {
 
     lv_obj_t * r = panel_row(p, y, tr("Agenda inschakelen", "Enable calendar"), NULL);
     sw_cal = row_switch(r, settings.calendar_enabled, on_cal_enabled_change);
-    y += 90;
+    y += 76;
 
     lv_obj_t * l1 = lv_label_create(p);
     lv_obj_set_style_text_color(l1, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(l1, SF(18), 0);
     lv_label_set_text(l1, tr("Home Assistant agenda-entiteit (optioneel):", "Home Assistant calendar entity (optional):"));
-    lv_obj_align(l1, LV_ALIGN_TOP_LEFT, SX(4), y); y += 30;
+    lv_obj_align(l1, LV_ALIGN_TOP_LEFT, SX(4), y); y += 26;
     ta_cal_ha = lv_textarea_create(p);
     lv_obj_set_size(ta_cal_ha, SX(470), SY(44));
     lv_obj_align(ta_cal_ha, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_textarea_set_one_line(ta_cal_ha, true);
     lv_textarea_set_placeholder_text(ta_cal_ha, "calendar.gezin");
     lv_textarea_set_text(ta_cal_ha, settings.calendar_ha_entity);
-    y += 60;
+    y += 56;
 
+    /* Multi-calendar ICS feeds list */
     lv_obj_t * l2 = lv_label_create(p);
     lv_obj_set_style_text_color(l2, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(l2, SF(18), 0);
-    lv_label_set_text(l2, tr("iCal (.ics) URL (optioneel):", "iCal (.ics) URL (optional):"));
-    lv_obj_align(l2, LV_ALIGN_TOP_LEFT, SX(4), y); y += 30;
+    lv_label_set_text(l2, tr("iCal (.ics) kalenders:", "iCal (.ics) calendars:"));
+    lv_obj_align(l2, LV_ALIGN_TOP_LEFT, SX(4), y); y += 26;
+
+    cal_feeds_list = lv_list_create(p);
+    lv_obj_set_size(cal_feeds_list, SX(740), SY(130));
+    lv_obj_align(cal_feeds_list, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_set_style_bg_color(cal_feeds_list, lv_color_hex(0x0e1a2a), 0);
+    cal_feeds_rebuild();
+    y += 138;
+
     ta_cal_ics = lv_textarea_create(p);
-    lv_obj_set_size(ta_cal_ics, SX(470), SY(44));
+    lv_obj_set_size(ta_cal_ics, SX(450), SY(44));
     lv_obj_align(ta_cal_ics, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_textarea_set_one_line(ta_cal_ics, true);
     lv_textarea_set_placeholder_text(ta_cal_ics, "https://... .ics");
-    lv_textarea_set_text(ta_cal_ics, settings.calendar_ics_url);
-    y += 60;
 
-    /* Notifications: pop a Toon notification N minutes before a timed event. */
+    lv_obj_t * addb = lv_btn_create(p);
+    lv_obj_set_size(addb, SX(120), SY(44));
+    lv_obj_align(addb, LV_ALIGN_TOP_LEFT, SX(464), y);
+    lv_obj_set_style_bg_color(addb, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_add_event_cb(addb, on_cal_add_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * al = lv_label_create(addb); lv_label_set_text(al, tr("Toevoegen", "Add")); lv_obj_center(al);
+
+    lv_obj_t * impb = lv_btn_create(p);
+    lv_obj_set_size(impb, SX(150), SY(44));
+    lv_obj_align(impb, LV_ALIGN_TOP_LEFT, SX(594), y);
+    lv_obj_set_style_bg_color(impb, lv_color_hex(0x224466), 0);
+    lv_obj_add_event_cb(impb, on_cal_import_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * il = lv_label_create(impb); lv_label_set_text(il, tr("Toon import", "Toon import")); lv_obj_center(il);
+    y += 50;
+
+    lbl_cal_status = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl_cal_status, lv_color_hex(0x9fc4e6), 0);
+    lv_obj_set_style_text_font(lbl_cal_status, SF(16), 0);
+    lv_label_set_text(lbl_cal_status, "");
+    lv_obj_align(lbl_cal_status, LV_ALIGN_TOP_LEFT, SX(4), y);
+    y += 26;
+
+    /* Notifications */
     lv_obj_t * rn = panel_row(p, y, tr("Meldingen", "Notifications"), NULL);
     sw_cal_notify = row_switch(rn, settings.calendar_notify_enabled, on_cal_notify_change);
-    y += 90;
+    y += 76;
 
     lv_obj_t * l3 = lv_label_create(p);
     lv_obj_set_style_text_color(l3, lv_color_hex(0xffffff), 0);
@@ -1861,7 +2034,7 @@ static void open_calendar_modal(lv_event_t * e) {
     lv_textarea_set_max_length(ta_cal_lead, 4);
     char leadbuf[8]; snprintf(leadbuf, sizeof leadbuf, "%d", settings.calendar_notify_lead_min);
     lv_textarea_set_text(ta_cal_lead, leadbuf);
-    y += 64;
+    y += 60;
 
     lv_obj_t * saveb = lv_btn_create(p);
     lv_obj_set_size(saveb, SX(150), SY(46));
@@ -2082,13 +2255,18 @@ static void on_int_p1esp_host(lv_event_t * e) {
     if (c == LV_EVENT_DEFOCUSED) integ_dirty_hint();
 }
 
+static void on_int_video(lv_event_t * e) {
+    settings.video_enabled = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    settings_save();
+}
+
 static void open_ha_entities_modal(lv_event_t * e);
 
 static void open_integrations_modal(lv_event_t * e) {
     (void)e;
-    /* Five panel_rows × 84 + 92 + 100 (hint label) ≈ 612. Bump the modal
+    /* Six panel_rows × 84 + 92 + 100 (hint label) ≈ 700. Bump the modal
      * height so the hide-offline switch + hint actually fit. */
-    lv_obj_t * p = modal_open(tr("Integraties", "Integrations"), 710);
+    lv_obj_t * p = modal_open(tr("Integraties", "Integrations"), 790);
     int y = 70;
 
     lv_obj_t * r;
@@ -2131,6 +2309,10 @@ static void open_integrations_modal(lv_event_t * e) {
 
     r = panel_row(p, y, tr("Home Assistant (gordijnen, Life360)", "Home Assistant (curtains, Life360)"), NULL);
     sw_int_ha = row_switch(r, settings.enable_ha, on_int_ha);
+    y += 84;
+
+    r = panel_row(p, y, tr("Videostream / Camera knop", "Video stream / Camera button"), NULL);
+    row_switch(r, settings.video_enabled, on_int_video);
     y += 84;
 
     r = panel_row(p, y, tr("Offline tegels volledig verbergen", "Hide offline tiles entirely"), NULL);
@@ -2468,10 +2650,18 @@ static lv_obj_t * dd_tile_slot[TILE_SLOT_COUNT];
  * Output buffer is owned by caller and must be large enough — 64 chars per
  * integration + 1 for separator. */
 /* Index 0 = "Built-in" (empty binding), index 1 = the calendar agenda
- * ("local:agenda"), then the marketplace integrations. */
-static void build_slot_options(char * out, size_t cap) {
-    size_t n = snprintf(out, cap, "%s\n%s\n%s", tr("Ingebouwd", "Built-in"),
-                        tr("Agenda", "Calendar"), "Sonos");
+ * ("local:agenda"), index 2 = Sonos ("local:sonos"), index 3 = Waste ("local:waste"),
+ * then the marketplace integrations. */
+static void build_slot_options(int slot, char * out, size_t cap) {
+    const char * def_label;
+    if (slot == 0) def_label = tr("Ingebouwd (Energie)", "Built-in (Energy)");
+    else if (slot == 1) def_label = tr("Ingebouwd (Familie)", "Built-in (Family)");
+    else if (slot == 2) def_label = tr("Ingebouwd (Ventilatie)", "Built-in (Ventilation)");
+    else if (slot == 3) def_label = tr("Ingebouwd (Water)", "Built-in (Water)");
+    else def_label = tr("Geen", "None");
+
+    size_t n = snprintf(out, cap, "%s\n%s\n%s\n%s", def_label,
+                        tr("Agenda", "Calendar"), "Sonos", tr("Afval", "Waste"));
     int total = tile_slots_integration_count();
     for (int i = 0; i < total && n + INTEG_NAME_MAX + 2 < cap; i++) {
         const integration_meta_t * m = tile_slots_integration_at(i);
@@ -2481,12 +2671,13 @@ static void build_slot_options(char * out, size_t cap) {
 }
 
 /* Resolve dropdown index → binding id for the given slot. 0 = Built-in (empty),
- * 1 = "local:agenda", 2 = "local:sonos", 3.. = integrations. */
+ * 1 = "local:agenda", 2 = "local:sonos", 3 = "local:waste", 4.. = integrations. */
 static const char * slot_dropdown_to_id(int idx) {
     if (idx <= 0) return "";
     if (idx == 1) return "local:agenda";
     if (idx == 2) return "local:sonos";
-    const integration_meta_t * m = tile_slots_integration_at(idx - 3);
+    if (idx == 3) return "local:waste";
+    const integration_meta_t * m = tile_slots_integration_at(idx - 4);
     return m ? m->id : "";
 }
 
@@ -2494,10 +2685,11 @@ static int slot_dropdown_from_id(const char * id) {
     if (!id || !id[0]) return 0;
     if (strcmp(id, "local:agenda") == 0) return 1;
     if (strcmp(id, "local:sonos") == 0) return 2;
+    if (strcmp(id, "local:waste") == 0) return 3;
     int total = tile_slots_integration_count();
     for (int i = 0; i < total; i++) {
         const integration_meta_t * m = tile_slots_integration_at(i);
-        if (strcmp(m->id, id) == 0) return i + 3;
+        if (strcmp(m->id, id) == 0) return i + 4;
     }
     return 0;
 }
@@ -2530,12 +2722,6 @@ static void open_tile_slots_modal(lv_event_t * e) {
     (void)e;
     lv_obj_t * p = modal_open(tr("Tegelslots", "Tile slots"), 500);
 
-    /* Built-in + Agenda are always assignable, so the dropdowns always show —
-     * even with no marketplace integrations (the Marketplace button still lets
-     * the user add more). */
-    static char options[2048];
-    build_slot_options(options, sizeof options);
-
     /* 8 slots don't fit — host the rows in a vertical scroller. */
     lv_obj_t * sc = lv_obj_create(p);
     lv_obj_set_size(sc, SX(820), SY(372));
@@ -2562,10 +2748,13 @@ static void open_tile_slots_modal(lv_event_t * e) {
         lv_label_set_text(lbl, tile_slot_label(s));
         lv_obj_align(lbl, LV_ALIGN_LEFT_MID, SX(8), 0);
 
+        char slot_opts[1024];
+        build_slot_options(s, slot_opts, sizeof slot_opts);
+
         lv_obj_t * dd = lv_dropdown_create(row);
         lv_obj_set_size(dd, SX(480), SY(56));
         lv_obj_align(dd, LV_ALIGN_RIGHT_MID, SX(-8), 0);
-        lv_dropdown_set_options_static(dd, options);
+        lv_dropdown_set_options(dd, slot_opts);
         lv_dropdown_set_selected(dd,
             slot_dropdown_from_id(tile_slots_binding(s)));
         lv_obj_set_style_text_font(dd, SF(22), 0);
@@ -3915,16 +4104,18 @@ static void sonos_modal_tick(void) {
         if (lbl_sonos_result) lv_label_set_text(lbl_sonos_result, g_sonos_probe_status);
         if (g_sonos_probe_count > 0 && dd_sonos_zone) {
             char opts[1024] = "";
+            int sel_idx = 0;
+            const char * cur = ta_sonos_zone ? lv_textarea_get_text(ta_sonos_zone) : settings.sonos_zone;
             for (int i = 0; i < g_sonos_probe_count; i++) {
                 if (opts[0]) strncat(opts, "\n", sizeof opts - strlen(opts) - 1);
                 strncat(opts, g_sonos_probe_zones[i], sizeof opts - strlen(opts) - 1);
+                if (cur && cur[0] && strcasecmp(cur, g_sonos_probe_zones[i]) == 0)
+                    sel_idx = i;
             }
             lv_dropdown_set_options(dd_sonos_zone, opts);
-            if (ta_sonos_zone) {
-                const char * cur = lv_textarea_get_text(ta_sonos_zone);
-                if (!cur || !cur[0]) {
-                    lv_textarea_set_text(ta_sonos_zone, g_sonos_probe_zones[0]);
-                }
+            lv_dropdown_set_selected(dd_sonos_zone, (uint16_t)sel_idx);
+            if (ta_sonos_zone && (!cur || !cur[0])) {
+                lv_textarea_set_text(ta_sonos_zone, g_sonos_probe_zones[0]);
             }
         }
         pthread_mutex_unlock(&g_sonos_ui_mtx);
@@ -3962,6 +4153,13 @@ static void on_sonos_discover_click(lv_event_t * e) {
     pthread_t tid;
     if (pthread_create(&tid, NULL, sonos_probe_worker, NULL) == 0) {
         pthread_detach(tid);
+    }
+}
+
+static void on_sonos_host_edit(lv_event_t * e) {
+    lv_event_code_t c = lv_event_get_code(e);
+    if (c == LV_EVENT_DEFOCUSED || c == LV_EVENT_READY) {
+        on_sonos_discover_click(NULL);
     }
 }
 
@@ -4025,11 +4223,14 @@ static void open_sonos_modal(lv_event_t * e) {
     lv_label_set_text(lbl_h, tr("Sonos API Host:", "Sonos API Host:"));
     lv_obj_align(lbl_h, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_sonos_host = lv_textarea_create(p);
+    ta_make_numeric(ta_sonos_host);
     lv_obj_set_size(ta_sonos_host, SX(380), SY(44));
     lv_obj_align(ta_sonos_host, LV_ALIGN_TOP_LEFT, SX(240), y - 4);
+    lv_obj_set_style_text_font(ta_sonos_host, SF(18), 0);
     lv_textarea_set_one_line(ta_sonos_host, true);
     lv_textarea_set_placeholder_text(ta_sonos_host, "192.168.2.26");
     lv_textarea_set_text(ta_sonos_host, settings.sonos_host);
+    lv_obj_add_event_cb(ta_sonos_host, on_sonos_host_edit, LV_EVENT_ALL, NULL);
 
     /* Port */
     lv_obj_t * lbl_p = lv_label_create(p);
@@ -4041,10 +4242,12 @@ static void open_sonos_modal(lv_event_t * e) {
     ta_make_numeric(ta_sonos_port);
     lv_obj_set_size(ta_sonos_port, SX(100), SY(44));
     lv_obj_align(ta_sonos_port, LV_ALIGN_TOP_LEFT, SX(720), y - 4);
+    lv_obj_set_style_text_font(ta_sonos_port, SF(18), 0);
     lv_textarea_set_one_line(ta_sonos_port, true);
     char portbuf[12];
     snprintf(portbuf, sizeof(portbuf), "%d", settings.sonos_port > 0 ? settings.sonos_port : 5005);
     lv_textarea_set_text(ta_sonos_port, portbuf);
+    lv_obj_add_event_cb(ta_sonos_port, on_sonos_host_edit, LV_EVENT_ALL, NULL);
     y += 60;
 
     /* Zone / Kamer text area */
@@ -4056,6 +4259,7 @@ static void open_sonos_modal(lv_event_t * e) {
     ta_sonos_zone = lv_textarea_create(p);
     lv_obj_set_size(ta_sonos_zone, SX(380), SY(44));
     lv_obj_align(ta_sonos_zone, LV_ALIGN_TOP_LEFT, SX(240), y - 4);
+    lv_obj_set_style_text_font(ta_sonos_zone, SF(18), 0);
     lv_textarea_set_one_line(ta_sonos_zone, true);
     lv_textarea_set_placeholder_text(ta_sonos_zone, "Keuken");
     lv_textarea_set_text(ta_sonos_zone, settings.sonos_zone);
@@ -4079,19 +4283,10 @@ static void open_sonos_modal(lv_event_t * e) {
     lv_obj_add_event_cb(dd_sonos_zone, on_sonos_dd_change, LV_EVENT_VALUE_CHANGED, NULL);
     y += 64;
 
-    /* Buttons: Discover & Apply */
-    lv_obj_t * b_disc = lv_btn_create(p);
-    lv_obj_set_size(b_disc, SX(240), SY(50));
-    lv_obj_align(b_disc, LV_ALIGN_TOP_LEFT, SX(4), y);
-    lv_obj_set_style_bg_color(b_disc, lv_color_hex(0x2a4060), 0);
-    lv_obj_add_event_cb(b_disc, on_sonos_discover_click, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * bdl = lv_label_create(b_disc);
-    lv_label_set_text(bdl, tr(LV_SYMBOL_REFRESH "  Kamers zoeken", LV_SYMBOL_REFRESH "  Discover rooms"));
-    lv_obj_center(bdl);
-
+    /* Save button */
     lv_obj_t * b_save = lv_btn_create(p);
     lv_obj_set_size(b_save, SX(220), SY(50));
-    lv_obj_align(b_save, LV_ALIGN_TOP_LEFT, SX(270), y);
+    lv_obj_align(b_save, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_obj_set_style_bg_color(b_save, lv_color_hex(0x2e6e3a), 0);
     lv_obj_add_event_cb(b_save, on_sonos_apply_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bsl = lv_label_create(b_save);
@@ -4106,10 +4301,15 @@ static void open_sonos_modal(lv_event_t * e) {
     lv_obj_set_width(lbl_sonos_result, SX(770));
     lv_label_set_long_mode(lbl_sonos_result, LV_LABEL_LONG_WRAP);
     lv_obj_align(lbl_sonos_result, LV_ALIGN_TOP_LEFT, SX(4), y);
-    lv_label_set_text(lbl_sonos_result, tr("Klaar. Vul host in en kies 'Kamers zoeken'.", "Ready. Fill host and tap 'Discover rooms'."));
+    lv_label_set_text(lbl_sonos_result, tr("Vul het IP-adres en de poort van je Sonos API in.", "Enter your Sonos API IP address and port."));
 
     modal_tick_fn = sonos_modal_tick;
     modal_timer = lv_timer_create(modal_timer_cb, 300, NULL);
+
+    /* Automatically search for rooms on open if a host is already configured. */
+    if (settings.sonos_host[0]) {
+        on_sonos_discover_click(NULL);
+    }
 }
 
 void screen_settings_open_sonos_modal(void) {

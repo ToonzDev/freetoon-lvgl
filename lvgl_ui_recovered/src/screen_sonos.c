@@ -14,11 +14,10 @@
 #include <string.h>
 #include <pthread.h>
 
-#define MAX_FAVORITES 32
-
 static lv_obj_t * s_modal = NULL;
 static lv_obj_t * s_lbl_zone = NULL;
 static lv_obj_t * s_dd_zone = NULL;
+static lv_obj_t * s_dd_source = NULL;
 static lv_obj_t * s_lbl_status = NULL;
 static lv_obj_t * s_lbl_title = NULL;
 static lv_obj_t * s_lbl_artist = NULL;
@@ -33,30 +32,33 @@ static lv_timer_t * s_refresh_timer = NULL;
 
 static bool s_vol_dragging = false;
 
-/* Background loading for favorites */
-static char s_fav_names[MAX_FAVORITES][64];
-static int  s_fav_count = 0;
-static volatile int s_fav_loading = 0;
-static volatile int s_fav_ready = 0;
+/* Multi-source items loading (Favorites / Sonos Playlists / Spotify) */
+static sonos_spotify_cfg_t s_spot_cfg = {0};
+static sonos_source_t      s_cur_source = SONOS_SRC_FAVORITES;
+static int                 s_cur_spot_user = 0;
+static sonos_item_t        s_items[SONOS_MAX_ITEMS];
+static int                 s_item_count = 0;
+static volatile int        s_items_loading = 0;
+static volatile int        s_items_ready = 0;
 
-static void * fav_loader_thread(void * arg) {
+static void * items_loader_thread(void * arg) {
     (void)arg;
-    int n = sonos_get_favorites(s_fav_names, MAX_FAVORITES);
-    s_fav_count = n;
-    s_fav_ready = 1;
-    s_fav_loading = 0;
+    int n = sonos_get_source_items(s_cur_source, s_cur_spot_user, s_items, SONOS_MAX_ITEMS);
+    s_item_count = n;
+    s_items_ready = 1;
+    s_items_loading = 0;
     return NULL;
 }
 
-static void trigger_load_favorites(void) {
-    if (s_fav_loading) return;
-    s_fav_loading = 1;
-    s_fav_ready = 0;
+static void trigger_load_items(void) {
+    if (s_items_loading) return;
+    s_items_loading = 1;
+    s_items_ready = 0;
     pthread_t tid;
-    if (pthread_create(&tid, NULL, fav_loader_thread, NULL) == 0) {
+    if (pthread_create(&tid, NULL, items_loader_thread, NULL) == 0) {
         pthread_detach(tid);
     } else {
-        s_fav_loading = 0;
+        s_items_loading = 0;
     }
 }
 
@@ -127,18 +129,44 @@ static void on_zone_change(lv_event_t * e) {
     lv_dropdown_get_selected_str(dd, buf, sizeof buf);
     if (buf[0]) {
         sonos_set_zone(buf);
-        trigger_load_favorites();
+        trigger_load_items();
     }
 }
 
-static void on_fav_item_click(lv_event_t * e) {
-    const char * name = (const char *)lv_event_get_user_data(e);
-    if (name && name[0]) {
-        sonos_play_favorite(name);
-        if (s_lbl_status) {
-            lv_label_set_text_fmt(s_lbl_status, "▶ %s...", name);
-            lv_obj_set_style_text_color(s_lbl_status, lv_color_hex(0x22cc66), 0);
-        }
+static void on_source_change(lv_event_t * e) {
+    lv_obj_t * dd = lv_event_get_target(e);
+    int sel = lv_dropdown_get_selected(dd);
+    if (sel == 0) {
+        s_cur_source = SONOS_SRC_FAVORITES;
+        s_cur_spot_user = 0;
+    } else if (sel == 1) {
+        s_cur_source = SONOS_SRC_PLAYLISTS;
+        s_cur_spot_user = 0;
+    } else {
+        s_cur_source = SONOS_SRC_SPOTIFY;
+        s_cur_spot_user = sel - 2;
+    }
+    if (s_lbl_fav_msg) {
+        lv_label_set_text(s_lbl_fav_msg, tr("Laden...", "Loading..."));
+        lv_obj_clear_flag(s_lbl_fav_msg, LV_OBJ_FLAG_HIDDEN);
+    }
+    trigger_load_items();
+}
+
+static void on_item_click(lv_event_t * e) {
+    int idx = (int)(intptr_t)lv_event_get_user_data(e);
+    if (idx < 0 || idx >= s_item_count) return;
+    const sonos_item_t * it = &s_items[idx];
+    if (s_cur_source == SONOS_SRC_FAVORITES) {
+        sonos_play_favorite(it->name);
+    } else if (s_cur_source == SONOS_SRC_PLAYLISTS) {
+        sonos_play_playlist(it->name);
+    } else if (s_cur_source == SONOS_SRC_SPOTIFY) {
+        sonos_play_spotify(it->uri);
+    }
+    if (s_lbl_status) {
+        lv_label_set_text_fmt(s_lbl_status, "▶ %s...", it->name);
+        lv_obj_set_style_text_color(s_lbl_status, lv_color_hex(0x22cc66), 0);
     }
 }
 
@@ -148,37 +176,46 @@ static void on_fav_refresh_click(lv_event_t * e) {
         lv_label_set_text(s_lbl_fav_msg, tr("Laden...", "Loading..."));
         lv_obj_clear_flag(s_lbl_fav_msg, LV_OBJ_FLAG_HIDDEN);
     }
-    trigger_load_favorites();
+    trigger_load_items();
 }
 
-static void populate_favorites_list(void) {
+static void populate_items_list(void) {
     if (!s_fav_list) return;
     lv_obj_clean(s_fav_list);
 
-    if (s_fav_count <= 0) {
+    if (s_item_count <= 0) {
         lv_obj_t * m = lv_label_create(s_fav_list);
-        lv_label_set_text(m, tr("Geen favorieten gevonden in Sonos.", "No favorites found in Sonos."));
+        if (s_cur_source == SONOS_SRC_FAVORITES)
+            lv_label_set_text(m, tr("Geen favorieten gevonden in Sonos.", "No favorites found in Sonos."));
+        else if (s_cur_source == SONOS_SRC_PLAYLISTS)
+            lv_label_set_text(m, tr("Geen Sonos-afspeellijsten gevonden.", "No Sonos playlists found."));
+        else
+            lv_label_set_text(m, tr("Geen Spotify-afspeellijsten gevonden.", "No Spotify playlists found."));
         lv_obj_set_style_text_color(m, lv_color_hex(0x88aabb), 0);
         lv_obj_set_style_text_font(m, SF(18), 0);
         return;
     }
 
-    for (int i = 0; i < s_fav_count; i++) {
+    const char * sym = LV_SYMBOL_AUDIO;
+    if (s_cur_source == SONOS_SRC_PLAYLISTS) sym = LV_SYMBOL_LIST;
+    else if (s_cur_source == SONOS_SRC_SPOTIFY) sym = LV_SYMBOL_PLAY;
+
+    for (int i = 0; i < s_item_count; i++) {
         lv_obj_t * btn = lv_btn_create(s_fav_list);
         lv_obj_set_size(btn, SX(450), SY(52));
         lv_obj_set_style_bg_color(btn, lv_color_hex(0x1a2e48), 0);
         lv_obj_set_style_radius(btn, 10, 0);
         lv_obj_set_style_pad_all(btn, SX(10), 0);
-        lv_obj_add_event_cb(btn, on_fav_item_click, LV_EVENT_CLICKED, (void *)s_fav_names[i]);
+        lv_obj_add_event_cb(btn, on_item_click, LV_EVENT_CLICKED, (void *)(intptr_t)i);
 
         lv_obj_t * ico = lv_label_create(btn);
-        lv_label_set_text(ico, LV_SYMBOL_AUDIO);
-        lv_obj_set_style_text_color(ico, lv_color_hex(0x44aaff), 0);
+        lv_label_set_text(ico, sym);
+        lv_obj_set_style_text_color(ico, lv_color_hex(s_cur_source == SONOS_SRC_SPOTIFY ? 0x22cc66 : 0x44aaff), 0);
         lv_obj_set_style_text_font(ico, SF(18), 0);
         lv_obj_align(ico, LV_ALIGN_LEFT_MID, SX(4), 0);
 
         lv_obj_t * lbl = lv_label_create(btn);
-        lv_label_set_text(lbl, s_fav_names[i]);
+        lv_label_set_text(lbl, s_items[i].name);
         lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
         lv_obj_set_style_text_font(lbl, SF(18), 0);
         lv_label_set_long_mode(lbl, LV_LABEL_LONG_DOT);
@@ -191,11 +228,11 @@ static void sonos_modal_tick_cb(lv_timer_t * t) {
     (void)t;
     if (!s_modal) return;
 
-    /* Check if background favorites load completed */
-    if (s_fav_ready) {
-        s_fav_ready = 0;
+    /* Check if background items load completed */
+    if (s_items_ready) {
+        s_items_ready = 0;
         if (s_lbl_fav_msg) lv_obj_add_flag(s_lbl_fav_msg, LV_OBJ_FLAG_HIDDEN);
-        populate_favorites_list();
+        populate_items_list();
     }
 
     sonos_state_t st;
@@ -261,6 +298,8 @@ static void sonos_modal_tick_cb(lv_timer_t * t) {
 void screen_sonos_show(void) {
     if (s_modal) lv_obj_del(s_modal);
 
+    sonos_get_spotify_config(&s_spot_cfg);
+
     s_modal = lv_obj_create(lv_layer_top());
     lv_obj_set_size(s_modal, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_pos(s_modal, 0, 0);
@@ -318,13 +357,17 @@ void screen_sonos_show(void) {
 
     /* Close button */
     lv_obj_t * b_close = lv_btn_create(s_modal);
-    lv_obj_set_size(b_close, SX(56), SY(52));
-    lv_obj_align(b_close, LV_ALIGN_TOP_RIGHT, SX(-16), SY(10));
+    int cb_w = (DISP_HOR < 1000) ? 68 : 76;
+    int cb_h = (DISP_VER < 600) ? 46 : 52;
+    lv_obj_set_size(b_close, cb_w, cb_h);
+    lv_obj_align(b_close, LV_ALIGN_TOP_RIGHT, SX(-12), SY(8));
     lv_obj_set_style_bg_color(b_close, lv_color_hex(0x33445a), 0);
     lv_obj_set_style_radius(b_close, 10, 0);
+    lv_obj_set_ext_click_area(b_close, 30);
     lv_obj_add_event_cb(b_close, on_close_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * cl = lv_label_create(b_close);
     lv_label_set_text(cl, LV_SYMBOL_CLOSE);
+    lv_obj_set_style_text_font(cl, SF(22), 0);
     lv_obj_set_style_text_color(cl, lv_color_hex(0xffffff), 0);
     lv_obj_center(cl);
 
@@ -467,15 +510,34 @@ void screen_sonos_show(void) {
     lv_obj_set_style_pad_all(card_right, SX(16), 0);
     lv_obj_clear_flag(card_right, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t * r_head = lv_label_create(card_right);
-    lv_obj_set_style_text_font(r_head, SF(22), 0);
-    lv_obj_set_style_text_color(r_head, lv_color_hex(0xffffff), 0);
-    lv_label_set_text(r_head, tr("Favorieten & Radio", "Favorites & Radio"));
-    lv_obj_align(r_head, LV_ALIGN_TOP_LEFT, SX(6), SY(4));
+    /* Source dropdown */
+    char src_opts[512] = "";
+    snprintf(src_opts, sizeof src_opts, "%s\n%s",
+             tr("Favorieten & Radio", "Favorites & Radio"),
+             tr("Sonos Playlists", "Sonos Playlists"));
+    if (s_spot_cfg.configured && s_spot_cfg.user_count > 0) {
+        for (int i = 0; i < s_spot_cfg.user_count; i++) {
+            char uline[64];
+            snprintf(uline, sizeof uline, "\nSpotify: %s", s_spot_cfg.user_names[i]);
+            strncat(src_opts, uline, sizeof src_opts - strlen(src_opts) - 1);
+        }
+    }
+
+    s_dd_source = lv_dropdown_create(card_right);
+    lv_obj_set_size(s_dd_source, SX(390), SY(46));
+    lv_obj_align(s_dd_source, LV_ALIGN_TOP_LEFT, SX(4), SY(2));
+    lv_obj_set_style_text_font(s_dd_source, SF(18), 0);
+    lv_dropdown_set_options(s_dd_source, src_opts);
+    int init_src_idx = 0;
+    if (s_cur_source == SONOS_SRC_FAVORITES) init_src_idx = 0;
+    else if (s_cur_source == SONOS_SRC_PLAYLISTS) init_src_idx = 1;
+    else init_src_idx = 2 + s_cur_spot_user;
+    lv_dropdown_set_selected(s_dd_source, init_src_idx);
+    lv_obj_add_event_cb(s_dd_source, on_source_change, LV_EVENT_VALUE_CHANGED, NULL);
 
     lv_obj_t * b_ref = lv_btn_create(card_right);
-    lv_obj_set_size(b_ref, SX(48), SY(40));
-    lv_obj_align(b_ref, LV_ALIGN_TOP_RIGHT, SX(-6), SY(0));
+    lv_obj_set_size(b_ref, SX(50), SY(46));
+    lv_obj_align(b_ref, LV_ALIGN_TOP_RIGHT, SX(-4), SY(2));
     lv_obj_set_style_bg_color(b_ref, lv_color_hex(0x1d3554), 0);
     lv_obj_set_style_radius(b_ref, 8, 0);
     lv_obj_add_event_cb(b_ref, on_fav_refresh_click, LV_EVENT_CLICKED, NULL);
@@ -488,11 +550,11 @@ void screen_sonos_show(void) {
     lv_obj_set_style_text_font(s_lbl_fav_msg, SF(16), 0);
     lv_obj_set_style_text_color(s_lbl_fav_msg, lv_color_hex(0x66ccff), 0);
     lv_label_set_text(s_lbl_fav_msg, tr("Laden...", "Loading..."));
-    lv_obj_align(s_lbl_fav_msg, LV_ALIGN_TOP_LEFT, SX(6), SY(36));
+    lv_obj_align(s_lbl_fav_msg, LV_ALIGN_TOP_LEFT, SX(6), SY(52));
 
     s_fav_list = lv_obj_create(card_right);
-    lv_obj_set_size(s_fav_list, SX(466), SY(426));
-    lv_obj_set_pos(s_fav_list, 0, SY(56));
+    lv_obj_set_size(s_fav_list, SX(466), SY(418));
+    lv_obj_set_pos(s_fav_list, 0, SY(74));
     lv_obj_set_style_bg_opa(s_fav_list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(s_fav_list, 0, 0);
     lv_obj_set_style_pad_all(s_fav_list, 0, 0);
@@ -502,8 +564,8 @@ void screen_sonos_show(void) {
     lv_obj_set_scrollbar_mode(s_fav_list, LV_SCROLLBAR_MODE_AUTO);
     lv_obj_set_flex_flow(s_fav_list, LV_FLEX_FLOW_COLUMN);
 
-    /* Start background favorite load */
-    trigger_load_favorites();
+    /* Start background items load */
+    trigger_load_items();
 
     /* Timer for periodic state update */
     s_refresh_timer = lv_timer_create(sonos_modal_tick_cb, 500, NULL);

@@ -26,7 +26,8 @@
 LV_FONT_DECLARE(lv_font_montserrat_96_custom);
 
 static lv_obj_t * scr_root = NULL;
-static lv_obj_t * lbl_clock;
+static lv_obj_t * lbl_clock_h = NULL;
+static lv_obj_t * lbl_clock_m = NULL;
 static lv_obj_t * lbl_clock_colon = NULL;   /* pulsing ":" overlay */
 static lv_obj_t * lbl_date;
 static lv_obj_t * dim_moon_img;   /* moon-phase widget — always shown */
@@ -181,9 +182,15 @@ static void refresh_cb(lv_timer_t * t) {
     time_t now = time(NULL);
     struct tm tm;
     localtime_r(&now, &tm);
-    char clk[16];
-    strftime(clk, sizeof(clk), "%H %M", &tm);   /* space; pulsing colon overlays */
-    lv_label_set_text(lbl_clock, clk);
+    char clk_h[8], clk_m[8];
+    strftime(clk_h, sizeof(clk_h), "%H", &tm);
+    strftime(clk_m, sizeof(clk_m), "%M", &tm);
+    lv_label_set_text(lbl_clock_h, clk_h);
+    lv_label_set_text(lbl_clock_m, clk_m);
+    lv_obj_update_layout(lbl_clock_h);
+    lv_obj_update_layout(lbl_clock_m);
+    lv_obj_align_to(lbl_clock_h, lbl_clock_colon, LV_ALIGN_OUT_LEFT_MID, -8, 0);
+    lv_obj_align_to(lbl_clock_m, lbl_clock_colon, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
     char dt[64];
     i18n_date_long(dt, sizeof(dt), &tm);   /* localised — strftime is C-locale (always English) */
     lv_label_set_text(lbl_date, dt);
@@ -353,7 +360,7 @@ static void refresh_cb(lv_timer_t * t) {
             const char * city = settings.weather_location[0]
                                 ? settings.weather_location : tr("Verwachting", "Forecast");
             lv_label_set_text_fmt(dim_lbl_city, tr("%s  -  %.1f°C nu", "%s  -  %.1f°C now"),
-                                  city, weather_state.current_temp);
+                                  city, weather_display_temp());
             lv_obj_clear_flag(dim_lbl_city, LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(dim_lbl_city, LV_OBJ_FLAG_HIDDEN);
@@ -383,7 +390,7 @@ static void refresh_cb(lv_timer_t * t) {
         }
     }
 
-    int use_hourly = settings.show_dim_weather && weather_state.hour_count > 0;
+    int use_hourly = settings.show_dim_weather && settings.forecast_mode != FORECAST_DAILY && weather_state.hour_count > 0;
     for (int i = 0; i < WEATHER_FORECAST_DAYS; i++) {
         if (!dim_fc_icon[i]) continue;
         if (!settings.show_dim_weather) {
@@ -407,10 +414,10 @@ static void refresh_cb(lv_timer_t * t) {
                 lv_label_set_text(dim_fc_day[i], h->label);
                 if (h->wind_dir[0])
                     lv_label_set_text_fmt(dim_fc_temp[i], "%.0f°C  %s%d",
-                                          h->temperature, h->wind_dir, h->wind_bft);
+                                          weather_hour_display_temp(h), h->wind_dir, h->wind_bft);
                 else
                     lv_label_set_text_fmt(dim_fc_temp[i], "%.0f°C",
-                                          h->temperature);
+                                          weather_hour_display_temp(h));
                 painted = 1;
             } else {
                 /* Fall back to daily, starting at days[0] (= tomorrow). */
@@ -458,7 +465,7 @@ static void refresh_cb(lv_timer_t * t) {
     }
     if (lbl_outside_temp) {
         if (settings.show_dim_weather && weather_state.connected) {
-            lv_label_set_text_fmt(lbl_outside_temp, "%.1f C", weather_state.current_temp);
+            lv_label_set_text_fmt(lbl_outside_temp, "%.1f C", weather_display_temp());
             lv_obj_clear_flag(lbl_outside_temp, LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(lbl_outside_temp, LV_OBJ_FLAG_HIDDEN);
@@ -602,18 +609,28 @@ lv_obj_t * screen_dim_grid_create(void) {
 
     /* Clock — custom 96pt Montserrat inside its customizable dim box (DB_CLOCK) */
     lv_obj_t * bx_clock = dim_box(DB_CLOCK, NULL, NULL);
-    lbl_clock = lv_label_create(bx_clock);
-    lv_obj_set_style_text_color(lbl_clock, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_clock, &lv_font_montserrat_96_custom, 0);
-    lv_label_set_text(lbl_clock, "-- --");
-    lv_obj_align(lbl_clock, LV_ALIGN_CENTER, 0, 0);
-
     lbl_clock_colon = lv_label_create(bx_clock);
     lv_obj_set_style_text_color(lbl_clock_colon, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl_clock_colon, &lv_font_montserrat_96_custom, 0);
     lv_label_set_text(lbl_clock_colon, ":");
     lv_obj_align(lbl_clock_colon, LV_ALIGN_CENTER, 0, 0);
     clock_colon_pulse(lbl_clock_colon);
+
+    lbl_clock_h = lv_label_create(bx_clock);
+    lv_obj_set_style_text_color(lbl_clock_h, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lbl_clock_h, &lv_font_montserrat_96_custom, 0);
+    lv_label_set_text(lbl_clock_h, "--");
+
+    lbl_clock_m = lv_label_create(bx_clock);
+    lv_obj_set_style_text_color(lbl_clock_m, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lbl_clock_m, &lv_font_montserrat_96_custom, 0);
+    lv_label_set_text(lbl_clock_m, "--");
+
+    lv_obj_update_layout(lbl_clock_colon);
+    lv_obj_update_layout(lbl_clock_h);
+    lv_obj_update_layout(lbl_clock_m);
+    lv_obj_align_to(lbl_clock_h, lbl_clock_colon, LV_ALIGN_OUT_LEFT_MID, -8, 0);
+    lv_obj_align_to(lbl_clock_m, lbl_clock_colon, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
 
     /* Date — inside its customizable dim box (DB_DATE) */
     lv_obj_t * bx_date = dim_box(DB_DATE, NULL, NULL);
@@ -693,11 +710,11 @@ lv_obj_t * screen_dim_grid_create(void) {
 
     lbl_waste = lv_label_create(bx_s);
     lv_obj_set_style_text_color(lbl_waste, lv_color_hex(0xbbbbbb), 0);
-    lv_obj_set_style_text_font(lbl_waste, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_waste, (DISP_VER < 600) ? &lv_font_montserrat_14 : &lv_font_montserrat_18, 0);
     lv_obj_set_width(lbl_waste, sbw - 8);
     lv_obj_set_style_text_align(lbl_waste, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(lbl_waste, LV_LABEL_LONG_WRAP);
-    lv_obj_align(lbl_waste, LV_ALIGN_TOP_MID, 0, 92);
+    lv_obj_align(lbl_waste, LV_ALIGN_TOP_MID, 0, (DISP_VER < 600) ? 90 : 92);
 
     /* ---- THERMO: indoor temp + setpoint + program + metrics, centre-stacked ---- */
     int tbw = 0, tbh = 0; lv_obj_t * bx_t = dim_box(DB_THERMO, &tbw, &tbh); (void)tbh;
@@ -824,6 +841,9 @@ lv_obj_t * screen_dim_grid_create(void) {
     /* ---- FORECAST: 5 columns across the block ---- */
     int fcw = 0, fch = 0; lv_obj_t * bx_c = dim_box(DB_FORECAST, &fcw, &fch); (void)fch;
     int col_w = fcw / WEATHER_FORECAST_DAYS;
+    const lv_font_t * fc_font = (DISP_VER < 600) ? &lv_font_montserrat_14 : &lv_font_montserrat_18;
+    int day_dy  = (DISP_VER < 600) ? 42 : 46;
+    int temp_dy = (DISP_VER < 600) ? 60 : 66;
     for (int i = 0; i < WEATHER_FORECAST_DAYS; i++) {
         int cx = i * col_w + col_w / 2;
 
@@ -831,25 +851,25 @@ lv_obj_t * screen_dim_grid_create(void) {
         lv_img_set_src(dim_fc_icon[i], &icon_wx_cloud);
         lv_obj_set_style_img_recolor(dim_fc_icon[i], lv_color_hex(0xffffff), 0);
         lv_obj_set_style_img_recolor_opa(dim_fc_icon[i], 255, 0);
-        lv_obj_set_pos(dim_fc_icon[i], cx - 20, 4);
+        lv_obj_set_pos(dim_fc_icon[i], cx - 20, (DISP_VER < 600) ? 2 : 4);
         lv_obj_add_flag(dim_fc_icon[i], LV_OBJ_FLAG_HIDDEN);
 
         dim_fc_day[i] = lv_label_create(bx_c);
         lv_obj_set_style_text_color(dim_fc_day[i], lv_color_hex(0xbbbbbb), 0);
-        lv_obj_set_style_text_font(dim_fc_day[i], &lv_font_montserrat_18, 0);
+        lv_obj_set_style_text_font(dim_fc_day[i], fc_font, 0);
         lv_label_set_text(dim_fc_day[i], "");
         lv_obj_set_style_text_align(dim_fc_day[i], LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_width(dim_fc_day[i], col_w);
-        lv_obj_set_pos(dim_fc_day[i], i * col_w, 46);
+        lv_obj_set_pos(dim_fc_day[i], i * col_w, day_dy);
         lv_obj_add_flag(dim_fc_day[i], LV_OBJ_FLAG_HIDDEN);
 
         dim_fc_temp[i] = lv_label_create(bx_c);
         lv_obj_set_style_text_color(dim_fc_temp[i], lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(dim_fc_temp[i], &lv_font_montserrat_18, 0);
+        lv_obj_set_style_text_font(dim_fc_temp[i], fc_font, 0);
         lv_label_set_text(dim_fc_temp[i], "");
         lv_obj_set_style_text_align(dim_fc_temp[i], LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_width(dim_fc_temp[i], col_w);
-        lv_obj_set_pos(dim_fc_temp[i], i * col_w, 66);
+        lv_obj_set_pos(dim_fc_temp[i], i * col_w, temp_dy);
         lv_obj_add_flag(dim_fc_temp[i], LV_OBJ_FLAG_HIDDEN);
     }
 

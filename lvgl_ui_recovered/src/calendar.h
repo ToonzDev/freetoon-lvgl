@@ -8,7 +8,7 @@
  * next CAL_MAX upcoming ones are kept. Refreshed on a slow background loop
  * (calendars don't change minute-to-minute). */
 
-#define CAL_MAX 64
+#define CAL_MAX 128
 
 typedef struct {
     char date[12];      /* "YYYY-MM-DD" */

@@ -346,7 +346,7 @@ void layout_type_min(int type, int * min_w, int * min_h) {
         case LT_NEWS_TICKER:  w = 4; h = 1; break;
         case LT_NEWS_SUMMARY: w = 3; h = 3; break;
         case LT_CALENDAR:     w = 3; h = 3; break;
-        case LT_ENERGY:       w = 3; h = 3; break;
+        case LT_ENERGY:       w = 3; h = 2; break;
         case LT_WATER:        w = 3; h = 2; break;
         case LT_VENT:         w = 2; h = 3; break;
         case LT_FAMILY:       w = 3; h = 2; break;

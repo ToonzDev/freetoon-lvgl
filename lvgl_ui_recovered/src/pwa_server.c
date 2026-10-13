@@ -318,8 +318,8 @@ static int render_state_json(char * body, size_t sz) {
      * 32 KB body buffer with all 12 items. */
     if (p < end) p += snprintf(p, end-p, "\"news\":[");
     for (int i = 0, n = news_count(); i < n; i++) {
-        char title[NEWS_TITLE_MAX], link[NEWS_LINK_MAX], body[NEWS_BODY_MAX];
-        char title_esc[NEWS_TITLE_MAX], link_esc[NEWS_LINK_MAX], body_esc[NEWS_BODY_MAX];
+        char title[NEWS_TITLE_MAX], link[NEWS_LINK_MAX], body[1024];
+        char title_esc[NEWS_TITLE_MAX], link_esc[NEWS_LINK_MAX], body_esc[1024];
         if (news_item(i, title, sizeof title, link, sizeof link) != 0) continue;
         body[0] = 0;
         news_body(i, body, sizeof body);
@@ -440,15 +440,17 @@ static int render_state_json(char * body, size_t sz) {
 }
 
 static int handle_state(int fd) {
-    char body[32768];    /* full state incl. lights/schedule/inbox/calendar/news/dz arrays */
-    int n = render_state_json(body, sizeof(body));
+    char * body = malloc(65536); /* full state incl. lights/schedule/inbox/calendar/news/dz arrays */
+    if (!body) return -1;
+    int n = render_state_json(body, 65536);
     char hdr[256];
     int hn = snprintf(hdr, sizeof(hdr),
         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\n"
         "Cache-Control: no-store\r\nConnection: close\r\n"
         "Access-Control-Allow-Origin: *\r\n\r\n", n);
-    if (sock_send_all(fd, hdr, hn) < 0) return -1;
-    return sock_send_all(fd, body, n);
+    int rc = (sock_send_all(fd, hdr, hn) < 0) ? -1 : sock_send_all(fd, body, n);
+    free(body);
+    return rc;
 }
 
 /* SSE stream — emits a `data: {…}` event whenever the JSON snapshot changes,
@@ -584,9 +586,9 @@ static int handle_state_stream(int fd) {
 
     /* Dynamically allocate buffers to protect 256KB thread stack and prevent
      * buffer overflow (full state JSON routinely exceeds 4-16KB). */
-    char * last = malloc(32768);
-    char * body = malloc(32768);
-    char * ev   = malloc(33000);
+    char * last = malloc(65536);
+    char * body = malloc(65536);
+    char * ev   = malloc(65800);
     if (!last || !body || !ev) {
         free(last); free(body); free(ev);
         return -1;
@@ -596,9 +598,9 @@ static int handle_state_stream(int fd) {
     int ret = 0;
 
     /* Push the first frame immediately so the client doesn't sit on default values. */
-    int n = render_state_json(body, 32768);
+    int n = render_state_json(body, 65536);
     if (n > 0) {
-        int en = snprintf(ev, 33000, "data: %s\n\n", body);
+        int en = snprintf(ev, 65800, "data: %s\n\n", body);
         if (sock_send_all(fd, ev, en) < 0) {
             ret = -1;
             goto cleanup;
@@ -607,10 +609,10 @@ static int handle_state_stream(int fd) {
     }
     while (1) {
         usleep(1000 * 1000);   /* 1 Hz poll of shared state */
-        n = render_state_json(body, 32768);
+        n = render_state_json(body, 65536);
         if (n <= 0) continue;
         if (strcmp(body, last) != 0) {
-            int en = snprintf(ev, 33000, "data: %s\n\n", body);
+            int en = snprintf(ev, 65800, "data: %s\n\n", body);
             if (sock_send_all(fd, ev, en) < 0) {
                 ret = -1;
                 break;
@@ -1214,7 +1216,7 @@ static int handle_settings_get(int fd) {
         "\"waste_provider\":%d,\"waste_ics_url\":\"%s\","
         "\"waste_plugin\":\"%s\",\"waste_icsid\":\"%s\",\"waste_street\":\"%s\",\"waste_city\":\"%s\","
         "\"weather_location\":\"%s\",\"weather_location_id\":%d,"
-        "\"forecast_mode\":%d,\"ot_bridge_mode\":\"%s\",\"otgw_host\":\"%s\","
+        "\"forecast_mode\":%d,\"weather_use_feel\":%d,\"ot_bridge_mode\":\"%s\",\"otgw_host\":\"%s\","
         "\"mqtt_enabled\":%d,\"mqtt_host\":\"%s\",\"mqtt_port\":%d,\"mqtt_user\":\"%s\","
         "\"enable_p1_elec\":%d,\"enable_p1_water\":%d,\"enable_vent\":%d,"
         "\"enable_ha\":%d,\"enable_zwave\":%d,\"vnc_enabled\":%d,"
@@ -1243,7 +1245,7 @@ static int handle_settings_get(int fd) {
         settings.waste_provider, settings.waste_ics_url,
         settings.waste_plugin, settings.waste_icsid, settings.waste_street, settings.waste_city,
         settings.weather_location, settings.weather_location_id,
-        settings.forecast_mode, settings.ot_bridge_mode, settings.otgw_host,
+        settings.forecast_mode, settings.weather_use_feel, settings.ot_bridge_mode, settings.otgw_host,
         settings.mqtt_enabled, settings.mqtt_host, settings.mqtt_port, settings.mqtt_user,
         settings.enable_p1_elec, settings.enable_p1_water, settings.enable_vent,
         settings.enable_ha, settings.enable_zwave, settings.vnc_enabled,
@@ -1272,7 +1274,7 @@ static int handle_settings_get(int fd) {
 }
 
 static int handle_settings_post(int fd, const char * body) {
-    int iv; char sv[256];
+    int iv; char sv[1024];
     if (extract_int(body, "auto_dim_enabled", &iv))   settings.auto_dim_enabled = !!iv;
     if (extract_int(body, "auto_dim_seconds", &iv))   settings.auto_dim_seconds = iv < 5 ? 5 : (iv > 300 ? 300 : iv);
     if (extract_int(body, "active_brightness", &iv))  settings.active_brightness = iv < 0 ? 0 : (iv > 1000 ? 1000 : iv);
@@ -1298,6 +1300,7 @@ static int handle_settings_post(int fd, const char * body) {
     if (extract_str(body, "waste_city", sv, sizeof sv))
         snprintf(settings.waste_city, sizeof settings.waste_city, "%s", sv);
     if (extract_int(body, "forecast_mode", &iv))      settings.forecast_mode = iv;
+    if (extract_int(body, "weather_use_feel", &iv))   settings.weather_use_feel = !!iv;
     if (extract_int(body, "mqtt_port", &iv))          settings.mqtt_port = iv;
     if (extract_int(body, "enable_p1_elec", &iv))     settings.enable_p1_elec = !!iv;
     if (extract_int(body, "enable_p1_water", &iv))    settings.enable_p1_water = !!iv;

@@ -37,9 +37,23 @@ void weather_get_snapshot(weather_state_t * out) {
     pthread_mutex_unlock(&g_wx_mtx);
 }
 
+float weather_display_temp(void) {
+    if (settings.weather_use_feel)
+        return weather_state.feel_temp;
+    return weather_state.current_temp;
+}
+
+float weather_hour_display_temp(const weather_hour_t * h) {
+    if (!h) return 0.0f;
+    if (settings.weather_use_feel)
+        return h->feel_temp;
+    return h->temperature;
+}
+
 /* The configured location's exact lat/lon, resolved by the Open-Meteo geocoder
  * (weather_geocode). Drives the Open-Meteo current+forecast fetch. 0 = unresolved. */
 static double g_cfg_lat = 0.0, g_cfg_lon = 0.0;
+static volatile int g_wx_wake = 0;
 
 /* Case-insensitive strstr. Buienradar's data feed switched from lowercase keys
  * ("stationid","temperature","iconurl","actualradarurl"…) to PascalCase
@@ -258,6 +272,7 @@ static int parse_openmeteo(const char * body) {
             if (strlen(iso) >= 16) snprintf(H->label, sizeof H->label, "%.5s", iso + 11);
             else snprintf(H->label, sizeof H->label, "%.7s", iso);
             H->temperature = (float)js_arr_num(hr, "temperature_2m", idx, 0);
+            H->feel_temp   = (float)js_arr_num(hr, "apparent_temperature", idx, H->temperature);
             H->wind_bft    = kmh_to_bft(js_arr_num(hr, "wind_speed_10m", idx, 0));
             deg_to_nl(js_arr_num(hr, "wind_direction_10m", idx, 0), H->wind_dir, sizeof H->wind_dir);
             wmo_icon((int)js_arr_num(hr, "weather_code", idx, 3), 1, H->icon);
@@ -270,30 +285,72 @@ static int parse_openmeteo(const char * body) {
 
 static int fetch_openmeteo(void) {
     if (g_cfg_lat == 0.0 && g_cfg_lon == 0.0) return -1;
-    char url[480];
+    char url[512];
     snprintf(url, sizeof url,
         "https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f"
         "&timezone=Europe%%2FAmsterdam&forecast_days=5"
         "&current=temperature_2m,apparent_temperature,weather_code,is_day"
         "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,"
         "wind_speed_10m_max,wind_direction_10m_dominant"
-        "&hourly=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m",
+        "&hourly=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m",
         g_cfg_lat, g_cfg_lon);
-    static char body[48 * 1024];
-    if (http_fetch(url, body, sizeof body) != 0) return -1;
-    weather_lock();
-    int rc = parse_openmeteo(body);
-    weather_unlock();
-    return rc;
+    static char body[56 * 1024];
+    for (int attempt = 0; attempt < 2; attempt++) {
+        if (attempt > 0) sleep(2);
+        if (http_fetch(url, body, sizeof body) != 0) continue;
+        weather_lock();
+        int rc = parse_openmeteo(body);
+        weather_unlock();
+        if (rc == 0) return 0;
+    }
+    return -1;
 }
 
-/* buienradar feed — used ONLY for the radar-map URL + the NL weather-report
- * narrative; all temperatures/forecast now come from Open-Meteo (exact point). */
+/* buienradar feed — used for the radar-map URL + the NL weather-report
+ * narrative, plus nearest-KNMI-station fallback if Open-Meteo is overloaded. */
 static int parse_buienradar_extras(const char * body) {
 
     /* --- radar image URL (lives in "actual" object) --- */
     js_str(body, body + strlen(body), "actualradarurl",
            weather_state.radar_url, sizeof(weather_state.radar_url));
+
+    /* If Open-Meteo failed, pick the closest KNMI station so live real + feel
+     * temperatures stay fresh instead of freezing at an old reading. */
+    if (!weather_state.connected) {
+        const char * sm = ci_strstr(body, "\"stationmeasurements\":");
+        if (sm) {
+            double ref_lat = (g_cfg_lat != 0.0) ? g_cfg_lat : 52.1009;
+            double ref_lon = (g_cfg_lon != 0.0) ? g_cfg_lon : 5.1783;
+            double best_d2 = 1e9, best_t = 0.0, best_f = 0.0;
+            int found = 0;
+            const char * p = sm;
+            while ((p = strchr(p, '{')) != NULL) {
+                const char * e = strchr(p, '}');
+                if (!e) break;
+                double slat = js_num(p, e, "lat", 0.0);
+                double slon = js_num(p, e, "lon", 0.0);
+                double stmp = js_num(p, e, "temperature", -999.0);
+                if (slat != 0.0 && stmp > -100.0) {
+                    double dlat = slat - ref_lat;
+                    double dlon = (slon - ref_lon) * 0.62;
+                    double d2 = dlat * dlat + dlon * dlon;
+                    if (d2 < best_d2) {
+                        best_d2 = d2;
+                        best_t  = stmp;
+                        best_f  = js_num(p, e, "feeltemperature", stmp);
+                        found   = 1;
+                    }
+                }
+                p = e + 1;
+                if (*p == ']') break;
+            }
+            if (found) {
+                weather_state.current_temp = (float)best_t;
+                weather_state.feel_temp    = (float)best_f;
+                weather_state.connected    = 1;
+            }
+        }
+    }
 
     /* --- weatherreport title + text --- */
     const char * wr = ci_strstr(body, "\"weatherreport\":");
@@ -446,17 +503,22 @@ static void * wx_thread(void * arg) {
             weather_unlock();
         }
 
-        /* Fetch the radar image every 5 minutes (3 ticks of 15-min loop is
-           too slow; we do an inner sleep loop instead). */
-        for (int i = 0; i < 3; i++) {
+        /* Fetch the radar image every 5 minutes, waking early on weather_refresh_async(). */
+        for (int i = 0; i < 3 && !g_wx_wake; i++) {
             if (fetch_radar_image() == 0)
                 fprintf(stderr, "[wx] radar refreshed (tick %d)\n", radar_tick++);
             else
                 fprintf(stderr, "[wx] radar fetch failed\n");
-            sleep(5 * 60);
+            for (int s = 0; s < 5 * 60 && !g_wx_wake; s++)
+                sleep(1);
         }
+        g_wx_wake = 0;
     }
     return NULL;
+}
+
+void weather_refresh_async(void) {
+    g_wx_wake = 1;
 }
 
 int weather_start(void) {

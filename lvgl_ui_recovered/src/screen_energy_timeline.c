@@ -315,11 +315,12 @@ lv_obj_t * screen_energy_timeline_create(void) {
 
     /* ── Back button ── */
     lv_obj_t *back = lv_btn_create(scr_root);
-    lv_obj_set_size(back, SX(130), SY(44));
+    lv_obj_set_size(back, SX(130), SY(46));
     lv_obj_align(back, LV_ALIGN_TOP_LEFT, SX(8), hdr_y + SY(3));
     lv_obj_set_style_bg_color(back, lv_color_hex(0x1e3050), 0);
     lv_obj_set_style_radius(back, 10, 0);
     lv_obj_set_style_border_width(back, 0, 0);
+    lv_obj_set_ext_click_area(back, 25);
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t *bl = lv_label_create(back);
     lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);

@@ -13,7 +13,7 @@
 #include <string.h>
 #include <time.h>
 
-#define CAL_EVENTS_PER_PAGE 10
+#define CAL_EVENTS_PER_PAGE 16
 
 static lv_obj_t * modal = NULL;
 static lv_obj_t * s_col_left = NULL;
@@ -174,14 +174,17 @@ void screen_calendar_show(void) {
 
     /* Close button */
     lv_obj_t * close = lv_btn_create(modal);
-    lv_obj_set_size(close, SX(56), SY(56));
-    lv_obj_align(close, LV_ALIGN_TOP_RIGHT, SX(-16), SY(12));
+    int cb_w = (DISP_HOR < 1000) ? 68 : 76;
+    int cb_h = (DISP_VER < 600) ? 46 : 56;
+    lv_obj_set_size(close, cb_w, cb_h);
+    lv_obj_align(close, LV_ALIGN_TOP_RIGHT, SX(-12), SY(8));
     lv_obj_set_style_bg_color(close, lv_color_hex(0x33445a), 0);
     lv_obj_set_style_radius(close, 12, 0);
-    lv_obj_set_ext_click_area(close, 20);
+    lv_obj_set_ext_click_area(close, 30);
     lv_obj_add_event_cb(close, on_close, LV_EVENT_CLICKED, NULL);
     lv_obj_t * cl = lv_label_create(close);
     lv_label_set_text(cl, LV_SYMBOL_CLOSE);
+    lv_obj_set_style_text_font(cl, SF(22), 0);
     lv_obj_set_style_text_color(cl, lv_color_hex(0xffffff), 0);
     lv_obj_center(cl);
 
@@ -262,8 +265,10 @@ void screen_calendar_show(void) {
     lv_obj_set_style_bg_opa(s_col_left, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(s_col_left, 0, 0);
     lv_obj_set_style_pad_all(s_col_left, 0, 0);
-    lv_obj_set_style_pad_row(s_col_left, 6, 0);
-    lv_obj_clear_flag(s_col_left, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_pad_row(s_col_left, 8, 0);
+    lv_obj_add_flag(s_col_left, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(s_col_left, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(s_col_left, LV_SCROLLBAR_MODE_AUTO);
     lv_obj_set_flex_flow(s_col_left, LV_FLEX_FLOW_COLUMN);
 
     s_col_right = lv_obj_create(cont);
@@ -272,8 +277,10 @@ void screen_calendar_show(void) {
     lv_obj_set_style_bg_opa(s_col_right, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(s_col_right, 0, 0);
     lv_obj_set_style_pad_all(s_col_right, 0, 0);
-    lv_obj_set_style_pad_row(s_col_right, 6, 0);
-    lv_obj_clear_flag(s_col_right, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_pad_row(s_col_right, 8, 0);
+    lv_obj_add_flag(s_col_right, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(s_col_right, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(s_col_right, LV_SCROLLBAR_MODE_AUTO);
     lv_obj_set_flex_flow(s_col_right, LV_FLEX_FLOW_COLUMN);
 
     render_calendar_page();

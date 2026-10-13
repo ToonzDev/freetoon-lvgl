@@ -50,6 +50,7 @@ typedef struct {
     int  forecast_mode;          /* 0 = auto (hourly if available, else daily)
                                     1 = force hourly
                                     2 = force daily */
+    int  weather_use_feel;       /* 0 = real temperature (default), 1 = feel temperature */
     /* OT bridge / OTGW configuration — three-way selector matching
        ot_mode_switch.sh:
          "off"      — bare keteladapter on /dev/ttymxc0, no bridge.
@@ -257,7 +258,7 @@ typedef struct {
      * Either or both; empty disables that source. */
     int  calendar_enabled;
     char calendar_ha_entity[64];
-    char calendar_ics_url[256];
+    char calendar_ics_url[1024];  /* one or more ICS URLs, newline-separated */
     int  calendar_notify_enabled;    /* 0/1 — pop a notification before a timed event starts */
     int  calendar_notify_lead_min;   /* minutes before the start to notify (default 15) */
     int  home_theme;                 /* 0 = freetoon dark dashboard, 1 = stock light tile-carousel */

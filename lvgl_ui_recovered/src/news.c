@@ -29,29 +29,63 @@ typedef struct {
     int  feed;                  /* index into g_feeds[] — which source it came from */
 } news_item_t;
 
-/* Strip HTML tags in place, then collapse the whitespace they leave behind. */
+/* Convert HTML to plain text in place, turning block-closing and <br> tags into
+ * paragraph/line breaks and collapsing extra whitespace while preserving '\n'. */
 static void strip_html(char * s) {
     char * w = s;
     for (char * r = s; *r; ) {
-        if (*r == '<') { while (*r && *r != '>') r++; if (*r) r++; }
-        else *w++ = *r++;
+        if (*r == '<') {
+            /* Detect <br>, </p>, </h2>, </h3>, </h4>, </li> for line/paragraph breaks */
+            char t0 = (char)(r[1] | 0x20);
+            char t1 = r[1] ? (char)(r[2] | 0x20) : 0;
+            char t2 = (r[1] && r[2]) ? (char)(r[3] | 0x20) : 0;
+            int is_br = (t0 == 'b' && t1 == 'r' && (t2 == '>' || t2 == ' ' || t2 == '/'));
+            int is_p_end = (r[1] == '/' &&
+                            ((t1 == 'p' && t2 == '>') ||
+                             (t1 == 'h' && (t2 >= '1' && t2 <= '6')) ||
+                             (t1 == 'l' && t2 == 'i')));
+            while (*r && *r != '>') r++;
+            if (*r == '>') r++;
+            if (is_p_end) { *w++ = '\n'; *w++ = '\n'; }
+            else if (is_br) { *w++ = '\n'; }
+        } else {
+            *w++ = *r++;
+        }
     }
     *w = 0;
-    /* collapse double spaces created by removed tags */
-    char * o = s; int sp = 0;
+    /* Collapse horizontal spaces and cap consecutive newlines to 2 */
+    char * o = s;
+    int sp = 0, nl = 0;
     for (char * r = s; *r; r++) {
-        if (*r == ' ') { if (!sp) *o++ = ' '; sp = 1; }
-        else { *o++ = *r; sp = 0; }
+        if (*r == '\n') {
+            while (o > s && o[-1] == ' ') o--;
+            if (nl < 2) *o++ = '\n';
+            nl++;
+            sp = 0;
+        } else if (*r == ' ') {
+            if (!sp && nl == 0 && o > s) { *o++ = ' '; sp = 1; }
+        } else {
+            *o++ = *r;
+            sp = 0;
+            nl = 0;
+        }
     }
     *o = 0;
-    while (o > s && o[-1] == ' ') *--o = 0;
+    while (o > s && (o[-1] == ' ' || o[-1] == '\n')) *--o = 0;
 }
 
 static news_item_t     g_items[NEWS_MAX_ITEMS];
 static int             g_count = 0;
 static char            g_feeds[NEWS_MAX_FEEDS][64];  /* feed display names */
 static int             g_feed_n = 0;
+static int             g_seq = 0;
 static pthread_mutex_t g_mtx = PTHREAD_MUTEX_INITIALIZER;
+
+/* Staging buffers used by fetch_thread so g_items is swapped atomically
+ * once all enabled feeds have been fetched and parsed. */
+static news_item_t     s_items[NEWS_MAX_ITEMS];
+static char            s_feeds[NEWS_MAX_FEEDS][64];
+static int             s_feed_n = 0;
 
 static int url_ok(const char * raw) {
     if (!raw) return 0;
@@ -91,12 +125,14 @@ static char latin1_to_ascii(unsigned char n) {
     return 0;
 }
 
-/* Minimal entity + whitespace cleanup, in place. */
-static void clean_text(char * s) {
-    /* unescape the few entities RSS titles actually use */
+/* Minimal entity + whitespace cleanup, in place. If keep_nl is non-zero,
+ * '\n' characters are preserved (for article bodies). */
+static void clean_text_ex(char * s, int keep_nl) {
     static const struct { const char * e; char c; } ent[] = {
         {"&amp;", '&'}, {"&lt;", '<'}, {"&gt;", '>'}, {"&quot;", '"'},
-        {"&#39;", '\''}, {"&apos;", '\''}, {NULL, 0}
+        {"&#39;", '\''}, {"&apos;", '\''}, {"&nbsp;", ' '},
+        {"&#8216;", '\''}, {"&#8217;", '\''}, {"&#8220;", '"'}, {"&#8221;", '"'},
+        {"&#8211;", '-'}, {"&#8212;", '-'}, {NULL, 0}
     };
     for (int i = 0; ent[i].e; i++) {
         char * p;
@@ -105,16 +141,23 @@ static void clean_text(char * s) {
             memmove(p + 1, p + strlen(ent[i].e), strlen(p + strlen(ent[i].e)) + 1);
         }
     }
-    /* collapse non-ASCII to '?' (Montserrat has no glyphs for them) and runs
-     * of whitespace to single spaces */
     char * w = s;
     int prev_sp = 0;
     for (char * r = s; *r; r++) {
         unsigned char c = (unsigned char)*r;
-        if (c == '\n' || c == '\r' || c == '\t' || c == ' ') {
+        if (keep_nl && c == '\n') {
+            *w++ = '\n';
+            prev_sp = 0;
+        } else if (c == '\n' || c == '\r' || c == '\t' || c == ' ') {
             if (!prev_sp) { *w++ = ' '; prev_sp = 1; }
         } else if (c >= 0xC0) {                       /* UTF-8 lead byte */
             char a = (c == 0xC3 && r[1]) ? latin1_to_ascii((unsigned char)r[1]) : 0;
+            if (!a && c == 0xE2 && (unsigned char)r[1] == 0x80) {
+                unsigned char b2 = (unsigned char)r[2];
+                if (b2 == 0x98 || b2 == 0x99) a = '\'';
+                else if (b2 == 0x9C || b2 == 0x9D) a = '"';
+                else if (b2 == 0x93 || b2 == 0x94) a = '-';
+            }
             if (a) { *w++ = a; prev_sp = 0; }
             else if (!prev_sp) { *w++ = ' '; prev_sp = 1; }   /* drop unknown multibyte */
             while (((unsigned char)r[1]) >= 0x80 && ((unsigned char)r[1]) <= 0xBF) r++;
@@ -125,14 +168,15 @@ static void clean_text(char * s) {
         }
     }
     *w = 0;
-    /* trim trailing space */
-    while (w > s && w[-1] == ' ') *--w = 0;
+    while (w > s && (w[-1] == ' ' || w[-1] == '\n')) *--w = 0;
 }
 
-/* Extract the inner text of the first <tag>…</tag> inside [blk,blk_end),
+static void clean_text(char * s) { clean_text_ex(s, 0); }
+
+/* Extract the raw inner text of the first <tag>…</tag> inside [blk,blk_end),
  * stripping a CDATA wrapper. Returns 0 on success. */
-static int tag_text(const char * blk, const char * blk_end, const char * tag,
-                    char * out, size_t outsz) {
+static int tag_raw(const char * blk, const char * blk_end, const char * tag,
+                   char * out, size_t outsz) {
     char open[24], close[24];
     snprintf(open, sizeof open, "<%s>", tag);
     snprintf(close, sizeof close, "</%s>", tag);
@@ -160,6 +204,12 @@ static int tag_text(const char * blk, const char * blk_end, const char * tag,
     size_t len = (size_t)(e - s);
     if (len >= outsz) len = outsz - 1;
     memcpy(out, s, len); out[len] = 0;
+    return 0;
+}
+
+static int tag_text(const char * blk, const char * blk_end, const char * tag,
+                    char * out, size_t outsz) {
+    if (tag_raw(blk, blk_end, tag, out, outsz) != 0) return -1;
     clean_text(out);
     return 0;
 }
@@ -184,18 +234,15 @@ static void url_host(const char * u, char * out, size_t outsz) {
     out[i] = 0;
 }
 
-/* Parse one feed, appending items starting at `start`; returns the new total
-   (so multiple feeds merge into the shared list, capped at NEWS_MAX_ITEMS).
-   Items added by this feed are stamped with a feed slot named `feed_name`.
-   When start==0 this is the first feed of a refresh cycle, so the feed table
-   is reset. */
-static int parse_feed(const char * xml, size_t len, int start, const char * feed_name,
-                      int max_this_feed) {
+/* Parse one feed into the staging buffers (s_items/s_feeds), appending items
+   starting at `start`; returns the new total (capped at NEWS_MAX_ITEMS). */
+static int parse_feed_staged(const char * xml, size_t len, int start, const char * feed_name,
+                             int max_this_feed) {
+    static char raw_desc[16384];
     const char * p = xml;
     const char * end = xml + len;
     int n = start;
-    pthread_mutex_lock(&g_mtx);
-    if (start == 0) g_feed_n = 0;
+    if (start == 0) s_feed_n = 0;
     int feed_slot = -1;                 /* assigned lazily on the first item */
     /* Stop at the global cap OR this feed's fair share (max_this_feed) so one
        busy feed can't eat every slot and starve the others. */
@@ -207,29 +254,32 @@ static int parse_feed(const char * xml, size_t len, int start, const char * feed
         if (!it_end) it_end = memmem(it, end - it, "</entry", 7);
         if (!it_end) it_end = end;
 
-        char title[NEWS_TITLE_MAX] = "", link[NEWS_LINK_MAX] = "", body[NEWS_BODY_MAX] = "";
+        char title[NEWS_TITLE_MAX] = "", link[NEWS_LINK_MAX] = "";
         if (tag_text(it, it_end, "title", title, sizeof title) == 0 && title[0]) {
             tag_text(it, it_end, "link", link, sizeof link);  /* link optional */
-            if (tag_text(it, it_end, "description", body, sizeof body) == 0)
-                strip_html(body);                              /* article summary */
-            if (feed_slot < 0) {        /* register this feed on its first item */
-                feed_slot = g_feed_n < NEWS_MAX_FEEDS ? g_feed_n : NEWS_MAX_FEEDS - 1;
-                snprintf(g_feeds[feed_slot], sizeof g_feeds[feed_slot], "%s",
-                         feed_name && feed_name[0] ? feed_name : "Nieuws");
-                if (g_feed_n < NEWS_MAX_FEEDS) g_feed_n++;
+            raw_desc[0] = 0;
+            if (tag_raw(it, it_end, "content:encoded", raw_desc, sizeof raw_desc) != 0 || !raw_desc[0])
+                tag_raw(it, it_end, "description", raw_desc, sizeof raw_desc);
+            if (raw_desc[0]) {
+                strip_html(raw_desc);
+                clean_text_ex(raw_desc, 1);
             }
-            snprintf(g_items[n].title, sizeof g_items[n].title, "%s", title);
-            snprintf(g_items[n].link,  sizeof g_items[n].link,  "%s", link);
-            snprintf(g_items[n].body,  sizeof g_items[n].body,  "%s", body);
-            g_items[n].feed = feed_slot;
+            if (feed_slot < 0) {        /* register this feed on its first item */
+                feed_slot = s_feed_n < NEWS_MAX_FEEDS ? s_feed_n : NEWS_MAX_FEEDS - 1;
+                snprintf(s_feeds[feed_slot], sizeof s_feeds[feed_slot], "%s",
+                         feed_name && feed_name[0] ? feed_name : "Nieuws");
+                if (s_feed_n < NEWS_MAX_FEEDS) s_feed_n++;
+            }
+            snprintf(s_items[n].title, sizeof s_items[n].title, "%s", title);
+            snprintf(s_items[n].link,  sizeof s_items[n].link,  "%s", link);
+            snprintf(s_items[n].body,  sizeof s_items[n].body,  "%s", raw_desc);
+            s_items[n].feed = feed_slot;
             n++;
         }
         p = it_end + 1;
         if (p >= end) break;
     }
-    g_count = n;
-    pthread_mutex_unlock(&g_mtx);
-    fprintf(stderr, "[news] total %d headlines\n", n);
+    fprintf(stderr, "[news] staged %d headlines\n", n);
     return n;
 }
 
@@ -246,25 +296,16 @@ static void * fetch_thread(void * arg) {
                and skipped (per-feed show/hide toggle in Settings). */
             char urls[sizeof settings.news_rss_url];
 
-            /* Pass 1: count enabled feeds so each gets a fair share of the 12
-               headline slots (round-robin-ish) instead of the first feed
-               grabbing them all. */
-            snprintf(urls, sizeof urls, "%s", settings.news_rss_url);
-            int nfeeds = 0;
-            { char * sv = NULL;
-              for (char * u = strtok_r(urls, "\n", &sv); u; u = strtok_r(NULL, "\n", &sv)) {
-                  while (*u == ' ' || *u == '\t' || *u == '\r') u++;
-                  if (!*u || *u == '#') continue;
-                  if (url_ok(u)) nfeeds++;
-              }
-            }
-            int per_feed = nfeeds > 0
-                ? (NEWS_MAX_ITEMS + nfeeds - 1) / nfeeds   /* ceil(12/n) */
-                : NEWS_MAX_ITEMS;
+            /* Each enabled feed gets up to NEWS_MAX_PER_FEED (12) items for the
+               news reader screen; the home-screen ticker caps its own display
+               to 12 items total across feeds. */
+            int per_feed = NEWS_MAX_PER_FEED;
 
-            /* Pass 2: fetch + parse each enabled feed, capped to its share. */
+            /* Fetch + parse each enabled feed into staging buffers, then swap
+               atomically into g_items so the UI never sees a partial list. */
             snprintf(urls, sizeof urls, "%s", settings.news_rss_url);
             int total = 0, did = 0;
+            s_feed_n = 0;
             char * save = NULL;
             for (char * u = strtok_r(urls, "\n", &save); u && total < NEWS_MAX_ITEMS;
                  u = strtok_r(NULL, "\n", &save)) {
@@ -283,11 +324,20 @@ static void * fetch_thread(void * arg) {
                     char fname[64];
                     feed_title(buf, got, fname, sizeof fname);
                     if (!fname[0]) url_host(u, fname, sizeof fname);
-                    total = parse_feed(buf, got, total, fname, per_feed);
+                    total = parse_feed_staged(buf, got, total, fname, per_feed);
                     did = 1;
                 }
             }
-            (void)did;
+            if (did) {
+                pthread_mutex_lock(&g_mtx);
+                memcpy(g_items, s_items, (size_t)total * sizeof(news_item_t));
+                memcpy(g_feeds, s_feeds, sizeof(g_feeds));
+                g_count  = total;
+                g_feed_n = s_feed_n;
+                g_seq++;
+                pthread_mutex_unlock(&g_mtx);
+                fprintf(stderr, "[news] committed %d headlines (seq=%d)\n", total, g_seq);
+            }
         }
         for (int s = 0; s < 900 && !g_wake_fetch; s += 2) {
             sleep(2);
@@ -362,6 +412,13 @@ int news_count(void) {
     return c;
 }
 
+int news_seq(void) {
+    pthread_mutex_lock(&g_mtx);
+    int s = g_seq;
+    pthread_mutex_unlock(&g_mtx);
+    return s;
+}
+
 /* Slave bridge: replace the in-memory list with the master's. The local
  * fetch thread isn't running in client_mode/WASM, so there's no race. */
 void news_set_count(int n) {
@@ -369,6 +426,7 @@ void news_set_count(int n) {
     if (n > NEWS_MAX_ITEMS) n = NEWS_MAX_ITEMS;
     pthread_mutex_lock(&g_mtx);
     g_count = n;
+    g_seq++;
     pthread_mutex_unlock(&g_mtx);
 }
 void news_set_item_data(int i, const char * title, const char * link,
