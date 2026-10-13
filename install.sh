@@ -439,7 +439,21 @@ CFG
     remote "pkill -x quby_bridge 2>/dev/null; pkill -x p1bridge 2>/dev/null; true"
     remote "umount -l /dev/ttymxc0 2>/dev/null; true"
     upsert_row "$TOON_ROW"
-    upsert_row "$VNCS_ROW"
+    if [ "$IS_LOCAL" = 1 ]; then
+        if [ -f /mnt/data/toonui.cfg ] && grep -q '^vnc_enabled=1' /mnt/data/toonui.cfg 2>/dev/null; then
+            upsert_row "$VNCS_ROW"
+        else
+            drop_row vncs
+            pkill -9 -x x11vnc 2>/dev/null || true
+        fi
+    else
+        if remote "[ -f /mnt/data/toonui.cfg ] && grep -q '^vnc_enabled=1' /mnt/data/toonui.cfg 2>/dev/null"; then
+            upsert_row "$VNCS_ROW"
+        else
+            drop_row vncs
+            remote "pkill -9 -x x11vnc 2>/dev/null || true"
+        fi
+    fi
     if [ -n "$QUBY_BRIDGE_BIN" ] && [ -e "$QUBY_BRIDGE_BIN" ]; then
         push "$QUBY_BRIDGE_BIN" /mnt/data/quby_bridge
         remote "/mnt/data/ot_mode_switch.sh proxy" || true

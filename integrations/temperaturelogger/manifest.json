@@ -1,0 +1,30 @@
+{
+  "id": "temperaturelogger",
+  "name": "Temperature Logger",
+  "version": "1.0.0",
+  "binary": "temperaturelogger",
+  "args": [],
+  "service_id": "temperatureLogger",
+  "tile": {
+    "title": "Temperatuur",
+    "color": "0x3388ff",
+    "icon": "flame",
+    "value_field": "room_temp",
+    "value_unit": "°C",
+    "subtitle_field": "summary",
+    "subtitle_unit": ""
+  },
+  "detail_screen": {
+    "type": "chart_24h",
+    "title": "Temperatuurlog afgelopen 24 uur",
+    "y_unit": "°C",
+    "series": [
+      { "name": "Kamer", "color": "0x3388ff", "live_field": "room_temp", "data_file": "actualTempReading24H.txt" },
+      { "name": "Setpoint", "color": "0xff4444", "live_field": "setpoint", "data_file": "actualTempSetpoint24H.txt" },
+      { "name": "Buiten", "color": "0xffbb00", "live_field": "outside_temp", "data_file": "actualTempBuienradar24H.txt" }
+    ]
+  },
+  "description": "Logt actuele kamertemperatuur, setpoint en buitentemperatuur over 24 uur en toont een interactieve 24-uurs grafiek.",
+  "license": "MIT"
+}
+

@@ -48,7 +48,16 @@
 #define INTEG_UNIT_MAX        16
 #define INTEG_VALUE_MAX       64
 
+#define INTEG_MAX_SERIES      4
+
 typedef struct {
+    char name[INTEG_NAME_MAX];
+    char color[16];                   /* "0xRRGGBB" */
+    char live_field[INTEG_FIELD_MAX]; /* BoxTalk field name or empty */
+    char data_file[64];               /* file path or filename */
+} integ_series_meta_t;
+
+typedef struct integration_meta_s {
     char id[INTEG_ID_MAX];
     char name[INTEG_NAME_MAX];
     char service_id[INTEG_SERVICE_MAX];
@@ -65,6 +74,13 @@ typedef struct {
      * when it goes empty again the notification is cleared. The integration
      * owns the decision (threshold logic etc.); toonui owns the UUIDs/path. */
     char alert_field[INTEG_FIELD_MAX];
+
+    /* Generic detail screen (optional, from manifest "detail_screen") */
+    char detail_type[24];              /* e.g. "chart_24h" */
+    char detail_title[INTEG_NAME_MAX];
+    char detail_y_unit[INTEG_UNIT_MAX];
+    int  series_count;
+    integ_series_meta_t series[INTEG_MAX_SERIES];
 
     /* Last value seen on BoxTalk for this integration's service. Updated
      * by tile_slots_on_notify() from a non-UI thread; refresh_cb reads

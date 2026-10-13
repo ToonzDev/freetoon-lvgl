@@ -601,6 +601,18 @@ static void on_home_theme_change(lv_event_t * e) {
     ui_apply_home_theme();   /* live swap — visible next time home is shown */
 }
 
+static lv_obj_t * lbl_vnc_val = NULL;
+static lv_obj_t * lbl_vnc_web_val = NULL;
+static void on_vnc_change(lv_event_t * e) {
+    settings.vnc_enabled = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    if (lbl_vnc_val)
+        lv_label_set_text(lbl_vnc_val, settings.vnc_enabled ? tr("Aan", "On") : tr("Uit", "Off"));
+    if (lbl_vnc_web_val)
+        lv_label_set_text(lbl_vnc_web_val, settings.vnc_enabled ? tr("Aan", "On") : tr("Uit", "Off"));
+    settings_save();
+    vnc_apply_state(settings.vnc_enabled);
+}
+
 /* ============================ category modals ============================ */
 
 static void open_display_modal(lv_event_t * e) {
@@ -678,6 +690,14 @@ static void open_display_modal(lv_event_t * e) {
     r = panel_row(p, y, tr("Stock: grote waarde = binnentemp",
                            "Stock: big readout = indoor temp"), NULL);
     row_switch(r, settings.stock_big_indoor == 1, on_stock_big_indoor_change);
+    y += 82;
+
+    /* VNC remote control (x11vnc server on port 5900) */
+    r = panel_row(p, y, tr("VNC schermovername (poort 5900)",
+                           "VNC remote control (port 5900)"), &lbl_vnc_val);
+    lv_label_set_text(lbl_vnc_val, settings.vnc_enabled ? tr("Aan", "On") : tr("Uit", "Off"));
+    row_switch(r, settings.vnc_enabled, on_vnc_change);
+    y += 82;
 }
 
 static void open_weather_modal(lv_event_t * e) {
@@ -1224,6 +1244,11 @@ static void open_marketplace(lv_event_t * e) {
 static void open_crypto_picker(lv_event_t * e) {
     (void)e;
     ui_push(screen_crypto_picker_create());
+}
+
+static void open_templogger(lv_event_t * e) {
+    (void)e;
+    ui_push(screen_chart_24h_create(tile_slots_integration_by_id("temperaturelogger")));
 }
 
 /* Z-Wave tile-tap: push the built-in Z-Wave controller management screen. */
@@ -1820,7 +1845,9 @@ static void on_cal_feed_remove(lv_event_t * e) {
     char tmp[sizeof settings.calendar_ics_url], out[sizeof settings.calendar_ics_url] = "";
     snprintf(tmp, sizeof tmp, "%s", settings.calendar_ics_url);
     int i = 0; char * save = NULL;
-    for (char * u = strtok_r(tmp, "\n", &save); u; u = strtok_r(NULL, "\n", &save)) {
+    for (char * u = strtok_r(tmp, "\n\t\r", &save); u; u = strtok_r(NULL, "\n\t\r", &save)) {
+        while (*u == ' ' || *u == '\t') u++;
+        if (!*u) continue;
         if (i++ == idx) continue;
         if (out[0]) strncat(out, "\n", sizeof out - strlen(out) - 1);
         strncat(out, u, sizeof out - strlen(out) - 1);
@@ -1837,21 +1864,18 @@ static void cal_feeds_rebuild(void) {
     char tmp[sizeof settings.calendar_ics_url];
     snprintf(tmp, sizeof tmp, "%s", settings.calendar_ics_url);
     int i = 0; char * save = NULL;
-    for (char * u = strtok_r(tmp, "\n", &save); u; u = strtok_r(NULL, "\n", &save)) {
+    for (char * u = strtok_r(tmp, "\n\t\r", &save); u; u = strtok_r(NULL, "\n\t\r", &save)) {
         while (*u == ' ' || *u == '\t') u++;
         if (!*u) continue;
-        char display[64];
-        if (strlen(u) > 52) {
-            snprintf(display, sizeof display, "%.49s...", u);
-        } else {
-            snprintf(display, sizeof display, "%s", u);
-        }
 
-        lv_obj_t * btn = lv_list_add_btn(cal_feeds_list, LV_SYMBOL_BULLET, display);
-        lv_obj_set_style_text_font(btn, SF(16), 0);
-        lv_obj_set_style_bg_color(btn, lv_color_hex(0x132135), 0);
+        lv_obj_t * btn = lv_list_add_btn(cal_feeds_list, NULL, u);
+        lv_obj_set_style_text_font(btn, SF(15), 0);
+        lv_obj_set_style_text_color(btn, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_bg_color(btn, lv_color_hex(0x1a2940), 0);
+        lv_obj_set_style_pad_left(btn, SX(12), 0);
         lv_obj_set_style_pad_right(btn, SX(56), 0);
 
+        /* Delete button on the right */
         lv_obj_t * tr_btn = lv_btn_create(btn);
         lv_obj_add_flag(tr_btn, LV_OBJ_FLAG_IGNORE_LAYOUT);
         lv_obj_set_size(tr_btn, SX(46), SY(34));
@@ -1860,11 +1884,26 @@ static void cal_feeds_rebuild(void) {
         lv_obj_set_style_radius(tr_btn, 8, 0);
         lv_obj_add_event_cb(tr_btn, on_cal_feed_remove, LV_EVENT_CLICKED, (void *)(intptr_t)i);
         lv_obj_t * tl = lv_label_create(tr_btn);
+        lv_obj_set_style_text_color(tl, lv_color_hex(0xffffff), 0);
         lv_label_set_text(tl, LV_SYMBOL_TRASH);
         lv_obj_center(tl);
+
+        /* Ensure child label text color is white */
+        uint32_t cnt = lv_obj_get_child_cnt(btn);
+        for (uint32_t c = 0; c < cnt; c++) {
+            lv_obj_t * ch = lv_obj_get_child(btn, c);
+            if (ch != tr_btn) {
+                lv_obj_set_style_text_color(ch, lv_color_hex(0xffffff), 0);
+                lv_obj_set_style_text_font(ch, SF(15), 0);
+            }
+        }
         i++;
     }
-    if (i == 0) lv_list_add_text(cal_feeds_list, tr("(geen kalenders - voeg er een toe)", "(no calendars - add one)"));
+    if (i == 0) {
+        lv_obj_t * txt = lv_list_add_text(cal_feeds_list, tr("(geen kalenders - voeg er een toe)", "(no calendars - add one)"));
+        lv_obj_set_style_text_color(txt, lv_color_hex(0x88aabb), 0);
+        lv_obj_set_style_text_font(txt, SF(15), 0);
+    }
 }
 
 static void on_cal_add_click(lv_event_t * e) {
@@ -3541,7 +3580,10 @@ static void ft_lan_ip(char * out, size_t n) {
 
 static void open_web_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open(tr("Webtoegang", "Web Access"), 480);
+    lv_obj_t * p = modal_open(tr("Webtoegang", "Web Access"), 540);
+    lv_obj_add_flag(p, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(p, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(p, LV_SCROLLBAR_MODE_AUTO);
     int y = 70;
 
     /* Headline: the web UI is on :10081 — NOT :10080 (that's the stock Toon API
@@ -3624,6 +3666,14 @@ static void open_web_modal(lv_event_t * e) {
            "Reset password = same, in one tap (when you forgot it).\n"
            "Turn the toggle off to disable login entirely."));
     lv_obj_align(note, LV_ALIGN_TOP_LEFT, SX(4), y + 60);
+    y += 130;
+
+    /* VNC remote control (x11vnc server on port 5900) */
+    lv_obj_t * r_vnc = panel_row(p, y, tr("VNC schermovername (poort 5900)",
+                                          "VNC remote control (port 5900)"), &lbl_vnc_web_val);
+    lv_label_set_text(lbl_vnc_web_val, settings.vnc_enabled ? tr("Aan", "On") : tr("Uit", "Off"));
+    row_switch(r_vnc, settings.vnc_enabled, on_vnc_change);
+    y += 82;
 }
 
 static void on_pin_enabled_change(lv_event_t * e) {
@@ -4404,6 +4454,8 @@ lv_obj_t * screen_settings_create(void) {
               tr("host, poort & kamers", "host, port & rooms"), open_sonos_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_HOME, tr("Tegels", "Tiles"),
               tr("starttegels toewijzen", "assign home tiles"), open_tile_slots_modal); n++;
+    make_tile(GX(n), GY(n), &icon_flame, NULL, tr("Temperatuurlog", "Temperature log"),
+              tr("24-uurs grafiek", "24-hour chart"), open_templogger); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_REFRESH, tr("UI herstarten", "Restart UI"),
               tr("instellingen herladen", "reload settings"), open_restart_confirm); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_POWER, tr("UI-modus", "UI mode"),

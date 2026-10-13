@@ -125,7 +125,30 @@ case "$CMD" in
       echo "x11vnc failed to start — see $LOG"; tail -n 5 "$LOG" 2>/dev/null
     fi
     ;;
+  enable)
+    VNCS_ROW="vncs:345:respawn:/mnt/data/toonvnc.sh respawn >> /var/volatile/tmp/x11vnc.log 2>&1"
+    grep -v '^vncs:' /etc/inittab > /etc/inittab.new 2>/dev/null || cp /etc/inittab /etc/inittab.new
+    echo "$VNCS_ROW" >> /etc/inittab.new
+    mv -f /etc/inittab.new /etc/inittab
+    kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true
+    echo "x11vnc enabled in inittab"
+    ;;
+  disable)
+    grep -v '^vncs:' /etc/inittab > /etc/inittab.new 2>/dev/null || cp /etc/inittab /etc/inittab.new
+    mv -f /etc/inittab.new /etc/inittab
+    kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true
+    sleep 1
+    pkill -9 -x x11vnc 2>/dev/null || true
+    echo "x11vnc disabled and stopped"
+    ;;
   respawn)
+    # Check if VNC is explicitly enabled in toonui.cfg. If not, drop inittab row and exit cleanly.
+    if [ -f /mnt/data/toonui.cfg ] && ! grep -q '^vnc_enabled=1' /mnt/data/toonui.cfg 2>/dev/null; then
+      echo "toonvnc: vnc_enabled is not 1 in toonui.cfg; removing from inittab"
+      grep -v '^vncs:' /etc/inittab > /etc/inittab.new 2>/dev/null && mv -f /etc/inittab.new /etc/inittab 2>/dev/null || true
+      kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true
+      exit 0
+    fi
     # Foreground variant for inittab. Identical args to `start` minus the
     # `-bg` flag, so init keeps a real child pid and respawns on death.
     if [ ! -x "$INPUT" ]; then
@@ -147,6 +170,6 @@ case "$CMD" in
       -desktop ToonUI $AUTH
     ;;
   *)
-    echo "usage: $0 [start|stop|restart|status|respawn]"; exit 1
+    echo "usage: $0 [start|stop|restart|status|respawn|enable|disable]"; exit 1
     ;;
 esac

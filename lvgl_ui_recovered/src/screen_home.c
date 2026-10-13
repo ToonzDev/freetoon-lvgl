@@ -35,6 +35,8 @@
 #include "efanlamp.h"
 #include "sonos.h"
 #include "domoticz.h"
+#include "templogger.h"
+#include "screen_chart_24h.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
@@ -454,20 +456,41 @@ static void on_tile_longpress(lv_event_t * e) {
     screen_settings_open_tile_slots_modal();
 }
 
+static int check_slot_integration_open(int slot) {
+    const char * b = tile_slots_binding(slot);
+    if (!b || !b[0]) return 0;
+    if (!strcmp(b, "local:agenda")) {
+        screen_calendar_show();
+        return 1;
+    }
+    if (!strcmp(b, "local:sonos")) {
+        screen_sonos_show();
+        return 1;
+    }
+    if (!strcmp(b, "local:waste")) {
+        return 1;
+    }
+    if (!strcmp(b, "local:templogger") || !strcmp(b, "temperaturelogger")) {
+        ui_push(screen_chart_24h_create(tile_slots_integration_by_id("temperaturelogger")));
+        return 1;
+    }
+    const integration_meta_t * meta = tile_slots_meta_for(slot);
+    if (meta) {
+        if (!strcmp(meta->detail_type, "chart_24h")) {
+            ui_push(screen_chart_24h_create(meta));
+            return 1;
+        }
+        if (!strcmp(meta->id, "crypto")) {
+            ui_push(screen_crypto_create());
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void open_placeholder(lv_event_t * e) {
     (void)e;  /* TODO: per-tile detail screens */
-    const char * b = tile_slots_binding(3);
-    if (b && !strcmp(b, "local:agenda")) {
-        screen_calendar_show();
-        return;
-    }
-    if (b && !strcmp(b, "local:sonos")) {
-        screen_sonos_show();
-        return;
-    }
-    if (b && !strcmp(b, "local:waste")) {
-        return;
-    }
+    if (check_slot_integration_open(3)) return;
 }
 
 static void on_update_modal_open_cb(lv_event_t * e) {
@@ -481,18 +504,7 @@ static void on_update_banner_click(lv_event_t * e) {
 
 static void open_vent(lv_event_t * e) {
     (void)e;
-    const char * b = tile_slots_binding(2);
-    if (b && !strcmp(b, "local:agenda")) {
-        screen_calendar_show();
-        return;
-    }
-    if (b && !strcmp(b, "local:sonos")) {
-        screen_sonos_show();
-        return;
-    }
-    if (b && !strcmp(b, "local:waste")) {
-        return;
-    }
+    if (check_slot_integration_open(2)) return;
     ui_push(screen_vent_remote_create());
 }
 
@@ -731,18 +743,7 @@ static void open_settings(lv_event_t * e) {
 }
 static void open_stats(lv_event_t * e) {
     (void)e;
-    const char * b = tile_slots_binding(0);
-    if (b && !strcmp(b, "local:agenda")) {
-        screen_calendar_show();
-        return;
-    }
-    if (b && !strcmp(b, "local:sonos")) {
-        screen_sonos_show();
-        return;
-    }
-    if (b && !strcmp(b, "local:waste")) {
-        return;
-    }
+    if (check_slot_integration_open(0)) return;
     ui_push(screen_stats_create());
 }
 static void open_forecast(lv_event_t * e) {
@@ -820,6 +821,19 @@ typedef struct {
 static sonos_view_t * slot_sonos[4] = {0};
 static lv_obj_t *      slot_waste[4] = {0};
 static sonos_view_t * tile_sonos_view = NULL;
+
+typedef struct {
+    lv_obj_t * root;
+    lv_obj_t * lbl_title;
+    lv_obj_t * lbl_val;
+    lv_obj_t * chart;
+    lv_chart_series_t * ser_room;
+    lv_chart_series_t * ser_sp;
+    lv_chart_series_t * ser_out;
+} slot_templogger_view_t;
+
+static slot_templogger_view_t * slot_templogger[4] = {0};
+static lv_obj_t * lbl_title_slot[TILE_SLOT_COUNT] = {0};
 
 static void on_sonos_tile_tap(lv_event_t * e) {
     (void)e;
@@ -1033,8 +1047,19 @@ static lv_obj_t * make_slot_agenda(lv_obj_t * tile, uint32_t bg) {
 /* Fill an agenda overlay with a heading + the next few events. */
 static void fill_agenda_overlay(lv_obj_t * l) {
     if (!l) return;
-    char buf[420] = "";
-    int nn = calendar_state.count; if (nn > 4) nn = 4;
+    lv_coord_t th = lv_obj_get_height(lv_obj_get_parent(l));
+    if (th <= 0) th = lv_obj_get_height(l);
+    if (th <= 0) th = SY(130);
+    int avail_h = th - SY(36);
+    int line_h = SY(20);
+    if (line_h < 14) line_h = 14;
+    int max_lines = avail_h / line_h;
+    if (max_lines < 3) max_lines = 3;
+    if (max_lines > 25) max_lines = 25;
+
+    char buf[1500] = "";
+    int nn = calendar_state.count;
+    if (nn > max_lines) nn = max_lines;
     for (int i = 0; i < nn; i++) {
         calendar_event_t * ev = &calendar_state.ev[i];
         char line[120];
@@ -1042,7 +1067,7 @@ static void fill_agenda_overlay(lv_obj_t * l) {
                  ev->date + 5, ev->time[0] ? ev->time : "", ev->summary);   /* MM-DD */
         strncat(buf, line, sizeof buf - strlen(buf) - 1);
     }
-    char out[480];
+    char out[1600];
     snprintf(out, sizeof out, "%s\n%s", tr("Agenda", "Calendar"),
              buf[0] ? buf : (settings.calendar_enabled ? tr("Geen afspraken", "No events")
                                                        : tr("Agenda uit", "Calendar off")));
@@ -1095,15 +1120,174 @@ static void fill_waste_overlay(lv_obj_t * l) {
     lv_label_set_text(l, out);
 }
 
+static void on_slot_templogger_tap(lv_event_t * e) {
+    (void)e;
+    ui_push(screen_chart_24h_create(tile_slots_integration_by_id("temperaturelogger")));
+}
+
+static slot_templogger_view_t * make_slot_templogger(lv_obj_t * tile) {
+    if (!tile) return NULL;
+    slot_templogger_view_t * v = calloc(1, sizeof(*v));
+    if (!v) return NULL;
+
+    lv_obj_t * root = lv_obj_create(tile);
+    v->root = root;
+    lv_obj_set_size(root, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_pos(root, 0, 0);
+    lv_obj_set_style_bg_color(root, lv_color_hex(COL_TILE_BG), 0);
+    lv_obj_set_style_bg_opa(root, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(root, 10, 0);
+    lv_obj_set_style_pad_all(root, SX(6), 0);
+    lv_obj_set_style_border_width(root, 0, 0);
+    lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(root, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(root, on_slot_templogger_tap, LV_EVENT_CLICKED, NULL);
+
+    /* Blue accent bar at top */
+    lv_obj_t * bar = lv_obj_create(root);
+    lv_obj_set_size(bar, LV_PCT(100), 3);
+    lv_obj_align(bar, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_set_style_bg_color(bar, lv_color_hex(0x3388ff), 0);
+    lv_obj_set_style_border_width(bar, 0, 0);
+    lv_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
+
+    /* Title label */
+    lv_obj_t * lt = lv_label_create(root);
+    v->lbl_title = lt;
+    lv_obj_set_style_text_color(lt, lv_color_hex(COL_TEXT_DIM), 0);
+    lv_obj_set_style_text_font(lt, SF(16), 0);
+    lv_label_set_text(lt, tr("Temperatuur", "Temperature"));
+    lv_obj_align(lt, LV_ALIGN_TOP_LEFT, SX(2), SY(8));
+
+    /* Value label */
+    lv_obj_t * lv = lv_label_create(root);
+    v->lbl_val = lv;
+    lv_obj_set_style_text_color(lv, lv_color_hex(COL_TEXT_HI), 0);
+    lv_obj_set_style_text_font(lv, SF(18), 0);
+    lv_label_set_text(lv, "--.- °C");
+    lv_obj_align(lv, LV_ALIGN_TOP_RIGHT, SX(-2), SY(6));
+
+    /* 24-hour mini sparkline chart */
+    lv_obj_t * ch = lv_chart_create(root);
+    v->chart = ch;
+    lv_obj_set_size(ch, LV_PCT(100), SY(78));
+    lv_obj_align(ch, LV_ALIGN_BOTTOM_MID, 0, SY(-2));
+    lv_obj_set_style_bg_color(ch, lv_color_hex(0x101722), 0);
+    lv_obj_set_style_border_color(ch, lv_color_hex(0x1e2c3e), 0);
+    lv_obj_set_style_border_width(ch, 1, 0);
+    lv_obj_set_style_radius(ch, 6, 0);
+    lv_obj_set_style_pad_all(ch, 2, 0);
+    lv_obj_clear_flag(ch, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(ch, LV_OBJ_FLAG_CLICKABLE);
+
+    lv_chart_set_type(ch, LV_CHART_TYPE_LINE);
+    lv_chart_set_point_count(ch, TEMPLOGGER_POINTS);
+    lv_obj_set_style_size(ch, 0, LV_PART_INDICATOR);
+    lv_obj_set_style_line_width(ch, 2, LV_PART_ITEMS);
+
+    /* 3 subtle horizontal raster lines, 0 vertical */
+    lv_chart_set_div_line_count(ch, 3, 0);
+    lv_obj_set_style_line_color(ch, lv_color_hex(0x1e2c3e), LV_PART_MAIN);
+    lv_obj_set_style_line_opa(ch, LV_OPA_60, LV_PART_MAIN);
+    lv_obj_set_style_line_width(ch, 1, LV_PART_MAIN);
+
+    /* Series: Room (blue), Setpoint (red), Outside (yellow) */
+    v->ser_room = lv_chart_add_series(ch, lv_color_hex(0x3388ff), LV_CHART_AXIS_PRIMARY_Y);
+    v->ser_sp   = lv_chart_add_series(ch, lv_color_hex(0xff4444), LV_CHART_AXIS_PRIMARY_Y);
+    v->ser_out  = lv_chart_add_series(ch, lv_color_hex(0xffbb00), LV_CHART_AXIS_PRIMARY_Y);
+
+    lv_obj_add_flag(root, LV_OBJ_FLAG_HIDDEN);
+    return v;
+}
+
+static void update_templogger_view(slot_templogger_view_t * v) {
+    if (!v) return;
+    templogger_snapshot_t snap;
+    templogger_get_snapshot(&snap);
+
+    if (v->lbl_val) {
+        if (snap.latest_room > 0.0f)
+            lv_label_set_text_fmt(v->lbl_val, "%.1f °C", snap.latest_room);
+        else
+            lv_label_set_text(v->lbl_val, "--.- °C");
+    }
+
+    if (!v->chart || !v->ser_room || !v->ser_sp || !v->ser_out) return;
+
+    /* Calculate dynamic Y range with margin */
+    float mn = 1e9f, mx = -1e9f;
+    int has_pts = 0;
+    for (int i = 0; i < TEMPLOGGER_POINTS; i++) {
+        float r = snap.room[i];
+        if (r > 0.0f && r < 50.0f) { if (r < mn) mn = r; if (r > mx) mx = r; has_pts = 1; }
+        float sp = snap.setpoint[i];
+        if (sp > 0.0f && sp < 40.0f) { if (sp < mn) mn = sp; if (sp > mx) mx = sp; has_pts = 1; }
+        float out = snap.outside[i];
+        if (out > -50.0f && out < 60.0f) { if (out < mn) mn = out; if (out > mx) mx = out; has_pts = 1; }
+    }
+    if (!has_pts) { mn = 15.0f; mx = 25.0f; }
+    else {
+        mn -= 1.0f;
+        mx += 1.0f;
+        if (mx - mn < 4.0f) mx = mn + 4.0f;
+    }
+
+    lv_chart_set_range(v->chart, LV_CHART_AXIS_PRIMARY_Y,
+                       (lv_coord_t)(mn * 10.0f), (lv_coord_t)(mx * 10.0f));
+
+    for (int i = 0; i < TEMPLOGGER_POINTS; i++) {
+        float r = snap.room[i];
+        v->ser_room->y_points[i] = (r > 0.0f && r < 50.0f) ? (lv_coord_t)(r * 10.0f) : LV_CHART_POINT_NONE;
+
+        float sp = snap.setpoint[i];
+        v->ser_sp->y_points[i] = (sp > 0.0f && sp < 40.0f) ? (lv_coord_t)(sp * 10.0f) : LV_CHART_POINT_NONE;
+
+        float out = snap.outside[i];
+        v->ser_out->y_points[i] = (out > -50.0f && out < 60.0f) ? (lv_coord_t)(out * 10.0f) : LV_CHART_POINT_NONE;
+    }
+    lv_chart_refresh(v->chart);
+}
+
 /* Either render the agenda overlay (when the slot is bound to "local:agenda")
  * or the Sonos overlay (when bound to "local:sonos") or the Waste overlay
- * (when bound to "local:waste") or fall back to the normal integration/built-in
- * render. Returns 1 when the slot is "active" (built-in refresh should be skipped). */
+ * (when bound to "local:waste") or the 24h temperature logger mini-graph
+ * or fall back to the normal integration/built-in render. */
 static int slot_render_or_agenda(int slot, int ai, lv_obj_t * lbl_main, lv_obj_t * lbl_sub) {
     const char * b = tile_slots_binding(slot);
+    const integration_meta_t * m = tile_slots_meta_for(slot);
+
+    /* Update title dynamically based on binding */
+    if (slot >= 0 && slot < TILE_SLOT_COUNT && lbl_title_slot[slot]) {
+        const char * title_to_show = NULL;
+        if (b && (!strcmp(b, "local:templogger") || !strcmp(b, "temperaturelogger"))) {
+            title_to_show = tr("Temperatuur", "Temperature");
+        } else if (b && !strcmp(b, "local:agenda")) {
+            title_to_show = tr("Agenda", "Calendar");
+        } else if (b && !strcmp(b, "local:sonos")) {
+            title_to_show = "Sonos";
+        } else if (b && !strcmp(b, "local:waste")) {
+            title_to_show = tr("Afval", "Waste");
+        } else if (b && m && m->tile_title[0]) {
+            title_to_show = m->tile_title;
+        } else {
+            /* Default titles */
+            switch (slot) {
+                case TILE_SLOT_ENERGY: title_to_show = tr("Energie", "Energy"); break;
+                case TILE_SLOT_FAMILY: title_to_show = tr("Familie", "Family"); break;
+                case TILE_SLOT_VENT:   title_to_show = tr("Ventilatie", "Vent"); break;
+                case TILE_SLOT_WATER:  title_to_show = tr("Water", "Water"); break;
+                default: break;
+            }
+        }
+        if (title_to_show) {
+            lv_label_set_text(lbl_title_slot[slot], title_to_show);
+        }
+    }
+
     if (b && !strcmp(b, "local:agenda")) {
         if (slot_sonos[ai]) lv_obj_add_flag(slot_sonos[ai]->root, LV_OBJ_FLAG_HIDDEN);
         if (slot_waste[ai]) lv_obj_add_flag(slot_waste[ai], LV_OBJ_FLAG_HIDDEN);
+        if (slot_templogger[ai]) lv_obj_add_flag(slot_templogger[ai]->root, LV_OBJ_FLAG_HIDDEN);
         fill_agenda_overlay(slot_agenda[ai]);
         if (slot_agenda[ai]) { lv_obj_clear_flag(slot_agenda[ai], LV_OBJ_FLAG_HIDDEN); lv_obj_move_foreground(slot_agenda[ai]); }
         return 1;
@@ -1112,6 +1296,7 @@ static int slot_render_or_agenda(int slot, int ai, lv_obj_t * lbl_main, lv_obj_t
 
     if (b && !strcmp(b, "local:sonos")) {
         if (slot_waste[ai]) lv_obj_add_flag(slot_waste[ai], LV_OBJ_FLAG_HIDDEN);
+        if (slot_templogger[ai]) lv_obj_add_flag(slot_templogger[ai]->root, LV_OBJ_FLAG_HIDDEN);
         if (slot_sonos[ai]) {
             update_sonos_view(slot_sonos[ai]);
             lv_obj_clear_flag(slot_sonos[ai]->root, LV_OBJ_FLAG_HIDDEN);
@@ -1122,6 +1307,7 @@ static int slot_render_or_agenda(int slot, int ai, lv_obj_t * lbl_main, lv_obj_t
     if (slot_sonos[ai]) lv_obj_add_flag(slot_sonos[ai]->root, LV_OBJ_FLAG_HIDDEN);
 
     if (b && !strcmp(b, "local:waste")) {
+        if (slot_templogger[ai]) lv_obj_add_flag(slot_templogger[ai]->root, LV_OBJ_FLAG_HIDDEN);
         fill_waste_overlay(slot_waste[ai]);
         if (slot_waste[ai]) {
             lv_obj_clear_flag(slot_waste[ai], LV_OBJ_FLAG_HIDDEN);
@@ -1130,6 +1316,16 @@ static int slot_render_or_agenda(int slot, int ai, lv_obj_t * lbl_main, lv_obj_t
         return 1;
     }
     if (slot_waste[ai]) lv_obj_add_flag(slot_waste[ai], LV_OBJ_FLAG_HIDDEN);
+
+    if (b && (!strcmp(b, "local:templogger") || !strcmp(b, "temperaturelogger"))) {
+        if (slot_templogger[ai]) {
+            update_templogger_view(slot_templogger[ai]);
+            lv_obj_clear_flag(slot_templogger[ai]->root, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_move_foreground(slot_templogger[ai]->root);
+        }
+        return 1;
+    }
+    if (slot_templogger[ai]) lv_obj_add_flag(slot_templogger[ai]->root, LV_OBJ_FLAG_HIDDEN);
 
     return render_tile_slot(slot, lbl_main, lbl_sub);
 }
@@ -1296,7 +1492,16 @@ static void refresh_cb(lv_timer_t * t) {
 
     /* Custom-layout info tiles — fill from cached state (no I/O). */
     if (tile_news_sum_lbl) {
-        char buf[512] = ""; int nn = news_count(); if (nn > 4) nn = 4;
+        lv_coord_t th = lv_obj_get_height(lv_obj_get_parent(tile_news_sum_lbl));
+        if (th <= 0) th = SY(150);
+        int avail_h = th - SY(45);
+        int line_h = SY(20);
+        if (line_h < 14) line_h = 14;
+        int max_lines = avail_h / line_h;
+        if (max_lines < 3) max_lines = 3;
+        if (max_lines > 20) max_lines = 20;
+
+        char buf[1500] = ""; int nn = news_count(); if (nn > max_lines) nn = max_lines;
         for (int i = 0; i < nn; i++) {
             char ti[120];
             if (news_item(i, ti, sizeof ti, NULL, 0) != 0) continue;
@@ -1307,7 +1512,16 @@ static void refresh_cb(lv_timer_t * t) {
         lv_label_set_text(tile_news_sum_lbl, buf[0] ? buf : tr("Geen nieuws", "No news"));
     }
     if (tile_cal_lbl) {
-        char buf[512] = ""; int nn = calendar_state.count; if (nn > 5) nn = 5;
+        lv_coord_t th = lv_obj_get_height(lv_obj_get_parent(tile_cal_lbl));
+        if (th <= 0) th = SY(150);
+        int avail_h = th - SY(45);
+        int line_h = SY(19);
+        if (line_h < 14) line_h = 14;
+        int max_lines = avail_h / line_h;
+        if (max_lines < 3) max_lines = 3;
+        if (max_lines > 25) max_lines = 25;
+
+        char buf[2048] = ""; int nn = calendar_state.count; if (nn > max_lines) nn = max_lines;
         for (int i = 0; i < nn; i++) {
             calendar_event_t * ev = &calendar_state.ev[i];
             char line[160];
@@ -1406,6 +1620,24 @@ static void refresh_cb(lv_timer_t * t) {
             } else {
                 if (p1_main[i]) lv_label_set_text(p1_main[i], waste_state.connected ? tr("geen", "none") : "...");
                 if (p1_sub[i])  lv_label_set_text(p1_sub[i], "");
+            }
+            continue;
+        }
+        if (b && (!strcmp(b, "local:templogger") || !strcmp(b, "temperaturelogger"))) {
+            if (p1_title[i]) lv_label_set_text(p1_title[i], tr("Temperatuur", "Temperature"));
+            float r = 0, sp = 0, out = 0;
+            templogger_get_latest(&r, &sp, &out);
+            if (p1_main[i]) {
+                if (r > 0.0f) lv_label_set_text_fmt(p1_main[i], "%.1f °C", r);
+                else lv_label_set_text(p1_main[i], "--.- °C");
+            }
+            if (p1_sub[i]) {
+                if (out > -50.0f && sp > 0.0f)
+                    lv_label_set_text_fmt(p1_sub[i], tr("buiten %.1f° · doel %.1f°", "out %.1f° · set %.1f°"), out, sp);
+                else if (out > -50.0f)
+                    lv_label_set_text_fmt(p1_sub[i], tr("buiten %.1f°", "out %.1f°"), out);
+                else
+                    lv_label_set_text(p1_sub[i], "");
             }
             continue;
         }
@@ -2464,15 +2696,7 @@ static void on_page1_slot(lv_event_t * e) {
     lv_obj_t * tapped = lv_event_get_current_target(e);
     for (int i = 0; i < g_p1_count; i++) {
         if (p1_main[i] && tapped == lv_obj_get_parent(p1_main[i])) {
-            const char * b = tile_slots_binding(4 + i);
-            if (b && !strcmp(b, "local:agenda")) {
-                screen_calendar_show();
-                return;
-            }
-            if (b && !strcmp(b, "local:sonos")) {
-                screen_sonos_show();
-                return;
-            }
+            if (check_slot_integration_open(4 + i)) return;
             break;
         }
     }
@@ -2481,12 +2705,8 @@ static void on_page1_slot(lv_event_t * e) {
         ui_push(screen_efanlamp_create());
         return;
     }
-    /* If the crypto integration is installed, a tap opens its price-history
-     * graphs; otherwise fall back to the tile-assignment picker. */
-    if (tile_slots_integration_by_id("crypto"))
-        ui_push(screen_crypto_create());
-    else
-        screen_settings_open_tile_slots_modal();
+    /* Otherwise fall back to the tile-assignment picker. */
+    screen_settings_open_tile_slots_modal();
 }
 void screen_home_reset_to_main(void) {
     if (home_tile_page != 0) home_show_page(0);
@@ -2948,18 +3168,7 @@ static void on_map_zoom_out(lv_event_t * e) { (void)e; if (g_map_zoom > 9)  { g_
 
 static void open_family_map(lv_event_t * e) {
     (void)e;
-    const char * b = tile_slots_binding(1);
-    if (b && !strcmp(b, "local:agenda")) {
-        screen_calendar_show();
-        return;
-    }
-    if (b && !strcmp(b, "local:sonos")) {
-        screen_sonos_show();
-        return;
-    }
-    if (b && !strcmp(b, "local:waste")) {
-        return;
-    }
+    if (check_slot_integration_open(1)) return;
     if (map_modal) return;
 
     map_modal = lv_obj_create(lv_scr_act());
@@ -3552,9 +3761,11 @@ lv_obj_t * screen_home_create(void) {
     make_tile(scr_root, 790, 20, 214, 130, LT_ENERGY, tr("Energie", "Energy"), 0xaa77ff,
               open_stats, &energy_t);
     tile_energy = energy_t.tile;
+    lbl_title_slot[TILE_SLOT_ENERGY] = energy_t.title;
     slot_agenda[0] = make_slot_agenda(tile_energy, 0x4477cc);
     slot_sonos[0]  = make_sonos_view(tile_energy);
     slot_waste[0]  = make_slot_waste(tile_energy, 0x1e3a24);
+    slot_templogger[0] = make_slot_templogger(tile_energy);
     if (slot_sonos[0]) lv_obj_add_flag(slot_sonos[0]->root, LV_OBJ_FLAG_HIDDEN);
     /* Compressed for the new 130-px tile: 28-pt W value (was 48), gas
      * total on the same baseline range below. */
@@ -3594,9 +3805,11 @@ lv_obj_t * screen_home_create(void) {
     make_tile(scr_root, 560, 230, 220, 200, LT_VENT, tr("Ventilatie", "Vent"), 0x66bbdd,
               (lv_event_cb_t)open_vent, &vent);
     tile_vent = vent.tile;
+    lbl_title_slot[TILE_SLOT_VENT] = vent.title;
     slot_agenda[2] = make_slot_agenda(tile_vent, 0x4477cc);
     slot_sonos[2]  = make_sonos_view(tile_vent);
     slot_waste[2]  = make_slot_waste(tile_vent, 0x1e3a24);
+    slot_templogger[2] = make_slot_templogger(tile_vent);
     if (slot_sonos[2]) lv_obj_add_flag(slot_sonos[2]->root, LV_OBJ_FLAG_HIDDEN);
 
     /* Speed % shares the title row with the "Vent" label so the
@@ -3682,9 +3895,11 @@ lv_obj_t * screen_home_create(void) {
     make_tile(scr_root, 790, 160, 214, 130, LT_FAMILY, tr("Familie", "Family"), 0xff8866,
               open_family_map, &family_t);
     tile_family = family_t.tile;
+    lbl_title_slot[TILE_SLOT_FAMILY] = family_t.title;
     slot_agenda[1] = make_slot_agenda(tile_family, 0x4477cc);
     slot_sonos[1]  = make_sonos_view(tile_family);
     slot_waste[1]  = make_slot_waste(tile_family, 0x1e3a24);
+    slot_templogger[1] = make_slot_templogger(tile_family);
     if (slot_sonos[1]) lv_obj_add_flag(slot_sonos[1]->root, LV_OBJ_FLAG_HIDDEN);
     /* Two scrolling labels — the formatted address ("City > Street > Num")
      * almost always exceeds the 194-px tile width, so we use
@@ -3765,9 +3980,11 @@ lv_obj_t * screen_home_create(void) {
         tile_sonos_view = make_sonos_view(sonos_t.tile);
     }
     tile_water = water_t.tile;
+    lbl_title_slot[TILE_SLOT_WATER] = water_t.title;
     slot_agenda[3] = make_slot_agenda(tile_water, 0x4477cc);
     slot_sonos[3]  = make_sonos_view(tile_water);
     slot_waste[3]  = make_slot_waste(tile_water, 0x1e3a24);
+    slot_templogger[3] = make_slot_templogger(tile_water);
     if (slot_sonos[3]) lv_obj_add_flag(slot_sonos[3]->root, LV_OBJ_FLAG_HIDDEN);
 
     /* Long-press on any of the four right-column tiles → tile-slots picker.

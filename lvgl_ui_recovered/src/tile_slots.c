@@ -110,13 +110,56 @@ static int load_manifest(const char * dir_path) {
     extract_tile_str(json, "subtitle_unit", m->subtitle_unit, sizeof m->subtitle_unit);
     extract_tile_str(json, "alert_field",   m->alert_field,   sizeof m->alert_field);
 
+    /* Check for optional detail_screen */
+    const char * ds = strstr(json, "\"detail_screen\"");
+    if (ds) {
+        const char * ds_obj = strchr(ds, '{');
+        if (ds_obj) {
+            extract_str(ds_obj, "type", m->detail_type, sizeof m->detail_type);
+            extract_str(ds_obj, "title", m->detail_title, sizeof m->detail_title);
+            extract_str(ds_obj, "y_unit", m->detail_y_unit, sizeof m->detail_y_unit);
+
+            /* Parse series array if present */
+            const char * s_arr = strstr(ds_obj, "\"series\"");
+            if (s_arr) {
+                const char * p = strchr(s_arr, '[');
+                while (p && *p && m->series_count < INTEG_MAX_SERIES) {
+                    const char * obj_start = strchr(p, '{');
+                    if (!obj_start) break;
+                    const char * obj_end = strchr(obj_start, '}');
+                    if (!obj_end) break;
+
+                    char sbuf[512];
+                    size_t slen = (size_t)(obj_end - obj_start + 1);
+                    if (slen >= sizeof sbuf) slen = sizeof sbuf - 1;
+                    memcpy(sbuf, obj_start, slen);
+                    sbuf[slen] = 0;
+
+                    integ_series_meta_t * ser = &m->series[m->series_count];
+                    extract_str(sbuf, "name", ser->name, sizeof ser->name);
+                    extract_str(sbuf, "color", ser->color, sizeof ser->color);
+                    extract_str(sbuf, "live_field", ser->live_field, sizeof ser->live_field);
+                    extract_str(sbuf, "data_file", ser->data_file, sizeof ser->data_file);
+                    m->series_count++;
+
+                    p = obj_end + 1;
+                    const char * next_arr_end = strchr(p, ']');
+                    const char * next_obj = strchr(p, '{');
+                    if (next_arr_end && (!next_obj || next_arr_end < next_obj)) break;
+                }
+            }
+        }
+    }
+
     g_integ_count++;
     fprintf(stderr,
         "[tiles] loaded integration: id=%s service=%s title='%s' "
-        "value=%s%s subtitle=%s%s\n",
+        "value=%s%s subtitle=%s%s detail=%s (series=%d)\n",
         m->id, m->service_id, m->tile_title,
         m->value_field, m->value_unit,
-        m->subtitle_field, m->subtitle_unit);
+        m->subtitle_field, m->subtitle_unit,
+        m->detail_type[0] ? m->detail_type : "none",
+        m->series_count);
     return 0;
 }
 
@@ -146,6 +189,7 @@ static const struct { const char * id; const char * label; } g_locals[] = {
     { "local:sonos",  "Sonos" },
     { "local:waste",  "Afval" },
     { "local:agenda", "Agenda" },
+    { "local:templogger", "Temperatuurlog" },
 };
 int tile_slots_local_count(void) {
     return (int)(sizeof g_locals / sizeof g_locals[0]);
@@ -171,6 +215,7 @@ int tile_slots_local_enabled(int i) {
         case 5: return settings.sonos_enabled;
         case 6: return 1;                                 /* waste pickup */
         case 7: return settings.calendar_enabled;
+        case 8: return 1;                                 /* templogger */
         default: return 0;
     }
 }

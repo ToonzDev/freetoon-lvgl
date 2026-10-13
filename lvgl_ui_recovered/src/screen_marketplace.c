@@ -1,12 +1,11 @@
 /*
  * Marketplace screen — browses the catalog at
  *   https://raw.githubusercontent.com/ToonSoftwareCollective/freetoon-integrations/main/catalog/index.json
- * and lets the user install integrations on-device with one tap.
+ * and lets the user install or uninstall integrations on-device with one tap.
  *
- * Install path: tap "Install" → screen runs `/mnt/data/integrations-install.sh <id>`
- * via system() in a background thread. The shell helper is shipped by
- * install.sh; if missing we fall back to a hint asking the user to run the
- * curl one-liner manually over SSH.
+ * Install path: tap "Install" → runs `/mnt/data/integrations-install.sh <id>`
+ * Uninstall path: tap "Verwijderen" → runs `/mnt/data/integrations-install.sh remove <id>`
+ * via system() in a background thread.
  *
  * The catalog parse is intentionally brittle (grep + sed-style on the JSON
  * text) because we run on a busybox userland with no jq and don't want to
@@ -19,6 +18,7 @@
 #include "http.h"
 #include "settings.h"
 #include "icons.h"
+#include "tile_slots.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,7 +26,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
-#define CATALOG_URL "https://raw.githubusercontent.com/ToonSoftwareCollective/freetoon-integrations/main/catalog/index.json"
+#define CATALOG_URL "https://raw.githubusercontent.com/ToonzDev/freetoon-integrations/main/catalog/index.json"
 #define INSTALL_HELPER "/mnt/data/integrations-install.sh"
 
 #define COL_BG       0x0e1a2a
@@ -43,19 +43,18 @@ static lv_obj_t * status_lbl = NULL;
 static char       catalog_buf[16384];
 static int        catalog_len = 0;
 
-/* One row of the rendered list. We keep btn handles so the per-item
- * install can flip them to "Installing…" / "Installed" without rebuilding
- * the whole list. */
+/* One row of the rendered list. */
 typedef struct {
     char id[64];
     char name[64];
     char description[256];
     char version[32];
     lv_obj_t * row;
-    lv_obj_t * btn_install;
-    lv_obj_t * btn_install_lbl;
-    volatile int install_status; /* 0=idle, 1=installing, 2=ok, 3=failed */
-    int last_applied_status;
+    lv_obj_t * badge_lbl;
+    lv_obj_t * btn_action;
+    lv_obj_t * btn_action_lbl;
+    volatile int action_status; /* 0=idle, 1=installing, 2=uninstalling, 3=err_install, 4=err_uninstall */
+    int is_installed;
 } integration_t;
 
 #define MAX_INTEGRATIONS 16
@@ -63,6 +62,19 @@ static integration_t entries[MAX_INTEGRATIONS];
 static int           entry_count = 0;
 static char          g_fetch_msg[128] = "";
 static volatile int  g_fetch_dirty = 0;
+
+/* Built-in fallback catalog items in case remote catalog is unreachable */
+static const struct {
+    const char * id;
+    const char * name;
+    const char * version;
+    const char * description;
+} g_builtin_catalog[] = {
+    { "temperaturelogger", "Temperature Logger", "1.0.0",
+      "24-uurs temperatuurlogger met grafiek (kamer, setpoint, buiten)." },
+    { "crypto", "Crypto Tracker", "1.0.0",
+      "Live crypto koersen en 24h verandering via CoinGecko." },
+};
 
 /* ===================================================================== */
 /* JSON walker — finds the next "field" : "value" or "field": value pair. */
@@ -140,18 +152,58 @@ static void * fetch_thread(void * arg) {
     (void)arg;
     snprintf(g_fetch_msg, sizeof(g_fetch_msg), "%s", tr("Catalogus ophalen...", "Fetching catalog..."));
     g_fetch_dirty = 1;
-    /* http_fetch returns 0 on success / -1 on failure (NOT a byte count) and
-     * fills catalog_buf. Treat a non-zero rc OR an empty body as failure. */
+    /* Try to fetch online catalog */
     int rc = http_fetch(CATALOG_URL, catalog_buf, sizeof catalog_buf);
     catalog_len = (int)strlen(catalog_buf);
-    if (rc != 0 || catalog_len <= 0) {
-        snprintf(g_fetch_msg, sizeof(g_fetch_msg), "%s",
-            tr("Catalogus ophalen mislukt - controleer je internet.",
-               "Catalog fetch failed - check your internet."));
-        g_fetch_dirty = 1;
-        return NULL;
+    if (rc == 0 && catalog_len > 0) {
+        parse_catalog();
     }
-    parse_catalog();
+
+    /* Merge standard built-in catalog fallbacks so uninstalled apps don't vanish */
+    for (size_t k = 0; k < sizeof(g_builtin_catalog)/sizeof(g_builtin_catalog[0]) && entry_count < MAX_INTEGRATIONS; k++) {
+        int exists = 0;
+        for (int j = 0; j < entry_count; j++) {
+            if (strcmp(entries[j].id, g_builtin_catalog[k].id) == 0) { exists = 1; break; }
+        }
+        if (!exists) {
+            integration_t * e = &entries[entry_count];
+            memset(e, 0, sizeof *e);
+            snprintf(e->id, sizeof e->id, "%s", g_builtin_catalog[k].id);
+            snprintf(e->name, sizeof e->name, "%s", g_builtin_catalog[k].name);
+            snprintf(e->version, sizeof e->version, "%s", g_builtin_catalog[k].version);
+            snprintf(e->description, sizeof e->description, "%s", g_builtin_catalog[k].description);
+            entry_count++;
+        }
+    }
+
+    /* Merge any additional locally installed integrations from tile_slots */
+    int n = tile_slots_integration_count();
+    for (int i = 0; i < n && entry_count < MAX_INTEGRATIONS; i++) {
+        const integration_meta_t * meta = tile_slots_integration_at(i);
+        if (!meta) continue;
+        int exists = 0;
+        for (int j = 0; j < entry_count; j++) {
+            if (strcmp(entries[j].id, meta->id) == 0) { exists = 1; break; }
+        }
+        if (exists) continue;
+
+        integration_t * e = &entries[entry_count];
+        memset(e, 0, sizeof *e);
+        snprintf(e->id, sizeof e->id, "%s", meta->id);
+        snprintf(e->name, sizeof e->name, "%s", meta->name[0] ? meta->name : meta->id);
+        if (strcmp(meta->id, "temperaturelogger") == 0) {
+            snprintf(e->description, sizeof e->description, "%s",
+                     "24-uurs temperatuurlogger met grafiek (kamer, setpoint, buiten).");
+        } else if (strcmp(meta->id, "crypto") == 0) {
+            snprintf(e->description, sizeof e->description, "%s",
+                     "Crypto tracker via CoinGecko API.");
+        } else {
+            snprintf(e->description, sizeof e->description, "%s", meta->tile_title);
+        }
+        snprintf(e->version, sizeof e->version, "1.0.0");
+        entry_count++;
+    }
+
     snprintf(g_fetch_msg, sizeof(g_fetch_msg),
              tr("%d integraties beschikbaar", "%d integrations available"),
              entry_count);
@@ -160,7 +212,7 @@ static void * fetch_thread(void * arg) {
 }
 
 /* ===================================================================== */
-/* Install action                                                        */
+/* Install / Uninstall actions                                           */
 /* ===================================================================== */
 static int install_helper_ok(void) {
     struct stat st;
@@ -168,10 +220,7 @@ static int install_helper_ok(void) {
 }
 
 #ifdef WASM_BUILD
-/* WASM client has no shell — route the install through the master Toon's
- * /api/install endpoint via the JS bridge (window.ftPost in shell.html).
- * Confirmation arrives back on the SSE stream as a new entry in the
- * "integrations":[…] registry, so the tile lights up without any rebuild. */
+/* WASM client has no shell — route through master Toon */
 extern void wasm_push_event(const char * topic, const char * payload);
 #endif
 
@@ -181,44 +230,160 @@ static void * install_thread(void * arg) {
     char payload[96];
     snprintf(payload, sizeof payload, "{\"id\":\"%s\"}", e->id);
     wasm_push_event("/api/install", payload);
-    e->install_status = 2;
+    e->action_status = 0;
     return NULL;
 #else
     char cmd[256];
     snprintf(cmd, sizeof cmd, "%s %s", INSTALL_HELPER, e->id);
     int rc = system(cmd);
-    e->install_status = (rc == 0) ? 2 : 3;
+    tile_slots_init();
+    e->action_status = (rc == 0) ? 0 : 3;
     return NULL;
 #endif
 }
 
-static void on_install_clicked(lv_event_t * e) {
-    integration_t * ent = (integration_t *)lv_event_get_user_data(e);
+static void * uninstall_thread(void * arg) {
+    integration_t * e = (integration_t *)arg;
 #ifdef WASM_BUILD
-    /* No pthread on WASM and the JS fetch is already async — just push the
-     * event inline and let the next SSE frame reflect the master's state. */
     char payload[96];
-    snprintf(payload, sizeof payload, "{\"id\":\"%s\"}", ent->id);
-    wasm_push_event("/api/install", payload);
-    if (ent->btn_install_lbl) lv_label_set_text(ent->btn_install_lbl, tr("Naar master gestuurd", "Sent to master"));
-    if (ent->btn_install)
-        lv_obj_set_style_bg_color(ent->btn_install, lv_color_hex(COL_OK), 0);
+    snprintf(payload, sizeof payload, "{\"id\":\"%s\"}", e->id);
+    wasm_push_event("/api/uninstall", payload);
+    e->action_status = 0;
+    return NULL;
 #else
-    if (!install_helper_ok()) {
-        if (ent->btn_install_lbl)
-            lv_label_set_text(ent->btn_install_lbl, tr("Helper nodig", "Need helper"));
+    char cmd[256];
+    snprintf(cmd, sizeof cmd, "%s remove %s", INSTALL_HELPER, e->id);
+    int rc = system(cmd);
+
+    /* Safety fallback: ensure integration dir is cleared */
+    char path[128];
+    snprintf(path, sizeof path, "/mnt/data/integrations/%s", e->id);
+    struct stat st;
+    if (stat(path, &st) == 0) {
+        snprintf(cmd, sizeof cmd, "rm -rf /mnt/data/integrations/%s", e->id);
+        system(cmd);
+    }
+
+    /* Unbind from any tile slot in settings if currently bound */
+    for (int s = 0; s < TILE_SLOT_COUNT; s++) {
+        const char * b = tile_slots_binding(s);
+        if (b && strcmp(b, e->id) == 0) {
+            tile_slots_bind(s, "");
+        }
+    }
+
+    /* Rescan installed integrations so tile_slots drops it */
+    tile_slots_init();
+
+    if (rc == 0 || tile_slots_integration_by_id(e->id) == NULL) {
+        e->action_status = 0;
+    } else {
+        e->action_status = 4;
+    }
+    return NULL;
+#endif
+}
+
+static void on_action_clicked(lv_event_t * e) {
+    integration_t * ent = (integration_t *)lv_event_get_user_data(e);
+    if (!ent) return;
+    if (ent->action_status != 0) return; /* busy */
+
+    int is_inst = (tile_slots_integration_by_id(ent->id) != NULL);
+    if (is_inst) {
+#ifdef WASM_BUILD
+        char payload[96];
+        snprintf(payload, sizeof payload, "{\"id\":\"%s\"}", ent->id);
+        wasm_push_event("/api/uninstall", payload);
+        if (ent->btn_action_lbl) lv_label_set_text(ent->btn_action_lbl, tr("Naar master gestuurd", "Sent to master"));
+#else
+        if (!install_helper_ok()) {
+            if (ent->btn_action_lbl)
+                lv_label_set_text(ent->btn_action_lbl, tr("Helper nodig", "Need helper"));
+            return;
+        }
+        ent->action_status = 2;
+        if (ent->btn_action_lbl) lv_label_set_text(ent->btn_action_lbl, tr("Verwijderen...", "Removing..."));
+        if (ent->btn_action)
+            lv_obj_set_style_bg_color(ent->btn_action, lv_color_hex(COL_BUSY), 0);
+        pthread_t t;
+        if (pthread_create(&t, NULL, uninstall_thread, ent) == 0)
+            pthread_detach(t);
+        else
+            ent->action_status = 4;
+#endif
+    } else {
+#ifdef WASM_BUILD
+        char payload[96];
+        snprintf(payload, sizeof payload, "{\"id\":\"%s\"}", ent->id);
+        wasm_push_event("/api/install", payload);
+        if (ent->btn_action_lbl) lv_label_set_text(ent->btn_action_lbl, tr("Naar master gestuurd", "Sent to master"));
+#else
+        if (!install_helper_ok()) {
+            if (ent->btn_action_lbl)
+                lv_label_set_text(ent->btn_action_lbl, tr("Helper nodig", "Need helper"));
+            return;
+        }
+        ent->action_status = 1;
+        if (ent->btn_action_lbl) lv_label_set_text(ent->btn_action_lbl, tr("Installeren...", "Installing..."));
+        if (ent->btn_action)
+            lv_obj_set_style_bg_color(ent->btn_action, lv_color_hex(COL_BUSY), 0);
+        pthread_t t;
+        if (pthread_create(&t, NULL, install_thread, ent) == 0)
+            pthread_detach(t);
+        else
+            ent->action_status = 3;
+#endif
+    }
+}
+
+static void update_row_state(integration_t * ent) {
+    if (!ent || !ent->row) return;
+
+    if (ent->action_status == 1) {
+        if (ent->badge_lbl) lv_label_set_text(ent->badge_lbl, "");
+        if (ent->btn_action_lbl) lv_label_set_text(ent->btn_action_lbl, tr("Installeren...", "Installing..."));
+        if (ent->btn_action) lv_obj_set_style_bg_color(ent->btn_action, lv_color_hex(COL_BUSY), 0);
         return;
     }
-    ent->install_status = 1;
-    if (ent->btn_install_lbl) lv_label_set_text(ent->btn_install_lbl, tr("Installeren...", "Installing..."));
-    if (ent->btn_install)
-        lv_obj_set_style_bg_color(ent->btn_install, lv_color_hex(COL_BUSY), 0);
-    pthread_t t;
-    if (pthread_create(&t, NULL, install_thread, ent) == 0)
-        pthread_detach(t);
-    else
-        ent->install_status = 3;
-#endif
+    if (ent->action_status == 2) {
+        if (ent->btn_action_lbl) lv_label_set_text(ent->btn_action_lbl, tr("Verwijderen...", "Removing..."));
+        if (ent->btn_action) lv_obj_set_style_bg_color(ent->btn_action, lv_color_hex(COL_BUSY), 0);
+        return;
+    }
+    if (ent->action_status == 3 || ent->action_status == 4) {
+        if (ent->btn_action_lbl) lv_label_set_text(ent->btn_action_lbl, tr("Mislukt", "Failed"));
+        if (ent->btn_action) lv_obj_set_style_bg_color(ent->btn_action, lv_color_hex(COL_WARN), 0);
+        return;
+    }
+
+    int is_inst = (tile_slots_integration_by_id(ent->id) != NULL);
+    ent->is_installed = is_inst;
+
+    if (is_inst) {
+        if (ent->badge_lbl) {
+            lv_label_set_text_fmt(ent->badge_lbl, LV_SYMBOL_OK " %s", tr("Geinstalleerd", "Installed"));
+            lv_obj_set_style_text_color(ent->badge_lbl, lv_color_hex(0x3ec263), 0);
+        }
+        if (ent->btn_action_lbl) {
+            lv_label_set_text(ent->btn_action_lbl, tr("Verwijderen", "Uninstall"));
+        }
+        if (ent->btn_action) {
+            lv_obj_set_style_bg_color(ent->btn_action, lv_color_hex(COL_WARN), 0);
+        }
+    } else {
+        if (ent->badge_lbl) {
+            lv_label_set_text(ent->badge_lbl, "");
+        }
+        if (ent->btn_action_lbl) {
+            lv_label_set_text(ent->btn_action_lbl,
+                              install_helper_ok() ? tr("Installeren", "Install")
+                                                  : tr("Geen helper", "No helper"));
+        }
+        if (ent->btn_action) {
+            lv_obj_set_style_bg_color(ent->btn_action, lv_color_hex(0x2a4060), 0);
+        }
+    }
 }
 
 /* ===================================================================== */
@@ -254,29 +419,32 @@ static void build_rows(void) {
         lv_obj_t * desc = lv_label_create(ent->row);
         lv_obj_set_style_text_font(desc, SF(18), 0);
         lv_obj_set_style_text_color(desc, lv_color_hex(COL_TEXT_DIM), 0);
-        lv_obj_set_width(desc, SX(720));
+        lv_obj_set_width(desc, SX(560));
         lv_label_set_long_mode(desc, LV_LABEL_LONG_WRAP);
         lv_label_set_text(desc, ent->description);
         lv_obj_align(desc, LV_ALIGN_TOP_LEFT, SX(4), SY(30));
 
-        /* Install button */
-        ent->btn_install = lv_btn_create(ent->row);
-        lv_obj_set_size(ent->btn_install, SX(180), SY(60));
-        lv_obj_align(ent->btn_install, LV_ALIGN_RIGHT_MID, SX(-4), 0);
-        lv_obj_set_style_bg_color(ent->btn_install, lv_color_hex(0x2a4060), 0);
-        lv_obj_set_style_radius(ent->btn_install, 10, 0);
-        lv_obj_add_event_cb(ent->btn_install, on_install_clicked,
+        /* Status badge (e.g. "✓ Geïnstalleerd") */
+        ent->badge_lbl = lv_label_create(ent->row);
+        lv_obj_set_style_text_font(ent->badge_lbl, SF(18), 0);
+        lv_obj_align(ent->badge_lbl, LV_ALIGN_RIGHT_MID, SX(-180), 0);
+
+        /* Action button (Install or Uninstall) */
+        ent->btn_action = lv_btn_create(ent->row);
+        lv_obj_set_size(ent->btn_action, SX(160), SY(52));
+        lv_obj_align(ent->btn_action, LV_ALIGN_RIGHT_MID, SX(-8), 0);
+        lv_obj_set_style_radius(ent->btn_action, 10, 0);
+        lv_obj_add_event_cb(ent->btn_action, on_action_clicked,
                             LV_EVENT_CLICKED, ent);
-        ent->btn_install_lbl = lv_label_create(ent->btn_install);
-        lv_obj_set_style_text_color(ent->btn_install_lbl,
+
+        ent->btn_action_lbl = lv_label_create(ent->btn_action);
+        lv_obj_set_style_text_color(ent->btn_action_lbl,
                                     lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(ent->btn_install_lbl,
-                                    SF(22), 0);
-        lv_label_set_text(ent->btn_install_lbl,
-                          install_helper_ok() ? tr("Installeren", "Install")
-                                              : tr("Geen helper", "No helper"));
-        lv_obj_center(ent->btn_install_lbl);
-        ent->last_applied_status = ent->install_status;
+        lv_obj_set_style_text_font(ent->btn_action_lbl,
+                                    SF(19), 0);
+        lv_obj_center(ent->btn_action_lbl);
+
+        update_row_state(ent);
     }
 }
 
@@ -293,17 +461,7 @@ static void refresh_cb(lv_timer_t * t) {
         prev_count = entry_count;
     }
     for (int i = 0; i < entry_count; i++) {
-        integration_t * ent = &entries[i];
-        if (ent->install_status != ent->last_applied_status) {
-            ent->last_applied_status = ent->install_status;
-            if (ent->install_status == 2) {
-                if (ent->btn_install_lbl) lv_label_set_text(ent->btn_install_lbl, tr("Geïnstalleerd", "Installed"));
-                if (ent->btn_install) lv_obj_set_style_bg_color(ent->btn_install, lv_color_hex(COL_OK), 0);
-            } else if (ent->install_status == 3) {
-                if (ent->btn_install_lbl) lv_label_set_text(ent->btn_install_lbl, tr("Mislukt", "Failed"));
-                if (ent->btn_install) lv_obj_set_style_bg_color(ent->btn_install, lv_color_hex(COL_WARN), 0);
-            }
-        }
+        update_row_state(&entries[i]);
     }
 }
 

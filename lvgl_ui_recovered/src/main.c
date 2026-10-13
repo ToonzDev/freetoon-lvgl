@@ -63,6 +63,7 @@ static void init_display_and_input(void) {
      * saved settings — not the compiled-in defaults. (Was loaded further down,
      * which made the page-flip guard see video_overlay=0 regardless of cfg.) */
     settings_load();
+    vnc_apply_state(settings.vnc_enabled);
 
     fbdev_init();
 
@@ -190,6 +191,8 @@ int main(int argc, char** argv) {
 
     extern void airhist_start(void);
     airhist_start();   /* record eCO2/TVOC history (RRD doesn't) for Stats graphs */
+    extern void templogger_start(void);
+    templogger_start(); /* continuous 24h temperature logger */
     if (headless) {
         /* No display: the daemons + pwa_server own their own threads, so just
          * stay alive and let init NOT respawn us. We deliberately skip the

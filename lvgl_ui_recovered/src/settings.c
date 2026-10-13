@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #define CFG_PATH "/mnt/data/toonui.cfg"
 
@@ -867,4 +868,30 @@ void settings_save(void) {
                 (double)settings.nilm_sig_hi[i]);
     fflush(f);
     fclose(f);
+}
+
+void vnc_apply_state(int enabled) {
+#ifndef __arm__
+    (void)enabled;
+    return;
+#else
+    if (enabled) {
+        if (settings.vnc_pass[0]) {
+            FILE * pf = fopen("/mnt/data/toonvnc.plain", "w");
+            if (pf) {
+                fprintf(pf, "%s\n", settings.vnc_pass);
+                fclose(pf);
+            }
+        } else {
+            unlink("/mnt/data/toonvnc.plain");
+        }
+        if (access("/mnt/data/toonvnc.sh", X_OK) == 0) {
+            system("/mnt/data/toonvnc.sh enable >/dev/null 2>&1 &");
+        }
+    } else {
+        if (access("/mnt/data/toonvnc.sh", X_OK) == 0) {
+            system("/mnt/data/toonvnc.sh disable >/dev/null 2>&1 &");
+        }
+    }
+#endif
 }

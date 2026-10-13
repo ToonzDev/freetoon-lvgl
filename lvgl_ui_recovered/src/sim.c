@@ -382,6 +382,7 @@ static const struct { const char * name; create_fn fn; } SCREENS[] = {
     { "bootpick",    screen_bootpick_create },
     { "crypto_pick", screen_crypto_picker_create },
     { "crypto",      screen_crypto_create },
+    { "templogger",  screen_templogger_create },
 };
 #define N_SCREENS ((int)(sizeof SCREENS / sizeof SCREENS[0]))
 

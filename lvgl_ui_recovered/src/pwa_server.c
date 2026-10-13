@@ -1314,7 +1314,13 @@ static int handle_settings_post(int fd, const char * body) {
     if (extract_str(body, "domoticz_pass", sv, sizeof sv))
         snprintf(settings.domoticz_pass, sizeof settings.domoticz_pass, "%s", sv);
     if (extract_int(body, "enable_zwave", &iv))       settings.enable_zwave = !!iv;
-    if (extract_int(body, "vnc_enabled", &iv))        settings.vnc_enabled = !!iv;
+    if (extract_int(body, "vnc_enabled", &iv)) {
+        int nv = !!iv;
+        if (settings.vnc_enabled != nv) {
+            settings.vnc_enabled = nv;
+            vnc_apply_state(settings.vnc_enabled);
+        }
+    }
     if (extract_int(body, "hide_offline_tiles", &iv)) settings.hide_offline_tiles = !!iv;
     if (extract_int(body, "boot_picker_enabled", &iv))settings.boot_picker_enabled = !!iv;
     if (extract_int(body, "update_check_enabled", &iv))settings.update_check_enabled = !!iv;

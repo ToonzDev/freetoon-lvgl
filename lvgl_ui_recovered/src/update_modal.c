@@ -404,8 +404,8 @@ void update_modal_open(lv_obj_t * parent) {
     lv_obj_t * cred = lv_label_create(panel);
     lv_obj_set_style_text_font(cred, SF(14), 0);
     lv_obj_set_style_text_color(cred, lv_color_hex(0x6f8aa0), 0);
-    lv_label_set_text(cred, tr("alternatieve UI door Ierlandfan  -  MIT-licentie",
-                               "alternative UI by Ierlandfan  -  MIT License"));
+    lv_label_set_text(cred, tr("Alternatieve UI door Ierlandfan en Toonz  -  MIT-licentie",
+                               "Alternative UI by Ierlandfan and Toonz  -  MIT License"));
     lv_obj_align(cred, LV_ALIGN_TOP_RIGHT, 0, 6);
 
     /* Live status line */
@@ -435,7 +435,7 @@ void update_modal_open(lv_obj_t * parent) {
         ? g_update_state.changelog
         : g_update_state.release_notes[0]
         ? g_update_state.release_notes
-        : "freetoon - an independent LVGL UI for the Eneco Toon, by Ierlandfan.\n"
+        : "freetoon - an independent LVGL UI for the Eneco Toon, by Ierlandfan/Toonz.\n"
           "Released under the MIT License.\n\n"
           "Thanks to Quby / Eneco for the underlying Toon platform and the\n"
           "BoxTalk / Quby protocol structure this UI builds on. The stock Toon\n"

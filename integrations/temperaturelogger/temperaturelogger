@@ -1,0 +1,11 @@
+#!/bin/sh
+# temperaturelogger daemon for FreeToon marketplace
+# The 24-hour continuous sampling engine is directly integrated into toonui.
+# This script maintains lifecycle compatibility with inittab and the marketplace.
+
+trap "exit 0" TERM INT
+while true; do
+    sleep 3600 &
+    wait $!
+done
+
