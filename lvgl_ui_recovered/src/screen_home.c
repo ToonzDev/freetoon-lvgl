@@ -218,6 +218,7 @@ static lv_obj_t * tile_waste    = NULL;
 /* Custom-layout-only info tiles (content labels; NULL unless created). */
 static lv_obj_t * tile_news_sum_lbl = NULL;
 static lv_obj_t * tile_cal_dates    = NULL;
+static lv_obj_t * tile_cal_times    = NULL;
 static lv_obj_t * tile_cal_titles   = NULL;
 static lv_obj_t * lights_handle     = NULL;
 static lv_obj_t * lights_handle_lbl = NULL;
@@ -804,6 +805,7 @@ typedef struct {
     lv_obj_t * root;
     lv_obj_t * lbl_hdr;
     lv_obj_t * lbl_dates;
+    lv_obj_t * lbl_times;
     lv_obj_t * lbl_titles;
 } slot_agenda_view_t;
 
@@ -1119,19 +1121,28 @@ static slot_agenda_view_t * make_slot_agenda(lv_obj_t * tile, uint32_t bg) {
     lv_label_set_text(a->lbl_hdr, tr("Agenda", "Calendar"));
     lv_obj_align(a->lbl_hdr, LV_ALIGN_TOP_LEFT, 0, 0);
 
+    /* Column 1: Date (e.g. "wo", "15-10") */
     a->lbl_dates = lv_label_create(a->root);
     lv_obj_set_style_text_color(a->lbl_dates, lv_color_hex(0xaad4f5), 0);
     lv_obj_set_style_text_font(a->lbl_dates, SF(14), 0);
     lv_label_set_long_mode(a->lbl_dates, LV_LABEL_LONG_CLIP);
-    lv_obj_set_width(a->lbl_dates, SX(78));
+    lv_obj_set_width(a->lbl_dates, SX(38));
     lv_obj_align(a->lbl_dates, LV_ALIGN_TOP_LEFT, 0, SY(24));
 
+    /* Column 2: Start time (e.g. "13:00") */
+    a->lbl_times = lv_label_create(a->root);
+    lv_obj_set_style_text_color(a->lbl_times, lv_color_hex(0x88ccff), 0);
+    lv_obj_set_style_text_font(a->lbl_times, SF(14), 0);
+    lv_label_set_long_mode(a->lbl_times, LV_LABEL_LONG_CLIP);
+    lv_obj_set_width(a->lbl_times, SX(38));
+    lv_obj_align(a->lbl_times, LV_ALIGN_TOP_LEFT, SX(42), SY(24));
+
+    /* Column 3: Title (width set dynamically at refresh) */
     a->lbl_titles = lv_label_create(a->root);
     lv_obj_set_style_text_color(a->lbl_titles, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_set_style_text_font(a->lbl_titles, SF(14), 0);
     lv_label_set_long_mode(a->lbl_titles, LV_LABEL_LONG_CLIP);
-    lv_obj_set_width(a->lbl_titles, SX(102));
-    lv_obj_align(a->lbl_titles, LV_ALIGN_TOP_LEFT, SX(82), SY(24));
+    lv_obj_align(a->lbl_titles, LV_ALIGN_TOP_LEFT, SX(86), SY(24));
 
     lv_obj_move_foreground(a->root);
     return a;
@@ -1177,22 +1188,39 @@ static void format_agenda_date(const char * ymd, time_t now, char * out, size_t 
     snprintf(out, outsz, "%.5s", ymd + 5);
 }
 
-/* Fill an agenda view (dates column + titles column) row for row. */
-static void fill_agenda_view(lv_obj_t * lbl_dates, lv_obj_t * lbl_titles, lv_coord_t avail_h) {
-    if (!lbl_dates || !lbl_titles) return;
+/* Fill an agenda view (dates column + times column + titles column) row for row. */
+static void fill_agenda_view(lv_obj_t * parent, lv_obj_t * lbl_dates, lv_obj_t * lbl_times, lv_obj_t * lbl_titles, lv_coord_t avail_h) {
+    if (!lbl_dates || !lbl_times || !lbl_titles) return;
+
+    lv_coord_t cw = 0;
+    if (parent) {
+        cw = lv_obj_get_content_width(parent);
+        if (cw <= 0) cw = lv_obj_get_width(parent);
+    }
+    if (cw <= 0) cw = SX(198);
+
+    lv_coord_t col1_x = 0;
+    lv_coord_t col1_w = SX(38);
+    lv_coord_t col2_x = SX(42);
+    lv_coord_t col2_w = SX(38);
+    lv_coord_t col3_x = SX(86);
+    lv_coord_t col3_w = cw - col3_x - SX(2);
+    if (col3_w < SX(60)) col3_w = SX(60);
 
     if (!settings.calendar_enabled) {
         lv_label_set_text(lbl_dates, "");
+        lv_label_set_text(lbl_times, "");
         lv_obj_set_pos(lbl_titles, 0, lv_obj_get_y(lbl_dates));
-        lv_obj_set_width(lbl_titles, LV_PCT(96));
+        lv_obj_set_width(lbl_titles, cw);
         lv_label_set_text(lbl_titles, tr("Agenda uit", "Calendar off"));
         return;
     }
 
     if (calendar_state.count <= 0) {
         lv_label_set_text(lbl_dates, "");
+        lv_label_set_text(lbl_times, "");
         lv_obj_set_pos(lbl_titles, 0, lv_obj_get_y(lbl_dates));
-        lv_obj_set_width(lbl_titles, LV_PCT(96));
+        lv_obj_set_width(lbl_titles, cw);
         lv_label_set_text(lbl_titles, tr("Geen afspraken", "No events"));
         return;
     }
@@ -1206,25 +1234,31 @@ static void fill_agenda_view(lv_obj_t * lbl_dates, lv_obj_t * lbl_titles, lv_coo
     int n = calendar_state.count;
     if (n > max_lines) n = max_lines;
 
-    char buf_dates[1024] = "";
+    char buf_dates[512] = "";
+    char buf_times[512] = "";
     char buf_titles[2048] = "";
     time_t now = time(NULL);
 
     for (int i = 0; i < n; i++) {
         calendar_event_t * ev = &calendar_state.ev[i];
 
-        /* Format date column: "di 09:00" or "di\n" or "24-10 14:30" */
+        /* Column 1: Date */
         char dt[16];
         format_agenda_date(ev->date, now, dt, sizeof dt);
         char row_date[32];
-        if (ev->time[0]) {
-            snprintf(row_date, sizeof row_date, "%s %s\n", dt, ev->time);
-        } else {
-            snprintf(row_date, sizeof row_date, "%s\n", dt);
-        }
+        snprintf(row_date, sizeof row_date, "%s\n", dt);
         strncat(buf_dates, row_date, sizeof buf_dates - strlen(buf_dates) - 1);
 
-        /* Format title column: sanitize newlines, clip long text */
+        /* Column 2: Start time (spaces if all-day event) */
+        char row_time[32];
+        if (ev->time[0]) {
+            snprintf(row_time, sizeof row_time, "%s\n", ev->time);
+        } else {
+            snprintf(row_time, sizeof row_time, "     \n");
+        }
+        strncat(buf_times, row_time, sizeof buf_times - strlen(buf_times) - 1);
+
+        /* Column 3: Title (sanitized single line) */
         char clean_title[64];
         size_t c = 0;
         for (const char * p = ev->summary; *p && c < sizeof(clean_title) - 1; p++) {
@@ -1240,9 +1274,17 @@ static void fill_agenda_view(lv_obj_t * lbl_dates, lv_obj_t * lbl_titles, lv_coo
         strncat(buf_titles, row_title, sizeof buf_titles - strlen(buf_titles) - 1);
     }
 
-    lv_obj_set_pos(lbl_titles, SX(82), lv_obj_get_y(lbl_dates));
-    lv_obj_set_width(lbl_titles, SX(102));
+    lv_obj_set_pos(lbl_dates, col1_x, lv_obj_get_y(lbl_dates));
+    lv_obj_set_width(lbl_dates, col1_w);
+
+    lv_obj_set_pos(lbl_times, col2_x, lv_obj_get_y(lbl_dates));
+    lv_obj_set_width(lbl_times, col2_w);
+
+    lv_obj_set_pos(lbl_titles, col3_x, lv_obj_get_y(lbl_dates));
+    lv_obj_set_width(lbl_titles, col3_w);
+
     lv_label_set_text(lbl_dates, buf_dates);
+    lv_label_set_text(lbl_times, buf_times);
     lv_label_set_text(lbl_titles, buf_titles);
 }
 
@@ -1253,7 +1295,7 @@ static void fill_agenda_overlay(slot_agenda_view_t * a) {
     if (th <= 0) th = lv_obj_get_height(a->root);
     if (th <= 0) th = SY(130);
     lv_coord_t avail_h = th - SY(34);
-    fill_agenda_view(a->lbl_dates, a->lbl_titles, avail_h);
+    fill_agenda_view(a->root, a->lbl_dates, a->lbl_times, a->lbl_titles, avail_h);
 }
 
 static void on_slot_waste_tap(lv_event_t * e) {
@@ -1693,11 +1735,12 @@ static void refresh_cb(lv_timer_t * t) {
         }
         lv_label_set_text(tile_news_sum_lbl, buf[0] ? buf : tr("Geen nieuws", "No news"));
     }
-    if (tile_cal_dates && tile_cal_titles) {
-        lv_coord_t th = lv_obj_get_height(lv_obj_get_parent(tile_cal_dates));
+    if (tile_cal_dates && tile_cal_times && tile_cal_titles) {
+        lv_obj_t * p = lv_obj_get_parent(tile_cal_dates);
+        lv_coord_t th = lv_obj_get_height(p);
         if (th <= 0) th = SY(150);
         lv_coord_t avail_h = th - SY(46);
-        fill_agenda_view(tile_cal_dates, tile_cal_titles, avail_h);
+        fill_agenda_view(p, tile_cal_dates, tile_cal_times, tile_cal_titles, avail_h);
     }
     if (tile_sonos_view && !lv_obj_has_flag(lv_obj_get_parent(tile_sonos_view->root), LV_OBJ_FLAG_HIDDEN)) {
         update_sonos_view(tile_sonos_view);
@@ -4124,18 +4167,27 @@ lv_obj_t * screen_home_create(void) {
         lv_obj_set_style_text_color(tile_cal_dates, lv_color_hex(0xaad4f5), 0);
         lv_obj_set_style_text_font(tile_cal_dates, SF(14), 0);
         lv_label_set_long_mode(tile_cal_dates, LV_LABEL_LONG_CLIP);
-        lv_obj_set_width(tile_cal_dates, SX(78));
+        lv_obj_set_width(tile_cal_dates, SX(38));
         lv_obj_align(tile_cal_dates, LV_ALIGN_TOP_LEFT, 0, SY(38));
         lv_obj_add_flag(tile_cal_dates, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_event_cb(tile_cal_dates, on_slot_agenda_tap, LV_EVENT_CLICKED, NULL);
         lv_label_set_text(tile_cal_dates, "");
 
+        tile_cal_times = lv_label_create(ct.tile);
+        lv_obj_set_style_text_color(tile_cal_times, lv_color_hex(0x88ccff), 0);
+        lv_obj_set_style_text_font(tile_cal_times, SF(14), 0);
+        lv_label_set_long_mode(tile_cal_times, LV_LABEL_LONG_CLIP);
+        lv_obj_set_width(tile_cal_times, SX(38));
+        lv_obj_align(tile_cal_times, LV_ALIGN_TOP_LEFT, SX(42), SY(38));
+        lv_obj_add_flag(tile_cal_times, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(tile_cal_times, on_slot_agenda_tap, LV_EVENT_CLICKED, NULL);
+        lv_label_set_text(tile_cal_times, "");
+
         tile_cal_titles = lv_label_create(ct.tile);
         lv_obj_set_style_text_color(tile_cal_titles, lv_color_hex(COL_TEXT_HI), 0);
         lv_obj_set_style_text_font(tile_cal_titles, SF(14), 0);
         lv_label_set_long_mode(tile_cal_titles, LV_LABEL_LONG_CLIP);
-        lv_obj_set_width(tile_cal_titles, SX(102));
-        lv_obj_align(tile_cal_titles, LV_ALIGN_TOP_LEFT, SX(82), SY(38));
+        lv_obj_align(tile_cal_titles, LV_ALIGN_TOP_LEFT, SX(86), SY(38));
         lv_obj_add_flag(tile_cal_titles, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_event_cb(tile_cal_titles, on_slot_agenda_tap, LV_EVENT_CLICKED, NULL);
         lv_label_set_text(tile_cal_titles, "...");
