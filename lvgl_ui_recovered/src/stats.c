@@ -113,27 +113,18 @@ static int http_get_body(const char * path_qs, char * out, size_t outsz) {
 }
 #endif
 
-int stats_fetch(const char * logger_name, const char * rra,
-                long window_seconds, int max_samples,
-                stats_series_t * series) {
+int stats_fetch_range(const char * logger_name, const char * rra,
+                      long from_ts, long to_ts, int max_samples,
+                      stats_series_t * series) {
     series->n = 0;
     series->min = +1e30; series->max = -1e30;
     if (max_samples <= 0 || max_samples > STATS_MAX_SAMPLES)
         max_samples = STATS_MAX_SAMPLES;
     char qs[320];
-    /* hcb_rrd accepts `from=<unix>&to=<unix>` to scope the query to a
-     * specific time window. Without that, `samples=N` downsamples
-     * across the entire archive span (5yrhours = 5 years, 10yrdays =
-     * 10 years), so e.g. `samples=168` from 5yrhours returns 168
-     * points spread across 5 years — exactly the "Week tab showed 21
-     * days" bug we hit. With `from=now-7d&to=now` the response is
-     * scoped to the actual trailing 7 days; `samples=N` then trims
-     * within that window. */
-    if (window_seconds > 0) {
-        long now = (long)time(NULL);
+    if (from_ts > 0 && to_ts > from_ts) {
         snprintf(qs, sizeof(qs),
             "hcb_rrd?action=getRrdData&loggerName=%s&rra=%s&from=%ld&to=%ld&readableTime=1&nullForNaN=1&samples=%d",
-            logger_name, rra, now - window_seconds, now, max_samples);
+            logger_name, rra, from_ts, to_ts, max_samples);
     } else {
         snprintf(qs, sizeof(qs),
             "hcb_rrd?action=getRrdData&loggerName=%s&rra=%s&readableTime=1&nullForNaN=1&samples=%d",
@@ -222,6 +213,16 @@ int stats_fetch(const char * logger_name, const char * rra,
     fprintf(stderr, "[stats] %s/%s: %d samples min=%.2f max=%.2f\n",
             logger_name, rra, series->n, series->min, series->max);
     return 0;
+}
+
+int stats_fetch(const char * logger_name, const char * rra,
+                long window_seconds, int max_samples,
+                stats_series_t * series) {
+    if (window_seconds > 0) {
+        long now = (long)time(NULL);
+        return stats_fetch_range(logger_name, rra, now - window_seconds, now, max_samples, series);
+    }
+    return stats_fetch_range(logger_name, rra, 0, 0, max_samples, series);
 }
 
 int stats_elec_flow_5min(stats_series_t * out)  { return stats_fetch("elec_flow",  "5min", 0, STATS_MAX_SAMPLES, out); }

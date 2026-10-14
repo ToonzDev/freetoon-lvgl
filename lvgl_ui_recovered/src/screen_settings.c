@@ -3482,6 +3482,7 @@ static void make_tile(int x, int y, const lv_img_dsc_t * icon, const char * sym,
     lv_obj_set_style_text_font(c, SF(14), 0);
     lv_obj_set_style_text_color(c, lv_color_hex(0x7d97b5), 0);
     lv_obj_set_width(c, SX(SETT_TILE_W - 16));
+    lv_obj_set_height(c, SY(18));
     lv_label_set_long_mode(c, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(c, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(c, caption);
@@ -4339,7 +4340,7 @@ lv_obj_t * screen_settings_create(void) {
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_SETTINGS, tr("Apparaten", "Appliances"),
               tr("NILM stap-detectie namen", "NILM step-change names"), open_appliances); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LOOP, tr("Auto-wisselen", "Auto-rotate"),
-              tr("inhoud van een tegel wisselen", "cycle a tile's content"), open_rotate_modal); n++;
+              tr("tegel wisselen", "cycle tile"), open_rotate_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_COPY, tr("Clientmodus", "Client mode"),
               tr("een master-Toon spiegelen", "mirror a master Toon"), open_client_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, "Crypto",
@@ -4367,7 +4368,7 @@ lv_obj_t * screen_settings_create(void) {
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_OK, tr("Pincode", "PIN code"),
               tr("wijzigingen vergrendelen", "lock changes"), open_pin_settings_modal); n++;
     make_tile(GX(n), GY(n), &icon_wx_sun, NULL, tr("Scherm", "Display"),
-              tr("dimmen, wachttijd, helderheid", "dim, timeout, brightness"), open_display_modal); n++;
+              tr("scherminstellingen", "display settings"), open_display_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_EYE_CLOSE, tr("Schoonmaken", "Clean"),
               tr("30 s schermvergrendeling", "30 s screen lock"), open_clean_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_AUDIO, "Sonos",

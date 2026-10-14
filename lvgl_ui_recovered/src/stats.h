@@ -33,6 +33,11 @@ int stats_fetch(const char * logger_name, const char * rra,
                 long window_seconds, int max_samples,
                 stats_series_t * out);
 
+/* Fetch raw history JSON for an explicit [from_ts, to_ts] time range. */
+int stats_fetch_range(const char * logger_name, const char * rra,
+                      long from_ts, long to_ts, int max_samples,
+                      stats_series_t * out);
+
 /* Convenience pre-defined fetches. */
 int stats_elec_flow_5min(stats_series_t * out);
 int stats_gas_flow_5min(stats_series_t * out);

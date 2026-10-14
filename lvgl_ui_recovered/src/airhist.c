@@ -122,15 +122,14 @@ void airhist_start(void) {
     if (pthread_create(&th, NULL, ah_thread, NULL) == 0) pthread_detach(th);
 }
 
-int airhist_series(int which, long window_seconds, int max_samples, stats_series_t * out) {
+int airhist_series_range(int which, long from_ts, long to_ts, int max_samples, stats_series_t * out) {
     out->n = 0; out->min = 1e30; out->max = -1e30;
     if (max_samples > STATS_MAX_SAMPLES) max_samples = STATS_MAX_SAMPLES;
-    long now = (long)time(NULL);
-    long cutoff = window_seconds ? now - window_seconds : 0;
     pthread_mutex_lock(&ah_mtx);
     for (int i = 0; i < ah_count && out->n < max_samples; i++) {
         int idx = (ah_head - ah_count + i + 2 * AH_CAP) % AH_CAP;   /* oldest → newest */
-        if (ring[idx].ts < cutoff) continue;
+        if (from_ts > 0 && ring[idx].ts < from_ts) continue;
+        if (to_ts > 0 && ring[idx].ts > to_ts) continue;
         double v = which ? ring[idx].tvoc : ring[idx].eco2;
         out->samples[out->n] = v;
         struct tm tm; time_t tt = (time_t)ring[idx].ts; localtime_r(&tt, &tm);
@@ -144,24 +143,30 @@ int airhist_series(int which, long window_seconds, int max_samples, stats_series
     return out->n > 0 ? 0 : -1;
 }
 
-int airhist_pres_series(long window_seconds, int max_samples, stats_series_t * out) {
+int airhist_series(int which, long window_seconds, int max_samples, stats_series_t * out) {
+    long now = (long)time(NULL);
+    long from = window_seconds ? now - window_seconds : 0;
+    return airhist_series_range(which, from, now, max_samples, out);
+}
+
+int airhist_pres_series_range(long from_ts, long to_ts, int max_samples, stats_series_t * out) {
     out->n = 0; out->min = 1e30; out->max = -1e30;
     if (max_samples > STATS_MAX_SAMPLES) max_samples = STATS_MAX_SAMPLES;
     if (max_samples < 1) max_samples = 1;
-    long now = (long)time(NULL);
-    long cutoff = window_seconds ? now - window_seconds : 0;
     pthread_mutex_lock(&ph_mtx);
-    /* count in-window, then stride-downsample to fit max_samples (year/month). */
     int inwin = 0;
     for (int i = 0; i < ph_count; i++) {
         int idx = (ph_head - ph_count + i + 2 * PH_CAP) % PH_CAP;
-        if (pring[idx].ts >= cutoff) inwin++;
+        if (from_ts > 0 && pring[idx].ts < from_ts) continue;
+        if (to_ts > 0 && pring[idx].ts > to_ts) continue;
+        inwin++;
     }
     int stride = (inwin > max_samples) ? (inwin + max_samples - 1) / max_samples : 1;
     int seen = 0;
     for (int i = 0; i < ph_count && out->n < max_samples; i++) {
         int idx = (ph_head - ph_count + i + 2 * PH_CAP) % PH_CAP;
-        if (pring[idx].ts < cutoff) continue;
+        if (from_ts > 0 && pring[idx].ts < from_ts) continue;
+        if (to_ts > 0 && pring[idx].ts > to_ts) continue;
         if ((seen++ % stride) != 0) continue;
         double v = pring[idx].bar;
         out->samples[out->n] = v;
@@ -174,4 +179,10 @@ int airhist_pres_series(long window_seconds, int max_samples, stats_series_t * o
     }
     pthread_mutex_unlock(&ph_mtx);
     return out->n > 0 ? 0 : -1;
+}
+
+int airhist_pres_series(long window_seconds, int max_samples, stats_series_t * out) {
+    long now = (long)time(NULL);
+    long from = window_seconds ? now - window_seconds : 0;
+    return airhist_pres_series_range(from, now, max_samples, out);
 }

@@ -13,10 +13,12 @@ void airhist_start(void);
  * 1=TVOC), capped to `max_samples`. Values are instantaneous (ppm/ppb), not
  * cumulative. Returns 0 if any samples were produced, else -1. */
 int  airhist_series(int which, long window_seconds, int max_samples, stats_series_t * out);
+int  airhist_series_range(int which, long from_ts, long to_ts, int max_samples, stats_series_t * out);
 
 /* CH water-pressure history — recorded hourly over ~400 days (also absent from
  * the Toon RRD), so the Stats screen can show day/week/month/year. Fills `out`
  * with the last window_seconds, stride-downsampled to <= max_samples. 0 if any. */
 int  airhist_pres_series(long window_seconds, int max_samples, stats_series_t * out);
+int  airhist_pres_series_range(long from_ts, long to_ts, int max_samples, stats_series_t * out);
 
 #endif

@@ -406,15 +406,16 @@ static int parse_rrd_val(const char * body, float * out) {
 static void poll_stock_master(void) {
     char url[256];
     char buf[4096];
-    int rrd_counter = 0;
     int fails = 0;
+    int power_counter = 4; /* fetch immediately on first tick */
+    int rrd_counter = 20;  /* fetch immediately on first tick */
 
     fprintf(stderr, "[client_link] running in Stock Toon master mode for %s\n", settings.master_host);
 
     while (settings.client_mode) {
         if (!host_ok(settings.master_host)) {
             toon_state.connected = 0;
-            sleep(2);
+            sleep(3);
             continue;
         }
 
@@ -459,20 +460,43 @@ static void poll_stock_master(void) {
             if (fails >= 3) toon_state.connected = 0;
         }
 
-        /* 2. Electricity, Gas, Pressure & Boiler Temps from hcb_rrd every ~4 seconds */
-        rrd_counter++;
-        if (rrd_counter >= 2) {
-            rrd_counter = 0;
-            snprintf(url, sizeof url, "http://%s:10080/hcb_rrd?action=getRrdData&loggerName=elec_flow&rra=5min&samples=1", settings.master_host);
-            if (http_fetch_to(url, buf, sizeof buf, 2) == 0) {
-                float pw = 0.0f;
-                if (parse_rrd_val(buf, &pw)) {
+        /* 2. Electricity consumption from happ_pwrusage every ~12 seconds */
+        power_counter++;
+        if (power_counter >= 4) {
+            power_counter = 0;
+            /* Live real-time power from happ_pwrusage GetCurrentUsage on stock master */
+            snprintf(url, sizeof url, "http://%s:10080/happ_pwrusage?action=GetCurrentUsage", settings.master_host);
+            if (http_fetch_to(url, buf, sizeof buf, 2) == 0 && strstr(buf, "\"powerUsage\"")) {
+                double pu = 0.0, pp = 0.0;
+                const char * p_pu = strstr(buf, "\"powerUsage\"");
+                if (p_pu && jnum(p_pu, "value", &pu)) {
+                    const char * p_pp = strstr(buf, "\"powerProduction\"");
+                    if (p_pp) jnum(p_pp, "value", &pp);
+                    float pw = (float)(pu - pp);
                     meter_state.power_w = pw;
                     meter_state.connected = 1;
                     hw_state.power_w = pw;
                     hw_state.connected_p1 = 1;
                 }
+            } else {
+                /* Fallback to hcb_rrd elec_flow */
+                snprintf(url, sizeof url, "http://%s:10080/hcb_rrd?action=getRrdData&loggerName=elec_flow&rra=5min&samples=1", settings.master_host);
+                if (http_fetch_to(url, buf, sizeof buf, 2) == 0) {
+                    float pw = 0.0f;
+                    if (parse_rrd_val(buf, &pw)) {
+                        meter_state.power_w = pw;
+                        meter_state.connected = 1;
+                        hw_state.power_w = pw;
+                        hw_state.connected_p1 = 1;
+                    }
+                }
             }
+        }
+
+        /* 3. Gas, Pressure & Boiler Temps from hcb_rrd every ~60 seconds */
+        rrd_counter++;
+        if (rrd_counter >= 20) {
+            rrd_counter = 0;
             snprintf(url, sizeof url, "http://%s:10080/hcb_rrd?action=getRrdData&loggerName=gas_flow&rra=5min&samples=1", settings.master_host);
             if (http_fetch_to(url, buf, sizeof buf, 2) == 0) {
                 float gw = 0.0f;
@@ -525,7 +549,7 @@ static void poll_stock_master(void) {
             }
         }
 
-        sleep(1);
+        sleep(3);
     }
 }
 

@@ -26,9 +26,25 @@ static lv_obj_t * lbl_metric_name;
 static lv_obj_t * lbl_unit;
 static lv_obj_t * lbl_value;
 static lv_obj_t * tab_metric_btns[6];
-static lv_obj_t * tab_period_btns[5];
+#define N_PERIOD 6
+static lv_obj_t * tab_period_btns[N_PERIOD];
 
-typedef enum { PERIOD_HOUR, PERIOD_DAY, PERIOD_WEEK, PERIOD_MONTH, PERIOD_YEAR } period_t;
+/* Time navigation widgets */
+static lv_obj_t * btn_nav_prev = NULL;
+static lv_obj_t * btn_nav_next = NULL;
+static lv_obj_t * lbl_nav_range = NULL;
+static int        g_time_offset = 0;     /* 0 = present, -1 = 1 window back, etc. */
+static long       g_current_start_t = 0;
+static long       g_current_end_t = 0;
+
+typedef enum {
+    PERIOD_NOW,     /* 12 x 5-minute intervals (past 1 hour) */
+    PERIOD_HOURS,   /* 24 hours (24 hourly bars) */
+    PERIOD_DAYS,    /* 31 days (31 daily bars) */
+    PERIOD_WEEKS,   /* 12 weeks (12 weekly bars) */
+    PERIOD_MONTHS,  /* 12 months (12 monthly bars) */
+    PERIOD_YEARS    /* 12 years (12 yearly bars) */
+} period_t;
 
 typedef struct {
     const char * label;
@@ -44,18 +60,26 @@ typedef struct {
        (instantaneous ppm/ppb, never diffed). which = metric index - 3. */
     int local_hist;
 } metric_t;
-static const metric_t metrics[6] = {
+static const metric_t metrics[4] = {
     {"Electricity", "W",     "kWh",  "elec_flow",  "elec_quantity_nt", "elec_quantity_lt", 0xaa77ff, 0},
     {"Gas",         "l/h",   "m3",   "gas_flow",   "gas_quantity",     NULL,                0xffaa44, 0},
     {"Water",       "l/min", "m3",   "water_flow", "water_quantity",   NULL,                0x44aaff, 0},
-    {"CO2",         "ppm",   "ppm",  NULL,         NULL,               NULL,                0x44cc88, 1},
-    {"TVOC",        "ppb",   "ppb",  NULL,         NULL,               NULL,                0xcc8844, 1},
     {"CV bar",      "bar",   "bar",  NULL,         NULL,               NULL,                0x5fb3ff, 2},  /* CH pressure, all periods */
 };
 #define N_METRIC ((int)(sizeof metrics / sizeof metrics[0]))
 
+static const char * metric_title(int i) {
+    switch (i) {
+        case 0: return tr("Elektriciteit", "Electricity");
+        case 1: return tr("Gas", "Gas");
+        case 2: return tr("Water", "Water");
+        case 3: return tr("CV bar", "CH bar");
+        default: return "";
+    }
+}
+
 static int      selected_metric = 0;
-static period_t selected_period = PERIOD_HOUR;
+static period_t selected_period = PERIOD_NOW;
 static stats_series_t  series;
 static stats_series_t  series2;   /* for elec second tariff */
 
@@ -64,121 +88,239 @@ static void on_back(lv_event_t * e) { (void)e; ui_pop(); }
 static void open_timeline_async(void *u) { (void)u; ui_push(screen_energy_timeline_create()); }
 static void on_devices_btn(lv_event_t *e) { (void)e; lv_async_call(open_timeline_async, NULL); }
 
+static void reload_and_render(void);
+
 /* Final bar values + labels, produced by render_chart's bucketing step.
  * The chart shows these directly (one bar per bucket). */
 static double g_bar_val[64];
 static char   g_bar_label[64][8];
 static int    g_bar_count = 0;
 
-/* Manual X-axis labels under the chart (lv_chart's own tick labels never
- * rendered reliably for bars). Up to 12 evenly-spaced bar labels. */
-#define XLBL_COUNT 12
+/* Manual X-axis labels under the chart. Up to 12 evenly-spaced bar labels. */
+#define XLBL_COUNT 24
 static lv_obj_t * g_xlbl[XLBL_COUNT] = {0};
-/* Chart plot geometry — chart is 700x300 at TOP_RIGHT -30,235; the Y tick
- * labels (draw_size 60) inset the plot on the left. Tuned to bar centers. */
-#define PLOT_L SX(360)
-#define PLOT_R SX(986)
-#define XLBL_Y SY(540)
+#define XLBL_Y SY(535)
 
 static void place_x_labels(void) {
     for (int i = 0; i < XLBL_COUNT; i++)
         if (g_xlbl[i]) lv_obj_add_flag(g_xlbl[i], LV_OBJ_FLAG_HIDDEN);
-    if (g_bar_count <= 0) return;
-    int shown = g_bar_count < XLBL_COUNT ? g_bar_count : XLBL_COUNT;
-    double plot_w = PLOT_R - PLOT_L;
+    if (g_bar_count <= 0 || !chart || !cs) return;
+
+    lv_obj_update_layout(chart);
+    lv_coord_t chart_x = lv_obj_get_x(chart);
+
+    int shown = (g_bar_count <= 16) ? g_bar_count : 7;
+    if (shown > XLBL_COUNT) shown = XLBL_COUNT;
+
     for (int k = 0; k < shown; k++) {
-        int b = (g_bar_count <= XLBL_COUNT) ? k
+        int b = (g_bar_count <= 16) ? k
               : (shown > 1 ? k * (g_bar_count - 1) / (shown - 1) : 0);
-        double cx = PLOT_L + (b + 0.5) * plot_w / g_bar_count;
+        lv_point_t pt;
+        lv_chart_get_point_pos_by_id(chart, cs, (uint16_t)b, &pt);
+        int cx = chart_x + pt.x;
+
         if (!g_xlbl[k]) continue;
         lv_label_set_text(g_xlbl[k], g_bar_label[b]);
         lv_obj_set_width(g_xlbl[k], SX(58));
         lv_obj_set_style_text_align(g_xlbl[k], LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_pos(g_xlbl[k], (int)(cx - SX(29)), XLBL_Y);
+        lv_obj_set_pos(g_xlbl[k], cx - SX(29), XLBL_Y);
         lv_obj_clear_flag(g_xlbl[k], LV_OBJ_FLAG_HIDDEN);
     }
 }
 
+static void update_nav_range_label(long start_t, long end_t) {
+    if (!lbl_nav_range) return;
+    char buf[96] = "";
+    struct tm tm_start, tm_end;
+    time_t ts = (time_t)start_t, te = (time_t)end_t;
+    localtime_r(&ts, &tm_start);
+    localtime_r(&te, &tm_end);
 
-/* Per-period: which logger + rra + time window + how many samples.
- *
- * Critical: each tab MUST pass an explicit `window_seconds` to
- * stats_fetch so hcb_rrd returns only the trailing slice of the RRA
- * archive. Without it, the archive's full multi-year span is
- * downsampled to N evenly-spaced points — that's the "Week tab
- * showed 21 days" bug. With from/to scoped, samples= just trims
- * within the window.
- *
- *   Tab     Logger        RRA       Window      Samples cap
- *   Hour    flow_logger   5min      1 h         12   (5-min res)
- *   Day     flow_logger   5min      24 h        288  (5-min res)
- *   Week    cum_logger    5yrhours  7 d         168  (hourly res)
- *   Month   cum_logger    10yrdays  31 d        31   (daily res)
- *   Year    cum_logger    10yrdays  365 d       365  (daily res)
- * Returns 0 if loaded. */
+    switch (selected_period) {
+        case PERIOD_NOW:
+            if (g_time_offset == 0) {
+                snprintf(buf, sizeof(buf), "%s", tr("Afgelopen uur (5-min)", "Past hour (5-min)"));
+            } else {
+                snprintf(buf, sizeof(buf), "%d %s %02d:%02d - %02d:%02d",
+                         tm_end.tm_mday, i18n_month_short(tm_end.tm_mon),
+                         tm_start.tm_hour, tm_start.tm_min,
+                         tm_end.tm_hour, tm_end.tm_min);
+            }
+            break;
+        case PERIOD_HOURS:
+            if (g_time_offset == 0) {
+                snprintf(buf, sizeof(buf), "%s", tr("Afgelopen 24 uur", "Past 24 hours"));
+            } else if (g_time_offset == -1) {
+                snprintf(buf, sizeof(buf), "%s (%d %s)",
+                         tr("Gisteren", "Yesterday"),
+                         tm_start.tm_mday, i18n_month_short(tm_start.tm_mon));
+            } else {
+                snprintf(buf, sizeof(buf), "%d %s %04d",
+                         tm_start.tm_mday, i18n_month_short(tm_start.tm_mon), tm_start.tm_year + 1900);
+            }
+            break;
+        case PERIOD_DAYS:
+            snprintf(buf, sizeof(buf), "%d %s - %d %s %04d",
+                     tm_start.tm_mday, i18n_month_short(tm_start.tm_mon),
+                     tm_end.tm_mday, i18n_month_short(tm_end.tm_mon), tm_end.tm_year + 1900);
+            break;
+        case PERIOD_WEEKS:
+            snprintf(buf, sizeof(buf), "%s (%d %s - %d %s %04d)",
+                     tr("12 weken", "12 weeks"),
+                     tm_start.tm_mday, i18n_month_short(tm_start.tm_mon),
+                     tm_end.tm_mday, i18n_month_short(tm_end.tm_mon), tm_end.tm_year + 1900);
+            break;
+        case PERIOD_MONTHS:
+            snprintf(buf, sizeof(buf), "%s %04d - %s %04d",
+                     i18n_month_short(tm_start.tm_mon), tm_start.tm_year + 1900,
+                     i18n_month_short(tm_end.tm_mon), tm_end.tm_year + 1900);
+            break;
+        case PERIOD_YEARS:
+            snprintf(buf, sizeof(buf), "%s", tr("Jaaroverzicht", "Yearly overview"));
+            break;
+    }
+    lv_label_set_text(lbl_nav_range, buf);
+}
+
+static void on_nav_prev(lv_event_t * e) {
+    (void)e;
+    g_time_offset--;
+    reload_and_render();
+}
+
+static void on_nav_next(lv_event_t * e) {
+    (void)e;
+    if (g_time_offset < 0) {
+        g_time_offset++;
+        reload_and_render();
+    }
+}
+
+/* Per-period data fetching. Supports stepping backward/forward in time via g_time_offset. */
 static int load_for_period(void) {
     const metric_t * m = &metrics[selected_metric];
-    const long HOUR = 3600, DAY = 86400, WEEK = 7*DAY,
-               MONTH = 31*DAY, YEAR = 365*DAY;
-    if (m->local_hist) {                /* CO2/TVOC/pressure — freetoon's recorder */
-        series2.n = 0;
-        if (m->local_hist == 2) {       /* CH pressure — hourly ring, all periods */
-            /* CH pressure is sampled only ONCE PER HOUR, so a 1-hour window
-             * holds <=1 point and the graph looks empty (the default Hour tab).
-             * Pressure is a slow-moving signal, so widen each period one step:
-             * the buttons select recent->longest trend instead of literal spans.
-             * Hour -> day of data, Day -> week, etc. so no tab is ever empty. */
-            long win = (selected_period == PERIOD_HOUR)  ? DAY
-                     : (selected_period == PERIOD_DAY)   ? WEEK
-                     : (selected_period == PERIOD_WEEK)  ? MONTH
-                     : (selected_period == PERIOD_MONTH) ? YEAR : YEAR;
-            return airhist_pres_series(win, 365, &series);
-        }
-        long win = (selected_period == PERIOD_HOUR) ? HOUR
-                 : (selected_period == PERIOD_DAY)  ? DAY : WEEK;  /* CO2/TVOC: 7d ring */
-        return airhist_series(selected_metric - 3, win, 288, &series);
-    }
+    long now = (long)time(NULL);
+    long from = 0, to = 0;
+
+    const long HOUR = 3600;
+    const long DAY = 86400;
+    const long WEEK_SPAN = 12 * 7 * DAY;     /* 12 weeks = 84 days */
+    const long DAYS_SPAN = 31 * DAY;         /* 31 days */
+
     switch (selected_period) {
-        case PERIOD_HOUR:
-            return stats_fetch(m->flow_logger, "5min", HOUR, 12, &series);
-        case PERIOD_DAY:
-            return stats_fetch(m->flow_logger, "5min", DAY, 288, &series);
-        case PERIOD_WEEK:
-            /* Cumulative meter, hourly samples — diff'd to per-hour usage
-             * in render_chart. 168 hours = 7 days exactly. */
-            if (m->cum_logger_extra) {
-                stats_fetch(m->cum_logger_extra, "5yrhours", WEEK, 168, &series2);
-            } else {
-                series2.n = 0;
-            }
-            return stats_fetch(m->cum_logger, "5yrhours", WEEK, 168, &series);
-        case PERIOD_MONTH:
-            if (m->cum_logger_extra) {
-                stats_fetch(m->cum_logger_extra, "10yrdays", MONTH, 31, &series2);
-            } else {
-                series2.n = 0;
-            }
-            return stats_fetch(m->cum_logger, "10yrdays", MONTH, 31, &series);
-        case PERIOD_YEAR: {
-            /* One-year window at daily resolution. hcb_rrd's socket path
-             * returns all-zero for multi-year windows (it spreads the samples
-             * too thin over the archive span), so we cap at 365 d / 365 daily
-             * samples — the proven-working query. render_chart buckets the
-             * daily deltas into one bar per calendar month (labelled mon-yy),
-             * so the Year view fills in month-by-month as history accrues.
-             * NB: a logger only shows as far back as it actually has data. */
-            if (m->cum_logger_extra) {
-                stats_fetch(m->cum_logger_extra, "10yrdays", YEAR, 365, &series2);
-            } else {
-                series2.n = 0;
-            }
-            return stats_fetch(m->cum_logger, "10yrdays", YEAR, 365, &series);
+        case PERIOD_NOW:
+            to = now + (long)g_time_offset * HOUR;
+            from = to - HOUR;
+            break;
+        case PERIOD_HOURS:
+            to = now + (long)g_time_offset * DAY;
+            from = to - DAY;
+            break;
+        case PERIOD_DAYS:
+            to = now + (long)g_time_offset * DAYS_SPAN;
+            from = to - DAYS_SPAN;
+            break;
+        case PERIOD_WEEKS:
+            to = now + (long)g_time_offset * WEEK_SPAN;
+            from = to - WEEK_SPAN;
+            break;
+        case PERIOD_MONTHS: {
+            /* Exactly 12 calendar months: from 1st of (now - 11 months) to end of month / now */
+            struct tm tm_now;
+            time_t t_now = (time_t)now;
+            localtime_r(&t_now, &tm_now);
+
+            int target_year = tm_now.tm_year + g_time_offset;
+            int target_mon  = tm_now.tm_mon;
+
+            struct tm tm_to = {0};
+            tm_to.tm_year = target_year;
+            tm_to.tm_mon  = target_mon + 1;
+            tm_to.tm_mday = 1;
+            tm_to.tm_isdst = -1;
+            to = (long)mktime(&tm_to);
+            if (g_time_offset == 0 && to > now) to = now;
+
+            struct tm tm_from = {0};
+            tm_from.tm_year = target_year - 1;
+            tm_from.tm_mon  = target_mon + 1;
+            tm_from.tm_mday = 1;
+            tm_from.tm_isdst = -1;
+            from = (long)mktime(&tm_from);
+            break;
         }
+        case PERIOD_YEARS:
+            to = now;
+            from = 0;
+            break;
+    }
+
+    g_current_start_t = from;
+    g_current_end_t = to;
+
+    if (m->local_hist) {                /* CH pressure — freetoon's recorder hourly ring */
+        series2.n = 0;
+        return airhist_pres_series_range(from, to, 365, &series);
+    }
+
+    switch (selected_period) {
+        case PERIOD_NOW:
+            /* Live 5-minute flow: 12 samples over 1 hour */
+            return stats_fetch_range(m->flow_logger, "5min", from, to, 12, &series);
+
+        case PERIOD_HOURS:
+            /* Cumulative meter, hourly samples — diff'd to per-hour usage.
+             * 24 hours -> 26 samples with from - 3600 so hour 0 has prev sample. */
+            if (m->cum_logger_extra) {
+                stats_fetch_range(m->cum_logger_extra, "5yrhours", from - 3600, to, 26, &series2);
+            } else {
+                series2.n = 0;
+            }
+            return stats_fetch_range(m->cum_logger, "5yrhours", from - 3600, to, 26, &series);
+
+        case PERIOD_DAYS:
+            /* 31 days of daily cumulative meter samples -> diff'd to 31 daily bars */
+            if (m->cum_logger_extra) {
+                stats_fetch_range(m->cum_logger_extra, "10yrdays", from - DAY, to, 34, &series2);
+            } else {
+                series2.n = 0;
+            }
+            return stats_fetch_range(m->cum_logger, "10yrdays", from - DAY, to, 34, &series);
+
+        case PERIOD_WEEKS:
+            /* 12 weeks = 84 days of daily cumulative meter samples -> diff'd to 84 daily deltas,
+             * bucketed into 12 weekly bars */
+            if (m->cum_logger_extra) {
+                stats_fetch_range(m->cum_logger_extra, "10yrdays", from - DAY, to, 88, &series2);
+            } else {
+                series2.n = 0;
+            }
+            return stats_fetch_range(m->cum_logger, "10yrdays", from - DAY, to, 88, &series);
+
+        case PERIOD_MONTHS:
+            /* 12 months = 365 days of daily cumulative meter samples -> diff'd to daily deltas,
+             * bucketed by calendar month */
+            if (m->cum_logger_extra) {
+                stats_fetch_range(m->cum_logger_extra, "10yrdays", from - DAY, to, 370, &series2);
+            } else {
+                series2.n = 0;
+            }
+            return stats_fetch_range(m->cum_logger, "10yrdays", from - DAY, to, 370, &series);
+
+        case PERIOD_YEARS:
+            /* Full 10-year archive at downsampled monthly resolution (~120 samples) -> grouped by year */
+            if (m->cum_logger_extra) {
+                stats_fetch_range(m->cum_logger_extra, "10yrdays", 0, 0, 120, &series2);
+            } else {
+                series2.n = 0;
+            }
+            return stats_fetch_range(m->cum_logger, "10yrdays", 0, 0, 120, &series);
     }
     return -1;
 }
 
 static void style_metric_tab(int i, int sel) {
+    if (i < 0 || i >= N_METRIC || !tab_metric_btns[i]) return;
     lv_obj_set_style_bg_color(tab_metric_btns[i],
         lv_color_hex(sel ? metrics[i].color : 0x1a2a44), 0);
     lv_obj_set_style_border_color(tab_metric_btns[i],
@@ -186,6 +328,7 @@ static void style_metric_tab(int i, int sel) {
     lv_obj_set_style_border_width(tab_metric_btns[i], sel ? 2 : 1, 0);
 }
 static void style_period_tab(int i, int sel) {
+    if (i < 0 || i >= N_PERIOD || !tab_period_btns[i]) return;
     lv_obj_set_style_bg_color(tab_period_btns[i],
         lv_color_hex(sel ? 0x3388aa : 0x1a2a44), 0);
     lv_obj_set_style_border_color(tab_period_btns[i],
@@ -215,16 +358,20 @@ static void render_chart(void) {
     int n = series.n > STATS_MAX_SAMPLES ? STATS_MAX_SAMPLES : series.n;
     if (n < 0) n = 0;
 
-    int is_cum = (selected_period == PERIOD_WEEK ||
-                  selected_period == PERIOD_MONTH ||
-                  selected_period == PERIOD_YEAR)
-                 && !metrics[selected_metric].local_hist;  /* CO2/TVOC are instantaneous */
+    int is_cum = (selected_period != PERIOD_NOW) && !metrics[selected_metric].local_hist;
 
     /* Cumulative meters → per-sample usage deltas. The elec NT/LT split is
-     * diffed separately then summed (the source sometimes returns NT-alone,
-     * sometimes NT+LT — diffing before summing avoids a false spike). */
+     * diffed separately then summed. */
     if (is_cum) {
-        double cap = (selected_period == PERIOD_WEEK) ? 10000.0 : 200000.0;
+        double cap;
+        switch (selected_period) {
+            case PERIOD_HOURS:  cap = 30000.0; break;
+            case PERIOD_DAYS:   cap = 200000.0; break;
+            case PERIOD_WEEKS:  cap = 1000000.0; break;
+            case PERIOD_MONTHS: cap = 4000000.0; break;
+            case PERIOD_YEARS:  cap = 50000000.0; break;
+            default:            cap = 200000.0; break;
+        }
         diff_in_place(&series, n, cap);
         if (selected_metric == 0 && series2.n >= n) {
             diff_in_place(&series2, n, cap);
@@ -237,26 +384,25 @@ static void render_chart(void) {
         }
     }
 
-    /* How many bars this period wants — mimics the original Toon: hourly
-     * for Hour/Day, daily for Week/Month, monthly for Year. */
-    int want;
-    switch (selected_period) {
-        case PERIOD_HOUR:  want = 12; break;
-        case PERIOD_DAY:   want = 24; break;
-        case PERIOD_WEEK:  want = 7;  break;
-        case PERIOD_MONTH: want = 31; break;
-        case PERIOD_YEAR:  want = 12; break;
-        default:           want = 12; break;
-    }
-
     g_bar_count = 0;
-    static const char * mon[] = {"","jan","feb","mar","apr","may","jun",
-                                 "jul","aug","sep","okt","nov","dec"};
 
-    if (selected_period == PERIOD_YEAR) {
-        /* Group consecutive samples by calendar month+year, summing usage →
-         * one bar per month across all available history. Label "mon-yy"
-         * (e.g. "may-26") so the displayed year is unambiguous. */
+    if (selected_period == PERIOD_YEARS) {
+        /* Group consecutive monthly samples by calendar year -> exactly 1 bar per year */
+        char cur_yy[3] = "";
+        for (int i = 0; i < n && g_bar_count < 64; i++) {
+            if (isnan(series.samples[i])) continue;
+            const char * yy = series.year2[i];
+            if (!yy[0]) continue;
+            if (strncmp(yy, cur_yy, 2) != 0) {
+                cur_yy[0] = yy[0]; cur_yy[1] = yy[1]; cur_yy[2] = 0;
+                g_bar_val[g_bar_count] = 0;
+                snprintf(g_bar_label[g_bar_count], sizeof g_bar_label[0], "20%s", yy);
+                g_bar_count++;
+            }
+            g_bar_val[g_bar_count - 1] += series.samples[i];
+        }
+    } else if (selected_period == PERIOD_MONTHS) {
+        /* Group consecutive daily samples by calendar month+year */
         int cur_mm = -1; char cur_yy[3] = "";
         for (int i = 0; i < n && g_bar_count < 64; i++) {
             if (isnan(series.samples[i])) continue;
@@ -267,10 +413,8 @@ static void render_chart(void) {
                 cur_mm = mm;
                 cur_yy[0] = yy[0]; cur_yy[1] = yy[1]; cur_yy[2] = 0;
                 g_bar_val[g_bar_count] = 0;
-                if (mm >= 1 && mm <= 12 && yy[0])
-                    snprintf(g_bar_label[g_bar_count], sizeof g_bar_label[0], "%s-%s", mon[mm], yy);
-                else if (mm >= 1 && mm <= 12)
-                    snprintf(g_bar_label[g_bar_count], sizeof g_bar_label[0], "%s", mon[mm]);
+                if (mm >= 1 && mm <= 12)
+                    snprintf(g_bar_label[g_bar_count], sizeof g_bar_label[0], "%s", i18n_month_short(mm - 1));
                 else
                     snprintf(g_bar_label[g_bar_count], sizeof g_bar_label[0], "?");
                 g_bar_count++;
@@ -278,8 +422,15 @@ static void render_chart(void) {
             g_bar_val[g_bar_count-1] += series.samples[i];
         }
     } else {
-        /* Compact real samples, then aggregate into `want` even buckets:
-         * average for flow (Hour/Day), sum of deltas for cumulative. */
+        int want;
+        switch (selected_period) {
+            case PERIOD_NOW:   want = 12; break;
+            case PERIOD_HOURS: want = 24; break;
+            case PERIOD_DAYS:  want = 31; break;
+            case PERIOD_WEEKS: want = 12; break;
+            default:           want = 12; break;
+        }
+
         static double comp[STATS_MAX_SAMPLES];
         static int    compi[STATS_MAX_SAMPLES];
         int cn = 0;
@@ -295,7 +446,7 @@ static void render_chart(void) {
             for (int k = s; k < e; k++) { acc += comp[k]; cnt++; }
             g_bar_val[b] = is_cum ? acc : (cnt ? acc / cnt : 0);
             const char * lab = series.labels[compi[s]];
-            if (selected_period == PERIOD_HOUR || selected_period == PERIOD_DAY)
+            if (selected_period == PERIOD_NOW || selected_period == PERIOD_HOURS)
                 snprintf(g_bar_label[b], sizeof g_bar_label[0], "%.5s", lab + 6); /* HH:MM */
             else
                 snprintf(g_bar_label[b], sizeof g_bar_label[0], "%.5s", lab);     /* DD-MM */
@@ -303,20 +454,15 @@ static void render_chart(void) {
         }
     }
 
-    /* Cumulative bars are summed deltas in Wh/mL — a month easily exceeds
-     * 300 000, which overflows lv_coord_t (int16) in lv_chart. Scale to the
-     * display unit (kWh/m3) so bar values + the Y range stay in int16 range. */
+    /* Cumulative bars are summed deltas in Wh/L — convert to kWh/m3 */
     if (is_cum)
         for (int i = 0; i < g_bar_count; i++) g_bar_val[i] /= 1000.0;
 
-    /* Y range from 0 baseline (bars) up to ~110% of the tallest bar. */
+    /* Y range from 0 baseline up to ~110% of tallest bar */
     double hi = 0;
     for (int i = 0; i < g_bar_count; i++) if (g_bar_val[i] > hi) hi = g_bar_val[i];
     double top = hi * 1.1; if (top < 1) top = 1;
 
-    /* lv_chart's bar draw faults with a single data point, so keep at least
-     * two slots — extra slots beyond the real bars are LV_CHART_POINT_NONE
-     * (not drawn). Happens for Year when only the current month has history. */
     int pc = g_bar_count < 2 ? 2 : g_bar_count;
     lv_chart_set_point_count(chart, pc);
     lv_chart_set_range(chart, LV_CHART_AXIS_PRIMARY_Y, 0, (lv_coord_t)top);
@@ -326,19 +472,44 @@ static void render_chart(void) {
 
     lv_chart_refresh(chart);
     place_x_labels();
+    update_nav_range_label(g_current_start_t, g_current_end_t);
+
+    /* Update navigation buttons */
+    if (btn_nav_prev && btn_nav_next) {
+        if (selected_period == PERIOD_YEARS) {
+            lv_obj_add_flag(btn_nav_prev, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(btn_nav_next, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_clear_flag(btn_nav_prev, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(btn_nav_next, LV_OBJ_FLAG_HIDDEN);
+            if (g_time_offset >= 0) {
+                lv_obj_set_style_opa(btn_nav_next, LV_OPA_30, 0);
+                lv_obj_clear_flag(btn_nav_next, LV_OBJ_FLAG_CLICKABLE);
+            } else {
+                lv_obj_set_style_opa(btn_nav_next, LV_OPA_COVER, 0);
+                lv_obj_add_flag(btn_nav_next, LV_OBJ_FLAG_CLICKABLE);
+            }
+        }
+    }
 
     /* Caption + headline value. */
     const metric_t * m = &metrics[selected_metric];
     if (!is_cum) {
-        lv_label_set_text(lbl_unit, tr("Huidig", "Current"));
+        if (g_time_offset == 0)
+            lv_label_set_text(lbl_unit, tr("Huidig", "Current"));
+        else
+            lv_label_set_text(lbl_unit, tr("Gemiddelde", "Average"));
+
         double cur = NAN;
-        if (selected_metric == 0)      cur = hw_state.power_w;
-        else if (selected_metric == 2) cur = hw_state.water_lpm;
+        if (g_time_offset == 0) {
+            if (selected_metric == 0)      cur = hw_state.power_w;
+            else if (selected_metric == 2) cur = hw_state.water_lpm;
+        }
         if (isnan(cur) || cur == 0) {
             for (int i = series.n - 1; i >= 0; i--)
                 if (!isnan(series.samples[i])) { cur = series.samples[i]; break; }
         }
-        if (isnan(cur)) lv_label_set_text(lbl_value, "--");   /* symbol-only, not translated */
+        if (isnan(cur)) lv_label_set_text(lbl_value, "--");
         else lv_label_set_text_fmt(lbl_value, "%.1f %s", cur, m->unit_flow);
     } else {
         lv_label_set_text(lbl_unit, tr("Periodetotaal", "Period total"));
@@ -354,21 +525,25 @@ static void render_chart(void) {
 
 static void reload_and_render(void) {
     lv_chart_set_series_color(chart, cs, lv_color_hex(metrics[selected_metric].color));
-    lv_label_set_text(lbl_metric_name, metrics[selected_metric].label);
+    lv_label_set_text(lbl_metric_name, metric_title(selected_metric));
     load_for_period();
     render_chart();
 }
 
 static void on_metric_tap(lv_event_t * e) {
     int idx = (int)(long)lv_event_get_user_data(e);
+    if (idx < 0 || idx >= N_METRIC) return;
     selected_metric = idx;
+    g_time_offset = 0;
     for (int i = 0; i < N_METRIC; i++) style_metric_tab(i, i == idx);
     reload_and_render();
 }
 static void on_period_tap(lv_event_t * e) {
     int idx = (int)(long)lv_event_get_user_data(e);
+    if (idx < 0 || idx >= N_PERIOD) return;
     selected_period = (period_t)idx;
-    for (int i = 0; i < 5; i++) style_period_tab(i, i == idx);
+    g_time_offset = 0;
+    for (int i = 0; i < N_PERIOD; i++) style_period_tab(i, i == idx);
     reload_and_render();
 }
 
@@ -415,32 +590,38 @@ lv_obj_t * screen_stats_create(void) {
     lv_obj_set_style_text_font(dbl, SF(17), 0);
     lv_obj_center(dbl);
 
-    /* Metric tabs row */
+    /* Metric tabs row (4 metrics: Electricity, Gas, Water, CV bar) */
     for (int i = 0; i < N_METRIC; i++) {
         lv_obj_t * t = lv_obj_create(scr_root);
-        lv_obj_set_size(t, SX(150), SY(56));
-        lv_obj_set_pos(t, SX(26 + i * 163), SY(100));
+        lv_obj_set_size(t, SX(230), SY(54));
+        lv_obj_set_pos(t, SX(26 + i * 246), SY(100));
         lv_obj_set_style_radius(t, 12, 0);
         lv_obj_set_style_pad_all(t, 0, 0);
         lv_obj_clear_flag(t, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_add_flag(t, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_event_cb(t, on_metric_tap, LV_EVENT_CLICKED, (void *)(long)i);
         lv_obj_t * lbl = lv_label_create(t);
-        lv_label_set_text(lbl, metrics[i].label);
+        lv_label_set_text(lbl, metric_title(i));
         lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(lbl, SF(18), 0);  /* 6 tabs → smaller */
+        lv_obj_set_style_text_font(lbl, SF(20), 0);
         lv_obj_center(lbl);
         tab_metric_btns[i] = t;
         style_metric_tab(i, i == selected_metric);
     }
 
-    /* Period tabs row */
-    const char * periods[] = {tr("Uur", "Hour"), tr("Dag", "Day"), tr("Week", "Week"),
-                              tr("Maand", "Month"), tr("Jaar", "Year")};
-    for (int i = 0; i < 5; i++) {
+    /* Period tabs row (6 tabs: Nu, Uren, Dagen, Weken, Maanden, Jaren) */
+    const char * periods[] = {
+        tr("Nu", "Now"),
+        tr("Uren", "Hours"),
+        tr("Dagen", "Days"),
+        tr("Weken", "Weeks"),
+        tr("Maanden", "Months"),
+        tr("Jaren", "Years")
+    };
+    for (int i = 0; i < N_PERIOD; i++) {
         lv_obj_t * t = lv_obj_create(scr_root);
-        lv_obj_set_size(t, SX(184), SY(46));
-        lv_obj_set_pos(t, SX(30 + i * 196), SY(170));
+        lv_obj_set_size(t, SX(150), SY(44));
+        lv_obj_set_pos(t, SX(26 + i * 163), SY(164));
         lv_obj_set_style_radius(t, 10, 0);
         lv_obj_set_style_pad_all(t, 0, 0);
         lv_obj_clear_flag(t, LV_OBJ_FLAG_SCROLLABLE);
@@ -449,18 +630,57 @@ lv_obj_t * screen_stats_create(void) {
         lv_obj_t * lbl = lv_label_create(t);
         lv_label_set_text(lbl, periods[i]);
         lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(lbl, SF(18), 0);
+        lv_obj_set_style_text_font(lbl, SF(17), 0);
         lv_obj_center(lbl);
         tab_period_btns[i] = t;
         style_period_tab(i, i == (int)selected_period);
     }
 
+    /* Time navigation row above chart */
+    btn_nav_prev = lv_btn_create(scr_root);
+    lv_obj_set_size(btn_nav_prev, SX(46), SY(32));
+    lv_obj_set_pos(btn_nav_prev, SX(360), SY(214));
+    lv_obj_set_style_bg_color(btn_nav_prev, lv_color_hex(0x1e3050), 0);
+    lv_obj_set_style_radius(btn_nav_prev, 6, 0);
+    lv_obj_set_style_border_color(btn_nav_prev, lv_color_hex(0x335577), 0);
+    lv_obj_set_style_border_width(btn_nav_prev, 1, 0);
+    lv_obj_set_ext_click_area(btn_nav_prev, 10);
+    lv_obj_add_event_cb(btn_nav_prev, on_nav_prev, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * lbl_prev = lv_label_create(btn_nav_prev);
+    lv_label_set_text(lbl_prev, LV_SYMBOL_LEFT);
+    lv_obj_set_style_text_color(lbl_prev, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lbl_prev, SF(16), 0);
+    lv_obj_center(lbl_prev);
+
+    lbl_nav_range = lv_label_create(scr_root);
+    lv_obj_set_size(lbl_nav_range, SX(550), SY(30));
+    lv_obj_set_pos(lbl_nav_range, SX(390), SY(218));
+    lv_obj_set_style_text_color(lbl_nav_range, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lbl_nav_range, SF(18), 0);
+    lv_obj_set_style_text_align(lbl_nav_range, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(lbl_nav_range, "");
+
+    btn_nav_next = lv_btn_create(scr_root);
+    lv_obj_set_size(btn_nav_next, SX(46), SY(32));
+    lv_obj_set_pos(btn_nav_next, SX(944), SY(214));
+    lv_obj_set_style_bg_color(btn_nav_next, lv_color_hex(0x1e3050), 0);
+    lv_obj_set_style_radius(btn_nav_next, 6, 0);
+    lv_obj_set_style_border_color(btn_nav_next, lv_color_hex(0x335577), 0);
+    lv_obj_set_style_border_width(btn_nav_next, 1, 0);
+    lv_obj_set_ext_click_area(btn_nav_next, 10);
+    lv_obj_add_event_cb(btn_nav_next, on_nav_next, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * lbl_next = lv_label_create(btn_nav_next);
+    lv_label_set_text(lbl_next, LV_SYMBOL_RIGHT);
+    lv_obj_set_style_text_color(lbl_next, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lbl_next, SF(16), 0);
+    lv_obj_center(lbl_next);
+
     /* Headline */
     lbl_metric_name = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_metric_name, lv_color_hex(0x88aabb), 0);
     lv_obj_set_style_text_font(lbl_metric_name, SF(22), 0);
-    lv_label_set_text(lbl_metric_name, tr("Elektriciteit", "Electricity"));
-    lv_obj_align(lbl_metric_name, LV_ALIGN_TOP_LEFT, 30, SY(235));
+    lv_label_set_text(lbl_metric_name, metric_title(0));
+    lv_obj_align(lbl_metric_name, LV_ALIGN_TOP_LEFT, SX(30), SY(245));
 
     /* Repurposed as the "Current" / "Period total" caption above the
      * value. Was rendering a duplicated unit ("W" under "369.0 W"). */
@@ -468,18 +688,18 @@ lv_obj_t * screen_stats_create(void) {
     lv_obj_set_style_text_color(lbl_unit, lv_color_hex(0x88aabb), 0);
     lv_obj_set_style_text_font(lbl_unit, SF(18), 0);
     lv_label_set_text(lbl_unit, tr("Huidig", "Current"));
-    lv_obj_align(lbl_unit, LV_ALIGN_TOP_LEFT, 30, SY(265));
+    lv_obj_align(lbl_unit, LV_ALIGN_TOP_LEFT, SX(30), SY(280));
 
     lbl_value = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_value, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_value, SF(48), 0);
+    lv_obj_set_style_text_font(lbl_value, SF(36), 0);
     lv_label_set_text(lbl_value, "--");
-    lv_obj_align(lbl_value, LV_ALIGN_TOP_LEFT, 30, SY(290));
+    lv_obj_align(lbl_value, LV_ALIGN_TOP_LEFT, SX(30), SY(310));
 
     /* Chart */
     chart = lv_chart_create(scr_root);
-    lv_obj_set_size(chart, SX(700), SY(300));
-    lv_obj_align(chart, LV_ALIGN_TOP_RIGHT, SX(-30), SY(235));
+    lv_obj_set_size(chart, SX(660), SY(280));
+    lv_obj_align(chart, LV_ALIGN_TOP_RIGHT, SX(-30), SY(250));
     /* Bars, like the original Toon energy view. Rounded top corners + a
      * little inter-bar gap so they read as discrete usage blocks. */
     lv_chart_set_type(chart, LV_CHART_TYPE_BAR);
