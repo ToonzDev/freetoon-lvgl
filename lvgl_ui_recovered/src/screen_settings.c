@@ -4133,14 +4133,10 @@ static void * sonos_probe_worker(void * arg) {
             snprintf(g_sonos_probe_zones[i], sizeof g_sonos_probe_zones[i], "%s", rooms[i]);
         }
         snprintf(g_sonos_probe_status, sizeof g_sonos_probe_status,
-                 "Gevonden: %d kamer(s)", n);
-    } else if (n == 0) {
-        snprintf(g_sonos_probe_status, sizeof g_sonos_probe_status,
-                 "Geen kamers gevonden op dit adres/poort");
+                 tr("Gevonden: %d kamer(s)", "Found: %d room(s)"), n);
     } else {
         snprintf(g_sonos_probe_status, sizeof g_sonos_probe_status,
-                 "Verbinding mislukt met http://%s:%d/zones",
-                 settings.sonos_host, settings.sonos_port > 0 ? settings.sonos_port : 5005);
+                 tr("Geen Sonos speakers gevonden op het netwerk", "No Sonos speakers found on network"));
     }
     g_sonos_probe_done = 1;
     pthread_mutex_unlock(&g_sonos_ui_mtx);
@@ -4155,7 +4151,7 @@ static void sonos_modal_tick(void) {
         if (g_sonos_probe_count > 0 && dd_sonos_zone) {
             char opts[1024] = "";
             int sel_idx = 0;
-            const char * cur = ta_sonos_zone ? lv_textarea_get_text(ta_sonos_zone) : settings.sonos_zone;
+            const char * cur = settings.sonos_zone;
             for (int i = 0; i < g_sonos_probe_count; i++) {
                 if (opts[0]) strncat(opts, "\n", sizeof opts - strlen(opts) - 1);
                 strncat(opts, g_sonos_probe_zones[i], sizeof opts - strlen(opts) - 1);
@@ -4164,8 +4160,8 @@ static void sonos_modal_tick(void) {
             }
             lv_dropdown_set_options(dd_sonos_zone, opts);
             lv_dropdown_set_selected(dd_sonos_zone, (uint16_t)sel_idx);
-            if (ta_sonos_zone && (!cur || !cur[0])) {
-                lv_textarea_set_text(ta_sonos_zone, g_sonos_probe_zones[0]);
+            if (!cur || !cur[0]) {
+                snprintf(settings.sonos_zone, sizeof settings.sonos_zone, "%s", g_sonos_probe_zones[0]);
             }
         }
         pthread_mutex_unlock(&g_sonos_ui_mtx);
@@ -4185,20 +4181,8 @@ static void on_sonos_dd_change(lv_event_t * e) {
 
 static void on_sonos_discover_click(lv_event_t * e) {
     (void)e;
-    if (ta_sonos_host) {
-        snprintf(settings.sonos_host, sizeof settings.sonos_host, "%s", lv_textarea_get_text(ta_sonos_host));
-    }
-    if (ta_sonos_port) {
-        int p = atoi(lv_textarea_get_text(ta_sonos_port));
-        settings.sonos_port = (p > 0) ? p : 5005;
-    }
-    if (!settings.sonos_host[0]) {
-        if (lbl_sonos_result)
-            lv_label_set_text(lbl_sonos_result, tr("Voer eerst een host of IP in", "Enter host or IP first"));
-        return;
-    }
     if (lbl_sonos_result)
-        lv_label_set_text(lbl_sonos_result, tr("Kamers zoeken...", "Searching for rooms..."));
+        lv_label_set_text(lbl_sonos_result, tr("Sonos speakers zoeken op het netwerk...", "Searching for Sonos speakers on network..."));
 
     pthread_t tid;
     if (pthread_create(&tid, NULL, sonos_probe_worker, NULL) == 0) {
@@ -4206,48 +4190,21 @@ static void on_sonos_discover_click(lv_event_t * e) {
     }
 }
 
-static void on_sonos_host_edit(lv_event_t * e) {
-    lv_event_code_t c = lv_event_get_code(e);
-    if (c == LV_EVENT_DEFOCUSED || c == LV_EVENT_READY) {
-        on_sonos_discover_click(NULL);
-    }
-}
-
 static void on_sonos_apply_click(lv_event_t * e) {
     (void)e;
-    if (ta_sonos_host) {
-        const char * h = lv_textarea_get_text(ta_sonos_host);
-        if (h) snprintf(settings.sonos_host, sizeof settings.sonos_host, "%s", h);
-    }
-    if (ta_sonos_port) {
-        int p = atoi(lv_textarea_get_text(ta_sonos_port));
-        settings.sonos_port = (p > 0) ? p : 5005;
-    }
     char z[48] = "";
-    if (ta_sonos_zone) {
-        const char * t = lv_textarea_get_text(ta_sonos_zone);
-        if (t && t[0]) snprintf(z, sizeof z, "%s", t);
-    }
-    if (!z[0] && dd_sonos_zone) {
+    if (dd_sonos_zone) {
         lv_dropdown_get_selected_str(dd_sonos_zone, z, sizeof z);
         if (z[0] && strcmp(z, tr("(nog geen kamers)", "(no rooms yet)")) != 0) {
-            if (ta_sonos_zone) lv_textarea_set_text(ta_sonos_zone, z);
-        } else {
-            z[0] = 0;
+            snprintf(settings.sonos_zone, sizeof settings.sonos_zone, "%s", z);
         }
     }
-    if (z[0]) snprintf(settings.sonos_zone, sizeof settings.sonos_zone, "%s", z);
-
     if (sw_sonos_en) {
         settings.sonos_enabled = lv_obj_has_state(sw_sonos_en, LV_STATE_CHECKED) ? 1 : 0;
-        if (!settings.sonos_enabled && settings.sonos_host[0]) {
-            settings.sonos_enabled = 1;
-            lv_obj_add_state(sw_sonos_en, LV_STATE_CHECKED);
-        }
-    } else if (settings.sonos_host[0]) {
-        settings.sonos_enabled = 1;
     }
+    settings.sonos_port = 1400;
     settings_save();
+    sonos_set_zone(settings.sonos_zone);
     sonos_start();
     if (lbl_sonos_result)
         lv_label_set_text(lbl_sonos_result, tr("Instellingen opgeslagen! Sonos actief.", "Settings saved! Sonos active."));
@@ -4264,85 +4221,50 @@ static void open_sonos_modal(lv_event_t * e) {
     /* Inschakelen switch */
     lv_obj_t * r_en = panel_row(p, y, tr("Sonos inschakelen", "Sonos enabled"), NULL);
     sw_sonos_en = row_switch(r_en, settings.sonos_enabled, on_sonos_enabled_change);
-    y += 82;
+    y += 90;
 
-    /* Host */
-    lv_obj_t * lbl_h = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_h, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_h, SF(22), 0);
-    lv_label_set_text(lbl_h, tr("Sonos API Host:", "Sonos API Host:"));
-    lv_obj_align(lbl_h, LV_ALIGN_TOP_LEFT, SX(4), y);
-    ta_sonos_host = lv_textarea_create(p);
-    ta_make_numeric(ta_sonos_host);
-    lv_obj_set_size(ta_sonos_host, SX(380), SY(44));
-    lv_obj_align(ta_sonos_host, LV_ALIGN_TOP_LEFT, SX(240), y - 4);
-    lv_obj_set_style_text_font(ta_sonos_host, SF(18), 0);
-    lv_textarea_set_one_line(ta_sonos_host, true);
-    lv_textarea_set_placeholder_text(ta_sonos_host, "192.168.2.26");
-    lv_textarea_set_text(ta_sonos_host, settings.sonos_host);
-    lv_obj_add_event_cb(ta_sonos_host, on_sonos_host_edit, LV_EVENT_ALL, NULL);
-
-    /* Port */
-    lv_obj_t * lbl_p = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_p, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_p, SF(22), 0);
-    lv_label_set_text(lbl_p, tr("Poort:", "Port:"));
-    lv_obj_align(lbl_p, LV_ALIGN_TOP_LEFT, SX(640), y);
-    ta_sonos_port = lv_textarea_create(p);
-    ta_make_numeric(ta_sonos_port);
-    lv_obj_set_size(ta_sonos_port, SX(100), SY(44));
-    lv_obj_align(ta_sonos_port, LV_ALIGN_TOP_LEFT, SX(720), y - 4);
-    lv_obj_set_style_text_font(ta_sonos_port, SF(18), 0);
-    lv_textarea_set_one_line(ta_sonos_port, true);
-    char portbuf[12];
-    snprintf(portbuf, sizeof(portbuf), "%d", settings.sonos_port > 0 ? settings.sonos_port : 5005);
-    lv_textarea_set_text(ta_sonos_port, portbuf);
-    lv_obj_add_event_cb(ta_sonos_port, on_sonos_host_edit, LV_EVENT_ALL, NULL);
-    y += 60;
-
-    /* Zone / Kamer text area */
-    lv_obj_t * lbl_z = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_z, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_z, SF(22), 0);
-    lv_label_set_text(lbl_z, tr("Kamer / Zone:", "Room / Zone:"));
-    lv_obj_align(lbl_z, LV_ALIGN_TOP_LEFT, SX(4), y);
-    ta_sonos_zone = lv_textarea_create(p);
-    lv_obj_set_size(ta_sonos_zone, SX(380), SY(44));
-    lv_obj_align(ta_sonos_zone, LV_ALIGN_TOP_LEFT, SX(240), y - 4);
-    lv_obj_set_style_text_font(ta_sonos_zone, SF(18), 0);
-    lv_textarea_set_one_line(ta_sonos_zone, true);
-    lv_textarea_set_placeholder_text(ta_sonos_zone, "Keuken");
-    lv_textarea_set_text(ta_sonos_zone, settings.sonos_zone);
-    y += 60;
-
-    /* Discovered zones dropdown */
+    /* Discovered zones dropdown + Scan button */
     lv_obj_t * lbl_dd = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_dd, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl_dd, SF(22), 0);
-    lv_label_set_text(lbl_dd, tr("Kies kamer:", "Select room:"));
+    lv_label_set_text(lbl_dd, tr("Kamer / Zone:", "Room / Zone:"));
     lv_obj_align(lbl_dd, LV_ALIGN_TOP_LEFT, SX(4), y);
+
     dd_sonos_zone = lv_dropdown_create(p);
-    lv_obj_set_size(dd_sonos_zone, SX(380), SY(44));
-    lv_obj_align(dd_sonos_zone, LV_ALIGN_TOP_LEFT, SX(240), y - 4);
-    lv_obj_set_style_text_font(dd_sonos_zone, SF(18), 0);
+    lv_obj_set_size(dd_sonos_zone, SX(420), SY(50));
+    lv_obj_align(dd_sonos_zone, LV_ALIGN_TOP_LEFT, SX(200), y - 4);
+    lv_obj_set_style_text_font(dd_sonos_zone, SF(20), 0);
     if (settings.sonos_zone[0]) {
         lv_dropdown_set_options(dd_sonos_zone, settings.sonos_zone);
     } else {
         lv_dropdown_set_options(dd_sonos_zone, tr("(nog geen kamers)", "(no rooms yet)"));
     }
     lv_obj_add_event_cb(dd_sonos_zone, on_sonos_dd_change, LV_EVENT_VALUE_CHANGED, NULL);
-    y += 64;
+
+    lv_obj_t * b_scan = lv_btn_create(p);
+    lv_obj_set_size(b_scan, SX(170), SY(50));
+    lv_obj_align(b_scan, LV_ALIGN_TOP_LEFT, SX(640), y - 4);
+    lv_obj_set_style_bg_color(b_scan, lv_color_hex(0x224466), 0);
+    lv_obj_set_style_radius(b_scan, 10, 0);
+    lv_obj_add_event_cb(b_scan, on_sonos_discover_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * bscan_lbl = lv_label_create(b_scan);
+    lv_label_set_text(bscan_lbl, tr(LV_SYMBOL_REFRESH " Zoeken", LV_SYMBOL_REFRESH " Scan"));
+    lv_obj_set_style_text_font(bscan_lbl, SF(20), 0);
+    lv_obj_center(bscan_lbl);
+    y += 80;
 
     /* Save button */
     lv_obj_t * b_save = lv_btn_create(p);
-    lv_obj_set_size(b_save, SX(220), SY(50));
+    lv_obj_set_size(b_save, SX(220), SY(54));
     lv_obj_align(b_save, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_obj_set_style_bg_color(b_save, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_set_style_radius(b_save, 10, 0);
     lv_obj_add_event_cb(b_save, on_sonos_apply_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bsl = lv_label_create(b_save);
     lv_label_set_text(bsl, tr(LV_SYMBOL_OK "  Opslaan", LV_SYMBOL_OK "  Save"));
+    lv_obj_set_style_text_font(bsl, SF(22), 0);
     lv_obj_center(bsl);
-    y += 64;
+    y += 74;
 
     /* Status feedback line */
     lbl_sonos_result = lv_label_create(p);
@@ -4351,15 +4273,13 @@ static void open_sonos_modal(lv_event_t * e) {
     lv_obj_set_width(lbl_sonos_result, SX(770));
     lv_label_set_long_mode(lbl_sonos_result, LV_LABEL_LONG_WRAP);
     lv_obj_align(lbl_sonos_result, LV_ALIGN_TOP_LEFT, SX(4), y);
-    lv_label_set_text(lbl_sonos_result, tr("Vul het IP-adres en de poort van je Sonos API in.", "Enter your Sonos API IP address and port."));
+    lv_label_set_text(lbl_sonos_result, tr("Automatisch zoeken actief. Zoekt Sonos speakers...", "Auto-discovery active. Searching for Sonos speakers..."));
 
     modal_tick_fn = sonos_modal_tick;
     modal_timer = lv_timer_create(modal_timer_cb, 300, NULL);
 
-    /* Automatically search for rooms on open if a host is already configured. */
-    if (settings.sonos_host[0]) {
-        on_sonos_discover_click(NULL);
-    }
+    /* Automatically trigger network discovery on open */
+    on_sonos_discover_click(NULL);
 }
 
 void screen_settings_open_sonos_modal(void) {
@@ -4451,7 +4371,7 @@ lv_obj_t * screen_settings_create(void) {
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_EYE_CLOSE, tr("Schoonmaken", "Clean"),
               tr("30 s schermvergrendeling", "30 s screen lock"), open_clean_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_AUDIO, "Sonos",
-              tr("host, poort & kamers", "host, port & rooms"), open_sonos_modal); n++;
+              tr("kamers & speakers", "rooms & speakers"), open_sonos_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_HOME, tr("Tegels", "Tiles"),
               tr("starttegels toewijzen", "assign home tiles"), open_tile_slots_modal); n++;
     make_tile(GX(n), GY(n), &icon_flame, NULL, tr("Temperatuurlog", "Temperature log"),

@@ -269,12 +269,12 @@ static void sonos_modal_tick_cb(lv_timer_t * t) {
     sonos_state_t st;
     sonos_get_snapshot(&st);
 
-    if (!settings.sonos_enabled || !settings.sonos_host[0]) {
+    if (!settings.sonos_enabled) {
         if (s_lbl_status) {
             lv_label_set_text(s_lbl_status, tr("⚠ Sonos niet ingeschakeld", "⚠ Sonos disabled"));
             lv_obj_set_style_text_color(s_lbl_status, lv_color_hex(0xffaa22), 0);
         }
-        if (s_lbl_title) lv_label_set_text(s_lbl_title, tr("Tik op instellingen om host in te stellen", "Tap settings to configure host"));
+        if (s_lbl_title) lv_label_set_text(s_lbl_title, tr("Tik op instellingen om Sonos in te schakelen", "Tap settings to enable Sonos"));
         if (s_lbl_artist) lv_label_set_text(s_lbl_artist, "");
         if (s_lbl_album) lv_label_set_text(s_lbl_album, "");
         if (s_art_box) lv_obj_add_flag(s_art_box, LV_OBJ_FLAG_HIDDEN);
@@ -287,10 +287,10 @@ static void sonos_modal_tick_cb(lv_timer_t * t) {
 
     if (!st.connected) {
         if (s_lbl_status) {
-            lv_label_set_text(s_lbl_status, tr("⚠ Geen verbinding met Sonos API", "⚠ No connection to Sonos API"));
+            lv_label_set_text(s_lbl_status, tr("⚠ Zoeken naar Sonos...", "⚠ Searching for Sonos..."));
             lv_obj_set_style_text_color(s_lbl_status, lv_color_hex(0xff4444), 0);
         }
-        if (s_lbl_title) lv_label_set_text(s_lbl_title, tr("Controleer host en poort", "Check host and port"));
+        if (s_lbl_title) lv_label_set_text(s_lbl_title, tr("Controleer of speakers aanstaan", "Check if speakers are turned on"));
         if (s_lbl_artist) lv_label_set_text(s_lbl_artist, "");
         if (s_lbl_album) lv_label_set_text(s_lbl_album, "");
         if (s_art_box) lv_obj_add_flag(s_art_box, LV_OBJ_FLAG_HIDDEN);
@@ -304,10 +304,10 @@ static void sonos_modal_tick_cb(lv_timer_t * t) {
     /* Playback status */
     if (s_lbl_status) {
         if (st.playing) {
-            lv_label_set_text(s_lbl_status, tr("● Speelt", "● Playing"));
+            lv_label_set_text(s_lbl_status, tr("Speelt", "Playing"));
             lv_obj_set_style_text_color(s_lbl_status, lv_color_hex(0x22cc66), 0);
         } else {
-            lv_label_set_text(s_lbl_status, tr("⏸ Gepauzeerd", "⏸ Paused"));
+            lv_label_set_text(s_lbl_status, tr("Gepauzeerd", "Paused"));
             lv_obj_set_style_text_color(s_lbl_status, lv_color_hex(0xffaa22), 0);
         }
     }
@@ -571,7 +571,7 @@ void screen_sonos_show(void) {
 
     /* Track Position Section (hidden when radio stream) */
     s_pos_container = lv_obj_create(card_left);
-    lv_obj_set_size(s_pos_container, SX(436), SY(58));
+    lv_obj_set_size(s_pos_container, SX(436), SY(68));
     lv_obj_align(s_pos_container, LV_ALIGN_TOP_MID, 0, SY(268));
     lv_obj_set_style_bg_opa(s_pos_container, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(s_pos_container, 0, 0);
@@ -582,11 +582,11 @@ void screen_sonos_show(void) {
     lv_obj_set_style_text_font(s_lbl_time, SF(15), 0);
     lv_obj_set_style_text_color(s_lbl_time, lv_color_hex(0x88aabb), 0);
     lv_label_set_text(s_lbl_time, "00:00 / 00:00");
-    lv_obj_align(s_lbl_time, LV_ALIGN_TOP_LEFT, SX(4), 0);
+    lv_obj_align(s_lbl_time, LV_ALIGN_TOP_LEFT, SX(4), SY(2));
 
     s_slider_pos = lv_slider_create(s_pos_container);
-    lv_obj_set_size(s_slider_pos, SX(428), SY(18));
-    lv_obj_align(s_slider_pos, LV_ALIGN_BOTTOM_MID, 0, SY(-2));
+    lv_obj_set_size(s_slider_pos, SX(416), SY(16));
+    lv_obj_align(s_slider_pos, LV_ALIGN_TOP_MID, 0, SY(32));
     lv_slider_set_range(s_slider_pos, 0, 100);
     lv_obj_set_style_bg_color(s_slider_pos, lv_color_hex(0x22354e), LV_PART_MAIN);
     lv_obj_set_style_bg_color(s_slider_pos, lv_color_hex(0x44aaff), LV_PART_INDICATOR);
@@ -596,7 +596,7 @@ void screen_sonos_show(void) {
     /* Volume Row ([-] Volume: XX% [+]) */
     lv_obj_t * vol_row = lv_obj_create(card_left);
     lv_obj_set_size(vol_row, SX(436), SY(56));
-    lv_obj_align(vol_row, LV_ALIGN_TOP_MID, 0, SY(346));
+    lv_obj_align(vol_row, LV_ALIGN_TOP_MID, 0, SY(376));
     lv_obj_set_style_bg_opa(vol_row, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(vol_row, 0, 0);
     lv_obj_set_style_pad_all(vol_row, 0, 0);

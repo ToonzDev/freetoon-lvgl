@@ -72,7 +72,7 @@ settings_t settings = {
     .enable_domoticz     = 0,
     .sonos_enabled       = 0,
     .sonos_host          = "",
-    .sonos_port          = 5005,
+    .sonos_port          = 1400,
     .sonos_zone          = "",
     .tile_rotate_enabled = 0,
     .tile_rotate_seconds = 10,
@@ -484,7 +484,7 @@ autodetect:
         }
     }
 
-    if (settings.sonos_port <= 0) settings.sonos_port = 5005;
+    if (settings.sonos_port <= 0 || settings.sonos_port == 5005) settings.sonos_port = 1400;
     /* Auto-seed Sonos from legacy QML app settings if present and not yet configured */
     if (!settings.sonos_host[0]) {
         FILE * sf = fopen("/mnt/data/tsc/sonos.userSettings.json", "r");

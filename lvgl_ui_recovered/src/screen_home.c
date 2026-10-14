@@ -850,7 +850,7 @@ static lv_obj_t * lbl_title_slot[TILE_SLOT_COUNT] = {0};
 
 static void on_sonos_tile_tap(lv_event_t * e) {
     (void)e;
-    if (!settings.sonos_host[0]) {
+    if (!settings.sonos_enabled) {
         screen_settings_open_sonos_modal();
     } else {
         screen_sonos_show();
