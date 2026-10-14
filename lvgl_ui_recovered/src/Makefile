@@ -57,7 +57,6 @@ ifeq ($(TARGET),toon1)
   # strip, for the Toon 1's small flash. (Symbols ARE only glibc 2.21; see
   # abi-check.)
   POSTLINK   := $(CROSS)objcopy --remove-section .note.ABI-tag $(BUILDDIR)/$(OUT) && \
-                patchelf --add-needed libpthread.so.0 $(BUILDDIR)/$(OUT) && \
                 $(CROSS)strip $(BUILDDIR)/$(OUT)
 else ifeq ($(TARGET),toon2)
   CROSS      := $(TC_ROOT)/linaro/bin/arm-linux-gnueabihf-
