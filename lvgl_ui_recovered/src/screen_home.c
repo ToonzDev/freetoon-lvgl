@@ -217,7 +217,8 @@ static lv_obj_t * tile_energy   = NULL;
 static lv_obj_t * tile_waste    = NULL;
 /* Custom-layout-only info tiles (content labels; NULL unless created). */
 static lv_obj_t * tile_news_sum_lbl = NULL;
-static lv_obj_t * tile_cal_lbl      = NULL;
+static lv_obj_t * tile_cal_dates    = NULL;
+static lv_obj_t * tile_cal_titles   = NULL;
 static lv_obj_t * lights_handle     = NULL;
 static lv_obj_t * lights_handle_lbl = NULL;
 static lv_obj_t * lights_handle_img = NULL;   /* backend logo (HA / Domoticz) */
@@ -797,14 +798,24 @@ static void apply_offline_tile_visibility(void) {
 static int render_tile_slot(int slot, lv_obj_t * lbl_main, lv_obj_t * lbl_sub);  /* fwd */
 
 /* Agenda overlay for the 4 swappable right-column tiles (ENERGY/FAMILY/VENT/
- * WATER). An opaque label that covers the tile body and lists upcoming events
+ * WATER). Shows a 2-column view (dates/times on the left, titles on the right)
  * when that slot is bound to "local:agenda" — shown/hidden in refresh_cb. */
-static lv_obj_t * slot_agenda[4] = {0};
+typedef struct {
+    lv_obj_t * root;
+    lv_obj_t * lbl_hdr;
+    lv_obj_t * lbl_dates;
+    lv_obj_t * lbl_titles;
+} slot_agenda_view_t;
+
+static slot_agenda_view_t * slot_agenda[4] = {0};
 
 /* Sonos UI view structure — used both for slot overlay on right-column tiles
  * and for the standalone custom layout tile (LT_SONOS). */
 typedef struct {
     lv_obj_t * root;
+    lv_obj_t * art_box;
+    lv_obj_t * img_art;
+    int        last_art_ver;
     lv_obj_t * lbl_zone;
     lv_obj_t * lbl_vol;
     lv_obj_t * lbl_artist;
@@ -874,6 +885,7 @@ static sonos_view_t * make_sonos_view(lv_obj_t * parent) {
     sonos_view_t * v = calloc(1, sizeof(sonos_view_t));
     if (!v) return NULL;
 
+    v->last_art_ver = -1;
     v->root = lv_obj_create(parent);
     lv_obj_set_size(v->root, LV_PCT(100), LV_PCT(100));
     lv_obj_set_pos(v->root, 0, 0);
@@ -905,6 +917,22 @@ static sonos_view_t * make_sonos_view(lv_obj_t * parent) {
     lv_obj_set_style_text_font(v->lbl_vol, SF(14), 0);
     lv_obj_align(v->lbl_vol, LV_ALIGN_TOP_RIGHT, SX(-2), SY(5));
     lv_label_set_text(v->lbl_vol, "");
+
+    /* Album art thumbnail (46x46, rounded corners) */
+    v->art_box = lv_obj_create(v->root);
+    lv_obj_set_size(v->art_box, SUNI(46), SUNI(46));
+    lv_obj_set_pos(v->art_box, SX(2), SY(24));
+    lv_obj_set_style_radius(v->art_box, 6, 0);
+    lv_obj_set_style_clip_corner(v->art_box, true, 0);
+    lv_obj_set_style_bg_color(v->art_box, lv_color_hex(0x132135), 0);
+    lv_obj_set_style_border_width(v->art_box, 0, 0);
+    lv_obj_set_style_pad_all(v->art_box, 0, 0);
+    lv_obj_clear_flag(v->art_box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(v->art_box, LV_OBJ_FLAG_HIDDEN);
+
+    v->img_art = lv_img_create(v->art_box);
+    lv_img_set_pivot(v->img_art, 0, 0);
+    lv_obj_set_pos(v->img_art, 0, 0);
 
     v->lbl_artist = lv_label_create(v->root);
     lv_obj_set_style_text_color(v->lbl_artist, lv_color_hex(COL_TEXT_HI), 0);
@@ -969,6 +997,13 @@ static void update_sonos_view(sonos_view_t * v) {
     sonos_get_snapshot(&st);
 
     if (!settings.sonos_enabled) {
+        if (v->art_box) lv_obj_add_flag(v->art_box, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_pos(v->lbl_artist, SX(2), SY(24));
+        lv_obj_set_width(v->lbl_artist, LV_PCT(96));
+        lv_obj_set_pos(v->lbl_title, SX(2), SY(44));
+        lv_obj_set_width(v->lbl_title, LV_PCT(96));
+        lv_obj_set_pos(v->lbl_status, SX(2), SY(64));
+        lv_obj_set_width(v->lbl_status, LV_PCT(96));
         lv_label_set_text(v->lbl_zone, "Sonos (uit)");
         lv_label_set_text(v->lbl_artist, tr("Niet ingeschakeld", "Disabled"));
         lv_label_set_text(v->lbl_title, tr("Tik voor instellingen", "Tap for settings"));
@@ -979,6 +1014,13 @@ static void update_sonos_view(sonos_view_t * v) {
     }
 
     if (!st.connected) {
+        if (v->art_box) lv_obj_add_flag(v->art_box, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_pos(v->lbl_artist, SX(2), SY(24));
+        lv_obj_set_width(v->lbl_artist, LV_PCT(96));
+        lv_obj_set_pos(v->lbl_title, SX(2), SY(44));
+        lv_obj_set_width(v->lbl_title, LV_PCT(96));
+        lv_obj_set_pos(v->lbl_status, SX(2), SY(64));
+        lv_obj_set_width(v->lbl_status, LV_PCT(96));
         lv_label_set_text_fmt(v->lbl_zone, "%s (offline)", st.zone[0] ? st.zone : "Sonos");
         lv_label_set_text(v->lbl_artist, tr("Geen verbinding", "No connection"));
         lv_label_set_text(v->lbl_title, tr("Controleer host/poort", "Check host/port"));
@@ -986,6 +1028,34 @@ static void update_sonos_view(sonos_view_t * v) {
         lv_label_set_text(v->lbl_vol, "");
         lv_label_set_text(v->lbl_play, LV_SYMBOL_PLAY);
         return;
+    }
+
+    /* Artwork update */
+    int art_ver = 0;
+    const lv_img_dsc_t * art_dsc = sonos_get_art_tile(&art_ver);
+    if (art_ver != v->last_art_ver) {
+        v->last_art_ver = art_ver;
+        if (art_dsc && v->img_art && v->art_box) {
+            lv_img_set_zoom(v->img_art, LV_IMG_ZOOM_NONE);
+            lv_img_set_src(v->img_art, art_dsc);
+            lv_obj_invalidate(v->img_art);
+            lv_obj_clear_flag(v->art_box, LV_OBJ_FLAG_HIDDEN);
+
+            lv_obj_set_pos(v->lbl_artist, SX(52), SY(24));
+            lv_obj_set_width(v->lbl_artist, SX(134));
+            lv_obj_set_pos(v->lbl_title, SX(52), SY(44));
+            lv_obj_set_width(v->lbl_title, SX(134));
+            lv_obj_set_pos(v->lbl_status, SX(52), SY(64));
+            lv_obj_set_width(v->lbl_status, SX(134));
+        } else {
+            if (v->art_box) lv_obj_add_flag(v->art_box, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_pos(v->lbl_artist, SX(2), SY(24));
+            lv_obj_set_width(v->lbl_artist, LV_PCT(96));
+            lv_obj_set_pos(v->lbl_title, SX(2), SY(44));
+            lv_obj_set_width(v->lbl_title, LV_PCT(96));
+            lv_obj_set_pos(v->lbl_status, SX(2), SY(64));
+            lv_obj_set_width(v->lbl_status, LV_PCT(96));
+        }
     }
 
     if (st.is_group) {
@@ -1025,53 +1095,165 @@ static void on_slot_agenda_tap(lv_event_t * e) {
     screen_calendar_show();
 }
 
-static lv_obj_t * make_slot_agenda(lv_obj_t * tile, uint32_t bg) {
+static slot_agenda_view_t * make_slot_agenda(lv_obj_t * tile, uint32_t bg) {
     if (!tile) return NULL;
-    lv_obj_t * l = lv_label_create(tile);
-    lv_obj_set_style_bg_color(l, lv_color_hex(bg), 0);
-    lv_obj_set_style_bg_opa(l, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(l, 10, 0);
-    lv_obj_set_style_pad_all(l, SX(8), 0);
-    lv_obj_set_style_text_color(l, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(l, SF(15), 0);
-    lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
-    lv_obj_set_size(l, LV_PCT(100), LV_PCT(100));
-    lv_obj_align(l, LV_ALIGN_TOP_LEFT, 0, 0);
-    lv_obj_add_flag(l, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(l, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(l, on_slot_agenda_tap, LV_EVENT_CLICKED, NULL);
-    lv_obj_move_foreground(l);                 /* cover the tile's own widgets */
-    return l;
+    slot_agenda_view_t * a = calloc(1, sizeof(*a));
+    if (!a) return NULL;
+
+    a->root = lv_obj_create(tile);
+    lv_obj_set_size(a->root, LV_PCT(100), LV_PCT(100));
+    lv_obj_align(a->root, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_set_style_bg_color(a->root, lv_color_hex(bg), 0);
+    lv_obj_set_style_bg_opa(a->root, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(a->root, 10, 0);
+    lv_obj_set_style_pad_all(a->root, SX(8), 0);
+    lv_obj_set_style_border_width(a->root, 0, 0);
+    lv_obj_clear_flag(a->root, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(a->root, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(a->root, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(a->root, on_slot_agenda_tap, LV_EVENT_CLICKED, NULL);
+
+    a->lbl_hdr = lv_label_create(a->root);
+    lv_obj_set_style_text_color(a->lbl_hdr, lv_color_hex(COL_TEXT_DIM), 0);
+    lv_obj_set_style_text_font(a->lbl_hdr, SF(16), 0);
+    lv_label_set_text(a->lbl_hdr, tr("Agenda", "Calendar"));
+    lv_obj_align(a->lbl_hdr, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    a->lbl_dates = lv_label_create(a->root);
+    lv_obj_set_style_text_color(a->lbl_dates, lv_color_hex(0xaad4f5), 0);
+    lv_obj_set_style_text_font(a->lbl_dates, SF(14), 0);
+    lv_label_set_long_mode(a->lbl_dates, LV_LABEL_LONG_CLIP);
+    lv_obj_set_width(a->lbl_dates, SX(78));
+    lv_obj_align(a->lbl_dates, LV_ALIGN_TOP_LEFT, 0, SY(24));
+
+    a->lbl_titles = lv_label_create(a->root);
+    lv_obj_set_style_text_color(a->lbl_titles, lv_color_hex(COL_TEXT_HI), 0);
+    lv_obj_set_style_text_font(a->lbl_titles, SF(14), 0);
+    lv_label_set_long_mode(a->lbl_titles, LV_LABEL_LONG_CLIP);
+    lv_obj_set_width(a->lbl_titles, SX(102));
+    lv_obj_align(a->lbl_titles, LV_ALIGN_TOP_LEFT, SX(82), SY(24));
+
+    lv_obj_move_foreground(a->root);
+    return a;
 }
 
-/* Fill an agenda overlay with a heading + the next few events. */
-static void fill_agenda_overlay(lv_obj_t * l) {
-    if (!l) return;
-    lv_coord_t th = lv_obj_get_height(lv_obj_get_parent(l));
-    if (th <= 0) th = lv_obj_get_height(l);
-    if (th <= 0) th = SY(130);
-    int avail_h = th - SY(36);
+/* Format calendar date: 2-letter weekday for first 7 days, dd-mm thereafter. */
+static void format_agenda_date(const char * ymd, time_t now, char * out, size_t outsz) {
+    if (!ymd || strlen(ymd) < 10) {
+        snprintf(out, outsz, "     ");
+        return;
+    }
+    int y = 0, m = 0, d = 0;
+    if (sscanf(ymd, "%4d-%2d-%2d", &y, &m, &d) == 3) {
+        struct tm ev_tm = {0};
+        ev_tm.tm_year = y - 1900;
+        ev_tm.tm_mon  = m - 1;
+        ev_tm.tm_mday = d;
+        ev_tm.tm_hour = 12;
+        time_t ev_time = mktime(&ev_tm);
+
+        struct tm now_tm = *localtime(&now);
+        now_tm.tm_hour = 12;
+        now_tm.tm_min = 0;
+        now_tm.tm_sec = 0;
+        time_t today_noon = mktime(&now_tm);
+
+        double diff_days = (double)(ev_time - today_noon) / 86400.0;
+        if (diff_days >= -0.5 && diff_days < 6.5) {
+            /* Within the first week (next 7 days): 2-letter weekday */
+            static const char * const d_nl[] = {"zo", "ma", "di", "wo", "do", "vr", "za"};
+            static const char * const d_en[] = {"Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"};
+            int wday = ev_tm.tm_wday;
+            if (wday < 0 || wday > 6) wday = 0;
+            const char * dw = (settings.language == LANG_EN) ? d_en[wday] : d_nl[wday];
+            snprintf(out, outsz, "%s", dw);
+            return;
+        } else {
+            /* Later appointments: dd-mm */
+            snprintf(out, outsz, "%02d-%02d", d, m);
+            return;
+        }
+    }
+    snprintf(out, outsz, "%.5s", ymd + 5);
+}
+
+/* Fill an agenda view (dates column + titles column) row for row. */
+static void fill_agenda_view(lv_obj_t * lbl_dates, lv_obj_t * lbl_titles, lv_coord_t avail_h) {
+    if (!lbl_dates || !lbl_titles) return;
+
+    if (!settings.calendar_enabled) {
+        lv_label_set_text(lbl_dates, "");
+        lv_obj_set_pos(lbl_titles, 0, lv_obj_get_y(lbl_dates));
+        lv_obj_set_width(lbl_titles, LV_PCT(96));
+        lv_label_set_text(lbl_titles, tr("Agenda uit", "Calendar off"));
+        return;
+    }
+
+    if (calendar_state.count <= 0) {
+        lv_label_set_text(lbl_dates, "");
+        lv_obj_set_pos(lbl_titles, 0, lv_obj_get_y(lbl_dates));
+        lv_obj_set_width(lbl_titles, LV_PCT(96));
+        lv_label_set_text(lbl_titles, tr("Geen afspraken", "No events"));
+        return;
+    }
+
     int line_h = SY(20);
     if (line_h < 14) line_h = 14;
     int max_lines = avail_h / line_h;
-    if (max_lines < 3) max_lines = 3;
-    if (max_lines > 25) max_lines = 25;
+    if (max_lines < 2) max_lines = 2;
+    if (max_lines > 20) max_lines = 20;
 
-    char buf[1500] = "";
-    int nn = calendar_state.count;
-    if (nn > max_lines) nn = max_lines;
-    for (int i = 0; i < nn; i++) {
+    int n = calendar_state.count;
+    if (n > max_lines) n = max_lines;
+
+    char buf_dates[1024] = "";
+    char buf_titles[2048] = "";
+    time_t now = time(NULL);
+
+    for (int i = 0; i < n; i++) {
         calendar_event_t * ev = &calendar_state.ev[i];
-        char line[120];
-        snprintf(line, sizeof line, "%s %s %s\n",
-                 ev->date + 5, ev->time[0] ? ev->time : "", ev->summary);   /* MM-DD */
-        strncat(buf, line, sizeof buf - strlen(buf) - 1);
+
+        /* Format date column: "di 09:00" or "di\n" or "24-10 14:30" */
+        char dt[16];
+        format_agenda_date(ev->date, now, dt, sizeof dt);
+        char row_date[32];
+        if (ev->time[0]) {
+            snprintf(row_date, sizeof row_date, "%s %s\n", dt, ev->time);
+        } else {
+            snprintf(row_date, sizeof row_date, "%s\n", dt);
+        }
+        strncat(buf_dates, row_date, sizeof buf_dates - strlen(buf_dates) - 1);
+
+        /* Format title column: sanitize newlines, clip long text */
+        char clean_title[64];
+        size_t c = 0;
+        for (const char * p = ev->summary; *p && c < sizeof(clean_title) - 1; p++) {
+            if (*p == '\r' || *p == '\n') {
+                clean_title[c++] = ' ';
+            } else {
+                clean_title[c++] = *p;
+            }
+        }
+        clean_title[c] = '\0';
+        char row_title[80];
+        snprintf(row_title, sizeof row_title, "%s\n", clean_title);
+        strncat(buf_titles, row_title, sizeof buf_titles - strlen(buf_titles) - 1);
     }
-    char out[1600];
-    snprintf(out, sizeof out, "%s\n%s", tr("Agenda", "Calendar"),
-             buf[0] ? buf : (settings.calendar_enabled ? tr("Geen afspraken", "No events")
-                                                       : tr("Agenda uit", "Calendar off")));
-    lv_label_set_text(l, out);
+
+    lv_obj_set_pos(lbl_titles, SX(82), lv_obj_get_y(lbl_dates));
+    lv_obj_set_width(lbl_titles, SX(102));
+    lv_label_set_text(lbl_dates, buf_dates);
+    lv_label_set_text(lbl_titles, buf_titles);
+}
+
+/* Fill an agenda slot overlay with upcoming events. */
+static void fill_agenda_overlay(slot_agenda_view_t * a) {
+    if (!a || !a->root) return;
+    lv_coord_t th = lv_obj_get_height(lv_obj_get_parent(a->root));
+    if (th <= 0) th = lv_obj_get_height(a->root);
+    if (th <= 0) th = SY(130);
+    lv_coord_t avail_h = th - SY(34);
+    fill_agenda_view(a->lbl_dates, a->lbl_titles, avail_h);
 }
 
 static void on_slot_waste_tap(lv_event_t * e) {
@@ -1289,10 +1471,10 @@ static int slot_render_or_agenda(int slot, int ai, lv_obj_t * lbl_main, lv_obj_t
         if (slot_waste[ai]) lv_obj_add_flag(slot_waste[ai], LV_OBJ_FLAG_HIDDEN);
         if (slot_templogger[ai]) lv_obj_add_flag(slot_templogger[ai]->root, LV_OBJ_FLAG_HIDDEN);
         fill_agenda_overlay(slot_agenda[ai]);
-        if (slot_agenda[ai]) { lv_obj_clear_flag(slot_agenda[ai], LV_OBJ_FLAG_HIDDEN); lv_obj_move_foreground(slot_agenda[ai]); }
+        if (slot_agenda[ai]) { lv_obj_clear_flag(slot_agenda[ai]->root, LV_OBJ_FLAG_HIDDEN); lv_obj_move_foreground(slot_agenda[ai]->root); }
         return 1;
     }
-    if (slot_agenda[ai]) lv_obj_add_flag(slot_agenda[ai], LV_OBJ_FLAG_HIDDEN);
+    if (slot_agenda[ai]) lv_obj_add_flag(slot_agenda[ai]->root, LV_OBJ_FLAG_HIDDEN);
 
     if (b && !strcmp(b, "local:sonos")) {
         if (slot_waste[ai]) lv_obj_add_flag(slot_waste[ai], LV_OBJ_FLAG_HIDDEN);
@@ -1511,27 +1693,11 @@ static void refresh_cb(lv_timer_t * t) {
         }
         lv_label_set_text(tile_news_sum_lbl, buf[0] ? buf : tr("Geen nieuws", "No news"));
     }
-    if (tile_cal_lbl) {
-        lv_coord_t th = lv_obj_get_height(lv_obj_get_parent(tile_cal_lbl));
+    if (tile_cal_dates && tile_cal_titles) {
+        lv_coord_t th = lv_obj_get_height(lv_obj_get_parent(tile_cal_dates));
         if (th <= 0) th = SY(150);
-        int avail_h = th - SY(45);
-        int line_h = SY(19);
-        if (line_h < 14) line_h = 14;
-        int max_lines = avail_h / line_h;
-        if (max_lines < 3) max_lines = 3;
-        if (max_lines > 25) max_lines = 25;
-
-        char buf[2048] = ""; int nn = calendar_state.count; if (nn > max_lines) nn = max_lines;
-        for (int i = 0; i < nn; i++) {
-            calendar_event_t * ev = &calendar_state.ev[i];
-            char line[160];
-            snprintf(line, sizeof line, "%s %s %s\n",
-                     ev->date + 5, ev->time[0] ? ev->time : "", ev->summary);   /* MM-DD */
-            strncat(buf, line, sizeof buf - strlen(buf) - 1);
-        }
-        lv_label_set_text(tile_cal_lbl, buf[0] ? buf :
-            (settings.calendar_enabled ? tr("Geen afspraken", "No events")
-                                       : tr("Agenda uit", "Calendar off")));
+        lv_coord_t avail_h = th - SY(46);
+        fill_agenda_view(tile_cal_dates, tile_cal_titles, avail_h);
     }
     if (tile_sonos_view && !lv_obj_has_flag(lv_obj_get_parent(tile_sonos_view->root), LV_OBJ_FLAG_HIDDEN)) {
         update_sonos_view(tile_sonos_view);
@@ -3954,15 +4120,25 @@ lv_obj_t * screen_home_create(void) {
         lv_label_set_text(tile_news_sum_lbl, "...");
 
         make_tile(scr_root, 0, 0, 200, 150, LT_CALENDAR, tr("Agenda", "Calendar"), 0x4477cc, on_slot_agenda_tap, &ct);
-        tile_cal_lbl = lv_label_create(ct.tile);
-        lv_obj_set_style_text_color(tile_cal_lbl, lv_color_hex(COL_TEXT_HI), 0);
-        lv_obj_set_style_text_font(tile_cal_lbl, SF(14), 0);
-        lv_label_set_long_mode(tile_cal_lbl, LV_LABEL_LONG_WRAP);
-        lv_obj_set_width(tile_cal_lbl, LV_PCT(94));
-        lv_obj_align(tile_cal_lbl, LV_ALIGN_TOP_LEFT, 0, 38);
-        lv_obj_add_flag(tile_cal_lbl, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_add_event_cb(tile_cal_lbl, on_slot_agenda_tap, LV_EVENT_CLICKED, NULL);
-        lv_label_set_text(tile_cal_lbl, "...");
+        tile_cal_dates = lv_label_create(ct.tile);
+        lv_obj_set_style_text_color(tile_cal_dates, lv_color_hex(0xaad4f5), 0);
+        lv_obj_set_style_text_font(tile_cal_dates, SF(14), 0);
+        lv_label_set_long_mode(tile_cal_dates, LV_LABEL_LONG_CLIP);
+        lv_obj_set_width(tile_cal_dates, SX(78));
+        lv_obj_align(tile_cal_dates, LV_ALIGN_TOP_LEFT, 0, SY(38));
+        lv_obj_add_flag(tile_cal_dates, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(tile_cal_dates, on_slot_agenda_tap, LV_EVENT_CLICKED, NULL);
+        lv_label_set_text(tile_cal_dates, "");
+
+        tile_cal_titles = lv_label_create(ct.tile);
+        lv_obj_set_style_text_color(tile_cal_titles, lv_color_hex(COL_TEXT_HI), 0);
+        lv_obj_set_style_text_font(tile_cal_titles, SF(14), 0);
+        lv_label_set_long_mode(tile_cal_titles, LV_LABEL_LONG_CLIP);
+        lv_obj_set_width(tile_cal_titles, SX(102));
+        lv_obj_align(tile_cal_titles, LV_ALIGN_TOP_LEFT, SX(82), SY(38));
+        lv_obj_add_flag(tile_cal_titles, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(tile_cal_titles, on_slot_agenda_tap, LV_EVENT_CLICKED, NULL);
+        lv_label_set_text(tile_cal_titles, "...");
 
         /* Lights: a placeable button tile that opens the lights screen (the same
          * backend as the retractable side handle). Hidden until added in the editor. */

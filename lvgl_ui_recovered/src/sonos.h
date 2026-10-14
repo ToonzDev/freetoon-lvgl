@@ -6,6 +6,8 @@
  * Polls /<zone>/state in the background and sends transport commands.
  */
 
+#include "lvgl/lvgl.h"
+
 #define SONOS_MAX_ZONES 16
 
 typedef struct {
@@ -20,6 +22,7 @@ typedef struct {
     volatile int volume;                  /* current zone volume 0..100 */
     volatile int is_group;                /* 1 if zone is group coordinator */
     volatile int is_radio;                /* 1 if radio stream, 0 if track */
+    char         art_url[256];            /* album art URI if available */
 } sonos_state_t;
 
 extern sonos_state_t sonos_state;
@@ -29,6 +32,10 @@ int  sonos_start(void);
 
 /* Snapshot copy for thread-safe UI rendering */
 void sonos_get_snapshot(sonos_state_t * out);
+
+/* Returns pre-decoded & downscaled in-memory LVGL image descriptors, or NULL if none */
+const lv_img_dsc_t * sonos_get_art_big(int * out_ver);
+const lv_img_dsc_t * sonos_get_art_tile(int * out_ver);
 
 /* Probe / discover zones from the Sonos HTTP API (/zones).
  * Fills `zones` with up to `max_zones` room names.
@@ -41,6 +48,7 @@ void sonos_pause(void);
 void sonos_play_pause(void);
 void sonos_next(void);
 void sonos_prev(void);
+void sonos_seek(int seconds);     /* timeseek/<seconds> */
 void sonos_volume_up(void);       /* +2 */
 void sonos_volume_down(void);     /* -2 */
 void sonos_set_volume(int vol);
