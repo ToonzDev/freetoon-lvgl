@@ -49,6 +49,32 @@ static int  g_met_found  = 0;     /* HAE_METER node present in Z-Wave list */
 static int  g_pair_active = 0;    /* Z-Wave inclusion window open */
 static int  g_query_ticks = 0;
 
+/* Probe happ_pwrusage on 127.0.0.1:10080 for live meter wattage and diagnostics */
+static void probe_happ_pwrusage(void) {
+    extern int http_fetch_to(const char *, char *, size_t, int);
+    char buf[512] = {0};
+    if (http_fetch_to("http://127.0.0.1:10080/happ_pwrusage?action=GetCurrentUsage", buf, sizeof(buf), 2) == 0) {
+        fprintf(stderr, "[adapters] happ_pwrusage GetCurrentUsage: %.200s\n", buf);
+        const char * p_pu = strstr(buf, "\"powerUsage\"");
+        if (p_pu) {
+            const char * p_val = strstr(p_pu, "\"value\"");
+            if (p_val) {
+                p_val += 7;
+                while (*p_val == ' ' || *p_val == ':' || *p_val == '\t') p_val++;
+                if (*p_val != 'n' && *p_val != 'N') {
+                    float pw = strtof(p_val, NULL);
+                    fprintf(stderr, "[adapters] GetCurrentUsage parsed live power: %.1f W\n", (double)pw);
+                    meteradapter_on_flow(pw);
+                } else {
+                    fprintf(stderr, "[adapters] GetCurrentUsage: powerUsage.value is null (P1 smart meter not reporting data to happ_pwrusage)\n");
+                }
+            }
+        }
+    } else {
+        fprintf(stderr, "[adapters] GetCurrentUsage: HTTP fetch to 127.0.0.1:10080 failed (daemon not listening or error)\n");
+    }
+}
+
 /* ===================================================================== */
 /* Meter Z-Wave "found" detection                                        */
 /* ===================================================================== */
@@ -57,7 +83,20 @@ static int  g_query_ticks = 0;
  * is enough and robust against the XML/JSON shape differences between fw. */
 static void scan_met_found(void) {
     if (!zwave_response_ready) return;
-    g_met_found = (strstr(zwave_response_buf, "HAE_METER") != NULL);
+    const char * p = strstr(zwave_response_buf, "HAE_METER");
+    g_met_found = (p != NULL);
+    if (g_met_found) {
+        char snippet[64] = {0};
+        strncpy(snippet, p, sizeof(snippet) - 1);
+        snippet[strcspn(snippet, "\" \r\n<")] = '\0';
+        time_t now = time(NULL);
+        fprintf(stderr, "[adapters] Z-Wave meter node found: '%s' (online=%d, last_flow=%ld s ago, power=%.1f W)\n",
+                snippet, meter_state.connected,
+                meter_state.last_flow_s ? (long)(now - meter_state.last_flow_s) : -1L,
+                (double)meter_state.power_w);
+    } else {
+        fprintf(stderr, "[adapters] Z-Wave scan: no HAE_METER in device list (buf len: %zu)\n", strlen(zwave_response_buf));
+    }
     zwave_response_ready = 0;
 }
 
@@ -106,7 +145,9 @@ static void update_ket_labels(void) {
 /* ===================================================================== */
 static void on_met_test(lv_event_t * e) {
     (void)e;
+    fprintf(stderr, "[adapters] on_met_test: query Z-Wave devices + probe happ_pwrusage\n");
     boxtalk_zwave_get_devices();   /* refresh found-state; flow drives online */
+    probe_happ_pwrusage();
     g_query_ticks = 2;
     lv_label_set_text(lbl_met_sub, tr("Z-Wave + live verbruik opvragen...", "Querying Z-Wave + live flow..."));
 }
@@ -192,6 +233,9 @@ static void refresh_cb(lv_timer_t * t) {
      * stays current without continuous polling of the value. */
     if (g_query_ticks <= 0) {
         boxtalk_zwave_get_devices();
+        if (g_met_found && !meter_state.connected) {
+            probe_happ_pwrusage();
+        }
         g_query_ticks = 5;
     } else {
         g_query_ticks--;

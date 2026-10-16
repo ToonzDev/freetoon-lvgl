@@ -68,6 +68,23 @@ fi
 # /qmf/sbin/qt-gui directly there gives a blank screen / no touch. So prefer
 # startqt when present, else source qt-env.sh (Toon 2 eglfs) and exec qt-gui.
 exec_qtgui() {
+    # Ensure quby_bridge is disabled from inittab and unmounted when entering qt-gui
+    # so stock qt-gui / happ_thermstat can talk to the real hardware keteladapter.
+    if grep -q '^qbri:' /etc/inittab 2>/dev/null; then
+        log "disabling quby_bridge in inittab for qt-gui"
+        if [ -x /mnt/data/ot_mode_switch.sh ]; then
+            /mnt/data/ot_mode_switch.sh off >> /tmp/ot_mode_switch.log 2>&1 || true
+        else
+            grep -v '^qbri:' /etc/inittab > /etc/inittab.new 2>/dev/null && mv -f /etc/inittab.new /etc/inittab || true
+            kill -HUP 1 2>/dev/null || true
+            pkill -9 -x quby_bridge 2>/dev/null || true
+            umount -l /dev/ttymxc0 2>/dev/null || true
+        fi
+    else
+        pkill -9 -x quby_bridge 2>/dev/null || true
+        umount -l /dev/ttymxc0 2>/dev/null || true
+    fi
+
     # qt-gui renders 32bpp, but the Toon 1 video prep forces fb0 to 16bpp for
     # the LVGL UI/picker. Restore 32bpp before handing off so qt-gui isn't
     # stuck at the wrong depth. No-op on Toon 2 (prep never ran).

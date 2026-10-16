@@ -89,6 +89,9 @@ void meteradapter_on_flow(float watts) {
     prev_w = watts;
     meter_state.power_w      = watts;
     meter_state.last_flow_s  = (long)time(NULL);
+    if (!meter_state.connected) {
+        fprintf(stderr, "[meteradapter] connected! live power = %.1f W\n", (double)watts);
+    }
     meter_state.connected    = 1;
 }
 
@@ -96,9 +99,15 @@ static void *watchdog_thread(void *arg) {
     (void)arg;
     for (;;) {
         sleep(5);
+        time_t now = time(NULL);
         if (meter_state.last_flow_s == 0 ||
-            time(NULL) - meter_state.last_flow_s > MET_STALE_S)
+            now - meter_state.last_flow_s > MET_STALE_S) {
+            if (meter_state.connected) {
+                fprintf(stderr, "[meteradapter] watchdog: marked offline (no flow notify for %ld s)\n",
+                        meter_state.last_flow_s ? (long)(now - meter_state.last_flow_s) : -1L);
+            }
             meter_state.connected = 0;
+        }
     }
     return NULL;
 }

@@ -1128,11 +1128,23 @@ static void on_uimode_confirm_yes(lv_event_t * e) {
     (void)e;
     qtlog_apply(g_qtgui_debug);          /* enable/disable stock-UI logging for this boot */
     write_ui_choice(1);
+
+    /* Disable quby_bridge in /etc/inittab and kill/unmount so stock qt-gui
+     * has exclusive ownership of the hardware keteladapter and UART /dev/ttymxc0 */
+    if (access("/mnt/data/ot_mode_switch.sh", X_OK) == 0) {
+        system("/mnt/data/ot_mode_switch.sh off >> /tmp/ot_mode_switch.log 2>&1");
+    } else {
+        system("grep -v '^qbri:' /etc/inittab > /etc/inittab.new 2>/dev/null && mv -f /etc/inittab.new /etc/inittab && kill -HUP 1 2>/dev/null || true");
+        system("pkill -9 -x quby_bridge 2>/dev/null || true");
+        system("umount -l /dev/ttymxc0 2>/dev/null || true");
+    }
+    snprintf(settings.ot_bridge_mode, sizeof(settings.ot_bridge_mode), "off");
+
     settings_save();
     uimode_confirm_dismiss();
     /* Give the LVGL frame a beat to flush the dismissal animation, then
      * bail. Init respawns us via the launcher within ~1 s. */
-    fprintf(stderr, "[uimode] switching to qt-gui — exiting\n");
+    fprintf(stderr, "[uimode] switching to qt-gui (quby_bridge disabled in inittab) — exiting\n");
     fflush(NULL);
     _exit(0);
 }

@@ -250,11 +250,14 @@ static void handle_notify(const char* xml) {
     if (!attr_value(xml, "serviceid", sid, sizeof(sid))) return;
     char src_uuid[64] = {0};
     attr_value(xml, "uuid", src_uuid, sizeof(src_uuid));
-    /* (quiet — was: fprintf notify log) */
-
     /* sid is full urn: extract the trailing part */
     const char* tail = strrchr(sid, ':');
     if (tail) tail++; else tail = sid;
+
+    if (strstr(sid, "Flow") || strstr(sid, "Meter") || strstr(sid, "Usage") || strstr(sid, "usage") || strstr(sid, "Power") || strstr(sid, "power")) {
+        fprintf(stderr, "[bxt-meter] notify sid='%s' tail='%s' uuid='%s': %.250s\n",
+                sid, tail, src_uuid, xml);
+    }
 
     if (strcmp(tail, "TemperatureSensor") == 0) {
         float v;
@@ -339,14 +342,25 @@ static void handle_notify(const char* xml) {
                 toon_state.water_pressure = (v > 10.0f) ? v / 100.0f : v;
             toon_state.msg_count++;
         }
-    } else if (strcmp(tail, "ElectricityFlowMeter") == 0) {
+    } else if (strcasecmp(tail, "ElectricityFlowMeter") == 0 ||
+               strcasecmp(tail, "PowerUsage") == 0) {
         /* Official energy source: happ_pwrusage publishes the live smart-meter
          * power here (W). Drives the Energy tile when energy_source=meteradapter
          * and the Adapters tile's online/offline state. */
-        float v;
-        if (elem_text_float(xml, "CurrentElectricityFlow", &v)) {
+        float v = 0.0f;
+        int got = 0;
+        if (elem_text_float(xml, "CurrentElectricityFlow", &v) ||
+            elem_text_float(xml, "currentElectricityFlow", &v) ||
+            elem_text_float(xml, "value", &v) ||
+            elem_text_float(xml, "power", &v)) {
+            got = 1;
+        }
+        if (got) {
+            fprintf(stderr, "[bxt-meter] flow accepted: %.1f W (svc='%s' uuid='%s')\n", (double)v, tail, src_uuid);
             meteradapter_on_flow(v);
             toon_state.msg_count++;
+        } else {
+            fprintf(stderr, "[bxt-meter] warning: matched service '%s' but no flow tag found in xml: %.350s\n", tail, xml);
         }
     } else if (tile_slots_integration_by_service(tail) != NULL) {
         /* Marketplace integration — dispatched via the manifest's value_field
@@ -849,6 +863,12 @@ static void send_initial_handshake(void) {
      * smart-meter power (the official "meteradapter" energy source). */
     snprintf(buf, sizeof(buf),
         "<subscribe uuid=\"%s\" destuuid=\"\"><target uuid=\"\" serviceid=\"urn:hcb-hae-com:serviceId:ElectricityFlowMeter\"></target></subscribe>",
+        OUR_UUID);
+    send_msg(buf);
+
+    /* Also subscribe to PowerUsage in case happ_pwrusage publishes under PowerUsage */
+    snprintf(buf, sizeof(buf),
+        "<subscribe uuid=\"%s\" destuuid=\"\"><target uuid=\"\" serviceid=\"urn:hcb-hae-com:serviceId:PowerUsage\"></target></subscribe>",
         OUR_UUID);
     send_msg(buf);
 

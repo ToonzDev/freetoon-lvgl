@@ -456,7 +456,12 @@ CFG
     fi
     if [ -n "$QUBY_BRIDGE_BIN" ] && [ -e "$QUBY_BRIDGE_BIN" ]; then
         push "$QUBY_BRIDGE_BIN" /mnt/data/quby_bridge
-        remote "/mnt/data/ot_mode_switch.sh proxy" || true
+        # Only enable OT bridge proxy if FreeToon is active; stock qt-gui needs direct UART access
+        if remote "[ \"\$(cat /mnt/data/ui_choice 2>/dev/null)\" != 'qt-gui' ]"; then
+            remote "/mnt/data/ot_mode_switch.sh proxy" || true
+        else
+            remote "/mnt/data/ot_mode_switch.sh off" || true
+        fi
     else
         echo "  (skipping bridge install — quby_bridge absent; OT bridge stays off)"
     fi
