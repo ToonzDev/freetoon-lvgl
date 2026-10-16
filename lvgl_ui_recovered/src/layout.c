@@ -61,24 +61,18 @@ layout_t g_layout = {0};
  * Page 0: thermostat (left), the four right-column tiles, news ticker +
  * forecast across the bottom. Page 1: assignable slots. */
 static const layout_tile_t DEFAULTS[] = {
-    /* type,           page, col, row, w, h, vis, slot
-     * Phase 1a only consults the five built-in tiles below; they live in the
-     * right region (col>=7) so they clear the still-hardcoded thermostat (left)
-     * and ticker/forecast (bottom). The thermostat/ticker/forecast/slot rows
-     * are kept for the later full migration but aren't placed from here yet. */
+    /* type,           page, col, row, w, h, vis, slot */
+    { LT_CLOCK,         0,   0,  0,  4, 2, 1, -1 },
+    { LT_THERMOSTAT,    0,   0,  2,  4, 3, 1, -1 },
+    { LT_CALENDAR,      0,   4,  0,  3, 5, 1, -1 },
     { LT_WASTE,         0,   7,  0,  2, 3, 1, -1 },
     { LT_VENT,          0,   7,  3,  2, 3, 1, -1 },
     { LT_ENERGY,        0,   9,  0,  3, 2, 1, -1 },
     { LT_FAMILY,        0,   9,  2,  3, 2, 1, -1 },
     { LT_WATER,         0,   9,  4,  3, 2, 1, -1 },
-    { LT_THERMOSTAT,    0,   0,  0,  7, 5, 1, -1 },
-    /* Thermostat is 5 rows tall (rows 0-4); ticker is row 5; forecast is a
-     * 2-row bar across the bottom (rows 6-7). Exactly 8 rows with no overlap. */
+    /* news ticker is row 5; forecast is a 2-row bar across the bottom (rows 6-7). */
     { LT_NEWS_TICKER,   0,   0,  5,  7, 1, 1, -1 },
     { LT_FORECAST,      0,   0,  6, 12, 2, 1, -1 },
-    /* news-summary + calendar are NOT preplaced (the grid is full) — add them
-     * on demand via the editor's "+ Tegel" button, which drops them in a free
-     * cell. */
     { LT_SLOT,          1,   0,  0,  6, 4, 1,  4 },   /* TILE_SLOT_P1_0 */
     { LT_SLOT,          1,   6,  0,  6, 4, 1,  5 },
     { LT_SLOT,          1,   0,  4,  6, 4, 1,  6 },
@@ -123,6 +117,35 @@ void layout_load_named(const char * name) {
          * the ticker at row 5, which breaks all reflow/drag repositioning. */
         if (t->type == LT_THERMOSTAT && t->page == 0 && t->row == 0 && t->h > 5) {
             t->h = 5;
+        }
+    }
+
+    /* Migrate older layouts without LT_CLOCK: split the oversized thermostat
+     * (0,0, 7x5) into a clock tile (0,0, 4x2) and a compact thermostat (0,2, 4x3),
+     * and fill the newly freed space (4,0, 3x5) with the calendar tile. */
+    int has_clock = 0;
+    int thermo_idx = -1;
+    for (int i = 0; i < g_layout.count; i++) {
+        if (g_layout.tiles[i].type == LT_CLOCK) has_clock = 1;
+        if (g_layout.tiles[i].type == LT_THERMOSTAT) thermo_idx = i;
+    }
+    if (!has_clock && thermo_idx >= 0 && g_layout.count < LAYOUT_MAX_TILES) {
+        layout_tile_t * th = &g_layout.tiles[thermo_idx];
+        if (th->col == 0 && th->row == 0 && th->w >= 5 && th->h >= 4) {
+            th->row = 2;
+            th->w = 4;
+            th->h = 3;
+            layout_tile_t clk = {
+                .type = LT_CLOCK,
+                .page = 0,
+                .col = 0,
+                .row = 0,
+                .w = 4,
+                .h = 2,
+                .visible = 1,
+                .slot = -1
+            };
+            g_layout.tiles[g_layout.count++] = clk;
         }
     }
 }
@@ -337,7 +360,8 @@ void layout_type_min(int type, int * min_w, int * min_h) {
      * guard, not persisted. */
     int w = 2, h = 2;
     switch (type) {
-        case LT_THERMOSTAT:   w = 5; h = 4; break;
+        case LT_CLOCK:        w = 3; h = 2; break;
+        case LT_THERMOSTAT:   w = 3; h = 2; break;
         case LT_FORECAST:     w = 4; h = 2; break;  /* needs 2 rows: the weather
                                                        icons can't be zoomed by the
                                                        SW renderer, so a 1-row tile
@@ -362,6 +386,7 @@ void layout_type_min(int type, int * min_w, int * min_h) {
 
 const char * layout_type_name(int type) {
     switch (type) {
+        case LT_CLOCK:       return "Klok / Datum";
         case LT_THERMOSTAT:  return "Thermostaat";
         case LT_FORECAST:    return "Weer";
         case LT_NEWS_TICKER: return "Nieuws (ticker)";

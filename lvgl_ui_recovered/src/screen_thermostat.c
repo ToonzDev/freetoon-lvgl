@@ -114,6 +114,14 @@ static void refresh_cb(lv_timer_t * t) {
     };
     for (int i = 0; i < 6; i++) {
         if (!btn_prog[i]) continue;
+        if (i >= 2) {
+            if (!on_schedule) {
+                lv_obj_add_flag(btn_prog[i], LV_OBJ_FLAG_HIDDEN);
+                continue;
+            } else {
+                lv_obj_clear_flag(btn_prog[i], LV_OBJ_FLAG_HIDDEN);
+            }
+        }
         int active = (i == mode_idx) || (i == preset_idx);
         lv_obj_set_style_border_width(btn_prog[i], active ? 2 : 0, 0);
         lv_obj_set_style_bg_color(btn_prog[i],
@@ -262,26 +270,47 @@ lv_obj_t * screen_thermostat_create(void) {
     lv_obj_align(img_temp_flame, LV_ALIGN_CENTER, SX(145), SY(-75));
     lv_obj_add_flag(img_temp_flame, LV_OBJ_FLAG_HIDDEN);
 
-    /* Program preset row — six small buttons centered horizontally just
-     * below the indoor temp.  Scheduled / Manual are the mode toggle;
-     * Comfort/Home/Sleep/Away pick a specific preset. Colours mirror the
-     * schedule editor pills for instant recognition; Scheduled uses a
-     * neutral teal so it doesn't fight any of the preset colours. */
+    /* Program preset buttons — two rows centered horizontally below the indoor temp.
+     * Row 1 (SY(-28)): Scheduled / Manual mode toggle (2 wider buttons).
+     * Row 2 (SY(24)):  Comfort / Home / Sleep / Away presets (4 buttons),
+     *                  shown only when the schedule is active. */
     {
         const char * names[6] = {tr("Programma", "Scheduled"), tr("Handmatig", "Manual"),
                                  tr("Comfort", "Comfort"), tr("Thuis", "Home"),
                                  tr("Slapen", "Sleep"), tr("Weg", "Away")};
         uint32_t     cols[6]  = {0x2f6b6b, 0x6a5424,
                                  0xcc7733, 0x3377cc, 0x553388, 0x557788};
-        /* On Toon 1 the 130px buttons + gaps total 810px and run off the
-         * 800px panel; SX() shrinks them to fit (identity on Toon 2). */
-        const int    bw = SX(130), bh = 44, gap = SX(6);
-        int total = 6 * bw + 5 * gap;
-        for (int i = 0; i < 6; i++) {
+
+        /* Row 1: Mode buttons (0..1) */
+        const int bw_mode = SX(170), bh_mode = 44, gap_mode = SX(14);
+        int total_mode = 2 * bw_mode + gap_mode;
+        for (int i = 0; i < 2; i++) {
             lv_obj_t * b = lv_btn_create(scr_root);
-            lv_obj_set_size(b, bw, bh);
+            lv_obj_set_size(b, bw_mode, bh_mode);
             lv_obj_align(b, LV_ALIGN_CENTER,
-                         -total / 2 + i * (bw + gap) + bw / 2, SY(-20));
+                         -total_mode / 2 + i * (bw_mode + gap_mode) + bw_mode / 2, SY(-28));
+            lv_obj_set_style_bg_color(b, lv_color_hex(cols[i]), 0);
+            lv_obj_set_style_radius(b, 10, 0);
+            lv_obj_set_style_border_color(b, lv_color_hex(0xffffff), 0);
+            lv_obj_set_style_border_width(b, 0, 0);
+            lv_obj_add_event_cb(b, on_program_tap, LV_EVENT_CLICKED,
+                                (void *)(intptr_t)i);
+            lv_obj_t * bl = lv_label_create(b);
+            lv_label_set_text(bl, names[i]);
+            lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+            lv_obj_set_style_text_font(bl, SF(18), 0);
+            lv_obj_center(bl);
+            btn_prog[i] = b;
+        }
+
+        /* Row 2: Preset buttons (2..5) */
+        const int bw_pre = SX(125), bh_pre = 42, gap_pre = SX(8);
+        int total_pre = 4 * bw_pre + 3 * gap_pre;
+        for (int i = 2; i < 6; i++) {
+            lv_obj_t * b = lv_btn_create(scr_root);
+            lv_obj_set_size(b, bw_pre, bh_pre);
+            lv_obj_align(b, LV_ALIGN_CENTER,
+                         -total_pre / 2 + (i - 2) * (bw_pre + gap_pre) + bw_pre / 2, SY(24));
             lv_obj_set_style_bg_color(b, lv_color_hex(cols[i]), 0);
             lv_obj_set_style_radius(b, 10, 0);
             lv_obj_set_style_border_color(b, lv_color_hex(0xffffff), 0);
@@ -347,11 +376,11 @@ lv_obj_t * screen_thermostat_create(void) {
 
     lbl_setpoint = lv_label_create(sp_row);
     lv_obj_set_style_text_color(lbl_setpoint, lv_color_hex(0xffffff), 0);
-    /* font_48 is too wide for the narrowed row on Toon 1 — drop to 34 there. */
+    /* Smaller font gives plenty of breathing room between the - and + buttons */
     lv_obj_set_style_text_font(lbl_setpoint,
-                               (DISP_VER < 600 ? SF(28)
-                                               : SF(48)), 0);
-    lv_obj_align(lbl_setpoint, LV_ALIGN_CENTER, 0, -8);
+                               (DISP_VER < 600 ? SF(20)
+                                               : SF(28)), 0);
+    lv_obj_align(lbl_setpoint, LV_ALIGN_CENTER, 0, 0);
     lv_label_set_text(lbl_setpoint, tr("Streefwaarde: --", "Setpoint: --"));
 
     lv_obj_t * btn_up = lv_btn_create(sp_row);

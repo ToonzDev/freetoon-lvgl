@@ -2313,6 +2313,12 @@ static void on_int_video(lv_event_t * e) {
 
 static void open_ha_entities_modal(lv_event_t * e);
 
+static void open_energy_stats(lv_event_t * e) {
+    (void)e;
+    modal_close(NULL);
+    ui_push(screen_stats_create());
+}
+
 static void open_integrations_modal(lv_event_t * e) {
     (void)e;
     /* Six panel_rows × 84 + 92 + 100 (hint label) ≈ 700. Bump the modal
@@ -2321,6 +2327,18 @@ static void open_integrations_modal(lv_event_t * e) {
     int y = 70;
 
     lv_obj_t * r;
+    r = panel_row(p, y, tr("Energie statistieken", "Energy statistics"), NULL);
+    lv_obj_t * b_stat = lv_btn_create(r);
+    lv_obj_set_size(b_stat, SX(170), SY(44));
+    lv_obj_align(b_stat, LV_ALIGN_RIGHT_MID, SX(-12), 0);
+    lv_obj_set_style_bg_color(b_stat, lv_color_hex(0x2a5078), 0);
+    lv_obj_set_style_radius(b_stat, 10, 0);
+    lv_obj_add_event_cb(b_stat, open_energy_stats, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * b_stat_lbl = lv_label_create(b_stat);
+    lv_label_set_text(b_stat_lbl, tr("Open grafieken", "Open charts"));
+    lv_obj_center(b_stat_lbl);
+    y += 84;
+
     r = panel_row(p, y, tr("Energiebron", "Energy source"), NULL);
     dd_energy_src = lv_dropdown_create(r);
     lv_dropdown_set_options(dd_energy_src,
@@ -4361,6 +4379,8 @@ lv_obj_t * screen_settings_create(void) {
               tr("dim-blokken (opt-in)", "dim blocks (opt-in)"), open_dim_layout_editor); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_HOME, "Domoticz",
               tr("licht & zonwering", "lights & blinds"), open_domoticz); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_CHARGE, tr("Energie", "Energy"),
+              tr("grafieken & verbruik", "charts & usage"), open_energy_stats); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_HOME, "Home Assistant",
               tr("host, token, entiteiten", "host, token, entities"), open_ha_entities_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_EDIT, tr("Indeling", "Layout"),

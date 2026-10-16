@@ -35,6 +35,7 @@ typedef enum {
     LT_LIGHTS,          /* lights shortcut */
     LT_SLOT,            /* assignable marketplace-integration slot (uses .slot) */
     LT_SONOS,           /* Sonos controller tile */
+    LT_CLOCK,           /* standalone clock and date tile */
     LT_COUNT
 } layout_tile_type_t;
 

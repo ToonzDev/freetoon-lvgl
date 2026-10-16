@@ -48,6 +48,7 @@ static int        replace_idx = -1;
 static int        edit_page = 0;   /* which page the editor is currently editing */
 static lv_obj_t * sel_lbl;
 static lv_obj_t * page_btn;        /* toolbar page-switch button (label shows current page) */
+static lv_obj_t * vis_btn = NULL;  /* toolbar hide/show toggle button */
 static void build_canvas_rects(void);   /* fwd */
 static void on_copy_p2(lv_event_t * e);  /* fwd */
 
@@ -69,13 +70,13 @@ static lv_obj_t * name_ta;                   /* its text area */
 
 /* tile types offerable in the insert palette (LT_SLOT is page-1 only). */
 static const int PALETTE[] = {
-    LT_THERMOSTAT, LT_FORECAST, LT_NEWS_TICKER, LT_NEWS_SUMMARY, LT_CALENDAR,
+    LT_CLOCK, LT_THERMOSTAT, LT_FORECAST, LT_NEWS_TICKER, LT_NEWS_SUMMARY, LT_CALENDAR,
     LT_ENERGY, LT_WATER, LT_VENT, LT_FAMILY, LT_WASTE, LT_LIGHTS, LT_SONOS,
 };
 #define N_PALETTE ((int)(sizeof PALETTE / sizeof PALETTE[0]))
 
 static const uint32_t TYPE_COL[LT_COUNT] = {
-    [LT_THERMOSTAT]=0x335577, [LT_FORECAST]=0x4488aa, [LT_NEWS_TICKER]=0x666688,
+    [LT_CLOCK]=0x2a4466, [LT_THERMOSTAT]=0x335577, [LT_FORECAST]=0x4488aa, [LT_NEWS_TICKER]=0x666688,
     [LT_NEWS_SUMMARY]=0x6666aa, [LT_CALENDAR]=0x4477cc, [LT_ENERGY]=0xaa77ff,
     [LT_WATER]=0x44aaff, [LT_VENT]=0x66bbdd, [LT_FAMILY]=0xff8866,
     [LT_WASTE]=0x88dd66, [LT_LIGHTS]=0xddaa44, [LT_SLOT]=0x778899,
@@ -126,7 +127,53 @@ static int trial_move(int i, int col, int row, layout_t * out) {
     *out = edit;
     out->tiles[i].col = col;
     out->tiles[i].row = row;
-    return layout_reflow_push(out, i);
+    if (layout_reflow_push(out, i)) return 1;
+
+    /* Swap fallback: If straight push/firstfit failed (e.g. tightly packed grid),
+     * see if we can cleanly swap `i` with the single tile it was dropped onto. */
+    int orig_col = edit.tiles[i].col;
+    int orig_row = edit.tiles[i].row;
+    int orig_w = edit.tiles[i].w;
+    int orig_h = edit.tiles[i].h;
+    int pg = edit.tiles[i].page;
+
+    int clash_idx = -1, clash_count = 0;
+    for (int k = 0; k < edit.count; k++) {
+        if (k == i) continue;
+        const layout_tile_t * t = &edit.tiles[k];
+        if (t->page != pg || !t->visible) continue;
+        if (col < t->col + t->w && t->col < col + orig_w &&
+            row < t->row + t->h && t->row < row + orig_h) {
+            clash_idx = k;
+            clash_count++;
+        }
+    }
+    if (clash_count == 1 && clash_idx >= 0) {
+        layout_t sw = edit;
+        sw.tiles[i].col = col;
+        sw.tiles[i].row = row;
+        sw.tiles[clash_idx].col = orig_col;
+        sw.tiles[clash_idx].row = orig_row;
+        /* Verify that neither tile clashes with any other tile on the page */
+        int ok = 1;
+        for (int k = 0; k < sw.count && ok; k++) {
+            if (!sw.tiles[k].visible || sw.tiles[k].page != pg) continue;
+            for (int j = k + 1; j < sw.count && ok; j++) {
+                if (!sw.tiles[j].visible || sw.tiles[j].page != pg) continue;
+                const layout_tile_t * a = &sw.tiles[k];
+                const layout_tile_t * b = &sw.tiles[j];
+                if (a->col < b->col + b->w && b->col < a->col + a->w &&
+                    a->row < b->row + b->h && b->row < a->row + a->h) {
+                    ok = 0;
+                }
+            }
+        }
+        if (ok) {
+            *out = sw;
+            return 1;
+        }
+    }
+    return 0;
 }
 
 /* Position every rect EXCEPT `except` from layout `src` (used for live preview
@@ -232,7 +279,7 @@ static void place_rect(int i) {
 /* Build the draggable rect for tile i (page-0 only). */
 static void create_rect(int i) {
     layout_tile_t * t = &edit.tiles[i];
-    if (t->page != edit_page) { rects[i] = NULL; return; }
+    if (t->page != edit_page || !t->visible) { rects[i] = NULL; return; }
     lv_obj_t * r = lv_obj_create(modal);
     rects[i] = r;
     lv_obj_set_user_data(r, (void *)(intptr_t)i);
@@ -255,10 +302,13 @@ static void create_rect(int i) {
 
 static void update_sel_label(void) {
     if (!sel_lbl) return;
+    if (vis_btn) {
+        lv_obj_t * l = lv_obj_get_child(vis_btn, 0);
+        if (l) lv_label_set_text(l, tr("Verberg", "Hide"));
+    }
     if (sel < 0) { lv_label_set_text(sel_lbl, tr("Tik een tegel om te selecteren", "Tap a tile to select")); return; }
     layout_tile_t * t = &edit.tiles[sel];
-    lv_label_set_text_fmt(sel_lbl, "%s  %dx%d  %s",
-        layout_type_name(t->type), t->w, t->h, t->visible ? "" : tr("(verborgen)", "(hidden)"));
+    lv_label_set_text_fmt(sel_lbl, "%s  %dx%d", layout_type_name(t->type), t->w, t->h);
 }
 
 /* ---- insert palette ("+ Tegel") --------------------------------------- */
@@ -266,9 +316,36 @@ static void update_sel_label(void) {
 /* Insert a tile of `type` at the picked size: drop it in the first free hole;
  * if the grid is full, place it top-left and push the rest down (re-pack). */
 static void do_insert(int type, int w, int h) {
-    if (edit.count >= LAYOUT_MAX_TILES) { lv_label_set_text(sel_lbl, tr("Maximum bereikt", "Maximum reached")); return; }
     if (w > LAYOUT_COLS) w = LAYOUT_COLS;
     if (h > LAYOUT_ROWS) h = LAYOUT_ROWS;
+
+    /* If this tile type already exists on this page as hidden, resurrect it! */
+    for (int k = 0; k < edit.count; k++) {
+        if (edit.tiles[k].page == edit_page && edit.tiles[k].type == type && !edit.tiles[k].visible) {
+            int c, r;
+            layout_t s = edit;
+            s.tiles[k].w = w;
+            s.tiles[k].h = h;
+            s.tiles[k].visible = 1;
+            if (find_free_cell(k, w, h, &c, &r)) {
+                s.tiles[k].col = c;
+                s.tiles[k].row = r;
+            } else {
+                s.tiles[k].col = 0;
+                s.tiles[k].row = 0;
+                if (!layout_reflow_push(&s, k)) {
+                    lv_label_set_text(sel_lbl, tr("Geen ruimte - kies een kleinere grootte of verberg iets", "No room - pick smaller size or hide something"));
+                    return;
+                }
+            }
+            edit = s;
+            build_canvas_rects();
+            select_tile(k);
+            return;
+        }
+    }
+
+    if (edit.count >= LAYOUT_MAX_TILES) { lv_label_set_text(sel_lbl, tr("Maximum bereikt", "Maximum reached")); return; }
     int i = edit.count;
     int c, r;
     if (find_free_cell(-1, w, h, &c, &r)) {
@@ -286,8 +363,7 @@ static void do_insert(int type, int w, int h) {
         }
         edit = s;
     }
-    create_rect(i);
-    for (int k = 0; k < edit.count; k++) if (rects[k]) place_rect(k);  /* others may have moved */
+    build_canvas_rects();
     select_tile(i);
 }
 
@@ -308,12 +384,17 @@ static void populate_types(void) {
     int cur_h = (replace_idx >= 0) ? edit.tiles[replace_idx].h : pick_h;
     for (int p = 0; p < N_PALETTE; p++) {
         int type = PALETTE[p];
-        int present = 0;
+        int visible_on_page = 0;
+        int hidden_on_page = 0;
         for (int k = 0; k < edit.count; k++) {
             if (replace_idx >= 0 && k == replace_idx) continue;
-            if (edit.tiles[k].type == type && edit.tiles[k].page == edit_page) { present = 1; break; }
+            if (edit.tiles[k].type == type && edit.tiles[k].page == edit_page) {
+                if (edit.tiles[k].visible) visible_on_page = 1;
+                else hidden_on_page = 1;
+            }
         }
-        if (present) continue;
+        if (visible_on_page && type != LT_SLOT) continue;
+
         int mw, mh; layout_type_min(type, &mw, &mh);
         if (cur_w < mw || cur_h < mh) continue;   /* too small for this content */
         lv_obj_t * b = lv_btn_create(type_grid);
@@ -321,7 +402,11 @@ static void populate_types(void) {
         lv_obj_set_style_bg_color(b, lv_color_hex(TYPE_COL[type % LT_COUNT]), 0);
         lv_obj_add_event_cb(b, on_type_pick, LV_EVENT_CLICKED, (void *)(intptr_t)type);
         lv_obj_t * l = lv_label_create(b);
-        lv_label_set_text(l, layout_type_name(type));
+        if (hidden_on_page) {
+            lv_label_set_text_fmt(l, "%s  %s", layout_type_name(type), tr("(verborgen)", "(hidden)"));
+        } else {
+            lv_label_set_text(l, layout_type_name(type));
+        }
         lv_obj_set_style_text_color(l, lv_color_hex(0x0a121e), 0);
         lv_obj_center(l);
         added++;
@@ -481,20 +566,15 @@ static void on_resize(lv_event_t * e) {
 }
 static void on_toggle_vis(lv_event_t * e) {
     (void)e;
-    if (sel < 0) return;
+    if (sel < 0 || sel >= edit.count) return;
     layout_tile_t * t = &edit.tiles[sel];
-    if (!t->visible) {
-        /* Turning a tile back ON must not stack it onto whatever took its cell
-         * while it was hidden. If the old spot is occupied, relocate to a free
-         * cell; if there's none, keep it hidden. */
-        if (would_overlap(sel, t->col, t->row, t->w, t->h)) {
-            int c, r;
-            if (find_free_cell(sel, t->w, t->h, &c, &r)) { t->col = c; t->row = r; }
-            else { lv_label_set_text(sel_lbl, tr("Geen ruimte om te tonen - verberg eerst iets", "No room to show - hide something first")); return; }
-        }
+    t->visible = 0;
+    if (rects[sel]) {
+        lv_obj_del(rects[sel]);
+        rects[sel] = NULL;
     }
-    t->visible = !t->visible;
-    place_rect(sel); update_sel_label();
+    sel = -1;
+    update_sel_label();
 }
 /* Remove tile `i` entirely (not just hide it): frees its grid cell AND its type,
  * so a smaller tile of any type can be added in its place. Keeps the parallel

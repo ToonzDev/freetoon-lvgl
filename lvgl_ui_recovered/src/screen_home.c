@@ -54,9 +54,10 @@
 
 static lv_obj_t * scr_root = NULL;
 
-/* Big thermostat tile widgets — updated by refresh timer */
-static lv_obj_t * lbl_t_clock;
+/* Clock / thermostat tile widgets — updated by refresh timer */
+static lv_obj_t * lbl_t_clock_h = NULL;
 static lv_obj_t * lbl_t_clock_colon = NULL;   /* pulsing ":" overlay */
+static lv_obj_t * lbl_t_clock_m = NULL;
 static lv_obj_t * lbl_t_temp;
 static lv_obj_t * lbl_t_setpoint;
 static lv_obj_t * lbl_t_burner;
@@ -381,18 +382,22 @@ static void picker_apply_cb(lv_event_t * e) {
     pin_gate(picker_apply_action, pe);
 }
 
-/* Mode-toggle taps. Each button always sends the corresponding action;
- * re-tapping the active mode is a no-op the user can't get wrong. */
+/* Mode-toggle taps. Kept for program modal / compatibility. */
+static void mode_manual_apply(void * ctx)  __attribute__((unused));
 static void mode_manual_apply(void * ctx)  { (void)ctx; boxtalk_set_manual();      }
+static void mode_program_apply(void * ctx) __attribute__((unused));
 static void mode_program_apply(void * ctx) { (void)ctx; boxtalk_resume_schedule(); }
+static void on_mode_manual(lv_event_t * e)  __attribute__((unused));
 static void on_mode_manual(lv_event_t * e)  { (void)e; pin_gate(mode_manual_apply,  NULL); }
+static void on_mode_program(lv_event_t * e) __attribute__((unused));
 static void on_mode_program(lv_event_t * e) { (void)e; pin_gate(mode_program_apply, NULL); }
 
-/* Direct preset tap on one of the four pill-side buttons. user_data carries
- * the Toon program state (0=Comfort, 1=Home, 2=Sleep, 3=Away). */
+/* Direct preset tap on one of the four pill-side buttons. */
+static void preset_apply(void * ctx) __attribute__((unused));
 static void preset_apply(void * ctx) {
     boxtalk_set_program((int)(intptr_t)ctx);
 }
+static void on_tile_preset(lv_event_t * e) __attribute__((unused));
 static void on_tile_preset(lv_event_t * e) {
     int s = (int)(intptr_t)lv_event_get_user_data(e);
     pin_gate(preset_apply, (void *)(intptr_t)s);
@@ -1981,17 +1986,17 @@ static void refresh_cb(lv_timer_t * t) {
     /* Expire any pending +/- temporary override once the schedule advances. */
     boxtalk_tick();
 
-    /* Clock on thermostat tile */
+    /* Clock on clock tile */
     time_t now = time(NULL);
     struct tm tm;
     localtime_r(&now, &tm);
-    char clk[16];
-    strftime(clk, sizeof(clk), "%H %M", &tm);   /* space; pulsing colon overlays */
-    lv_label_set_text(lbl_t_clock, clk);
-    /* Re-centre the ":" overlay on the (now real-width) clock — the create-time
-     * align used the narrower "-- --" placeholder, which left the colon sitting
-     * on a digit instead of in the gap (so it looked missing on the device). */
-    if (lbl_t_clock_colon) lv_obj_align_to(lbl_t_clock_colon, lbl_t_clock, LV_ALIGN_CENTER, 0, 0);
+    if (lbl_t_clock_h && lbl_t_clock_m) {
+        char ch[8], cm[8];
+        strftime(ch, sizeof(ch), "%H", &tm);
+        strftime(cm, sizeof(cm), "%M", &tm);
+        lv_label_set_text(lbl_t_clock_h, ch);
+        lv_label_set_text(lbl_t_clock_m, cm);
+    }
     if (lbl_t_date) {
         char dt[48];
         i18n_date_short(dt, sizeof(dt), &tm);   /* localised — strftime is C-locale (always English) */
@@ -2012,8 +2017,14 @@ static void refresh_cb(lv_timer_t * t) {
         }
     }
 
-    if (toon_state.indoor_temp > 0)
+    if (toon_state.indoor_temp > 0) {
         lv_label_set_text_fmt(lbl_t_temp, "%.1f°C", display_indoor_temp(toon_state.indoor_temp));
+        lv_obj_update_layout(lbl_t_temp);
+        lv_obj_align(lbl_t_temp, LV_ALIGN_TOP_MID, 0, (DISP_VER < 600 ? 6 : 14));
+        if (tile_img_flame) lv_obj_align_to(tile_img_flame, lbl_t_temp, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
+        if (tile_img_faucet) lv_obj_align_to(tile_img_faucet, lbl_t_temp, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
+        if (tile_img_drop) lv_obj_align_to(tile_img_drop, lbl_t_temp, LV_ALIGN_OUT_RIGHT_MID, 26, 8);
+    }
     /* Setpoint visible at all times; the "to" prefix only when the CH
      * burner is actively heating toward it (idle just shows the target
      * temperature, no arrow). */
@@ -2076,22 +2087,26 @@ static void refresh_cb(lv_timer_t * t) {
         }
     }
 
-    /* Pure-icon burner indicator next to the big indoor-temp number. No
-     * "-> 90 C" text — the radiator+flame glyph carries the meaning, same
-     * style as the dim and heater-detail screens. */
-    lv_label_set_text(lbl_t_burner, "");
+    if (lbl_t_burner) lv_label_set_text(lbl_t_burner, "");
     if (toon_state.burner_on) {
-        lv_obj_clear_flag(tile_img_flame,  LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(tile_img_faucet, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(tile_img_drop,   LV_OBJ_FLAG_HIDDEN);
+        if (tile_img_flame)  lv_obj_clear_flag(tile_img_flame,  LV_OBJ_FLAG_HIDDEN);
+        if (tile_img_faucet) lv_obj_add_flag(tile_img_faucet, LV_OBJ_FLAG_HIDDEN);
+        if (tile_img_drop)   lv_obj_add_flag(tile_img_drop,   LV_OBJ_FLAG_HIDDEN);
     } else if (toon_state.dhw_on) {
-        lv_obj_add_flag(tile_img_flame, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(tile_img_faucet, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(tile_img_drop,   LV_OBJ_FLAG_HIDDEN);
+        if (tile_img_flame)  lv_obj_add_flag(tile_img_flame, LV_OBJ_FLAG_HIDDEN);
+        if (tile_img_faucet) lv_obj_clear_flag(tile_img_faucet, LV_OBJ_FLAG_HIDDEN);
+        if (tile_img_drop)   lv_obj_clear_flag(tile_img_drop,   LV_OBJ_FLAG_HIDDEN);
     } else {
-        lv_obj_add_flag(tile_img_flame,  LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(tile_img_faucet, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(tile_img_drop,   LV_OBJ_FLAG_HIDDEN);
+        if (tile_img_flame)  lv_obj_add_flag(tile_img_flame,  LV_OBJ_FLAG_HIDDEN);
+        if (tile_img_faucet) lv_obj_add_flag(tile_img_faucet, LV_OBJ_FLAG_HIDDEN);
+        if (tile_img_drop)   lv_obj_add_flag(tile_img_drop,   LV_OBJ_FLAG_HIDDEN);
+    }
+    if (tile_img_flame && lbl_t_temp) {
+        lv_obj_align_to(tile_img_flame, lbl_t_temp, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
+    }
+    if (tile_img_faucet && lbl_t_temp) {
+        lv_obj_align_to(tile_img_faucet, lbl_t_temp, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
+        if (tile_img_drop) lv_obj_align_to(tile_img_drop, lbl_t_temp, LV_ALIGN_OUT_RIGHT_MID, 26, 8);
     }
 
     if (lbl_t_pressure) {
@@ -3536,30 +3551,90 @@ lv_obj_t * screen_home_create(void) {
            Energy (P1), Buienradar, Waste, Settings
     */
 
-    /* --- Big thermostat tile (height 360 — was 410, lost 50 px to make room
-           for the new Curtains strip below it). --- */
+    /* --- Clock / Date tile (LT_CLOCK) --- */
+    lv_obj_t * tile_clock = lv_obj_create(scr_root);
+    lv_obj_set_size(tile_clock, 330, 140);
+    lv_obj_set_pos(tile_clock, 20, 20);
+    if (settings.custom_layout_enabled) {
+        const layout_tile_t * Lc = layout_find(LT_CLOCK);
+        if (Lc && Lc->visible) {
+            int x, y, w, h;
+            layout_cell_px(Lc->col, Lc->row, Lc->w, Lc->h, &x, &y, &w, &h);
+            x += 4; y += 4; w -= 8; h -= 8;     /* inter-tile margin */
+            lv_obj_set_pos(tile_clock, x, y);
+            lv_obj_set_size(tile_clock, w, h);
+        } else if (Lc) {
+            lv_obj_add_flag(tile_clock, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    lv_obj_set_style_bg_color(tile_clock, lv_color_hex(COL_TILE_BG), 0);
+    lv_obj_set_style_border_width(tile_clock, 0, 0);
+    lv_obj_set_style_radius(tile_clock, 18, 0);
+    lv_obj_set_style_pad_all(tile_clock, 8, 0);
+    lv_obj_clear_flag(tile_clock, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(tile_clock, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(tile_clock, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(tile_clock, (DISP_VER < 600 ? 2 : 4), 0);
+
+    /* Clock row: Hours : Minutes centered horizontally */
+    lv_obj_t * clk_row = lv_obj_create(tile_clock);
+    lv_obj_set_size(clk_row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(clk_row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(clk_row, 0, 0);
+    lv_obj_set_style_pad_all(clk_row, 0, 0);
+    lv_obj_set_style_pad_column(clk_row, (DISP_VER < 600 ? 1 : 2), 0);
+    lv_obj_clear_flag(clk_row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(clk_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(clk_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    const lv_font_t * font_clock = SF(64);
+
+    lbl_t_clock_h = lv_label_create(clk_row);
+    lv_obj_set_style_text_color(lbl_t_clock_h, lv_color_hex(COL_TEXT_HI), 0);
+    lv_obj_set_style_text_font(lbl_t_clock_h, font_clock, 0);
+    lv_label_set_text(lbl_t_clock_h, "--");
+
+    lbl_t_clock_colon = lv_label_create(clk_row);
+    lv_obj_set_style_text_color(lbl_t_clock_colon, lv_color_hex(COL_TEXT_HI), 0);
+    lv_obj_set_style_text_font(lbl_t_clock_colon, font_clock, 0);
+    lv_label_set_text(lbl_t_clock_colon, ":");
+    clock_colon_pulse(lbl_t_clock_colon);
+
+    lbl_t_clock_m = lv_label_create(clk_row);
+    lv_obj_set_style_text_color(lbl_t_clock_m, lv_color_hex(COL_TEXT_HI), 0);
+    lv_obj_set_style_text_font(lbl_t_clock_m, font_clock, 0);
+    lv_label_set_text(lbl_t_clock_m, "--");
+
+    /* Date label centered horizontally */
+    lbl_t_date = lv_label_create(tile_clock);
+    lv_obj_set_style_text_color(lbl_t_date, lv_color_hex(COL_TEXT_DIM), 0);
+    lv_obj_set_style_text_font(lbl_t_date, SF(22), 0);
+    lv_obj_set_style_text_align(lbl_t_date, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(lbl_t_date, "");
+
+    /* Moon phase icon (top-right corner, non-interfering) */
+    moon_phase_img = lv_img_create(tile_clock);
+    lv_obj_add_flag(moon_phase_img, LV_OBJ_FLAG_FLOATING);
+    lv_img_set_src(moon_phase_img, moon_phase_icon(40));
+    lv_obj_set_style_img_recolor(moon_phase_img, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_img_recolor_opa(moon_phase_img, 255, 0);
+    lv_obj_align(moon_phase_img, LV_ALIGN_TOP_RIGHT, -4, 4);
+    lv_obj_add_flag(moon_phase_img, LV_OBJ_FLAG_HIDDEN);
+
+    /* --- Compact Thermostat Tile (LT_THERMOSTAT) ---
+     * Shows indoor temperature + flame icon next to it, setpoint, and +/- buttons.
+     * Tapping the tile opens the full thermostat detail screen. */
     lv_obj_t * th = lv_obj_create(scr_root);
-    lv_obj_set_size(th, 520, 360);   /* bottom flush with the curtains/right column */
-    lv_obj_set_pos(th, 20, 20);
-    /* Custom layout: move/size/hide the thermostat block from the grid. Size
-     * it to its grid cell too (like every make_tile tile) so its footprint and
-     * its neighbours line up on the grid — otherwise the native 520x360 tile is
-     * undersized vs its ~597x450 default footprint and the right-column tiles
-     * snap to grid edges, looking shrunk + misaligned (BUG 5). The internals are
-     * absolutely positioned/centred, so a larger box just gives them more room;
-     * SCROLLABLE is cleared below so any overflow is clipped, not scrolled. */
-    int clock_dx = 0;   /* shift the clock right of the "ft" logo when needed */
+    lv_obj_set_size(th, 330, 210);
+    lv_obj_set_pos(th, 20, 175);
     if (settings.custom_layout_enabled) {
         const layout_tile_t * L = layout_find(LT_THERMOSTAT);
-        if (L && L->visible) { int x, y, w, h;
+        if (L && L->visible) {
+            int x, y, w, h;
             layout_cell_px(L->col, L->row, L->w, L->h, &x, &y, &w, &h);
             x += 4; y += 4; w -= 8; h -= 8;     /* inter-tile margin */
             lv_obj_set_pos(th, x, y);
             lv_obj_set_size(th, w, h);
-            /* The "ft" logo badge is a fixed 40px box at screen (8,6). A custom
-             * layout can place the thermostat at the top-left corner, putting the
-             * clock behind the badge — shift it right to clear it. (pad_all=20.) */
-            if (y < 46 && x + 20 < 54) clock_dx = 54 - (x + 20);
         } else if (L) {
             lv_obj_add_flag(th, LV_OBJ_FLAG_HIDDEN);
         }
@@ -3567,320 +3642,133 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_bg_color(th, lv_color_hex(COL_TILE_BG), 0);
     lv_obj_set_style_border_width(th, 0, 0);
     lv_obj_set_style_radius(th, 18, 0);
-    lv_obj_set_style_pad_all(th, 20, 0);
+    lv_obj_set_style_pad_all(th, 10, 0);
     lv_obj_clear_flag(th, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(th, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(th, open_thermostat, LV_EVENT_CLICKED, NULL);
 
-    lbl_t_clock = lv_label_create(th);
-    lv_obj_set_style_text_color(lbl_t_clock, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(lbl_t_clock, SF(28), 0);
-    lv_label_set_text(lbl_t_clock, "-- --");
-    lv_obj_align(lbl_t_clock, LV_ALIGN_TOP_LEFT, clock_dx, 0);
-
-    /* Pulsing ":" overlay centred on the clock (in the "HH MM" middle space) —
-     * separate label so the digits don't jitter as the colon fades. */
-    lbl_t_clock_colon = lv_label_create(th);
-    lv_obj_set_style_text_color(lbl_t_clock_colon, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(lbl_t_clock_colon, SF(28), 0);
-    lv_label_set_text(lbl_t_clock_colon, ":");
-    /* Force the clock's geometry to be computed so align_to reads real coords
-     * (without this the colon can land at 0,0 of the tile and look "missing"). */
-    lv_obj_update_layout(lbl_t_clock);
-    lv_obj_align_to(lbl_t_clock_colon, lbl_t_clock, LV_ALIGN_CENTER, 0, 0);
-    clock_colon_pulse(lbl_t_clock_colon);
-
-    /* Date directly under the clock so the top-left corner is a full
-       date+time block. */
-    lbl_t_date = lv_label_create(th);
-    lv_obj_set_style_text_color(lbl_t_date, lv_color_hex(COL_TEXT_DIM), 0);
-    lv_obj_set_style_text_font(lbl_t_date, SF(18), 0);
-    lv_label_set_text(lbl_t_date, "");
-    lv_obj_align(lbl_t_date, LV_ALIGN_TOP_LEFT, 0, 36);
-
-    /* Moon phase — 40-px icon sitting below the date, just left-of-centre
-     * inside the heater tile. ALWAYS shown so the user sees the current
-     * lunar phase even during the day; the icon is separate from the
-     * forecast band so it doesn't compete with the weather icon. A fixed
-     * pixel position is used (rather than align-to-date-label) because
-     * lv_obj_align_to runs before the label has measured its text width
-     * → the icon ends up clipped behind the clock. */
-    moon_phase_img = lv_img_create(scr_root);
-    lv_img_set_src(moon_phase_img, moon_phase_icon(40));
-    lv_obj_set_style_img_recolor(moon_phase_img, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_img_recolor_opa(moon_phase_img, 255, 0);
-    /* NOTE: do NOT lv_img_set_zoom() these weather-icon assets — they're a color
-     * format the SW renderer can't transform, so any non-256 zoom draws nothing
-     * (the same bug that hid the forecast icons). Render at native size. */
-    /* Sits at the start of the "<city> - X.X°C now" location/forecast header
-     * (just before the outside temperature). White at night, hidden during
-     * the day — gated in refresh_cb via is_daytime_now(), mirroring dim. */
-    lv_obj_align(moon_phase_img, LV_ALIGN_TOP_LEFT, 20, 450);
-
-    /* Air-quality badge — top-right of the Heater tile, coloured per
-       eCO2/TVOC bucket (green/lime/yellow/orange/red). */
-    lbl_t_aq = lv_label_create(th);
-    lv_obj_set_style_text_color(lbl_t_aq, lv_color_hex(0x66cc88), 0);
-    lv_obj_set_style_text_font(lbl_t_aq, SF(18), 0);
-    lv_label_set_text(lbl_t_aq, "");
-    lv_obj_align(lbl_t_aq, LV_ALIGN_TOP_RIGHT, 0, 6);
-
-    /* "Thermostat" title removed per request — the gear icon and tile
-       content already make this tile's role obvious. */
-
     lbl_t_temp = lv_label_create(th);
     lv_obj_set_style_text_color(lbl_t_temp, lv_color_hex(COL_TEMP_YELLOW), 0);
-    lv_obj_set_style_text_font(lbl_t_temp, SF(48), 0);
-    lv_label_set_text(lbl_t_temp, "-- C");
-    lv_obj_align(lbl_t_temp, LV_ALIGN_CENTER, 0, -90);
+    lv_obj_set_style_text_font(lbl_t_temp, (DISP_VER < 600 ? SF(36) : SF(48)), 0);
+    lv_label_set_text(lbl_t_temp, "--.-°C");
+    lv_obj_align(lbl_t_temp, LV_ALIGN_TOP_MID, 0, (DISP_VER < 600 ? 6 : 14));
 
-    /* Setpoint row: [-] setpoint [+]. sp_row itself is NOT clickable so
-     * taps on its centre (the setpoint label dead-zone between the two
-     * buttons) pass through to the tile and open the detail page. The
-     * +/- buttons keep their own click handlers. */
+    /* Flame / burner indicator sitting horizontally right next to the temp value */
+    tile_img_flame = lv_img_create(th);
+    lv_img_set_src(tile_img_flame, &icon_radiator);
+    lv_img_set_zoom(tile_img_flame, (DISP_VER < 600 ? 200 : 256));
+    lv_obj_set_style_img_recolor(tile_img_flame, lv_color_hex(COL_BURNER_RED), 0);
+    lv_obj_set_style_img_recolor_opa(tile_img_flame, 255, 0);
+    lv_obj_align_to(tile_img_flame, lbl_t_temp, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
+    lv_obj_add_flag(tile_img_flame, LV_OBJ_FLAG_HIDDEN);
+
+    tile_img_faucet = lv_img_create(th);
+    lv_img_set_src(tile_img_faucet, &icon_faucet);
+    lv_img_set_zoom(tile_img_faucet, (DISP_VER < 600 ? 200 : 256));
+    lv_obj_set_style_img_recolor(tile_img_faucet, lv_color_hex(0xff5544), 0);
+    lv_obj_set_style_img_recolor_opa(tile_img_faucet, 255, 0);
+    lv_obj_align_to(tile_img_faucet, lbl_t_temp, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
+    lv_obj_add_flag(tile_img_faucet, LV_OBJ_FLAG_HIDDEN);
+
+    tile_img_drop = lv_img_create(th);
+    lv_img_set_src(tile_img_drop, &icon_drop);
+    lv_img_set_zoom(tile_img_drop, (DISP_VER < 600 ? 200 : 256));
+    lv_obj_set_style_img_recolor(tile_img_drop, lv_color_hex(0xff5544), 0);
+    lv_obj_set_style_img_recolor_opa(tile_img_drop, 255, 0);
+    lv_obj_align_to(tile_img_drop, lbl_t_temp, LV_ALIGN_OUT_RIGHT_MID, 26, 8);
+    lv_obj_add_flag(tile_img_drop, LV_OBJ_FLAG_HIDDEN);
+
+    /* Setpoint row: [-] setpoint [+] */
     lv_obj_t * sp_row = lv_obj_create(th);
-    lv_obj_set_size(sp_row, 460, 84);
-    lv_obj_align(sp_row, LV_ALIGN_CENTER, 0, -10);
+    lv_obj_set_size(sp_row, LV_PCT(100), (DISP_VER < 600 ? 64 : 78));
+    lv_obj_align(sp_row, LV_ALIGN_BOTTOM_MID, 0, (DISP_VER < 600 ? -2 : -6));
     lv_obj_set_style_bg_opa(sp_row, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(sp_row, 0, 0);
     lv_obj_set_style_pad_all(sp_row, 0, 0);
     lv_obj_clear_flag(sp_row, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_clear_flag(sp_row, LV_OBJ_FLAG_CLICKABLE);
 
+    int btn_sz_w = (DISP_VER < 600 ? 64 : 78);
+    int btn_sz_h = (DISP_VER < 600 ? 58 : 70);
+
     lv_obj_t * btn_dn = lv_btn_create(sp_row);
-    lv_obj_set_size(btn_dn, 84, 76);
-    lv_obj_align(btn_dn, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_obj_set_size(btn_dn, btn_sz_w, btn_sz_h);
+    lv_obj_align(btn_dn, LV_ALIGN_LEFT_MID, 4, 0);
     lv_obj_set_style_bg_color(btn_dn, lv_color_hex(COL_TILE_ACCENT), 0);
     lv_obj_set_style_radius(btn_dn, 12, 0);
     lv_obj_set_ext_click_area(btn_dn, 12);
     lv_obj_add_event_cb(btn_dn, on_tile_sp_down, LV_EVENT_CLICKED, NULL);
     lv_obj_t * btn_dn_lbl = lv_label_create(btn_dn);
     lv_label_set_text(btn_dn_lbl, "-");
-    lv_obj_set_style_text_font(btn_dn_lbl, SF(48), 0);
+    lv_obj_set_style_text_font(btn_dn_lbl, (DISP_VER < 600 ? SF(36) : SF(48)), 0);
     lv_obj_set_style_text_color(btn_dn_lbl, lv_color_hex(0xffffff), 0);
     lv_obj_center(btn_dn_lbl);
 
     lbl_t_setpoint = lv_label_create(sp_row);
     lv_obj_set_style_text_color(lbl_t_setpoint, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(lbl_t_setpoint, SF(28), 0);
-    lv_label_set_text(lbl_t_setpoint, tr("naar -- C", "to -- C"));
+    lv_obj_set_style_text_font(lbl_t_setpoint, (DISP_VER < 600 ? SF(20) : SF(24)), 0);
+    lv_label_set_text(lbl_t_setpoint, "--.-°C");
     lv_obj_align(lbl_t_setpoint, LV_ALIGN_CENTER, 0, 0);
 
     lv_obj_t * btn_up = lv_btn_create(sp_row);
-    lv_obj_set_size(btn_up, 84, 76);
-    lv_obj_align(btn_up, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_set_size(btn_up, btn_sz_w, btn_sz_h);
+    lv_obj_align(btn_up, LV_ALIGN_RIGHT_MID, -4, 0);
     lv_obj_set_style_bg_color(btn_up, lv_color_hex(COL_TILE_ACCENT), 0);
     lv_obj_set_style_radius(btn_up, 12, 0);
     lv_obj_set_ext_click_area(btn_up, 12);
     lv_obj_add_event_cb(btn_up, on_tile_sp_up, LV_EVENT_CLICKED, NULL);
     lv_obj_t * btn_up_lbl = lv_label_create(btn_up);
     lv_label_set_text(btn_up_lbl, "+");
-    lv_obj_set_style_text_font(btn_up_lbl, SF(48), 0);
+    lv_obj_set_style_text_font(btn_up_lbl, (DISP_VER < 600 ? SF(36) : SF(48)), 0);
     lv_obj_set_style_text_color(btn_up_lbl, lv_color_hex(0xffffff), 0);
     lv_obj_center(btn_up_lbl);
 
-    /* Camera button — icon-only, stacked above the "+". Self-gated: only
-     * appears when video is enabled (no-op on Toon 2 / when disabled). */
+    /* Camera button if video enabled */
     video_install_button(th, btn_up);
 
-    /* Mode toggle row — Manual | Program, both tappable. Active mode gets
-     * a white outline. Buttons are compact (110 + 140) — the active preset
-     * is already visible from the highlighted preset button on the row
-     * below, so the Program button doesn't need to carry it. An asterisk
-     * appears on Program while a +/- temporary override is in flight. */
-    {
-        const int manual_w = 135, prog_w = 160, btn_h = 42, gap = 8;
-        const int total   = manual_w + prog_w + gap;
-        const int left_x  = -total / 2 + manual_w / 2;
-        const int right_x = -total / 2 + manual_w + gap + prog_w / 2;
-
-        tile_btn_mode_manual = lv_btn_create(th);
-        lv_obj_set_size(tile_btn_mode_manual, manual_w, btn_h);
-        lv_obj_align(tile_btn_mode_manual, LV_ALIGN_CENTER, left_x, 70);
-        lv_obj_set_style_bg_color(tile_btn_mode_manual, lv_color_hex(0x6a5424), 0);
-        lv_obj_set_style_radius(tile_btn_mode_manual, 21, 0);
-        lv_obj_set_style_border_color(tile_btn_mode_manual, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_border_width(tile_btn_mode_manual, 0, 0);
-        lv_obj_set_style_pad_hor(tile_btn_mode_manual, 4, 0);
-        lv_obj_set_ext_click_area(tile_btn_mode_manual, 8);
-        lv_obj_add_event_cb(tile_btn_mode_manual, on_mode_manual,
-                            LV_EVENT_CLICKED, NULL);
-        lv_obj_t * ml = lv_label_create(tile_btn_mode_manual);
-        lv_label_set_text(ml, tr("Handmatig", "Manual"));
-        lv_obj_set_style_text_color(ml, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(ml, SF(20), 0);
-        lv_obj_center(ml);
-
-        tile_btn_mode_program = lv_btn_create(th);
-        lv_obj_set_size(tile_btn_mode_program, prog_w, btn_h);
-        lv_obj_align(tile_btn_mode_program, LV_ALIGN_CENTER, right_x, 70);
-        lv_obj_set_style_bg_color(tile_btn_mode_program, lv_color_hex(0x2f6b6b), 0);
-        lv_obj_set_style_radius(tile_btn_mode_program, 21, 0);
-        lv_obj_set_style_border_color(tile_btn_mode_program, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_border_width(tile_btn_mode_program, 0, 0);
-        lv_obj_set_style_pad_hor(tile_btn_mode_program, 4, 0);
-        lv_obj_set_ext_click_area(tile_btn_mode_program, 8);
-        lv_obj_add_event_cb(tile_btn_mode_program, on_mode_program,
-                            LV_EVENT_CLICKED, NULL);
-        lbl_t_program = lv_label_create(tile_btn_mode_program);
-        lv_label_set_text(lbl_t_program, tr("Programma", "Program"));
-        lv_obj_set_style_text_color(lbl_t_program, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(lbl_t_program, SF(20), 0);
-        lv_obj_center(lbl_t_program);
-    }
-
-    /* Direct-preset row just below the pill — one tap to set Comfort /
-     * Home / Sleep / Away. Colours mirror the schedule editor and heater
-     * detail screen for instant recognition. The active preset gets a
-     * white border, updated in refresh_cb. Width 78 so "Comfort" doesn't
-     * clip at 18-pt; row centred at +118 so it sits between the pill
-     * (bottom ~y=276) and the metrics strip (top ~y=334). */
-    {
-        const char * names[4] = {tr("Comfort", "Comfort"), tr("Thuis", "Home"),
-                                 tr("Slapen", "Sleep"), tr("Weg", "Away")};
-        uint32_t     cols[4]  = {0xcc7733, 0x3377cc, 0x553388, 0x557788};
-        const int    bw = 78, bh = 34, gap = 4;
-        int total = 4 * bw + 3 * gap;
-        for (int i = 0; i < 4; i++) {
-            lv_obj_t * b = lv_btn_create(th);
-            lv_obj_set_size(b, bw, bh);
-            lv_obj_align(b, LV_ALIGN_CENTER,
-                         -total / 2 + i * (bw + gap) + bw / 2, 124);
-            lv_obj_set_style_bg_color(b, lv_color_hex(cols[i]), 0);
-            lv_obj_set_style_radius(b, 8, 0);
-            lv_obj_set_style_border_color(b, lv_color_hex(0xffffff), 0);
-            lv_obj_set_style_border_width(b, 0, 0);
-            lv_obj_set_style_pad_all(b, 0, 0);
-            lv_obj_set_ext_click_area(b, 6);
-            lv_obj_add_event_cb(b, on_tile_preset, LV_EVENT_CLICKED,
-                                (void *)(intptr_t)i);
-            lv_obj_t * bl = lv_label_create(b);
-            lv_label_set_text(bl, names[i]);
-            lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
-            lv_obj_set_style_text_font(bl, SF(18), 0);
-            lv_obj_center(bl);
-            tile_btn_preset[i] = b;
-        }
-    }
-
-    /* Burner status sits above the metrics strip. The icons follow it so
-       the flame/faucet stays paired with the text. */
-    lbl_t_burner = lv_label_create(th);
-    lv_obj_set_style_text_color(lbl_t_burner, lv_color_hex(COL_BURNER_RED), 0);
-    lv_obj_set_style_text_font(lbl_t_burner, SF(22), 0);
-    lv_label_set_text(lbl_t_burner, tr("inactief", "idle"));
-    lv_obj_align(lbl_t_burner, LV_ALIGN_BOTTOM_MID, 30, -40);
-
-    /* Bottom strip: humidity | eCO2 | TVOC | water-pressure on one row.
-       Font 18 keeps the 4 values from running into each other on a
-       520-wide tile. y offset 0 pins them flush with the tile bottom
-       so the mode-toggle and preset rows above have more breathing room.
-       humidity/eCO2/TVOC come from the eCO2/TVOC air sensor that only
-       Toon 2 has -- omit them on Toon 1 (the update sites null-check, so
-       leaving these NULL just hides them; water-pressure stays). */
-#ifndef TOON1
-    lbl_t_humidity = lv_label_create(th);
-    lv_obj_set_style_text_color(lbl_t_humidity, lv_color_hex(COL_TEXT_DIM), 0);
-    lv_obj_set_style_text_font(lbl_t_humidity, SF(18), 0);
-    lv_label_set_text(lbl_t_humidity, tr("RV --%", "RH --%"));
-    lv_obj_align(lbl_t_humidity, LV_ALIGN_BOTTOM_LEFT, 12, 8);
-
-    lbl_t_ppm = lv_label_create(th);
-    lv_obj_set_style_text_color(lbl_t_ppm, lv_color_hex(COL_TEXT_DIM), 0);
-    lv_obj_set_style_text_font(lbl_t_ppm, SF(18), 0);
-    lv_label_set_text(lbl_t_ppm, "-- ppm");
-    lv_obj_align(lbl_t_ppm, LV_ALIGN_BOTTOM_LEFT, 140, 8);
-
-    lbl_t_tvoc = lv_label_create(th);
-    lv_obj_set_style_text_color(lbl_t_tvoc, lv_color_hex(COL_TEXT_DIM), 0);
-    lv_obj_set_style_text_font(lbl_t_tvoc, SF(18), 0);
-    lv_label_set_text(lbl_t_tvoc, "TVOC --");
-    lv_obj_align(lbl_t_tvoc, LV_ALIGN_BOTTOM_LEFT, 280, 8);
-#endif
-
-    lbl_t_pressure = lv_label_create(th);
-    lv_obj_set_style_text_color(lbl_t_pressure, lv_color_hex(COL_TEXT_DIM), 0);
-    lv_obj_set_style_text_font(lbl_t_pressure, SF(18), 0);
-    lv_label_set_text(lbl_t_pressure, "-- bar");
-    lv_obj_align(lbl_t_pressure, LV_ALIGN_BOTTOM_RIGHT, -12, 8);
-
-    /* CH-pressure warning banner. Sits on top of the Heater tile so the
-       user can't miss it. EVENT_BUBBLE keeps the tile clickable through
-       the banner. Hidden by default; shown only when pressure is low. */
-    pressure_banner = lv_obj_create(th);
-    lv_obj_set_size(pressure_banner, 520, 42);
-    lv_obj_align(pressure_banner, LV_ALIGN_TOP_LEFT, -10, -10);
-    lv_obj_set_style_radius(pressure_banner, 0, 0);
-    lv_obj_set_style_border_width(pressure_banner, 0, 0);
-    lv_obj_clear_flag(pressure_banner, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(pressure_banner, LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_add_flag(pressure_banner, LV_OBJ_FLAG_HIDDEN);
-
-    pressure_banner_lbl = lv_label_create(pressure_banner);
-    lv_obj_set_style_text_color(pressure_banner_lbl,
-                                lv_color_hex(0x000000), 0);
-    lv_obj_set_style_text_font(pressure_banner_lbl,
-                               SF(22), 0);
-    lv_label_set_text(pressure_banner_lbl, "");
-    lv_obj_center(pressure_banner_lbl);
-    lv_obj_add_flag(pressure_banner_lbl, LV_OBJ_FLAG_EVENT_BUBBLE);
-
-    /* Burner indicator icons — replace the old "heating"/"hot water" word.
-     * Native 32×40 source; render at full size (zoom 256) so the symbol
-     * reads at a glance. Flame sits left of the target-temp label, faucet
-     * & drop pair on the left for DHW. */
-    /* Icons sit to the right of the big indoor-temp label (lbl_t_temp at
-     * CENTER (0, -90), 48-pt font ≈ 150 px wide). Same placement style
-     * as dim and heater-detail screens. */
-    tile_img_flame = lv_img_create(th);
-    lv_img_set_src(tile_img_flame, &icon_radiator);
-    lv_img_set_zoom(tile_img_flame, 256);
-    lv_obj_set_style_img_recolor(tile_img_flame, lv_color_hex(COL_BURNER_RED), 0);
-    lv_obj_set_style_img_recolor_opa(tile_img_flame, 255, 0);
-    lv_obj_align(tile_img_flame, LV_ALIGN_CENTER, 110, -90);
-    lv_obj_add_flag(tile_img_flame, LV_OBJ_FLAG_HIDDEN);
-
-    /* DHW indicator is FULLY red (faucet + drop both tinted) so it's
-     * unambiguously distinct from the blue cold-water-flow drop on the
-     * left side. Silver faucet was too easy to mistake for "off". */
-    tile_img_faucet = lv_img_create(th);
-    lv_img_set_src(tile_img_faucet, &icon_faucet);
-    lv_img_set_zoom(tile_img_faucet, 256);
-    lv_obj_set_style_img_recolor(tile_img_faucet, lv_color_hex(0xff5544), 0);
-    lv_obj_set_style_img_recolor_opa(tile_img_faucet, 255, 0);
-    lv_obj_align(tile_img_faucet, LV_ALIGN_CENTER, 105, -100);
-    lv_obj_add_flag(tile_img_faucet, LV_OBJ_FLAG_HIDDEN);
-
-    /* DHW drop is RED so it's instantly distinguishable from the blue
-     * cold-water-flow drop on the left. Silver faucet + red drop = "tap
-     * is delivering hot water from the boiler"; lone blue drop on the
-     * other side = "cold water flowing through the meter". */
-    tile_img_drop = lv_img_create(th);
-    lv_img_set_src(tile_img_drop, &icon_drop);
-    lv_img_set_zoom(tile_img_drop, 256);
-    lv_obj_set_style_img_recolor(tile_img_drop, lv_color_hex(0xff5544), 0);
-    lv_obj_set_style_img_recolor_opa(tile_img_drop, 255, 0);
-    lv_obj_align(tile_img_drop, LV_ALIGN_CENTER, 125, -80);
-    lv_obj_add_flag(tile_img_drop, LV_OBJ_FLAG_HIDDEN);
-
-    /* Live water-flow indicator on the left side of the indoor temp —
-     * mirrors the radiator+flame on the right. The 48-pt temp spans
-     * ~150 px, so its left edge sits around x = -75. Icon at -180 and
-     * 14-pt label at -135 keep the indicator clear of the temp glyphs. */
+    /* Live water-flow indicator */
     tile_img_water = lv_img_create(th);
     lv_img_set_src(tile_img_water, &icon_drop);
-    lv_img_set_zoom(tile_img_water, 256);
+    lv_img_set_zoom(tile_img_water, 200);
     lv_obj_set_style_img_recolor(tile_img_water, lv_color_hex(0x66bbff), 0);
     lv_obj_set_style_img_recolor_opa(tile_img_water, 255, 0);
-    lv_obj_align(tile_img_water, LV_ALIGN_CENTER, -180, -90);
+    lv_obj_align(tile_img_water, LV_ALIGN_TOP_LEFT, 4, 10);
     lv_obj_add_flag(tile_img_water, LV_OBJ_FLAG_HIDDEN);
 
     tile_lbl_water = lv_label_create(th);
     lv_obj_set_style_text_color(tile_lbl_water, lv_color_hex(0x66bbff), 0);
     lv_obj_set_style_text_font(tile_lbl_water, SF(14), 0);
     lv_label_set_text(tile_lbl_water, "");
-    lv_obj_align(tile_lbl_water, LV_ALIGN_CENTER, -140, -90);
+    lv_obj_align_to(tile_lbl_water, tile_img_water, LV_ALIGN_OUT_RIGHT_MID, 4, 0);
     lv_obj_add_flag(tile_lbl_water, LV_OBJ_FLAG_HIDDEN);
+
+    /* Pressure warning banner */
+    pressure_banner = lv_obj_create(th);
+    lv_obj_set_size(pressure_banner, LV_PCT(100), 32);
+    lv_obj_align(pressure_banner, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_set_style_radius(pressure_banner, 8, 0);
+    lv_obj_set_style_border_width(pressure_banner, 0, 0);
+    lv_obj_clear_flag(pressure_banner, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(pressure_banner, LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_add_flag(pressure_banner, LV_OBJ_FLAG_HIDDEN);
+
+    pressure_banner_lbl = lv_label_create(pressure_banner);
+    lv_obj_set_style_text_color(pressure_banner_lbl, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_text_font(pressure_banner_lbl, SF(16), 0);
+    lv_label_set_text(pressure_banner_lbl, "");
+    lv_obj_center(pressure_banner_lbl);
+    lv_obj_add_flag(pressure_banner_lbl, LV_OBJ_FLAG_EVENT_BUBBLE);
+
+    /* Clean up unused legacy tile widgets */
+    tile_btn_mode_manual  = NULL;
+    tile_btn_mode_program = NULL;
+    for (int i = 0; i < 4; i++) tile_btn_preset[i] = NULL;
+    lbl_t_burner = NULL;
+    lbl_t_humidity = NULL;
+    lbl_t_ppm = NULL;
+    lbl_t_tvoc = NULL;
+    lbl_t_pressure = NULL;
+    lbl_t_aq = NULL;
 
     /* --- Waste tile: two stacked pickup rows ---
        Each row gets its own type-specific icon (newspaper for Papier,
