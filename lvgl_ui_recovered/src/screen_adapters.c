@@ -51,27 +51,48 @@ static int  g_met_found  = 0;     /* HAE_METER node present in Z-Wave list */
 static int  g_pair_active = 0;    /* Z-Wave inclusion window open */
 static int  g_query_ticks = 0;
 
-/* Probe happ_pwrusage on 127.0.0.1:10080 for live meter wattage and diagnostics */
-static void probe_happ_pwrusage(void) {
+/* Probe happ_pwrusage on 127.0.0.1:10080 for live meter wattage and diagnostics.
+ * Supports both smart meters (instantaneous 'value') and analog pulse meters
+ * (where 'value' can be null between pulses, but 'avgValue' holds the calculated wattage). */
+void probe_happ_pwrusage(void) {
     extern int http_fetch_to(const char *, char *, size_t, int);
     char buf[512] = {0};
     if (http_fetch_to("http://127.0.0.1:10080/happ_pwrusage?action=GetCurrentUsage", buf, sizeof(buf), 2) == 0) {
         fprintf(stderr, "[adapters] happ_pwrusage GetCurrentUsage: %.200s\n", buf);
         const char * p_pu = strstr(buf, "\"powerUsage\"");
         if (p_pu) {
+            float pw = 0.0f;
+            int found = 0;
             const char * p_val = strstr(p_pu, "\"value\"");
             if (p_val) {
                 p_val += 7;
                 while (*p_val == ' ' || *p_val == ':' || *p_val == '\t') p_val++;
                 if (*p_val != 'n' && *p_val != 'N') {
-                    float pw = 0.0f;
                     if (sscanf(p_val, "%f", &pw) == 1) {
+                        found = 1;
                         fprintf(stderr, "[adapters] GetCurrentUsage parsed live power: %.1f W\n", (double)pw);
-                        meteradapter_on_flow(pw);
                     }
-                } else {
-                    fprintf(stderr, "[adapters] GetCurrentUsage: powerUsage.value is null (P1 smart meter not reporting data to happ_pwrusage)\n");
                 }
+            }
+            if (!found) {
+                /* Analog pulse meter fallback: between pulses 'value' is often null,
+                 * but 'avgValue' carries the calculated average wattage */
+                const char * p_avg = strstr(p_pu, "\"avgValue\"");
+                if (p_avg) {
+                    p_avg += 10;
+                    while (*p_avg == ' ' || *p_avg == ':' || *p_avg == '\t') p_avg++;
+                    if (*p_avg != 'n' && *p_avg != 'N') {
+                        if (sscanf(p_avg, "%f", &pw) == 1) {
+                            found = 1;
+                            fprintf(stderr, "[adapters] GetCurrentUsage parsed analog pulse avg power: %.1f W\n", (double)pw);
+                        }
+                    }
+                }
+            }
+            if (found) {
+                meteradapter_on_flow(pw);
+            } else {
+                fprintf(stderr, "[adapters] GetCurrentUsage: powerUsage.value/avgValue are null (no pulses detected or P1 disconnected)\n");
             }
         }
     } else {
@@ -126,7 +147,7 @@ static void update_meter_labels(void) {
     else if (online)
         lv_label_set_text(lbl_met_sub, tr("Z-Wave slimme meter - publiceert op ElectricityFlowMeter.", "Z-Wave smart meter - publishing on ElectricityFlowMeter."));
     else if (g_met_found)
-        lv_label_set_text(lbl_met_sub, tr("Meter is gekoppeld maar verzendt niet. Controleer de P1-/meterkabel.", "Meter is paired but not sending. Check the P1/meter cable."));
+        lv_label_set_text(lbl_met_sub, tr("Meter is gekoppeld maar meet geen verbruik. Controleer P1-kabel of pulssensor.", "Meter is paired but not measuring. Check P1 cable or pulse sensor."));
     else
         lv_label_set_text(lbl_met_sub, tr("Geen HAE_METER node gekoppeld. Tik op \"Koppel via Z-Wave\" om toe te voegen.", "No HAE_METER node paired. Tap \"Pair via Z-Wave\" to add it."));
 }

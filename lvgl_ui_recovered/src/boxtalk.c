@@ -362,6 +362,21 @@ static void handle_notify(const char* xml) {
         } else {
             fprintf(stderr, "[bxt-meter] warning: matched service '%s' but no flow tag found in xml: %.350s\n", tail, xml);
         }
+    } else if (strcasecmp(tail, "ElectricityQuantityMeter") == 0) {
+        /* Analog electricity meter (pulse counter / optical sensor) */
+        float q = 0.0f;
+        int got = 0;
+        if (elem_text_float(xml, "CurrentElectricityQuantity", &q) ||
+            elem_text_float(xml, "currentElectricityQuantity", &q) ||
+            elem_text_float(xml, "value", &q)) {
+            got = 1;
+        }
+        if (got) {
+            fprintf(stderr, "[bxt-meter] analog pulse notify: quantity=%.3f kWh (svc='%s')\n", (double)q, tail);
+            toon_state.msg_count++;
+            extern void probe_happ_pwrusage(void);
+            probe_happ_pwrusage();
+        }
     } else if (tile_slots_integration_by_service(tail) != NULL) {
         /* Marketplace integration — dispatched via the manifest's value_field
          * / subtitle_field. tile_slots_on_notify updates the latest-value
@@ -869,6 +884,12 @@ static void send_initial_handshake(void) {
     /* Also subscribe to PowerUsage in case happ_pwrusage publishes under PowerUsage */
     snprintf(buf, sizeof(buf),
         "<subscribe uuid=\"%s\" destuuid=\"\"><target uuid=\"\" serviceid=\"urn:hcb-hae-com:serviceId:PowerUsage\"></target></subscribe>",
+        OUR_UUID);
+    send_msg(buf);
+
+    /* Also subscribe to ElectricityQuantityMeter for analog optical pulse meters */
+    snprintf(buf, sizeof(buf),
+        "<subscribe uuid=\"%s\" destuuid=\"\"><target uuid=\"\" serviceid=\"urn:hcb-hae-com:serviceId:ElectricityQuantityMeter\"></target></subscribe>",
         OUR_UUID);
     send_msg(buf);
 
