@@ -24,7 +24,9 @@
 #include "boxtalk.h"
 #include "meteradapter.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define COL_BG       0x0e1a2a
 #define COL_CARD     0x1a2940
@@ -62,9 +64,11 @@ static void probe_happ_pwrusage(void) {
                 p_val += 7;
                 while (*p_val == ' ' || *p_val == ':' || *p_val == '\t') p_val++;
                 if (*p_val != 'n' && *p_val != 'N') {
-                    float pw = strtof(p_val, NULL);
-                    fprintf(stderr, "[adapters] GetCurrentUsage parsed live power: %.1f W\n", (double)pw);
-                    meteradapter_on_flow(pw);
+                    float pw = 0.0f;
+                    if (sscanf(p_val, "%f", &pw) == 1) {
+                        fprintf(stderr, "[adapters] GetCurrentUsage parsed live power: %.1f W\n", (double)pw);
+                        meteradapter_on_flow(pw);
+                    }
                 } else {
                     fprintf(stderr, "[adapters] GetCurrentUsage: powerUsage.value is null (P1 smart meter not reporting data to happ_pwrusage)\n");
                 }
