@@ -495,6 +495,16 @@ static void * wx_thread(void * arg) {
             fprintf(stderr, "[wx] open-meteo fetch failed\n");
         }
 
+        /* If weather fetch failed (e.g. WiFi still connecting on boot),
+         * retry quickly (every 10s) until we get our first successful fetch,
+         * rather than sleeping 15 minutes! */
+        if (!weather_state.connected) {
+            for (int s = 0; s < 10 && !g_wx_wake; s++)
+                sleep(1);
+            g_wx_wake = 0;
+            continue;
+        }
+
         /* buienradar feed — radar-map URL + NL weather-report narrative only. */
         if (http_fetch("https://data.buienradar.nl/2.0/feed/json",
                        body, sizeof(body)) == 0) {

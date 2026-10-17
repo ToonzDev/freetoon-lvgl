@@ -2426,8 +2426,13 @@ static void refresh_cb(lv_timer_t * t) {
                 lv_label_set_text(lbl_waste_type, p1.labels);
                 lv_obj_set_style_text_color(lbl_waste_date, lv_color_hex(COL_TEXT_HI), 0);
                 lv_obj_set_style_text_font(lbl_waste_date, (n >= 2) ? SF(24) : SF(28), 0);
+#ifdef TOON1
+                lv_obj_align(lbl_waste_date, LV_ALIGN_TOP_LEFT, 4, 38);
+                lv_obj_align(lbl_waste_type, LV_ALIGN_TOP_LEFT, 4, (n >= 2) ? 68 : 74);
+#else
                 lv_obj_align(lbl_waste_date, LV_ALIGN_TOP_LEFT, 56, 42);
                 lv_obj_align(lbl_waste_type, LV_ALIGN_TOP_LEFT, 56, (n >= 2) ? 70 : 78);
+#endif
                 fit_font(lbl_waste_type, p1.labels, lv_obj_get_content_width(tile_waste) - 60, (n >= 2) ? 15 : 18);
                 if (waste_icon_1) {
                     lv_obj_align(waste_icon_1, LV_ALIGN_TOP_LEFT, 6, 42);
@@ -2450,11 +2455,16 @@ static void refresh_cb(lv_timer_t * t) {
                 lv_label_set_text(lbl_waste_type_2, p2.labels);
                 lv_obj_set_style_text_color(lbl_waste_date_2, lv_color_hex(COL_TEXT_DIM), 0);
                 lv_obj_set_style_text_font(lbl_waste_date_2, SF(20), 0);
-                lv_obj_align(waste_icon_2, LV_ALIGN_BOTTOM_LEFT, 6, -36);
+#ifdef TOON1
+                lv_obj_align(lbl_waste_date_2, LV_ALIGN_BOTTOM_LEFT, 4, -28);
+                lv_obj_align(lbl_waste_type_2, LV_ALIGN_BOTTOM_LEFT, 4, -8);
+#else
                 lv_obj_align(lbl_waste_date_2, LV_ALIGN_BOTTOM_LEFT, 56, -30);
                 lv_obj_align(lbl_waste_type_2, LV_ALIGN_BOTTOM_LEFT, 56, -8);
+#endif
                 fit_font(lbl_waste_type_2, p2.labels, lv_obj_get_content_width(tile_waste) - 60, 14);
                 if (waste_icon_2) {
+                    lv_obj_align(waste_icon_2, LV_ALIGN_BOTTOM_LEFT, 6, -36);
                     lv_img_set_src(waste_icon_2, waste_icon_for_label(p2.labels));
                     lv_obj_set_style_img_recolor(waste_icon_2, lv_color_hex(waste_accent_for_label(p2.labels)), 0);
                     lv_obj_clear_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
