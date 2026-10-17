@@ -51,5 +51,7 @@ int  meteradapter_start(void);
 /* Called from the BoxTalk notify handler when an ElectricityFlowMeter
  * CurrentElectricityFlow value arrives. */
 void meteradapter_on_flow(float watts);
+/* Query happ_pwrusage via local HTTP daemon (fallback / analog pulse meters) */
+void probe_happ_pwrusage(void);
 
 #endif

@@ -149,6 +149,13 @@ case "$CMD" in
       kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true
       exit 0
     fi
+    # If x11vnc binary is missing, remove inittab respawn to prevent tight loop
+    if ! command -v "$X11VNC" >/dev/null 2>&1 && [ ! -x "$X11VNC" ]; then
+      echo "toonvnc: x11vnc binary not found; removing from inittab"
+      grep -v '^vncs:' /etc/inittab > /etc/inittab.new 2>/dev/null && mv -f /etc/inittab.new /etc/inittab 2>/dev/null || true
+      kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true
+      exit 0
+    fi
     # Foreground variant for inittab. Identical args to `start` minus the
     # `-bg` flag, so init keeps a real child pid and respawns on death.
     if [ ! -x "$INPUT" ]; then

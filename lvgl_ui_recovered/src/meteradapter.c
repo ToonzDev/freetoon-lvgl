@@ -12,6 +12,8 @@
 #include <unistd.h>
 #include <time.h>
 #include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 
 #define MET_STALE_S       60    /* no flow notify for this long → meter offline */
 #define NILM_THRESHOLD_W  18.0f /* min |delta| W to trigger a NILM event */
@@ -95,11 +97,105 @@ void meteradapter_on_flow(float watts) {
     meter_state.connected    = 1;
 }
 
+/* Probe happ_pwrusage on 127.0.0.1:10080 for live meter wattage and diagnostics.
+ * Supports both smart meters (instantaneous 'value') and analog pulse meters
+ * (where 'value' is often null, but 'avgValue' holds the calculated wattage).
+ * Also subtracts powerProduction if solar power is being generated. */
+void probe_happ_pwrusage(void) {
+    extern int http_fetch_to(const char *, char *, size_t, int);
+    char buf[512] = {0};
+    static int log_budget = 5;
+    static int last_status = -1; /* 1 = got usage, 0 = null, -2 = fetch error */
+
+    if (http_fetch_to("http://127.0.0.1:10080/happ_pwrusage?action=GetCurrentUsage", buf, sizeof(buf), 2) == 0) {
+        float usage_w = 0.0f;
+        int got_usage = 0;
+        int is_avg = 0;
+        const char * p_pu = strstr(buf, "\"powerUsage\"");
+        if (p_pu) {
+            const char * p_val = strstr(p_pu, "\"value\"");
+            if (p_val) {
+                p_val += 7;
+                while (*p_val == ' ' || *p_val == ':' || *p_val == '\t') p_val++;
+                if (*p_val != 'n' && *p_val != 'N') {
+                    if (sscanf(p_val, "%f", &usage_w) == 1) {
+                        got_usage = 1;
+                    }
+                }
+            }
+            if (!got_usage) {
+                /* Analog pulse meter fallback: between pulses 'value' is null,
+                 * but 'avgValue' carries the calculated average wattage */
+                const char * p_avg = strstr(p_pu, "\"avgValue\"");
+                if (p_avg) {
+                    p_avg += 10;
+                    while (*p_avg == ' ' || *p_avg == ':' || *p_avg == '\t') p_avg++;
+                    if (*p_avg != 'n' && *p_avg != 'N') {
+                        if (sscanf(p_avg, "%f", &usage_w) == 1) {
+                            got_usage = 1;
+                            is_avg = 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        /* Check solar production to calculate net flow */
+        float prod_w = 0.0f;
+        const char * p_pp = strstr(buf, "\"powerProduction\"");
+        if (p_pp) {
+            const char * p_pval = strstr(p_pp, "\"value\"");
+            if (p_pval) {
+                p_pval += 7;
+                while (*p_pval == ' ' || *p_pval == ':' || *p_pval == '\t') p_pval++;
+                if (*p_pval != 'n' && *p_pval != 'N') {
+                    float v = 0.0f;
+                    if (sscanf(p_pval, "%f", &v) == 1) prod_w = v;
+                }
+            }
+        }
+
+        if (got_usage) {
+            float net_w = usage_w - prod_w;
+            if (log_budget > 0 || last_status != 1) {
+                if (log_budget > 0) log_budget--;
+                fprintf(stderr, "[meteradapter] GetCurrentUsage: live power = %.1f W%s\n",
+                        (double)net_w, is_avg ? " (analog pulse avgValue)" : "");
+            }
+            last_status = 1;
+            meteradapter_on_flow(net_w);
+        } else {
+            if (log_budget > 0 || last_status != 0) {
+                if (log_budget > 0) log_budget--;
+                fprintf(stderr, "[meteradapter] GetCurrentUsage: powerUsage value/avgValue are null (waiting for pulses)\n");
+            }
+            last_status = 0;
+        }
+    } else {
+        if (log_budget > 0 || last_status != -2) {
+            if (log_budget > 0) log_budget--;
+            fprintf(stderr, "[meteradapter] GetCurrentUsage: HTTP fetch to 127.0.0.1:10080 failed\n");
+        }
+        last_status = -2;
+    }
+}
+
 static void *watchdog_thread(void *arg) {
     (void)arg;
     for (;;) {
         sleep(5);
         time_t now = time(NULL);
+
+        /* On standalone/master with native meteradapter:
+         * If BoxTalk flow notifies haven't arrived in the last 4 seconds,
+         * poll happ_pwrusage (enables analog pulse meters and acts as failsafe). */
+        if (!settings.client_mode && settings.energy_source == 0) {
+            if (meter_state.last_flow_s == 0 || (now - meter_state.last_flow_s) >= 4) {
+                probe_happ_pwrusage();
+                now = time(NULL);
+            }
+        }
+
         if (meter_state.last_flow_s == 0 ||
             now - meter_state.last_flow_s > MET_STALE_S) {
             if (meter_state.connected) {

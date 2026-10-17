@@ -52,54 +52,7 @@ static int  g_met_found  = 0;     /* HAE_METER node present in Z-Wave list */
 static int  g_pair_active = 0;    /* Z-Wave inclusion window open */
 static int  g_query_ticks = 0;
 
-/* Probe happ_pwrusage on 127.0.0.1:10080 for live meter wattage and diagnostics.
- * Supports both smart meters (instantaneous 'value') and analog pulse meters
- * (where 'value' can be null between pulses, but 'avgValue' holds the calculated wattage). */
-void probe_happ_pwrusage(void) {
-    extern int http_fetch_to(const char *, char *, size_t, int);
-    char buf[512] = {0};
-    if (http_fetch_to("http://127.0.0.1:10080/happ_pwrusage?action=GetCurrentUsage", buf, sizeof(buf), 2) == 0) {
-        fprintf(stderr, "[adapters] happ_pwrusage GetCurrentUsage: %.200s\n", buf);
-        const char * p_pu = strstr(buf, "\"powerUsage\"");
-        if (p_pu) {
-            float pw = 0.0f;
-            int found = 0;
-            const char * p_val = strstr(p_pu, "\"value\"");
-            if (p_val) {
-                p_val += 7;
-                while (*p_val == ' ' || *p_val == ':' || *p_val == '\t') p_val++;
-                if (*p_val != 'n' && *p_val != 'N') {
-                    if (sscanf(p_val, "%f", &pw) == 1) {
-                        found = 1;
-                        fprintf(stderr, "[adapters] GetCurrentUsage parsed live power: %.1f W\n", (double)pw);
-                    }
-                }
-            }
-            if (!found) {
-                /* Analog pulse meter fallback: between pulses 'value' is often null,
-                 * but 'avgValue' carries the calculated average wattage */
-                const char * p_avg = strstr(p_pu, "\"avgValue\"");
-                if (p_avg) {
-                    p_avg += 10;
-                    while (*p_avg == ' ' || *p_avg == ':' || *p_avg == '\t') p_avg++;
-                    if (*p_avg != 'n' && *p_avg != 'N') {
-                        if (sscanf(p_avg, "%f", &pw) == 1) {
-                            found = 1;
-                            fprintf(stderr, "[adapters] GetCurrentUsage parsed analog pulse avg power: %.1f W\n", (double)pw);
-                        }
-                    }
-                }
-            }
-            if (found) {
-                meteradapter_on_flow(pw);
-            } else {
-                fprintf(stderr, "[adapters] GetCurrentUsage: powerUsage.value/avgValue are null (no pulses detected or P1 disconnected)\n");
-            }
-        }
-    } else {
-        fprintf(stderr, "[adapters] GetCurrentUsage: HTTP fetch to 127.0.0.1:10080 failed (daemon not listening or error)\n");
-    }
-}
+/* probe_happ_pwrusage is provided by meteradapter.c (declared in meteradapter.h) */
 
 /* ===================================================================== */
 /* Meter Z-Wave "found" detection                                        */
