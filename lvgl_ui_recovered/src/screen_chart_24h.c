@@ -38,12 +38,15 @@ static inline float chart_roundf(float x) {
     return (x >= 0.0f) ? (float)(int)(x + 0.5f) : (float)(int)(x - 0.5f);
 }
 
-#define COL_BG         0x101418
-#define COL_CARD       0x182230
-#define COL_GRID       0x223042
-#define COL_BORDER     0x2a384c
-#define COL_TEXT_HI    0xffffff
-#define COL_TEXT_DIM   0x88aabb
+#include "settings.h"
+#include "theme.h"
+
+#define COL_BG         THEME_BG
+#define COL_CARD       THEME_CARD_BG
+#define COL_GRID       THEME_BORDER
+#define COL_BORDER     THEME_BORDER
+#define COL_TEXT_HI    THEME_TEXT_HI
+#define COL_TEXT_DIM   THEME_TEXT_DIM
 
 typedef struct {
     char name[INTEG_NAME_MAX];
@@ -485,7 +488,7 @@ lv_obj_t * screen_chart_24h_create(const integration_meta_t * meta) {
     g_ctx->chart = chart;
     lv_obj_set_size(chart, chart_w, chart_h);
     lv_obj_set_pos(chart, chart_x, chart_y);
-    lv_obj_set_style_bg_color(chart, lv_color_hex(0x0e1722), 0);
+    lv_obj_set_style_bg_color(chart, lv_color_hex(COL_CARD), 0);
     lv_obj_set_style_border_color(chart, lv_color_hex(COL_BORDER), 0);
     lv_obj_set_style_border_width(chart, 1, 0);
     lv_obj_set_style_radius(chart, 8, 0);
@@ -495,7 +498,7 @@ lv_obj_t * screen_chart_24h_create(const integration_meta_t * meta) {
     lv_chart_set_point_count(chart, TEMPLOGGER_POINTS);
     lv_obj_set_style_size(chart, 0, LV_PART_INDICATOR);    /* No point dots */
     lv_obj_set_style_line_width(chart, 3, LV_PART_ITEMS);  /* Thicker graph lines (3px) */
-    lv_obj_set_style_line_color(chart, lv_color_hex(0x223246), LV_PART_MAIN); /* Darker raster/grid lines */
+    lv_obj_set_style_line_color(chart, lv_color_hex(THEME_BORDER), LV_PART_MAIN); /* Raster/grid lines */
     lv_obj_set_style_line_opa(chart, LV_OPA_70, LV_PART_MAIN);
     lv_obj_set_style_line_width(chart, 1, LV_PART_MAIN);
     lv_chart_set_div_line_count(chart, 5, 13);             /* 5 horizontal, 13 vertical = 2h each */
@@ -549,7 +552,7 @@ lv_obj_t * screen_chart_24h_create(const integration_meta_t * meta) {
     g_ctx->cursor_line = cur_line;
     lv_obj_set_size(cur_line, 2, chart_h + SY(16));
     lv_obj_set_pos(cur_line, cursor_x, chart_y - SY(8));
-    lv_obj_set_style_bg_color(cur_line, lv_color_hex(0x55aaff), 0);
+    lv_obj_set_style_bg_color(cur_line, lv_color_hex(settings.home_light_mode ? 0x1d4ed8 : 0x55aaff), 0);
     lv_obj_set_style_bg_opa(cur_line, LV_OPA_80, 0);
     lv_obj_set_style_border_width(cur_line, 0, 0);
     lv_obj_clear_flag(cur_line, LV_OBJ_FLAG_SCROLLABLE);

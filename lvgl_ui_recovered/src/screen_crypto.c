@@ -11,6 +11,8 @@
 #include "screens.h"
 #include "display.h"   /* SX()/SY() scaling for Toon 1 (800x480) vs Toon 2 (1024x600) */
 #include "i18n.h"
+#include "settings.h"
+#include "theme.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -117,7 +119,9 @@ static void rebuild_chart(void) {
 static void style_selected(lv_obj_t ** arr, int n, int sel) {
     for (int i = 0; i < n; i++) {
         if (!arr[i]) continue;
-        lv_obj_set_style_bg_color(arr[i], lv_color_hex(i == sel ? 0x2e6e9e : 0x33415c), 0);
+        lv_obj_set_style_bg_color(arr[i], lv_color_hex(i == sel ? THEME_BTN_ACCENT : THEME_BTN_BG), 0);
+        lv_obj_set_style_border_color(arr[i], lv_color_hex(THEME_BORDER), 0);
+        lv_obj_set_style_border_width(arr[i], settings.home_light_mode && i != sel ? 1 : 0, 0);
     }
 }
 
@@ -135,26 +139,37 @@ static lv_obj_t * chip(lv_obj_t * parent, const char * txt, lv_event_cb_t cb, in
     lv_obj_t * b = lv_btn_create(parent);
     lv_obj_set_size(b, SX(96), SY(40));
     lv_obj_set_pos(b, SX(x), SY(y));
-    lv_obj_set_style_bg_color(b, lv_color_hex(0x33415c), 0);
+    lv_obj_set_style_bg_color(b, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, (void *)(intptr_t)idx);
-    lv_obj_t * l = lv_label_create(b); lv_label_set_text(l, txt); lv_obj_center(l);
+    lv_obj_t * l = lv_label_create(b);
+    lv_label_set_text(l, txt);
+    lv_obj_set_style_text_color(l, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_center(l);
     return b;
 }
 
 lv_obj_t * screen_crypto_create(void) {
+    static int scr_light_mode = -1;
+    if (scr_root && scr_light_mode == settings.home_light_mode) return scr_root;
+    if (scr_root) { lv_obj_del(scr_root); scr_root = NULL; }
+    scr_light_mode = settings.home_light_mode;
+
     init_tf_labels();
     scr_root = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(scr_root, lv_color_hex(0x101418), 0);
+    lv_obj_set_style_bg_color(scr_root, lv_color_hex(THEME_BG), 0);
     lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t * back = lv_btn_create(scr_root);
+    lv_obj_set_style_bg_color(back, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_align(back, LV_ALIGN_TOP_LEFT, SX(8), SY(8));
-    lv_obj_t * bl = lv_label_create(back); lv_label_set_text(bl, tr(LV_SYMBOL_LEFT " Terug", LV_SYMBOL_LEFT " Back"));
+    lv_obj_t * bl = lv_label_create(back);
+    lv_obj_set_style_text_color(bl, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_label_set_text(bl, tr(LV_SYMBOL_LEFT " Terug", LV_SYMBOL_LEFT " Back"));
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
 
     lbl_title = lv_label_create(scr_root);
     lv_obj_set_style_text_font(lbl_title, SF(22), 0);
-    lv_obj_set_style_text_color(lbl_title, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lbl_title, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_align(lbl_title, LV_ALIGN_TOP_MID, 0, SY(16));
 
     load_coins();
@@ -174,16 +189,19 @@ lv_obj_t * screen_crypto_create(void) {
     lv_obj_align(chart, LV_ALIGN_TOP_MID, 0, SY(154));
     lv_chart_set_type(chart, LV_CHART_TYPE_LINE);
     lv_chart_set_div_line_count(chart, 5, 0);
-    lv_obj_set_style_bg_color(chart, lv_color_hex(0x1a2a44), 0);
+    lv_obj_set_style_bg_color(chart, lv_color_hex(THEME_CARD_BG), 0);
+    lv_obj_set_style_border_color(chart, lv_color_hex(THEME_BORDER), 0);
+    lv_obj_set_style_border_width(chart, settings.home_light_mode ? 1 : 0, 0);
+    lv_obj_set_style_line_color(chart, lv_color_hex(THEME_BORDER), LV_PART_MAIN);
     lv_obj_set_style_size(chart, 0, LV_PART_INDICATOR);   /* no point dots */
     cs = lv_chart_add_series(chart, lv_color_hex(0xf7931a), LV_CHART_AXIS_PRIMARY_Y);
 
     lbl_hi = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_hi, lv_color_hex(0x88dd66), 0);
+    lv_obj_set_style_text_color(lbl_hi, lv_color_hex(settings.home_light_mode ? 0x15803d : 0x88dd66), 0);
     lv_label_set_text(lbl_hi, "");
     lv_obj_align_to(lbl_hi, chart, LV_ALIGN_OUT_TOP_RIGHT, 0, -2);
     lbl_lo = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_lo, lv_color_hex(0xff8866), 0);
+    lv_obj_set_style_text_color(lbl_lo, lv_color_hex(settings.home_light_mode ? 0xd97706 : 0xff8866), 0);
     lv_label_set_text(lbl_lo, "");
     lv_obj_align_to(lbl_lo, chart, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, 2);
 

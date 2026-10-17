@@ -368,16 +368,16 @@ void layout_type_min(int type, int * min_w, int * min_h) {
                                                        overlaps icon+time+temp+wind
                                                        (esp. on Toon 1's 480-px panel). */
         case LT_NEWS_TICKER:  w = 4; h = 1; break;
-        case LT_NEWS_SUMMARY: w = 3; h = 3; break;
-        case LT_CALENDAR:     w = 3; h = 3; break;
-        case LT_ENERGY:       w = 3; h = 2; break;
-        case LT_WATER:        w = 3; h = 2; break;
-        case LT_VENT:         w = 2; h = 3; break;
-        case LT_FAMILY:       w = 3; h = 2; break;
-        case LT_WASTE:        w = 2; h = 3; break;
+        case LT_NEWS_SUMMARY: w = 3; h = 2; break;
+        case LT_CALENDAR:     w = 2; h = 2; break;
+        case LT_ENERGY:       w = 2; h = 2; break;
+        case LT_WATER:        w = 2; h = 2; break;
+        case LT_VENT:         w = 2; h = 2; break;
+        case LT_FAMILY:       w = 2; h = 1; break;
+        case LT_WASTE:        w = 2; h = 1; break;
         case LT_LIGHTS:       w = 2; h = 2; break;
-        case LT_SLOT:         w = 3; h = 3; break;
-        case LT_SONOS:        w = 3; h = 2; break;
+        case LT_SLOT:         w = 2; h = 2; break;
+        case LT_SONOS:        w = 2; h = 2; break;
         default:              w = 0; h = 0; break;
     }
     if (min_w) *min_w = w;

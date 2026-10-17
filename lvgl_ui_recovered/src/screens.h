@@ -11,6 +11,8 @@ void ui_push(lv_obj_t * scr);
 void ui_pop(void);
 /* Apply settings.home_theme live (swap dark<->stock home, no restart). */
 void ui_apply_home_theme(void);
+void ui_refresh_home(void);
+void ui_refresh_theme(void);
 void ui_request_restart(void);   /* clean _exit(0) restart; drops the launcher crash-guard marker */
 
 /* Start a gentle ~1.1s opacity pulse on a clock-colon overlay label so the ":"
@@ -19,6 +21,7 @@ void clock_colon_pulse(lv_obj_t * colon);
 
 /* Per-screen builders. Each returns a freshly created screen object. */
 lv_obj_t * screen_home_create(void);
+void screen_home_destroy(void);
 lv_obj_t * screen_home_stock_create(void);   /* light tile-carousel "stock theme" home */
 lv_obj_t * screen_dim_stock_create(void);    /* stock-style standby (dim) for the stock theme */
 /* Auto-home: drop the home screen's swipe page back to page 1 (the main page)
@@ -77,6 +80,8 @@ static inline lv_obj_t * screen_templogger_create(void) {
 /* Open the Tile-slots picker modal — used both by the Settings → Tiles
  * tile and the long-press handler on the four right-column home tiles. */
 void screen_settings_open_tile_slots_modal(void);
+/* Open single-slot assignment modal for a specific tile slot (0..7). */
+void screen_settings_open_tile_slot_single_modal(int slot);
 /* Open the Sonos configuration modal. */
 void screen_settings_open_sonos_modal(void);
 /* Open the Sonos player & favorites modal. */

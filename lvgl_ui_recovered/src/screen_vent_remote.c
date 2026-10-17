@@ -17,6 +17,8 @@
 #include "display.h"
 #include "i18n.h"
 #include "ventilation.h"
+#include "settings.h"
+#include "theme.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -145,13 +147,16 @@ static void on_scr_event(lv_event_t * e) {
 
 /* ── screen builder ─────────────────────────────────────────── */
 lv_obj_t * screen_vent_remote_create(void) {
-    if (scr_root) {
+    static int scr_light_mode = -1;
+    if (scr_root && scr_light_mode == settings.home_light_mode) {
         last_user_ms = lv_tick_get();
         return scr_root;
     }
+    if (scr_root) { lv_obj_del(scr_root); scr_root = NULL; }
+    scr_light_mode = settings.home_light_mode;
 
     scr_root = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(scr_root, lv_color_hex(0x0f1a2a), 0);
+    lv_obj_set_style_bg_color(scr_root, lv_color_hex(THEME_BG), 0);
     lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(scr_root, on_scr_event, LV_EVENT_ALL, NULL);
 
@@ -159,18 +164,19 @@ lv_obj_t * screen_vent_remote_create(void) {
     lv_obj_t * back = lv_btn_create(scr_root);
     lv_obj_set_size(back, SX(110), SY(48));
     lv_obj_align(back, LV_ALIGN_TOP_LEFT, SX(8), SY(8));
-    lv_obj_set_style_bg_color(back, lv_color_hex(0x223344), 0);
+    lv_obj_set_style_bg_color(back, lv_color_hex(THEME_BTN_BG), 0);
+    lv_obj_set_style_border_color(back, lv_color_hex(THEME_BORDER), 0);
+    lv_obj_set_style_border_width(back, settings.home_light_mode ? 1 : 0, 0);
     lv_obj_set_style_radius(back, 10, 0);
-    lv_obj_set_style_border_width(back, 0, 0);
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(back);
-    lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(bl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(bl, SF(18), 0);
     lv_label_set_text(bl, tr(LV_SYMBOL_LEFT " Terug", LV_SYMBOL_LEFT " Back"));
     lv_obj_center(bl);
 
     lv_obj_t * hdr = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(hdr, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(hdr, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(hdr, SF(26), 0);
     lv_obj_align(hdr, LV_ALIGN_TOP_MID, 0, SY(16));
     lv_label_set_text(hdr, tr("Ventilatie", "Ventilation"));
@@ -178,19 +184,20 @@ lv_obj_t * screen_vent_remote_create(void) {
     lv_obj_t * adv = lv_btn_create(scr_root);
     lv_obj_set_size(adv, SX(150), SY(48));
     lv_obj_align(adv, LV_ALIGN_TOP_RIGHT, -SX(8), SY(8));
-    lv_obj_set_style_bg_color(adv, lv_color_hex(0x444444), 0);
+    lv_obj_set_style_bg_color(adv, lv_color_hex(THEME_BTN_BG), 0);
+    lv_obj_set_style_border_color(adv, lv_color_hex(THEME_BORDER), 0);
+    lv_obj_set_style_border_width(adv, settings.home_light_mode ? 1 : 0, 0);
     lv_obj_set_style_radius(adv, 10, 0);
-    lv_obj_set_style_border_width(adv, 0, 0);
     lv_obj_add_event_cb(adv, on_open_advanced, LV_EVENT_CLICKED, NULL);
     lv_obj_t * advl = lv_label_create(adv);
-    lv_obj_set_style_text_color(advl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(advl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(advl, SF(18), 0);
     lv_label_set_text(advl, tr("Geavanceerd", "Advanced"));
     lv_obj_center(advl);
 
     /* ── status line ── */
     lbl_status = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_status, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_color(lbl_status, lv_color_hex(THEME_TEXT_MUTED), 0);
     lv_obj_set_style_text_font(lbl_status, SF(16), 0);
     lv_obj_align(lbl_status, LV_ALIGN_TOP_MID, 0, SY(66));
     lv_label_set_text(lbl_status, tr("(laden...)", "(loading...)"));
@@ -256,7 +263,7 @@ lv_obj_t * screen_vent_remote_create(void) {
     int slider_y = btn_y0 + 2 * (btn_h + btn_gap) + SY(16);
 
     lv_obj_t * man_lbl = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(man_lbl, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_color(man_lbl, lv_color_hex(THEME_TEXT_MUTED), 0);
     lv_obj_set_style_text_font(man_lbl, SF(16), 0);
     lv_obj_set_pos(man_lbl, SX(16), slider_y);
     lv_label_set_text(man_lbl, tr("Handmatig", "Manual"));
@@ -270,7 +277,7 @@ lv_obj_t * screen_vent_remote_create(void) {
     lv_obj_set_pos(slider, SX(16), slider_y + SY(30));
     lv_slider_set_range(slider, 0, 100);
     lv_slider_set_value(slider, init_pct, LV_ANIM_OFF);
-    lv_obj_set_style_bg_color(slider, lv_color_hex(0x1d2c40), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(slider, lv_color_hex(settings.home_light_mode ? 0xcfd8dc : 0x1d2c40), LV_PART_MAIN);
     lv_obj_set_style_bg_color(slider, lv_color_hex(0x3a9bdc), LV_PART_INDICATOR);
     lv_obj_set_style_radius(slider, SX(8), LV_PART_MAIN);
     lv_obj_set_style_radius(slider, SX(8), LV_PART_INDICATOR);
@@ -281,13 +288,13 @@ lv_obj_t * screen_vent_remote_create(void) {
 
     /* % readout right of slider */
     lbl_pct = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_pct, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lbl_pct, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_pct, SF(40), 0);
     lv_obj_align_to(lbl_pct, slider, LV_ALIGN_OUT_RIGHT_MID, SX(12), 0);
     lv_label_set_text_fmt(lbl_pct, "%d", init_pct);
 
     lbl_pct_sign = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_pct_sign, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_color(lbl_pct_sign, lv_color_hex(THEME_TEXT_MUTED), 0);
     lv_obj_set_style_text_font(lbl_pct_sign, SF(20), 0);
     lv_obj_align_to(lbl_pct_sign, lbl_pct, LV_ALIGN_OUT_RIGHT_BOTTOM, SX(2), -SY(4));
     lv_label_set_text(lbl_pct_sign, "%");

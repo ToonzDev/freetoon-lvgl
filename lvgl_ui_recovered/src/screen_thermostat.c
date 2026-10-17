@@ -9,6 +9,7 @@
 #include "homewizard.h"
 #include "icons.h"
 #include "settings.h"
+#include "theme.h"
 #include "pin_modal.h"
 #include <stdio.h>
 #include <time.h>
@@ -124,11 +125,13 @@ static void refresh_cb(lv_timer_t * t) {
         }
         int active = (i == mode_idx) || (i == preset_idx);
         lv_obj_set_style_border_width(btn_prog[i], active ? 2 : 0, 0);
+        lv_obj_set_style_border_color(btn_prog[i],
+                                      lv_color_hex(settings.home_light_mode ? 0x1e2838 : 0xffffff), 0);
         lv_obj_set_style_bg_color(btn_prog[i],
-                                  lv_color_hex(active ? prog_cols[i] : 0x243242), 0);
+                                  lv_color_hex(active ? prog_cols[i] : (settings.home_light_mode ? 0xd0d8e2 : 0x243242)), 0);
         lv_obj_t * bl = lv_obj_get_child(btn_prog[i], 0);
         if (bl) {
-            lv_obj_set_style_text_color(bl, lv_color_hex(active ? 0xffffff : 0x88aabb), 0);
+            lv_obj_set_style_text_color(bl, lv_color_hex(active ? 0xffffff : (settings.home_light_mode ? 0x1e2838 : 0x88aabb)), 0);
         }
     }
     if (toon_state.humidity > 0)
@@ -197,11 +200,18 @@ static void refresh_cb(lv_timer_t * t) {
     lv_obj_invalidate(scr_root);
 }
 
+static int scr_light_mode = -1;
+
 lv_obj_t * screen_thermostat_create(void) {
-    if (scr_root) return scr_root;  /* cached */
+    if (scr_root && scr_light_mode == settings.home_light_mode) return scr_root;  /* cached */
+    if (scr_root) {
+        lv_obj_del(scr_root);
+        scr_root = NULL;
+    }
+    scr_light_mode = settings.home_light_mode;
 
     scr_root = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(scr_root, lv_color_hex(0x0f1a2a), 0);
+    lv_obj_set_style_bg_color(scr_root, lv_color_hex(THEME_BG), 0);
     lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
 
     /* Back button — generous hit area (140x96) plus extended ext_click_area
@@ -209,25 +219,25 @@ lv_obj_t * screen_thermostat_create(void) {
     lv_obj_t * btn_back = lv_btn_create(scr_root);
     lv_obj_set_size(btn_back, 140, 96);
     lv_obj_align(btn_back, LV_ALIGN_TOP_LEFT, 12, 12);
-    lv_obj_set_style_bg_color(btn_back, lv_color_hex(0x223344), 0);
+    lv_obj_set_style_bg_color(btn_back, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_set_style_radius(btn_back, 14, 0);
     lv_obj_set_ext_click_area(btn_back, 20);
     lv_obj_add_event_cb(btn_back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t * btn_back_lbl = lv_label_create(btn_back);
     lv_label_set_text(btn_back_lbl, tr("< Terug", "< Back"));
-    lv_obj_set_style_text_color(btn_back_lbl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(btn_back_lbl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(btn_back_lbl, SF(22), 0);
     lv_obj_center(btn_back_lbl);
 
     /* Clock + date */
     lbl_clock = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_clock, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lbl_clock, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_clock, SF(28), 0);
     lv_obj_align(lbl_clock, LV_ALIGN_TOP_LEFT, 180, 25);
     lv_label_set_text(lbl_clock, "--:--");
 
     lbl_date = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_date, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_color(lbl_date, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_date, SF(18), 0);
     lv_obj_align_to(lbl_date, lbl_clock, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 0);
 
@@ -235,13 +245,13 @@ lv_obj_t * screen_thermostat_create(void) {
     lv_obj_t * btn_sched = lv_btn_create(scr_root);
     lv_obj_set_size(btn_sched, 180, 70);
     lv_obj_align(btn_sched, LV_ALIGN_TOP_RIGHT, -12, 12);
-    lv_obj_set_style_bg_color(btn_sched, lv_color_hex(0x335577), 0);
+    lv_obj_set_style_bg_color(btn_sched, lv_color_hex(THEME_BTN_ACCENT), 0);
     lv_obj_set_style_radius(btn_sched, 12, 0);
     lv_obj_set_ext_click_area(btn_sched, 16);
     lv_obj_add_event_cb(btn_sched, on_open_schedule, LV_EVENT_CLICKED, NULL);
     lv_obj_t * sched_lbl = lv_label_create(btn_sched);
     lv_label_set_text(sched_lbl, tr("Programma", "Schedule"));
-    lv_obj_set_style_text_color(sched_lbl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(sched_lbl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(sched_lbl, SF(22), 0);
     lv_obj_center(sched_lbl);
 
@@ -254,7 +264,7 @@ lv_obj_t * screen_thermostat_create(void) {
 
     /* Big indoor temp */
     lbl_temp = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_temp, lv_color_hex(0xffcc44), 0);
+    lv_obj_set_style_text_color(lbl_temp, lv_color_hex(THEME_WARN_ORANGE), 0);
     lv_obj_set_style_text_font(lbl_temp, SF(48), 0);
     lv_obj_align(lbl_temp, LV_ALIGN_CENTER, 0, SY(-80));
     lv_label_set_text(lbl_temp, "-- C");
@@ -329,22 +339,23 @@ lv_obj_t * screen_thermostat_create(void) {
     /* Environment readings live in the left column just above the
        setpoint row, where "Boiler idle" used to sit. Boiler state has
        moved further up. */
+    /* Environment readings */
     lbl_humidity = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_humidity, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_color(lbl_humidity, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_humidity, SF(22), 0);
     lv_obj_align(lbl_humidity, LV_ALIGN_BOTTOM_LEFT, 30,
                  SY(-260) - (DISP_VER < 600 ? 8 : 0));
     lv_label_set_text(lbl_humidity, tr("RV --%", "RH --%"));
 
     lbl_voc = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_voc, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_color(lbl_voc, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_voc, SF(22), 0);
     lv_obj_align(lbl_voc, LV_ALIGN_BOTTOM_LEFT, 30,
                  SY(-225) - (DISP_VER < 600 ? 8 : 0));
     lv_label_set_text(lbl_voc, tr("eCO2 -- ppm", "eCO2 -- ppm"));
 
     lbl_water = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_water, lv_color_hex(0x66aaff), 0);
+    lv_obj_set_style_text_color(lbl_water, lv_color_hex(settings.home_light_mode ? 0x0284c7 : 0x66aaff), 0);
     lv_obj_set_style_text_font(lbl_water, SF(22), 0);
     lv_obj_align(lbl_water, LV_ALIGN_BOTTOM_LEFT, 30,
                  SY(-190) - (DISP_VER < 600 ? 8 : 0));
@@ -357,7 +368,7 @@ lv_obj_t * screen_thermostat_create(void) {
     /* Lift a little extra on Toon 1 so its bottom clears the Advanced btn. */
     lv_obj_align(sp_row, LV_ALIGN_BOTTOM_MID, 0,
                  SY(-40) - (DISP_VER < 600 ? 8 : 0));
-    lv_obj_set_style_bg_color(sp_row, lv_color_hex(0x1a2a44), 0);
+    lv_obj_set_style_bg_color(sp_row, lv_color_hex(THEME_CARD_BG), 0);
     lv_obj_set_style_border_width(sp_row, 0, 0);
     lv_obj_set_style_radius(sp_row, 14, 0);
     lv_obj_clear_flag(sp_row, LV_OBJ_FLAG_SCROLLABLE);
@@ -365,17 +376,18 @@ lv_obj_t * screen_thermostat_create(void) {
     lv_obj_t * btn_dn = lv_btn_create(sp_row);
     lv_obj_set_size(btn_dn, SX(110), SY(100));
     lv_obj_align(btn_dn, LV_ALIGN_LEFT_MID, 5, 0);
-    lv_obj_set_style_bg_color(btn_dn, lv_color_hex(0x335577), 0);
+    lv_obj_set_style_bg_color(btn_dn, lv_color_hex(THEME_BTN_ACCENT), 0);
     lv_obj_add_event_cb(btn_dn, on_setpoint_down, LV_EVENT_CLICKED, NULL);
     lv_obj_t * btn_dn_lbl = lv_label_create(btn_dn);
     lv_label_set_text(btn_dn_lbl, "-");
+    lv_obj_set_style_text_color(btn_dn_lbl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(btn_dn_lbl,
                                (DISP_VER < 600 ? SF(28)
                                                : SF(48)), 0);
     lv_obj_center(btn_dn_lbl);
 
     lbl_setpoint = lv_label_create(sp_row);
-    lv_obj_set_style_text_color(lbl_setpoint, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lbl_setpoint, lv_color_hex(THEME_TEXT_HI), 0);
     /* Smaller font gives plenty of breathing room between the - and + buttons */
     lv_obj_set_style_text_font(lbl_setpoint,
                                (DISP_VER < 600 ? SF(20)
@@ -386,10 +398,11 @@ lv_obj_t * screen_thermostat_create(void) {
     lv_obj_t * btn_up = lv_btn_create(sp_row);
     lv_obj_set_size(btn_up, SX(110), SY(100));
     lv_obj_align(btn_up, LV_ALIGN_RIGHT_MID, -5, 0);
-    lv_obj_set_style_bg_color(btn_up, lv_color_hex(0x335577), 0);
+    lv_obj_set_style_bg_color(btn_up, lv_color_hex(THEME_BTN_ACCENT), 0);
     lv_obj_add_event_cb(btn_up, on_setpoint_up, LV_EVENT_CLICKED, NULL);
     lv_obj_t * btn_up_lbl = lv_label_create(btn_up);
     lv_label_set_text(btn_up_lbl, "+");
+    lv_obj_set_style_text_color(btn_up_lbl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(btn_up_lbl,
                                (DISP_VER < 600 ? SF(28)
                                                : SF(48)), 0);
@@ -419,22 +432,16 @@ lv_obj_t * screen_thermostat_create(void) {
     lv_obj_align(img_drop, LV_ALIGN_BOTTOM_LEFT, 48, -320);
     lv_obj_add_flag(img_drop, LV_OBJ_FLAG_HIDDEN);
 
-    /* "Boiler idle / Heating / Hot water" status label — was at
-     * BOTTOM_LEFT(90, -325) which collided horizontally with the new
-     * program-buttons row (the Manual button sat exactly behind the
-     * text). Pinned to the upper-left under the back button so it has
-     * its own clean strip. */
+    /* "Boiler idle / Heating / Hot water" status label */
     lbl_burner = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_burner, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_color(lbl_burner, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_burner, SF(22), 0);
     lv_obj_align(lbl_burner, LV_ALIGN_TOP_LEFT, 180, SY(130));
     lv_label_set_text(lbl_burner, tr("Ketel rust", "Boiler idle"));
 
-    /* CH water inlet/outlet block — right side, above the setpoint row.
-       Outlet = flow temp (CurrentBoilerTemperature),
-       inlet  = return temp (CurrentBoilerReturnTemperature). */
+    /* CH water inlet/outlet block */
     lbl_ch_hdr = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_ch_hdr, lv_color_hex(0x6688aa), 0);
+    lv_obj_set_style_text_color(lbl_ch_hdr, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_ch_hdr, SF(18), 0);
     lv_obj_align(lbl_ch_hdr, LV_ALIGN_BOTTOM_RIGHT, -40,
                  SY(-250) - (DISP_VER < 600 ? 8 : 0));
@@ -454,14 +461,14 @@ lv_obj_t * screen_thermostat_create(void) {
                  SY(-192) - (DISP_VER < 600 ? 8 : 0));
     lv_label_set_text(lbl_return, tr("Retour  -- C", "Return  -- C"));
 
-    /* "Advanced" button — pushes OTGW raw-DID list. */
+    /* "Advanced" button */
     lv_obj_t * adv = lv_btn_create(scr_root);
     lv_obj_set_size(adv, 140, 44);
     lv_obj_align(adv, LV_ALIGN_BOTTOM_RIGHT, -20, -20);
-    lv_obj_set_style_bg_color(adv, lv_color_hex(0x444444), 0);
+    lv_obj_set_style_bg_color(adv, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_add_event_cb(adv, on_open_advanced, LV_EVENT_CLICKED, NULL);
     lv_obj_t * advl = lv_label_create(adv);
-    lv_obj_set_style_text_color(advl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(advl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(advl, SF(18), 0);
     lv_label_set_text(advl, tr("Geavanceerd", "Advanced"));
     lv_obj_center(advl);

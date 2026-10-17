@@ -16,6 +16,7 @@
 #include "display.h"   /* SF()/SX()/SY() scaling for Toon 1 */
 #include "layout.h"
 #include "settings.h"
+#include "theme.h"
 #include "i18n.h"
 #include <stdio.h>
 #include <string.h>
@@ -615,14 +616,14 @@ static void show_delete_confirm(int i) {
     lv_obj_t * card = lv_obj_create(confirm_modal);
     lv_obj_set_size(card, SCR_W * 62 / 100, 180);
     lv_obj_center(card);
-    lv_obj_set_style_bg_color(card, lv_color_hex(0x16263a), 0);
-    lv_obj_set_style_border_color(card, lv_color_hex(0x33506e), 0);
+    lv_obj_set_style_bg_color(card, lv_color_hex(THEME_CARD_BG), 0);
+    lv_obj_set_style_border_color(card, lv_color_hex(THEME_BORDER), 0);
     lv_obj_set_style_border_width(card, 2, 0);
     lv_obj_set_style_radius(card, 12, 0);
     lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t * t = lv_label_create(card);
-    lv_obj_set_style_text_color(t, lv_color_hex(0xeaf2ff), 0);
+    lv_obj_set_style_text_color(t, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(t, SF(18), 0);
     lv_label_set_text_fmt(t, tr("%s aanpassen of verwijderen?", "Change or delete %s?"), layout_type_name(edit.tiles[i].type));
     lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 16);
@@ -718,13 +719,14 @@ static void open_name_modal(lv_event_t * e) {
     lv_obj_t * card = lv_obj_create(name_modal);
     lv_obj_set_size(card, SCR_W * 70 / 100, SCR_H - 60);
     lv_obj_center(card);
-    lv_obj_set_style_bg_color(card, lv_color_hex(0x16263a), 0);
-    lv_obj_set_style_border_width(card, 0, 0);
+    lv_obj_set_style_bg_color(card, lv_color_hex(THEME_CARD_BG), 0);
+    lv_obj_set_style_border_color(card, lv_color_hex(THEME_BORDER), 0);
+    lv_obj_set_style_border_width(card, settings.home_light_mode ? 1 : 0, 0);
     lv_obj_set_style_radius(card, 12, 0);
     lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t * t = lv_label_create(card);
-    lv_obj_set_style_text_color(t, lv_color_hex(0xeaf2ff), 0);
+    lv_obj_set_style_text_color(t, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(t, SF(18), 0);
     lv_label_set_text(t, tr("Naam van de indeling", "Layout name"));
     lv_obj_align(t, LV_ALIGN_TOP_LEFT, 6, 6);
@@ -1054,7 +1056,7 @@ void screen_layout_editor_show(void) {
     modal = lv_obj_create(lv_layer_top());
     lv_obj_set_size(modal, SCR_W, SCR_H);
     lv_obj_set_pos(modal, 0, 0);
-    lv_obj_set_style_bg_color(modal, lv_color_hex(0x0a121e), 0);
+    lv_obj_set_style_bg_color(modal, lv_color_hex(THEME_BG), 0);
     lv_obj_set_style_bg_opa(modal, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(modal, 0, 0);
     lv_obj_set_style_radius(modal, 0, 0);
@@ -1068,7 +1070,7 @@ void screen_layout_editor_show(void) {
         lv_obj_remove_style_all(ln);
         lv_obj_set_size(ln, 1, SCR_H - BAR_H);
         lv_obj_set_pos(ln, c * CELL_W, 0);
-        lv_obj_set_style_bg_color(ln, lv_color_hex(0x2a3a4c), 0);
+        lv_obj_set_style_bg_color(ln, lv_color_hex(THEME_BORDER), 0);
         lv_obj_set_style_bg_opa(ln, LV_OPA_50, 0);
         lv_obj_clear_flag(ln, LV_OBJ_FLAG_CLICKABLE);
     }
@@ -1077,7 +1079,7 @@ void screen_layout_editor_show(void) {
         lv_obj_remove_style_all(ln);
         lv_obj_set_size(ln, SCR_W, 1);
         lv_obj_set_pos(ln, 0, r * CELL_H);
-        lv_obj_set_style_bg_color(ln, lv_color_hex(0x2a3a4c), 0);
+        lv_obj_set_style_bg_color(ln, lv_color_hex(THEME_BORDER), 0);
         lv_obj_set_style_bg_opa(ln, LV_OPA_50, 0);
         lv_obj_clear_flag(ln, LV_OBJ_FLAG_CLICKABLE);
     }
@@ -1089,8 +1091,9 @@ void screen_layout_editor_show(void) {
     lv_obj_t * bar = lv_obj_create(modal);
     lv_obj_set_size(bar, SCR_W, BAR_H);
     lv_obj_set_pos(bar, 0, SCR_H - BAR_H);
-    lv_obj_set_style_bg_color(bar, lv_color_hex(0x16263a), 0);
-    lv_obj_set_style_border_width(bar, 0, 0);
+    lv_obj_set_style_bg_color(bar, lv_color_hex(THEME_CARD_BG), 0);
+    lv_obj_set_style_border_color(bar, lv_color_hex(THEME_BORDER), 0);
+    lv_obj_set_style_border_width(bar, settings.home_light_mode ? 1 : 0, 0);
     lv_obj_set_style_radius(bar, 0, 0);
     lv_obj_set_style_pad_all(bar, 0, 0);
     lv_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);

@@ -9,6 +9,8 @@
 #include "display.h"        /* SX()/SY()/SF() */
 #include "i18n.h"
 #include "homeassistant.h"  /* ha_discover_entities, ha_discovered_t */
+#include "settings.h"
+#include "theme.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -67,7 +69,8 @@ static void load_entities(void) {
                  tr("Geen %s-entiteiten gevonden - controleer HA-verbinding",
                     "No %s entities found - check HA connection"),
                  g_domain);
-        lv_list_add_text(lst_results, msg);
+        lv_obj_t * t = lv_list_add_text(lst_results, msg);
+        if (t) lv_obj_set_style_text_color(t, lv_color_hex(THEME_TEXT_MUTED), 0);
         return;
     }
 
@@ -77,6 +80,8 @@ static void load_entities(void) {
                  ents[i].friendly_name, ents[i].entity_id);
 
         lv_obj_t * btn = lv_list_add_btn(lst_results, NULL, label);
+        lv_obj_set_style_bg_color(btn, lv_color_hex(THEME_ROW_BG), 0);
+        lv_obj_set_style_text_color(btn, lv_color_hex(THEME_TEXT_HI), 0);
 
         /* Stash entity_id + friendly_name so on_pick can read them back. */
         struct pick_item * it = malloc(sizeof *it);
@@ -94,7 +99,7 @@ static void load_entities(void) {
         lv_obj_t * lbl = lv_obj_get_child(btn, 0);
         if (lbl) {
             lv_obj_set_style_text_font(lbl, SF(18), 0);
-            lv_obj_set_style_text_color(lbl, lv_color_hex(0x8899aa), 0);
+            lv_obj_set_style_text_color(lbl, lv_color_hex(THEME_TEXT_DIM), 0);
         }
     }
 }
@@ -108,27 +113,31 @@ static void on_refresh(lv_event_t * e) {
 
 lv_obj_t * screen_ha_picker_create(void) {
     scr_root = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(scr_root, lv_color_hex(0x101418), 0);
+    lv_obj_set_style_bg_color(scr_root, lv_color_hex(THEME_BG), 0);
     lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
 
     /* Back button */
     lv_obj_t * back = lv_btn_create(scr_root);
+    lv_obj_set_style_bg_color(back, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_align(back, LV_ALIGN_TOP_LEFT, SX(8), SY(8));
     lv_obj_t * bl = lv_label_create(back);
+    lv_obj_set_style_text_color(bl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_label_set_text(bl, tr(LV_SYMBOL_LEFT " Terug", LV_SYMBOL_LEFT " Back"));
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
 
     /* Refresh button */
     lv_obj_t * refresh = lv_btn_create(scr_root);
+    lv_obj_set_style_bg_color(refresh, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_align(refresh, LV_ALIGN_TOP_RIGHT, SX(-8), SY(8));
     lv_obj_t * rl = lv_label_create(refresh);
+    lv_obj_set_style_text_color(rl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_label_set_text(rl, LV_SYMBOL_REFRESH);
     lv_obj_add_event_cb(refresh, on_refresh, LV_EVENT_CLICKED, NULL);
 
     /* Title */
     lbl_title = lv_label_create(scr_root);
     lv_obj_set_style_text_font(lbl_title, SF(22), 0);
-    lv_obj_set_style_text_color(lbl_title, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lbl_title, lv_color_hex(THEME_TEXT_HI), 0);
     char title[64];
     snprintf(title, sizeof(title), tr("Kies %s-entiteit", "Pick %s entity"), g_domain);
     lv_label_set_text(lbl_title, title);
@@ -138,6 +147,9 @@ lv_obj_t * screen_ha_picker_create(void) {
     lst_results = lv_list_create(scr_root);
     lv_obj_set_size(lst_results, LV_PCT(94), SY(420));
     lv_obj_align(lst_results, LV_ALIGN_TOP_MID, 0, SY(60));
+    lv_obj_set_style_bg_color(lst_results, lv_color_hex(THEME_CARD_BG), 0);
+    lv_obj_set_style_border_color(lst_results, lv_color_hex(THEME_BORDER), 0);
+    lv_obj_set_style_border_width(lst_results, settings.home_light_mode ? 1 : 0, 0);
 
     /* Spinner — shown while the curl call is in flight */
     spinner = lv_spinner_create(scr_root, 1000, 60);

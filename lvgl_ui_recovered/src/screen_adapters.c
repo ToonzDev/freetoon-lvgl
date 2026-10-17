@@ -21,6 +21,7 @@
 #include "display.h"
 #include "i18n.h"
 #include "settings.h"
+#include "theme.h"
 #include "boxtalk.h"
 #include "meteradapter.h"
 #include <stdio.h>
@@ -28,16 +29,16 @@
 #include <string.h>
 #include <time.h>
 
-#define COL_BG       0x0e1a2a
-#define COL_CARD     0x1a2940
-#define COL_TEXT_HI  0xffffff
-#define COL_TEXT_DIM 0x88aabb
-#define COL_OK       0x2e6e3a
-#define COL_WARN     0x6e3a3a
-#define COL_OFF      0x3a4658
-#define COL_GREEN    0x36c46b
-#define COL_RED      0xd4574f
-#define COL_AMBER    0xd9a23a
+#define COL_BG       THEME_BG
+#define COL_CARD     THEME_CARD_BG
+#define COL_TEXT_HI  THEME_TEXT_HI
+#define COL_TEXT_DIM THEME_TEXT_DIM
+#define COL_OK       (settings.home_light_mode ? 0x16a34a : 0x2e6e3a)
+#define COL_WARN     (settings.home_light_mode ? 0xdc2626 : 0x6e3a3a)
+#define COL_OFF      THEME_OFF
+#define COL_GREEN    (settings.home_light_mode ? 0x16a34a : 0x36c46b)
+#define COL_RED      (settings.home_light_mode ? 0xdc2626 : 0xd4574f)
+#define COL_AMBER    (settings.home_light_mode ? 0xd97706 : 0xd9a23a)
 
 static lv_obj_t * scr_root      = NULL;
 static lv_obj_t * lbl_met_state = NULL;
@@ -317,7 +318,8 @@ static lv_obj_t * mk_card(int y, const char * title, const char * kind,
     lv_obj_set_size(card, DISP_HOR - 44, SY(210));
     lv_obj_align(card, LV_ALIGN_TOP_LEFT, 22, y);
     lv_obj_set_style_bg_color(card, lv_color_hex(COL_CARD), 0);
-    lv_obj_set_style_border_width(card, 0, 0);
+    lv_obj_set_style_border_color(card, lv_color_hex(THEME_BORDER), 0);
+    lv_obj_set_style_border_width(card, settings.home_light_mode ? 1 : 0, 0);
     lv_obj_set_style_radius(card, 14, 0);
     lv_obj_set_style_pad_all(card, 16, 0);
     lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
@@ -353,8 +355,12 @@ static lv_obj_t * mk_card(int y, const char * title, const char * kind,
     return card;
 }
 
+static int scr_light_mode = -1;
+
 lv_obj_t * screen_adapters_create(void) {
-    if (scr_root) return scr_root;
+    if (scr_root && scr_light_mode == settings.home_light_mode) return scr_root;
+    if (scr_root) { lv_obj_del(scr_root); scr_root = NULL; }
+    scr_light_mode = settings.home_light_mode;
 
     scr_root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(COL_BG), 0);
@@ -365,12 +371,12 @@ lv_obj_t * screen_adapters_create(void) {
     lv_obj_t * back = lv_btn_create(scr_root);
     lv_obj_set_size(back, 140, 52);
     lv_obj_align(back, LV_ALIGN_TOP_LEFT, 20, 14);
-    lv_obj_set_style_bg_color(back, lv_color_hex(COL_OFF), 0);
+    lv_obj_set_style_bg_color(back, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_set_style_radius(back, 10, 0);
     lv_obj_set_ext_click_area(back, 20);
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(back);
-    lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(bl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(bl, SF(22), 0);
     lv_label_set_text(bl, tr("< Terug", "< Back"));
     lv_obj_center(bl);

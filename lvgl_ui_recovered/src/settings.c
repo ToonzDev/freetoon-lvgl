@@ -70,6 +70,9 @@ settings_t settings = {
     .enable_vent         = 0,
     .enable_ha           = 0,
     .enable_domoticz     = 0,
+    .domoticz_tile_idx1  = -1,
+    .domoticz_tile_idx2  = -1,
+    .clock_moon_phase    = 0,
     .sonos_enabled       = 0,
     .sonos_host          = "",
     .sonos_port          = 1400,
@@ -83,6 +86,7 @@ settings_t settings = {
     .calendar_notify_enabled  = 0,
     .calendar_notify_lead_min = 15,
     .home_theme               = 0,
+    .home_light_mode          = 0,
     .stock_tiles              = "",
     .stock_big_indoor         = 1,
     .calendar_ha_entity  = "",
@@ -277,6 +281,9 @@ void settings_load(void) {
         else if (strcmp(k, "enable_domoticz") == 0) { settings.enable_domoticz = iv; seen_domoticz = 1; }
         else if (strcmp(k, "domoticz_host")   == 0)
             snprintf(settings.domoticz_host, sizeof settings.domoticz_host, "%s", v);
+        else if (strcmp(k, "domoticz_tile_idx1") == 0) settings.domoticz_tile_idx1 = iv;
+        else if (strcmp(k, "domoticz_tile_idx2") == 0) settings.domoticz_tile_idx2 = iv;
+        else if (strcmp(k, "clock_moon_phase") == 0) settings.clock_moon_phase = iv;
         else if (strcmp(k, "sonos_enabled")   == 0) { settings.sonos_enabled = iv; seen_sonos = 1; }
         else if (strcmp(k, "sonos_host")      == 0) snprintf(settings.sonos_host, sizeof settings.sonos_host, "%s", v);
         else if (strcmp(k, "sonos_port")      == 0) settings.sonos_port = iv;
@@ -305,6 +312,7 @@ void settings_load(void) {
         else if (strcmp(k, "calendar_notify_enabled")  == 0) settings.calendar_notify_enabled = iv;
         else if (strcmp(k, "calendar_notify_lead_min") == 0) settings.calendar_notify_lead_min = iv;
         else if (strcmp(k, "home_theme")         == 0) settings.home_theme = iv;
+        else if (strcmp(k, "home_light_mode")    == 0) settings.home_light_mode = iv;
         else if (strcmp(k, "stock_tiles")        == 0) snprintf(settings.stock_tiles, sizeof settings.stock_tiles, "%s", v);
         else if (strcmp(k, "stock_big_indoor")   == 0) settings.stock_big_indoor = iv;
         else if (strcmp(k, "calendar_ha_entity") == 0) snprintf(settings.calendar_ha_entity, sizeof settings.calendar_ha_entity, "%s", v);
@@ -769,6 +777,9 @@ void settings_save(void) {
     fprintf(f, "enable_ha=%d\n",       settings.enable_ha);
     fprintf(f, "enable_domoticz=%d\n", settings.enable_domoticz);
     fprintf(f, "domoticz_host=%s\n",   settings.domoticz_host);
+    fprintf(f, "domoticz_tile_idx1=%d\n", settings.domoticz_tile_idx1);
+    fprintf(f, "domoticz_tile_idx2=%d\n", settings.domoticz_tile_idx2);
+    fprintf(f, "clock_moon_phase=%d\n", settings.clock_moon_phase);
     fprintf(f, "sonos_enabled=%d\n",   settings.sonos_enabled);
     fprintf(f, "sonos_host=%s\n",      settings.sonos_host);
     fprintf(f, "sonos_port=%d\n",      settings.sonos_port);
@@ -793,6 +804,7 @@ void settings_save(void) {
     fprintf(f, "calendar_enabled=%d\n", settings.calendar_enabled);
     fprintf(f, "calendar_notify_enabled=%d\n", settings.calendar_notify_enabled);
     fprintf(f, "home_theme=%d\n", settings.home_theme);
+    fprintf(f, "home_light_mode=%d\n", settings.home_light_mode);
     if (settings.stock_tiles[0]) fprintf(f, "stock_tiles=%s\n", settings.stock_tiles);
     fprintf(f, "stock_big_indoor=%d\n", settings.stock_big_indoor);
     fprintf(f, "calendar_notify_lead_min=%d\n", settings.calendar_notify_lead_min);

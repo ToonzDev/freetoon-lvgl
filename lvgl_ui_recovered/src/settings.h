@@ -103,6 +103,9 @@ typedef struct {
     char domoticz_host[64];
     char domoticz_user[32];
     char domoticz_pass[48];
+    int  domoticz_tile_idx1;   /* device idx pinned to tile switch 1 (-1 = none) */
+    int  domoticz_tile_idx2;   /* device idx pinned to tile switch 2 (-1 = none) */
+    int  clock_moon_phase;     /* 0 = off (clean clock), 1 = show moon phase icon at night */
 
     /* Sonos HTTP API integration (node-sonos-http-api) */
     int  sonos_enabled;
@@ -262,6 +265,7 @@ typedef struct {
     int  calendar_notify_enabled;    /* 0/1 — pop a notification before a timed event starts */
     int  calendar_notify_lead_min;   /* minutes before the start to notify (default 15) */
     int  home_theme;                 /* 0 = freetoon dark dashboard, 1 = stock light tile-carousel */
+    int  home_light_mode;            /* 0 = dark tiles (default), 1 = light tiles for freetoon dashboard */
     char stock_tiles[200];           /* stock-theme carousel layout: comma-sep tile keys per slot */
     int  stock_big_indoor;           /* stock theme: 1 = big readout is indoor temp, 0 = setpoint */
 

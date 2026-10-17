@@ -11,19 +11,20 @@
 #include "screens.h"
 #include "display.h"
 #include "i18n.h"
-#include "homeassistant.h"
 #include "settings.h"
+#include "theme.h"
+#include "homeassistant.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
 
-#define COL_BG       0x0e1a2a
-#define COL_CARD     0x1a2940
-#define COL_TEXT_HI  0xffffff
-#define COL_TEXT_DIM 0x88aabb
-#define COL_PIN_ON   0x2e6e3a
-#define COL_PIN_OFF  0x3a4658
-#define COL_REMOVE   0x6e3a3a
+#define COL_BG       THEME_BG
+#define COL_CARD     THEME_CARD_BG
+#define COL_TEXT_HI  THEME_TEXT_HI
+#define COL_TEXT_DIM THEME_TEXT_DIM
+#define COL_PIN_ON   (settings.home_light_mode ? 0x16a34a : 0x2e6e3a)
+#define COL_PIN_OFF  THEME_OFF
+#define COL_REMOVE   (settings.home_light_mode ? 0xdc2626 : 0x6e3a3a)
 
 static lv_obj_t * scr_root = NULL;
 static lv_obj_t * list     = NULL;
@@ -82,7 +83,8 @@ static void rebuild(void) {
         lv_obj_t * c = lv_obj_create(list);
         lv_obj_set_size(c, lv_pct(100), 56);
         lv_obj_set_style_bg_color(c, lv_color_hex(COL_CARD), 0);
-        lv_obj_set_style_border_width(c, 0, 0);
+        lv_obj_set_style_border_color(c, lv_color_hex(THEME_BORDER), 0);
+        lv_obj_set_style_border_width(c, settings.home_light_mode ? 1 : 0, 0);
         lv_obj_set_style_radius(c, 12, 0);
         lv_obj_set_style_pad_all(c, 8, 0);
         lv_obj_clear_flag(c, LV_OBJ_FLAG_SCROLLABLE);
@@ -114,8 +116,12 @@ static void on_scr_event(lv_event_t * e) {
     if (lv_event_get_code(e) == LV_EVENT_SCREEN_LOADED) rebuild();
 }
 
+static int scr_light_mode = -1;
+
 lv_obj_t * screen_ha_devices_create(void) {
-    if (scr_root) return scr_root;
+    if (scr_root && scr_light_mode == settings.home_light_mode) return scr_root;
+    if (scr_root) { lv_obj_del(scr_root); scr_root = NULL; }
+    scr_light_mode = settings.home_light_mode;
 
     scr_root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(COL_BG), 0);
@@ -131,12 +137,12 @@ lv_obj_t * screen_ha_devices_create(void) {
     lv_obj_t * back = lv_btn_create(scr_root);
     lv_obj_set_size(back, 110, 44);
     lv_obj_align(back, LV_ALIGN_TOP_RIGHT, -16, 10);
-    lv_obj_set_style_bg_color(back, lv_color_hex(0x3a4658), 0);
+    lv_obj_set_style_bg_color(back, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_set_style_radius(back, 8, 0);
     lv_obj_set_ext_click_area(back, 18);
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(back);
-    lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(bl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_label_set_text(bl, tr("< Terug", "< Back"));
     lv_obj_center(bl);
 
@@ -156,7 +162,7 @@ lv_obj_t * screen_ha_devices_create(void) {
         { HADEV_SCENE, tr("+ Scene", "+ Scene") },
     };
     for (size_t i = 0; i < sizeof(adds)/sizeof(adds[0]); i++)
-        small_btn(addrow, adds[i].txt, 0x2e5e8a, SX(140), SY(40), on_add, adds[i].type);
+        small_btn(addrow, adds[i].txt, settings.home_light_mode ? 0x2563eb : 0x2e5e8a, SX(140), SY(40), on_add, adds[i].type);
 
     /* Scrollable device list. */
     list = lv_obj_create(scr_root);

@@ -45,6 +45,22 @@ void ui_apply_home_theme(void) {
     if (sp == 1) lv_scr_load(target);   /* only swap on-screen if home is showing */
 }
 
+/* Rebuild the freetoon home screen live when tile light-mode is toggled */
+void ui_refresh_home(void) {
+    if (settings.home_theme == 0) {
+        screen_home_destroy();
+        lv_obj_t * target = screen_home_create();
+        if (sp > 0) {
+            stack[0] = target;
+            if (sp == 1) lv_scr_load(target);
+        }
+    }
+}
+
+void ui_refresh_theme(void) {
+    ui_refresh_home();
+}
+
 static uint32_t last_activity_ms = 0;
 static int      is_dimmed = 0;
 

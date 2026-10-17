@@ -16,6 +16,8 @@
 #include "i18n.h"
 #include "display.h"
 #include "schedule.h"
+#include "settings.h"
+#include "theme.h"
 #include "boxtalk.h"
 #include "pin_modal.h"
 #include <stdio.h>
@@ -56,9 +58,11 @@ static int chip_day_of(lv_obj_t * c) {
     return -1;
 }
 static void style_chip(lv_obj_t * c, int sel) {
-    lv_obj_set_style_bg_color(c, lv_color_hex(sel ? 0x3388aa : 0x1a2a44), 0);
-    lv_obj_set_style_border_color(c, lv_color_hex(sel ? 0xffffff : 0x335577), 0);
+    lv_obj_set_style_bg_color(c, lv_color_hex(sel ? (settings.home_light_mode ? 0x2563eb : 0x3388aa) : THEME_CARD_BG), 0);
+    lv_obj_set_style_border_color(c, lv_color_hex(sel ? (settings.home_light_mode ? 0x1d4ed8 : 0xffffff) : THEME_BORDER), 0);
     lv_obj_set_style_border_width(c, sel ? 2 : 1, 0);
+    lv_obj_t * lbl = lv_obj_get_child(c, 0);
+    if (lbl) lv_obj_set_style_text_color(lbl, lv_color_hex(sel ? 0xffffff : THEME_TEXT_HI), 0);
 }
 static void on_chip_tap(lv_event_t * e) {
     int d = chip_day_of(lv_event_get_target(e));
@@ -83,7 +87,7 @@ static void rebuild_timeline(void) {
         lv_obj_t * tick = lv_obj_create(timeline_box);
         lv_obj_set_size(tick, TL_W, 1);
         lv_obj_set_pos(tick, 0, y);
-        lv_obj_set_style_bg_color(tick, lv_color_hex(0x223344), 0);
+        lv_obj_set_style_bg_color(tick, lv_color_hex(THEME_BORDER), 0);
         lv_obj_set_style_border_width(tick, 0, 0);
         lv_obj_set_style_radius(tick, 0, 0);
         lv_obj_clear_flag(tick, LV_OBJ_FLAG_SCROLLABLE);
@@ -93,7 +97,7 @@ static void rebuild_timeline(void) {
          * for labels positioned relative to the box. */
         lv_obj_t * hl = lv_label_create(scr_root);
         lv_label_set_text_fmt(hl, "%02d", hr);
-        lv_obj_set_style_text_color(hl, lv_color_hex(0x88aabb), 0);
+        lv_obj_set_style_text_color(hl, lv_color_hex(THEME_TEXT_DIM), 0);
         lv_obj_set_style_text_font(hl, SF(14), 0);
         /* timeline_box at (TL_X-20=60, TL_Y); pad_all=8 internally → the
          * y=0 row inside the box is at screen y = TL_Y+8. Labels sit
@@ -158,7 +162,7 @@ static void rebuild_timeline(void) {
     timeline_now_line = lv_obj_create(timeline_box);
     lv_obj_set_size(timeline_now_line, TL_COL_W, 2);
     lv_obj_set_pos(timeline_now_line, toon_day * TL_COL_W, y_now - 1);
-    lv_obj_set_style_bg_color(timeline_now_line, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_bg_color(timeline_now_line, lv_color_hex(settings.home_light_mode ? 0xd97706 : 0xffffff), 0);
     lv_obj_set_style_border_width(timeline_now_line, 0, 0);
     lv_obj_set_style_radius(timeline_now_line, 0, 0);
     lv_obj_clear_flag(timeline_now_line, LV_OBJ_FLAG_SCROLLABLE);
@@ -178,7 +182,7 @@ static void rebuild_day_list(void) {
     lv_obj_clean(day_list);
 
     lv_obj_t * hdr = lv_label_create(day_list);
-    lv_obj_set_style_text_color(hdr, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(hdr, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(hdr, SF(22), 0);
     lv_label_set_text_fmt(hdr, tr("%s - schakelpunten", "%s - switch points"), schedule_day_short(selected_day));
     lv_obj_align(hdr, LV_ALIGN_TOP_LEFT, 0, 0);
@@ -193,7 +197,7 @@ static void rebuild_day_list(void) {
         lv_obj_t * row = lv_obj_create(day_list);
         lv_obj_set_size(row, lv_pct(100), 50);
         lv_obj_set_pos(row, 0, row_y);
-        lv_obj_set_style_bg_color(row, lv_color_hex(0x1a2a44), 0);
+        lv_obj_set_style_bg_color(row, lv_color_hex(THEME_CARD_BG), 0);
         lv_obj_set_style_radius(row, 8, 0);
         lv_obj_set_style_border_width(row, 0, 0);
         lv_obj_set_style_pad_all(row, 8, 0);
@@ -211,7 +215,7 @@ static void rebuild_day_list(void) {
         snprintf(buf, sizeof(buf), "%02d:%02d   %s",
                  e->start_hour, e->start_min, schedule_state_name(e->target_state));
         lv_obj_t * lbl = lv_label_create(row);
-        lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_color(lbl, lv_color_hex(THEME_TEXT_HI), 0);
         lv_obj_set_style_text_font(lbl, SF(22), 0);
         lv_label_set_text(lbl, buf);
         lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 28, 0);
@@ -219,11 +223,11 @@ static void rebuild_day_list(void) {
         lv_obj_t * btn = lv_btn_create(row);
         lv_obj_set_size(btn, 110, 40);
         lv_obj_align(btn, LV_ALIGN_RIGHT_MID, 0, 0);
-        lv_obj_set_style_bg_color(btn, lv_color_hex(0x335577), 0);
+        lv_obj_set_style_bg_color(btn, lv_color_hex(THEME_BTN_ACCENT), 0);
         lv_obj_add_event_cb(btn, on_edit_row, LV_EVENT_CLICKED, &row_data[i]);
         lv_obj_t * btn_lbl = lv_label_create(btn);
         lv_label_set_text(btn_lbl, tr("Wijzig", "Edit"));
-        lv_obj_set_style_text_color(btn_lbl, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_color(btn_lbl, lv_color_hex(THEME_TEXT_HI), 0);
         lv_obj_center(btn_lbl);
 
         row_y += 56;
@@ -232,7 +236,7 @@ static void rebuild_day_list(void) {
 
     if (row_count == 0) {
         lv_obj_t * empty = lv_label_create(day_list);
-        lv_obj_set_style_text_color(empty, lv_color_hex(0x88aabb), 0);
+        lv_obj_set_style_text_color(empty, lv_color_hex(THEME_TEXT_DIM), 0);
         lv_obj_set_style_text_font(empty, SF(22), 0);
         lv_label_set_text(empty, tr("Geen schakelpunten voor deze dag.", "No switch points for this day."));
         lv_obj_align(empty, LV_ALIGN_TOP_LEFT, 0, 44);
@@ -243,7 +247,7 @@ static void rebuild_day_list(void) {
     lv_obj_t * add = lv_btn_create(day_list);
     lv_obj_set_size(add, 180, 50);
     lv_obj_set_pos(add, 0, row_y + 4);
-    lv_obj_set_style_bg_color(add, lv_color_hex(0x3388aa), 0);
+    lv_obj_set_style_bg_color(add, lv_color_hex(settings.home_light_mode ? 0x2563eb : 0x3388aa), 0);
     lv_obj_set_style_radius(add, 10, 0);
     lv_obj_add_event_cb(add, on_add_row, LV_EVENT_CLICKED, NULL);
     lv_obj_t * add_lbl = lv_label_create(add);
@@ -275,9 +279,9 @@ static void edit_update_state_buttons(void) {
         int active = (i == edit_state.target_state);
         lv_obj_t * btn = lv_obj_get_parent(edit_state_lbls[i]);
         lv_obj_set_style_bg_color(btn,
-            lv_color_hex(active ? schedule_state_color(i) : 0x223344), 0);
+            lv_color_hex(active ? schedule_state_color(i) : THEME_BTN_BG), 0);
         lv_obj_set_style_border_color(btn,
-            lv_color_hex(active ? 0xffffff : schedule_state_color(i)), 0);
+            lv_color_hex(active ? 0xffffff : THEME_BORDER), 0);
         lv_obj_set_style_border_width(btn, active ? 2 : 1, 0);
     }
 }
@@ -382,15 +386,15 @@ static void show_edit_modal(int idx) {
     lv_obj_t * panel = lv_obj_create(edit_modal);
     lv_obj_set_size(panel, 800, 460);
     lv_obj_align(panel, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_set_style_bg_color(panel, lv_color_hex(0x0f1a2a), 0);
+    lv_obj_set_style_bg_color(panel, lv_color_hex(THEME_CARD_BG), 0);
     lv_obj_set_style_radius(panel, 16, 0);
-    lv_obj_set_style_border_color(panel, lv_color_hex(0x335577), 0);
+    lv_obj_set_style_border_color(panel, lv_color_hex(THEME_BORDER), 0);
     lv_obj_set_style_border_width(panel, 1, 0);
     lv_obj_set_style_pad_all(panel, 24, 0);
     lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t * title = lv_label_create(panel);
-    lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(title, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(title, SF(28), 0);
     lv_label_set_text_fmt(title, tr("%s - schakelpunt", "%s - switch point"),
                           schedule_day_short(selected_day));
@@ -398,7 +402,7 @@ static void show_edit_modal(int idx) {
 
     /* Time editor: big time label on top, buttons below in their own row. */
     edit_time_lbl = lv_label_create(panel);
-    lv_obj_set_style_text_color(edit_time_lbl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(edit_time_lbl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(edit_time_lbl, SF(48), 0);
     edit_update_time();
     lv_obj_align(edit_time_lbl, LV_ALIGN_TOP_MID, 0, 50);
@@ -408,26 +412,34 @@ static void show_edit_modal(int idx) {
     int row_y = 130;
     b = lv_btn_create(panel);
     lv_obj_set_size(b, 70, 60); lv_obj_align(b, LV_ALIGN_TOP_MID, -190, row_y);
+    lv_obj_set_style_bg_color(b, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_add_event_cb(b, on_hour_dec, LV_EVENT_CLICKED, NULL);
     lv_obj_t * l = lv_label_create(b); lv_label_set_text(l, tr("u-", "h-"));
+    lv_obj_set_style_text_color(l, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(l, SF(22), 0); lv_obj_center(l);
 
     b = lv_btn_create(panel);
     lv_obj_set_size(b, 70, 60); lv_obj_align(b, LV_ALIGN_TOP_MID, -100, row_y);
+    lv_obj_set_style_bg_color(b, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_add_event_cb(b, on_hour_inc, LV_EVENT_CLICKED, NULL);
     l = lv_label_create(b); lv_label_set_text(l, tr("u+", "h+"));
+    lv_obj_set_style_text_color(l, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(l, SF(22), 0); lv_obj_center(l);
 
     b = lv_btn_create(panel);
     lv_obj_set_size(b, 70, 60); lv_obj_align(b, LV_ALIGN_TOP_MID, 100, row_y);
+    lv_obj_set_style_bg_color(b, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_add_event_cb(b, on_min_dec, LV_EVENT_CLICKED, NULL);
     l = lv_label_create(b); lv_label_set_text(l, tr("m-", "m-"));
+    lv_obj_set_style_text_color(l, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(l, SF(22), 0); lv_obj_center(l);
 
     b = lv_btn_create(panel);
     lv_obj_set_size(b, 70, 60); lv_obj_align(b, LV_ALIGN_TOP_MID, 190, row_y);
+    lv_obj_set_style_bg_color(b, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_add_event_cb(b, on_min_inc, LV_EVENT_CLICKED, NULL);
     l = lv_label_create(b); lv_label_set_text(l, tr("m+", "m+"));
+    lv_obj_set_style_text_color(l, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(l, SF(22), 0); lv_obj_center(l);
 
     /* State picker row (4 buttons) */
@@ -452,7 +464,7 @@ static void show_edit_modal(int idx) {
     lv_obj_t * save = lv_btn_create(panel);
     lv_obj_set_size(save, 200, 60);
     lv_obj_align(save, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-    lv_obj_set_style_bg_color(save, lv_color_hex(0x3388aa), 0);
+    lv_obj_set_style_bg_color(save, lv_color_hex(settings.home_light_mode ? 0x2563eb : 0x3388aa), 0);
     lv_obj_add_event_cb(save, on_save, LV_EVENT_CLICKED, NULL);
     l = lv_label_create(save); lv_label_set_text(l, tr("Opslaan", "Save"));
     lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
@@ -474,10 +486,10 @@ static void show_edit_modal(int idx) {
     lv_obj_t * cancel = lv_btn_create(panel);
     lv_obj_set_size(cancel, 200, 60);
     lv_obj_align(cancel, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
-    lv_obj_set_style_bg_color(cancel, lv_color_hex(0x444444), 0);
+    lv_obj_set_style_bg_color(cancel, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_add_event_cb(cancel, on_cancel, LV_EVENT_CLICKED, NULL);
     l = lv_label_create(cancel); lv_label_set_text(l, tr("Annuleren", "Cancel"));
-    lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(l, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(l, SF(22), 0);
     lv_obj_center(l);
 }
@@ -503,14 +515,18 @@ static void refresh_cb(lv_timer_t * t) {
     lv_obj_set_pos(timeline_now_line, toon_day * TL_COL_W, y_now - 1);
 }
 
+static int scr_light_mode = -1;
+
 lv_obj_t * screen_schedule_create(void) {
-    if (scr_root) {
+    if (scr_root && scr_light_mode == settings.home_light_mode) {
         /* Refresh data each time we enter (in case schedule changed elsewhere) */
         schedule_load();
         rebuild_timeline();
         rebuild_day_list();
         return scr_root;
     }
+    if (scr_root) { lv_obj_del(scr_root); scr_root = NULL; }
+    scr_light_mode = settings.home_light_mode;
 
     schedule_load();
 
@@ -520,25 +536,25 @@ lv_obj_t * screen_schedule_create(void) {
     selected_day = (tm.tm_wday + 6) % 7;
 
     scr_root = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(scr_root, lv_color_hex(0x0f1a2a), 0);
+    lv_obj_set_style_bg_color(scr_root, lv_color_hex(THEME_BG), 0);
     lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
 
     /* Back + title */
     lv_obj_t * back = lv_btn_create(scr_root);
     lv_obj_set_size(back, 140, 70);
     lv_obj_align(back, LV_ALIGN_TOP_LEFT, 12, 12);
-    lv_obj_set_style_bg_color(back, lv_color_hex(0x223344), 0);
+    lv_obj_set_style_bg_color(back, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_set_style_radius(back, 12, 0);
     lv_obj_set_ext_click_area(back, 20);
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(back);
     lv_label_set_text(bl, tr("< Terug", "< Back"));
-    lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(bl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(bl, SF(22), 0);
     lv_obj_center(bl);
 
     lv_obj_t * title = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(title, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(title, SF(28), 0);
     lv_label_set_text(title, tr("Programma", "Schedule"));
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 180, 26);
@@ -553,14 +569,13 @@ lv_obj_t * screen_schedule_create(void) {
         lv_obj_clear_flag(c, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_add_flag(c, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_event_cb(c, on_chip_tap, LV_EVENT_CLICKED, NULL);
-        style_chip(c, i == selected_day);
 
         lv_obj_t * lbl = lv_label_create(c);
         lv_label_set_text(lbl, schedule_day_short(i));
-        lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
         lv_obj_set_style_text_font(lbl, SF(22), 0);
         lv_obj_center(lbl);
 
+        style_chip(c, i == selected_day);
         day_chips[i] = c;
     }
 
@@ -569,9 +584,10 @@ lv_obj_t * screen_schedule_create(void) {
     lv_obj_set_size(timeline_box, TL_W, TL_H);
     /* Origin offset by 40 px on the left so the hour-axis labels fit. */
     lv_obj_set_pos(timeline_box, TL_X - 20, TL_Y);
-    lv_obj_set_style_bg_color(timeline_box, lv_color_hex(0x1a2a44), 0);
+    lv_obj_set_style_bg_color(timeline_box, lv_color_hex(THEME_CARD_BG), 0);
     lv_obj_set_style_radius(timeline_box, 10, 0);
-    lv_obj_set_style_border_width(timeline_box, 0, 0);
+    lv_obj_set_style_border_color(timeline_box, lv_color_hex(THEME_BORDER), 0);
+    lv_obj_set_style_border_width(timeline_box, 1, 0);
     lv_obj_set_style_pad_all(timeline_box, 8, 0);
     lv_obj_clear_flag(timeline_box, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -590,7 +606,7 @@ lv_obj_t * screen_schedule_create(void) {
     lv_obj_add_flag(day_list, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(day_list, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(day_list, LV_SCROLLBAR_MODE_ON);
-    lv_obj_set_style_bg_color(day_list, lv_color_hex(0x335577),
+    lv_obj_set_style_bg_color(day_list, lv_color_hex(THEME_BORDER),
                               LV_PART_SCROLLBAR);
     lv_obj_set_style_bg_opa(day_list, LV_OPA_70, LV_PART_SCROLLBAR);
     lv_obj_set_style_width(day_list, 6, LV_PART_SCROLLBAR);

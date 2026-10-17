@@ -18,6 +18,7 @@
 #include "display.h"
 #include "http.h"
 #include "settings.h"
+#include "theme.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -96,7 +97,7 @@ static void rebuild_list(void) {
 
         lv_obj_t * lbl = lv_label_create(row);
         lv_obj_set_style_text_font(lbl, SF(18), 0);
-        lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_color(lbl, lv_color_hex(THEME_TEXT_HI), 0);
         lv_label_set_text_fmt(lbl, "%-26s %s %s", name, value, unit);
         lv_obj_align(lbl, LV_ALIGN_LEFT_MID, SX(4), 0);
         rows++;
@@ -125,13 +126,13 @@ static void on_back(lv_event_t * e) {
 
 lv_obj_t * screen_heater_advanced_create(void) {
     scr_root = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(scr_root, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_color(scr_root, lv_color_hex(THEME_BG), 0);
     lv_obj_set_style_pad_all(scr_root, 0, 0);
 
     /* header */
     lv_obj_t * hdr = lv_label_create(scr_root);
     lv_obj_set_style_text_font(hdr, SF(28), 0);
-    lv_obj_set_style_text_color(hdr, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(hdr, lv_color_hex(THEME_TEXT_HI), 0);
     lv_label_set_text(hdr, tr("Ketel - Geavanceerd (OTGW)", "Boiler - Advanced (OTGW)"));
     lv_obj_align(hdr, LV_ALIGN_TOP_LEFT, SX(20), SY(16));
 
@@ -139,17 +140,19 @@ lv_obj_t * screen_heater_advanced_create(void) {
     lv_obj_t * back = lv_btn_create(scr_root);
     lv_obj_set_size(back, SX(90), SY(44));
     lv_obj_align(back, LV_ALIGN_TOP_RIGHT, -SX(16), SY(14));
-    lv_obj_set_style_bg_color(back, lv_color_hex(0x333333), 0);
+    lv_obj_set_style_bg_color(back, lv_color_hex(THEME_BTN_BG), 0);
+    lv_obj_set_style_border_color(back, lv_color_hex(THEME_BORDER), 0);
+    lv_obj_set_style_border_width(back, settings.home_light_mode ? 1 : 0, 0);
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(back);
-    lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(bl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_label_set_text(bl, tr("Terug", "Back"));
     lv_obj_center(bl);
 
     /* status (field count or error) */
     lbl_status = lv_label_create(scr_root);
     lv_obj_set_style_text_font(lbl_status, SF(14), 0);
-    lv_obj_set_style_text_color(lbl_status, lv_color_hex(0x888888), 0);
+    lv_obj_set_style_text_color(lbl_status, lv_color_hex(THEME_TEXT_MUTED), 0);
     lv_label_set_text(lbl_status, tr("laden...", "loading..."));
     lv_obj_align(lbl_status, LV_ALIGN_TOP_LEFT, SX(20), SY(56));
 
@@ -157,8 +160,9 @@ lv_obj_t * screen_heater_advanced_create(void) {
     list_col = lv_obj_create(scr_root);
     lv_obj_set_size(list_col, DISP_HOR - SX(20), DISP_VER - SY(90));
     lv_obj_align(list_col, LV_ALIGN_TOP_LEFT, SX(10), SY(82));
-    lv_obj_set_style_bg_color(list_col, lv_color_hex(0x111111), 0);
-    lv_obj_set_style_border_width(list_col, 0, 0);
+    lv_obj_set_style_bg_color(list_col, lv_color_hex(THEME_CARD_BG), 0);
+    lv_obj_set_style_border_color(list_col, lv_color_hex(THEME_BORDER), 0);
+    lv_obj_set_style_border_width(list_col, settings.home_light_mode ? 1 : 0, 0);
     lv_obj_set_flex_flow(list_col, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(list_col, LV_FLEX_ALIGN_START,
                           LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);

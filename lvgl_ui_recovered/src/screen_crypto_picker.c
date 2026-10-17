@@ -12,6 +12,8 @@
 #include "screens.h"
 #include "display.h"   /* SX()/SY() scaling for Toon 1 (800x480) vs Toon 2 (1024x600) */
 #include "i18n.h"
+#include "settings.h"
+#include "theme.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -63,11 +65,16 @@ static void refilter(void) {
     if (!ql[0]) {
         lv_obj_t * b = lv_list_add_text(lst_results, tr("Typ om te zoeken (naam of symbool)...",
                                                         "Type to search (name or symbol)..."));
-        (void)b; return;
+        if (b) lv_obj_set_style_text_color(b, lv_color_hex(THEME_TEXT_MUTED), 0);
+        return;
     }
     FILE * f = fopen(COINS_TSV, "r");
-    if (!f) { lv_list_add_text(lst_results, tr("coins.tsv ontbreekt - crypto-integratie nog niet geinstalleerd?",
-                                               "coins.tsv missing - crypto integration not installed yet?")); return; }
+    if (!f) {
+        lv_obj_t * b = lv_list_add_text(lst_results, tr("coins.tsv ontbreekt - crypto-integratie nog niet geinstalleerd?",
+                                                       "coins.tsv missing - crypto integration not installed yet?"));
+        if (b) lv_obj_set_style_text_color(b, lv_color_hex(THEME_TEXT_MUTED), 0);
+        return;
+    }
     char line[256]; int shown = 0;
     while (fgets(line, sizeof line, f) && shown < MAX_RESULTS) {
         char * nl = strchr(line, '\n'); if (nl) *nl = 0;
@@ -84,6 +91,8 @@ static void refilter(void) {
                  sel_index(id) >= 0 ? LV_SYMBOL_OK " " : "", name, sym,
                  sel_index(id) >= 0 ? "" : "");
         lv_obj_t * btn = lv_list_add_btn(lst_results, NULL, label);
+        lv_obj_set_style_bg_color(btn, lv_color_hex(THEME_ROW_BG), 0);
+        lv_obj_set_style_text_color(btn, lv_color_hex(THEME_TEXT_HI), 0);
         /* stash the id+sym on the button via user_data (id\tsym, heap copy) */
         char * ud = malloc(96);
         snprintf(ud, 96, "%s\t%s", id, sym);
@@ -92,9 +101,14 @@ static void refilter(void) {
         shown++;
     }
     fclose(f);
-    if (shown == 0) lv_list_add_text(lst_results, tr("Geen munten gevonden", "No coins found"));
-    else if (shown >= MAX_RESULTS) lv_list_add_text(lst_results, tr("... verfijn de zoekopdracht voor meer",
-                                                                     "... refine the search for more"));
+    if (shown == 0) {
+        lv_obj_t * b = lv_list_add_text(lst_results, tr("Geen munten gevonden", "No coins found"));
+        if (b) lv_obj_set_style_text_color(b, lv_color_hex(THEME_TEXT_MUTED), 0);
+    } else if (shown >= MAX_RESULTS) {
+        lv_obj_t * b = lv_list_add_text(lst_results, tr("... verfijn de zoekopdracht voor meer",
+                                                        "... refine the search for more"));
+        if (b) lv_obj_set_style_text_color(b, lv_color_hex(THEME_TEXT_MUTED), 0);
+    }
 }
 
 static void on_pick(lv_event_t * e) {
@@ -182,22 +196,28 @@ static void on_back(lv_event_t * e) { (void)e; ui_pop(); }
 
 lv_obj_t * screen_crypto_picker_create(void) {
     scr_root = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(scr_root, lv_color_hex(0x101418), 0);
+    lv_obj_set_style_bg_color(scr_root, lv_color_hex(THEME_BG), 0);
     lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t * back = lv_btn_create(scr_root);
+    lv_obj_set_style_bg_color(back, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_align(back, LV_ALIGN_TOP_LEFT, SX(8), SY(8));
-    lv_obj_t * bl = lv_label_create(back); lv_label_set_text(bl, tr(LV_SYMBOL_LEFT " Terug", LV_SYMBOL_LEFT " Back"));
+    lv_obj_t * bl = lv_label_create(back);
+    lv_obj_set_style_text_color(bl, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_label_set_text(bl, tr(LV_SYMBOL_LEFT " Terug", LV_SYMBOL_LEFT " Back"));
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t * save = lv_btn_create(scr_root);
+    lv_obj_set_style_bg_color(save, lv_color_hex(THEME_BTN_ACCENT), 0);
     lv_obj_align(save, LV_ALIGN_TOP_RIGHT, SX(-8), SY(8));
-    lv_obj_t * sl = lv_label_create(save); lv_label_set_text(sl, tr(LV_SYMBOL_SAVE " Opslaan", LV_SYMBOL_SAVE " Save"));
+    lv_obj_t * sl = lv_label_create(save);
+    lv_obj_set_style_text_color(sl, lv_color_hex(0xffffff), 0);
+    lv_label_set_text(sl, tr(LV_SYMBOL_SAVE " Opslaan", LV_SYMBOL_SAVE " Save"));
     lv_obj_add_event_cb(save, on_save, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t * title = lv_label_create(scr_root);
     lv_obj_set_style_text_font(title, SF(22), 0);
-    lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(title, lv_color_hex(THEME_TEXT_HI), 0);
     lv_label_set_text(title, tr("Crypto munten", "Crypto coins"));
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, SY(14));
 
@@ -207,17 +227,23 @@ lv_obj_t * screen_crypto_picker_create(void) {
                                                    "Search coin (e.g. bitcoin, eth, solana)..."));
     lv_obj_set_width(ta_search, LV_PCT(70));
     lv_obj_align(ta_search, LV_ALIGN_TOP_MID, 0, SY(64));
+    lv_obj_set_style_bg_color(ta_search, lv_color_hex(THEME_CARD_BG), 0);
+    lv_obj_set_style_text_color(ta_search, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_border_color(ta_search, lv_color_hex(THEME_BORDER), 0);
     lv_obj_add_event_cb(ta_search, on_search_changed, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_event_cb(ta_search, on_search_focus, LV_EVENT_FOCUSED, NULL);
     lv_obj_add_event_cb(ta_search, on_search_focus, LV_EVENT_DEFOCUSED, NULL);
 
     lbl_picked = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_picked, lv_color_hex(0x88dd66), 0);
+    lv_obj_set_style_text_color(lbl_picked, lv_color_hex(settings.home_light_mode ? 0x15803d : 0x88dd66), 0);
     lv_obj_align(lbl_picked, LV_ALIGN_TOP_MID, 0, SY(112));
 
     lst_results = lv_list_create(scr_root);
     lv_obj_set_size(lst_results, LV_PCT(94), SY(330));
     lv_obj_align(lst_results, LV_ALIGN_TOP_MID, 0, SY(140));
+    lv_obj_set_style_bg_color(lst_results, lv_color_hex(THEME_CARD_BG), 0);
+    lv_obj_set_style_border_color(lst_results, lv_color_hex(THEME_BORDER), 0);
+    lv_obj_set_style_border_width(lst_results, settings.home_light_mode ? 1 : 0, 0);
 
     kb = lv_keyboard_create(lv_layer_top());
     lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);

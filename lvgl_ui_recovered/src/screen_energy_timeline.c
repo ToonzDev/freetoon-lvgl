@@ -25,6 +25,8 @@
 #include "screens.h"
 #include "display.h"
 #include "i18n.h"
+#include "settings.h"
+#include "theme.h"
 #include "meteradapter.h"
 #include <stdio.h>
 #include <string.h>
@@ -42,13 +44,13 @@
 static lv_color_t tl_buf[TL_BUF_W * TL_BUF_H];
 
 /* ── colours ───────────────────────────────────────────────────── */
-#define COL_BG       0x0e1a2a
-#define COL_CANVAS   0x0a1520
-#define COL_TEXT_HI  0xffffff
-#define COL_TEXT_DIM 0x88aabb
-#define COL_GRID     0x1e3248
-#define COL_NOW      0xffffff
-#define COL_TICK_OFF 0x445566
+#define COL_BG       THEME_BG
+#define COL_CANVAS   THEME_CARD_BG
+#define COL_TEXT_HI  THEME_TEXT_HI
+#define COL_TEXT_DIM THEME_TEXT_DIM
+#define COL_GRID     THEME_BORDER
+#define COL_NOW      (settings.home_light_mode ? 0xd97706 : 0xffffff)
+#define COL_TICK_OFF (settings.home_light_mode ? 0x94a3b8 : 0x445566)
 
 /* 8-colour device palette */
 static const uint32_t dev_palette[] = {
@@ -268,9 +270,11 @@ static void refresh_cb(lv_timer_t *t) {
 /* ── range buttons ─────────────────────────────────────────────── */
 static void style_range_btn(int idx, int sel) {
     lv_obj_set_style_bg_color(btn_range[idx],
-        lv_color_hex(sel ? 0x3a6ea8 : 0x1e3050), 0);
+        lv_color_hex(sel ? (settings.home_light_mode ? 0x2563eb : 0x3a6ea8) : THEME_BTN_BG), 0);
     lv_obj_set_style_border_width(btn_range[idx], sel ? 2 : 0, 0);
-    lv_obj_set_style_border_color(btn_range[idx], lv_color_hex(0x5090d0), 0);
+    lv_obj_set_style_border_color(btn_range[idx], lv_color_hex(sel ? (settings.home_light_mode ? 0x1d4ed8 : 0x5090d0) : THEME_BORDER), 0);
+    lv_obj_t * l = lv_obj_get_child(btn_range[idx], 0);
+    if (l) lv_obj_set_style_text_color(l, lv_color_hex(sel ? 0xffffff : THEME_TEXT_HI), 0);
 }
 
 static void on_range(lv_event_t *e) {
@@ -297,13 +301,17 @@ static void on_scr_event(lv_event_t *e) {
 static void back_async(void *u) { (void)u; ui_pop(); }
 static void on_back(lv_event_t *e) { (void)e; lv_async_call(back_async, NULL); }
 
+static int scr_light_mode = -1;
+
 /* ── screen builder ────────────────────────────────────────────── */
 lv_obj_t * screen_energy_timeline_create(void) {
-    if (scr_root) {
+    if (scr_root && scr_light_mode == settings.home_light_mode) {
         g_last_log = -1;
         redraw_canvas();
         return scr_root;
     }
+    if (scr_root) { lv_obj_del(scr_root); scr_root = NULL; }
+    scr_light_mode = settings.home_light_mode;
 
     scr_root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(COL_BG), 0);
@@ -317,20 +325,20 @@ lv_obj_t * screen_energy_timeline_create(void) {
     lv_obj_t *back = lv_btn_create(scr_root);
     lv_obj_set_size(back, SX(130), SY(46));
     lv_obj_align(back, LV_ALIGN_TOP_LEFT, SX(8), hdr_y + SY(3));
-    lv_obj_set_style_bg_color(back, lv_color_hex(0x1e3050), 0);
+    lv_obj_set_style_bg_color(back, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_set_style_radius(back, 10, 0);
     lv_obj_set_style_border_width(back, 0, 0);
     lv_obj_set_ext_click_area(back, 25);
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t *bl = lv_label_create(back);
-    lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(bl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(bl, SF(18), 0);
     lv_label_set_text_fmt(bl, LV_SYMBOL_LEFT " %s", tr("Terug", "Back"));
     lv_obj_center(bl);
 
     /* ── Title ── */
     lv_obj_t *title = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(title, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(title, SF(22), 0);
     lv_label_set_text(title, tr("Apparaten tijdlijn", "Device timeline"));
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, hdr_y + SY(12));

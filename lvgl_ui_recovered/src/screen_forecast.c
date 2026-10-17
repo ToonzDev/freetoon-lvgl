@@ -14,6 +14,7 @@
 #include "weather.h"
 #include "icons.h"
 #include "settings.h"
+#include "theme.h"
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -128,24 +129,31 @@ static void refresh_cb(lv_timer_t * t) {
     }
 }
 
+static int scr_light_mode = -1;
+
 lv_obj_t * screen_forecast_create(void) {
-    if (scr_root) return scr_root;
+    if (scr_root && scr_light_mode == settings.home_light_mode) return scr_root;
+    if (scr_root) {
+        lv_obj_del(scr_root);
+        scr_root = NULL;
+    }
+    scr_light_mode = settings.home_light_mode;
 
     scr_root = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(scr_root, lv_color_hex(0x0f1a2a), 0);
+    lv_obj_set_style_bg_color(scr_root, lv_color_hex(THEME_BG), 0);
     lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
 
     /* Back + title */
     lv_obj_t * back = lv_btn_create(scr_root);
     lv_obj_set_size(back, 140, 70);
     lv_obj_align(back, LV_ALIGN_TOP_LEFT, 12, 12);
-    lv_obj_set_style_bg_color(back, lv_color_hex(0x223344), 0);
+    lv_obj_set_style_bg_color(back, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_set_style_radius(back, 12, 0);
     lv_obj_set_ext_click_area(back, 20);
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(back);
     lv_label_set_text(bl, tr("< Terug", "< Back"));
-    lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(bl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(bl, SF(22), 0);
     lv_obj_center(bl);
 
@@ -155,9 +163,9 @@ lv_obj_t * screen_forecast_create(void) {
     lv_obj_t * radar_frame = lv_obj_create(scr_root);
     lv_obj_set_size(radar_frame, SX(380), SY(380));
     lv_obj_set_pos(radar_frame, 30, SY(100));
-    lv_obj_set_style_bg_color(radar_frame, lv_color_hex(0x1a2a44), 0);
+    lv_obj_set_style_bg_color(radar_frame, lv_color_hex(THEME_CARD_BG), 0);
     lv_obj_set_style_radius(radar_frame, 12, 0);
-    lv_obj_set_style_border_color(radar_frame, lv_color_hex(0x335577), 0);
+    lv_obj_set_style_border_color(radar_frame, lv_color_hex(THEME_BORDER), 0);
     lv_obj_set_style_border_width(radar_frame, 1, 0);
     lv_obj_set_style_pad_all(radar_frame, 0, 0);
     lv_obj_set_style_clip_corner(radar_frame, true, 0);
@@ -185,13 +193,13 @@ lv_obj_t * screen_forecast_create(void) {
         lv_obj_t * b = lv_btn_create(scr_root);
         lv_obj_set_size(b, 40, 40);
         lv_obj_align(b, z[i].a, z[i].x, z[i].y);
-        lv_obj_set_style_bg_color(b, lv_color_hex(0x335577), 0);
+        lv_obj_set_style_bg_color(b, lv_color_hex(THEME_BTN_ACCENT), 0);
         lv_obj_set_style_bg_opa(b, 180, 0);
         lv_obj_set_style_radius(b, 20, 0);
         lv_obj_add_event_cb(b, on_radar_zoom, LV_EVENT_CLICKED,
                             (void *)(intptr_t)z[i].d);
         lv_obj_t * bl = lv_label_create(b);
-        lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_color(bl, lv_color_hex(THEME_TEXT_HI), 0);
         lv_obj_set_style_text_font(bl, SF(28), 0);
         lv_label_set_text(bl, z[i].t);
         lv_obj_center(bl);
@@ -199,7 +207,7 @@ lv_obj_t * screen_forecast_create(void) {
 
     /* Right side: title + body text */
     lbl_title = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_title, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lbl_title, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_title, SF(28), 0);
     lv_obj_set_width(lbl_title, SX(540));
     lv_label_set_long_mode(lbl_title, LV_LABEL_LONG_WRAP);
@@ -218,7 +226,7 @@ lv_obj_t * screen_forecast_create(void) {
     lv_obj_set_scroll_dir(body_scroll, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(body_scroll, LV_SCROLLBAR_MODE_AUTO);
     lbl_body = lv_label_create(body_scroll);
-    lv_obj_set_style_text_color(lbl_body, lv_color_hex(0xbbbbbb), 0);
+    lv_obj_set_style_text_color(lbl_body, lv_color_hex(settings.home_light_mode ? 0x334455 : 0xbbbbbb), 0);
     lv_obj_set_style_text_font(lbl_body, SF(18), 0);
     lv_obj_set_width(lbl_body, SX(540));
     lv_label_set_long_mode(lbl_body, LV_LABEL_LONG_WRAP);
@@ -238,7 +246,7 @@ lv_obj_t * screen_forecast_create(void) {
         lv_obj_t * col = lv_obj_create(scr_root);
         lv_obj_set_size(col, col_w - 8, strip_h);
         lv_obj_set_pos(col, 10 + i * col_w, strip_y);
-        lv_obj_set_style_bg_color(col, lv_color_hex(0x1a2a44), 0);
+        lv_obj_set_style_bg_color(col, lv_color_hex(THEME_CARD_BG), 0);
         lv_obj_set_style_radius(col, 10, 0);
         lv_obj_set_style_border_width(col, 0, 0);
         lv_obj_set_style_pad_all(col, 8, 0);
@@ -248,7 +256,7 @@ lv_obj_t * screen_forecast_create(void) {
            screen gives us more vertical room per column. */
         fc_icon[i] = lv_img_create(col);
         lv_img_set_src(fc_icon[i], &icon_wx_cloud_lg);
-        lv_obj_set_style_img_recolor(fc_icon[i], lv_color_hex(0xddeeff), 0);
+        lv_obj_set_style_img_recolor(fc_icon[i], lv_color_hex(settings.home_light_mode ? 0x64748b : 0xddeeff), 0);
         lv_obj_set_style_img_recolor_opa(fc_icon[i], 255, 0);
         /* Shrink the big icon on Toon 1's shorter strip so it fits the
          * 84px column without crowding the day/temp/wind text. */
@@ -263,19 +271,19 @@ lv_obj_t * screen_forecast_create(void) {
         lv_obj_add_flag(fc_wind_arrow[i], LV_OBJ_FLAG_HIDDEN);
 
         fc_wind_lbl[i] = lv_label_create(col);
-        lv_obj_set_style_text_color(fc_wind_lbl[i], lv_color_hex(0x88aabb), 0);
+        lv_obj_set_style_text_color(fc_wind_lbl[i], lv_color_hex(THEME_TEXT_DIM), 0);
         lv_obj_set_style_text_font(fc_wind_lbl[i], SF(18), 0);
         lv_label_set_text(fc_wind_lbl[i], "");
         lv_obj_align(fc_wind_lbl[i], LV_ALIGN_BOTTOM_LEFT, 30, -2);
 
         fc_day_lbl[i] = lv_label_create(col);
-        lv_obj_set_style_text_color(fc_day_lbl[i], lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_color(fc_day_lbl[i], lv_color_hex(THEME_TEXT_HI), 0);
         lv_obj_set_style_text_font(fc_day_lbl[i], SF(22), 0);
         lv_label_set_text(fc_day_lbl[i], "--");
         lv_obj_align(fc_day_lbl[i], LV_ALIGN_TOP_LEFT, 0, 0);
 
         fc_temp_lbl[i] = lv_label_create(col);
-        lv_obj_set_style_text_color(fc_temp_lbl[i], lv_color_hex(0xffcc44), 0);
+        lv_obj_set_style_text_color(fc_temp_lbl[i], lv_color_hex(THEME_WARN_ORANGE), 0);
         lv_obj_set_style_text_font(fc_temp_lbl[i], SF(22), 0);
         lv_label_set_text(fc_temp_lbl[i], "");
         lv_obj_align(fc_temp_lbl[i], LV_ALIGN_TOP_RIGHT, 0, 0);

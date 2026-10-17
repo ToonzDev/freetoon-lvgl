@@ -85,13 +85,15 @@ const lv_img_dsc_t * waste_icon_for_label(const char * label) {
     return &icon_trash;
 }
 
+#include "settings.h"
+
 unsigned int waste_accent_for_label(const char * label) {
-    if (!label) return 0x888888;
-    if (!strncasecmp(label, "Pap",  3)) return 0x44aaff;     /* blue */
-    if (!strncasecmp(label, "PMD",  3)) return 0xffaa44;     /* orange */
-    if (!strncasecmp(label, "Plas", 4)) return 0xffaa44;
-    if (!strncasecmp(label, "GFT",  3)) return 0x88dd66;     /* green */
-    return 0x888888;                                          /* Restafval */
+    if (!label) return settings.home_light_mode ? 0x4b5563 : 0x888888;
+    if (!strncasecmp(label, "Pap",  3)) return settings.home_light_mode ? 0x1d4ed8 : 0x44aaff;     /* blue */
+    if (!strncasecmp(label, "PMD",  3)) return settings.home_light_mode ? 0xc25e00 : 0xffaa44;     /* orange */
+    if (!strncasecmp(label, "Plas", 4)) return settings.home_light_mode ? 0xc25e00 : 0xffaa44;
+    if (!strncasecmp(label, "GFT",  3)) return settings.home_light_mode ? 0x15803d : 0x88dd66;     /* green */
+    return settings.home_light_mode ? 0x4b5563 : 0x888888;                                          /* Restafval */
 }
 
 /* Buienradar code → icon. Mapping from their public documentation

@@ -17,7 +17,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define UPDATE_CHECK_INTERVAL_S (6 * 3600)   /* 6 h between polls */
+#define UPDATE_CHECK_INTERVAL_S (24 * 3600)  /* 24 h (once a day) between polls */
 /* Two update channels (settings.update_channel):
  *   1 = beta/dev (default): newest release INCLUDING prereleases. We fetch a
  *       page of recent releases and pick the HIGHEST SEMVER tag ourselves —

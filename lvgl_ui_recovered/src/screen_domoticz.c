@@ -9,17 +9,18 @@
 #include "display.h"
 #include "i18n.h"
 #include "settings.h"
+#include "theme.h"
 #include "domoticz.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
 
-#define COL_BG       0x0e1a2a
-#define COL_CARD     0x1a2940
-#define COL_TEXT_HI  0xffffff
-#define COL_TEXT_DIM 0x88aabb
-#define COL_ON       0x2e6e3a
-#define COL_OFF      0x3a4658
+#define COL_BG       THEME_BG
+#define COL_CARD     THEME_CARD_BG
+#define COL_TEXT_HI  THEME_TEXT_HI
+#define COL_TEXT_DIM THEME_TEXT_DIM
+#define COL_ON       (settings.home_light_mode ? 0x16a34a : 0x2e6e3a)
+#define COL_OFF      THEME_OFF
 
 static lv_obj_t * scr_root   = NULL;
 static lv_obj_t * list_box   = NULL;
@@ -27,10 +28,27 @@ static lv_obj_t * lbl_status = NULL;
 static lv_timer_t * refresh_timer = NULL;
 static int g_built_count = -1;   /* rebuild rows only when the device set changes */
 
+/* Forward declaration */
+static void build_rows(void);
+
 /* ---- control callbacks (idx packed in user_data) ---- */
 static void on_toggle(lv_event_t * e) {
     int idx = (int)(intptr_t)lv_event_get_user_data(e);
     domoticz_switch_async(idx, "Toggle");
+}
+static void on_pin_tile1(lv_event_t * e) {
+    int idx = (int)(intptr_t)lv_event_get_user_data(e);
+    if (settings.domoticz_tile_idx1 == idx) settings.domoticz_tile_idx1 = -1;
+    else settings.domoticz_tile_idx1 = idx;
+    settings_save();
+    build_rows();
+}
+static void on_pin_tile2(lv_event_t * e) {
+    int idx = (int)(intptr_t)lv_event_get_user_data(e);
+    if (settings.domoticz_tile_idx2 == idx) settings.domoticz_tile_idx2 = -1;
+    else settings.domoticz_tile_idx2 = idx;
+    settings_save();
+    build_rows();
 }
 static void on_blind_open (lv_event_t * e) { domoticz_switch_async((int)(intptr_t)lv_event_get_user_data(e), "Open");  }
 static void on_blind_stop (lv_event_t * e) { domoticz_switch_async((int)(intptr_t)lv_event_get_user_data(e), "Stop");  }
@@ -71,7 +89,8 @@ static void build_rows(void) {
         lv_obj_t * row = lv_obj_create(list_box);
         lv_obj_set_size(row, SX(940), SY(76));
         lv_obj_set_style_bg_color(row, lv_color_hex(COL_CARD), 0);
-        lv_obj_set_style_border_width(row, 0, 0);
+        lv_obj_set_style_border_color(row, lv_color_hex(THEME_BORDER), 0);
+        lv_obj_set_style_border_width(row, settings.home_light_mode ? 1 : 0, 0);
         lv_obj_set_style_radius(row, 12, 0);
         lv_obj_set_style_pad_all(row, 10, 0);
         lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
@@ -90,6 +109,13 @@ static void build_rows(void) {
             mk_btn(row, tr("Open", "Open"), COL_ON, on_blind_open, d->idx, SX(120));
             lv_obj_align(lv_obj_get_child(row, lv_obj_get_child_cnt(row)-1), LV_ALIGN_RIGHT_MID, SX(-250), 0);
         } else {
+            int is_t1 = (settings.domoticz_tile_idx1 == d->idx);
+            int is_t2 = (settings.domoticz_tile_idx2 == d->idx);
+            lv_obj_t * b_t1 = mk_btn(row, is_t1 ? "[ T1 ]" : "T1", is_t1 ? 0x2a6088 : 0x223044, on_pin_tile1, d->idx, SX(72));
+            lv_obj_align(b_t1, LV_ALIGN_RIGHT_MID, SX(-238), 0);
+            lv_obj_t * b_t2 = mk_btn(row, is_t2 ? "[ T2 ]" : "T2", is_t2 ? 0x2a6088 : 0x223044, on_pin_tile2, d->idx, SX(72));
+            lv_obj_align(b_t2, LV_ALIGN_RIGHT_MID, SX(-160), 0);
+
             char st[24];
             if (d->kind == DZ_DIMMER && d->on && d->level >= 0)
                 snprintf(st, sizeof st, "%d%%", d->level);
@@ -147,8 +173,13 @@ static void on_scr_event(lv_event_t * e) {
     else if (c == LV_EVENT_SCREEN_UNLOADED) { if (refresh_timer) lv_timer_pause(refresh_timer); }
 }
 
+static int scr_light_mode = -1;
+
 lv_obj_t * screen_domoticz_create(void) {
-    if (scr_root) return scr_root;
+    if (scr_root && scr_light_mode == settings.home_light_mode) return scr_root;
+    if (scr_root) { lv_obj_del(scr_root); scr_root = NULL; }
+    scr_light_mode = settings.home_light_mode;
+
     scr_root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(COL_BG), 0);
     lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
@@ -158,12 +189,12 @@ lv_obj_t * screen_domoticz_create(void) {
     lv_obj_t * back = lv_btn_create(scr_root);
     lv_obj_set_size(back, SX(140), SY(52));
     lv_obj_align(back, LV_ALIGN_TOP_LEFT, SX(20), SY(14));
-    lv_obj_set_style_bg_color(back, lv_color_hex(COL_OFF), 0);
+    lv_obj_set_style_bg_color(back, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_set_style_radius(back, 10, 0);
     lv_obj_set_ext_click_area(back, 20);
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(back);
-    lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(bl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(bl, SF(22), 0);
     lv_label_set_text(bl, tr("< Terug", "< Back")); lv_obj_center(bl);
 

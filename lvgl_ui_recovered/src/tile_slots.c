@@ -22,13 +22,17 @@ static integration_meta_t g_integ[MAX_INSTALLED_INTEGRATIONS];
 static int                g_integ_count = 0;
 
 const char * tile_slot_label(int slot) {
-    static char buf[32];
+    static char buf[48];
     if (slot == 0) return tr("Energie", "Energy");
     if (slot == 1) return tr("Familie", "Family");
-    if (slot == 2) return tr("Ventilatie", "Vent");
+    if (slot == 2) return tr("Ventilatie", "Ventilation");
     if (slot == 3) return tr("Water", "Water");
+    if (slot == 4) return tr("Pagina 2 - Linksboven", "Page 2 - Top left");
+    if (slot == 5) return tr("Pagina 2 - Rechtsboven", "Page 2 - Top right");
+    if (slot == 6) return tr("Pagina 2 - Linksonder", "Page 2 - Bottom left");
+    if (slot == 7) return tr("Pagina 2 - Rechtsonder", "Page 2 - Bottom right");
     if (slot >= TILE_SLOT_P1_0 && slot < TILE_SLOT_COUNT) {
-        snprintf(buf, sizeof buf, "%s %d", tr("Pagina 2 -", "Page 2 -"), slot - TILE_SLOT_P1_0 + 1);
+        snprintf(buf, sizeof buf, "%s %d", tr("Pagina 2 - Slot", "Page 2 - Slot"), slot - TILE_SLOT_P1_0 + 1);
         return buf;
     }
     return "?";

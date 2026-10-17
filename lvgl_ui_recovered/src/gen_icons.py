@@ -228,62 +228,43 @@ gen_bgra("icon_fan", W_FAN, H_FAN, fan_alpha, (0x66, 0xdd, 0xff), "icon_fan.h")
 print("Wrote icon_flame.h, icon_faucet.h, icon_drop.h, icon_fan.h (BGRA)")
 
 # ----- per-waste-type icons (alpha-8, recolored at runtime) -----
-# Newspaper for "Papier" — 44x44 instead of 60x60 so its visual weight
-# matches the milk/leaf icons next to it (they're mostly outline, news is
-# solid → at the same bounding-box size news looked much bigger).
-W_NEWS, H_NEWS = 44, 44
+# All waste icons are normalized to 40x40 with visual bounds x in [8, 32]
+# so they line up pixel-perfect in the waste tile column.
+W_NEWS, H_NEWS = 40, 40
 def news_alpha(x, y):
-    # Front-page look, scaled down:
-    #   - thin outer rectangle (1-px stroke)
-    #   - masthead band, headline bar, photo block, text lines
-    on_outline = ((x in (3, 40) and 3 <= y <= 40) or
-                  (y in (3, 40) and 3 <= x <= 40))
-    in_masthead = (5 <= x <= 38 and 5 <= y <= 10)
-    in_headline = (5 <= x <= 38 and 13 <= y <= 15)
-    in_photo    = (5 <= x <= 16 and 18 <= y <= 27)
-    on_right_text = (y in (19, 22, 25) and 18 <= x <= 38)
-    on_lower_text = (y in (30, 33, 36) and 5 <= x <= 38)
-    if on_outline or in_masthead or in_headline or in_photo:
-        return 255
-    if on_right_text or on_lower_text:
-        return 180
+    on_outline = ((x in (8, 32) and 5 <= y <= 36) or (y in (5, 36) and 8 <= x <= 32))
+    in_masthead = (10 <= x <= 30 and 7 <= y <= 11)
+    in_headline = (10 <= x <= 30 and 13 <= y <= 15)
+    in_photo    = (10 <= x <= 18 and 18 <= y <= 26)
+    on_r_text   = (y in (19, 22, 25) and 20 <= x <= 30)
+    on_l_text   = (y in (29, 32) and 10 <= x <= 30)
+    if on_outline or in_masthead or in_headline or in_photo: return 255
+    if on_r_text or on_l_text: return 180
     return 0
 
-# Milk carton for "Plastic" — gable-top carton silhouette.
-W_MILK, H_MILK = 60, 60
+# Milk carton / bottle for "Plastic" — gable-top silhouette, 40x40, bounds x in [8, 32]
+W_MILK, H_MILK = 40, 40
 def milk_alpha(x, y):
-    # body: rect (16,20) to (44,54)
-    on_body = ((x in (16, 44) and 20 <= y <= 54) or
-               (y in (20, 54) and 16 <= x <= 44))
-    # gable top: two diagonals from (16,20)/(44,20) up to (30,6)
-    # left diagonal: y = 20 - (x-16)*1.0  for x in 16..30
-    on_gable_l = (16 <= x <= 30 and y == 20 - (x - 16))
-    # right diagonal: y = 20 - (44-x)*1.0  for x in 30..44
-    on_gable_r = (30 <= x <= 44 and y == 20 - (44 - x))
-    # cap line across top of gable
-    on_cap = (28 <= x <= 32 and 4 <= y <= 8)
-    if on_body or on_gable_l or on_gable_r or on_cap:
-        return 255
+    on_body = ((x in (8, 32) and 15 <= y <= 36) or (y == 36 and 8 <= x <= 32))
+    on_gable_l = (8 <= x <= 20 and abs(y - (15 - int(round((x - 8) * 9.0 / 12.0)))) <= 0)
+    on_gable_r = (20 <= x <= 32 and abs(y - (15 - int(round((32 - x) * 9.0 / 12.0)))) <= 0)
+    on_cap = (18 <= x <= 22 and 4 <= y <= 6)
+    if on_body or on_gable_l or on_gable_r or on_cap: return 255
     return 0
 
-# Leaf for "GFT" — simple teardrop with a midrib.
-W_LEAF, H_LEAF = 60, 60
+# Leaf for "GFT" — teardrop with midrib, 40x40, bounds x in [8, 32]
+W_LEAF, H_LEAF = 40, 40
 def leaf_alpha(x, y):
-    cx, cy = 30, 30
-    # ellipse-ish leaf body, rotated 45° (use untransformed ellipse here)
+    cx, cy = 20, 20
     dx, dy = x - cx, y - cy
-    # rotated coords: u along leaf axis, v perpendicular
     import math
     a = math.radians(-45)
     u =  dx * math.cos(a) + dy * math.sin(a)
     v = -dx * math.sin(a) + dy * math.cos(a)
-    # leaf body: u in [-22, 22], v in [-12, 12] tapered at the tips
-    half = 12.0 * math.sqrt(max(0.0, 1.0 - (u / 22.0) ** 2))
-    on_body = abs(v) <= half and abs(u) <= 22.0
-    # midrib: line along u-axis (v in [-1,1])
-    on_rib  = abs(v) <= 1.0 and abs(u) <= 22.0
+    half = 8.5 * math.sqrt(max(0.0, 1.0 - (u / 16.0) ** 2)) if abs(u) <= 16.0 else -1.0
+    on_body = abs(v) <= half and abs(u) <= 16.0
+    on_rib  = abs(v) <= 0.8 and abs(u) <= 16.0
     if on_body or on_rib:
-        # soft AA at the rim
         d = abs(v) - half
         if d > -1: return int(max(0.0, min(1.0, (1.0 - d) * 0.5)) * 255)
         return 255

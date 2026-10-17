@@ -29,6 +29,7 @@
 #include "display.h"
 #include "i18n.h"
 #include "settings.h"
+#include "theme.h"
 #include "meteradapter.h"
 #include <stdio.h>
 #include <string.h>
@@ -36,18 +37,18 @@
 #include <stdlib.h>
 
 /* ── colours ──────────────────────────────────────────────────── */
-#define COL_BG       0x0e1a2a
-#define COL_CARD     0x1a2940
-#define COL_SECTION  0x0a1220
-#define COL_TEXT_HI  0xffffff
-#define COL_TEXT_DIM 0x88aabb
-#define COL_ACCENT   0x3a9fd4
+#define COL_BG       THEME_BG
+#define COL_CARD     THEME_CARD_BG
+#define COL_SECTION  THEME_ROW_BG
+#define COL_TEXT_HI  THEME_TEXT_HI
+#define COL_TEXT_DIM THEME_TEXT_DIM
+#define COL_ACCENT   THEME_ACCENT_BLUE
 #define COL_ON       0x36c46b
 #define COL_OFF      0xd4574f
-#define COL_EDIT     0x3a6ea8
-#define COL_DEL      0x7a2e2e
-#define COL_NAME     0x2e6e3a
-#define COL_BULITIN  0x253040
+#define COL_EDIT     (settings.home_light_mode ? 0x2563eb : 0x3a6ea8)
+#define COL_DEL      (settings.home_light_mode ? 0xdc2626 : 0x7a2e2e)
+#define COL_NAME     (settings.home_light_mode ? 0x16a34a : 0x2e6e3a)
+#define COL_BULITIN  (settings.home_light_mode ? 0xd0d8e2 : 0x253040)
 
 
 /* ── screen state ─────────────────────────────────────────────── */
@@ -87,7 +88,8 @@ static lv_obj_t * mk_row(lv_obj_t *parent, int h) {
     lv_obj_t *r = lv_obj_create(parent);
     lv_obj_set_size(r, LV_PCT(100), SY(h));
     lv_obj_set_style_bg_color(r, lv_color_hex(COL_CARD), 0);
-    lv_obj_set_style_border_width(r, 0, 0);
+    lv_obj_set_style_border_color(r, lv_color_hex(THEME_BORDER), 0);
+    lv_obj_set_style_border_width(r, settings.home_light_mode ? 1 : 0, 0);
     lv_obj_set_style_radius(r, 8, 0);
     lv_obj_set_style_pad_all(r, SY(8), 0);
     lv_obj_clear_flag(r, LV_OBJ_FLAG_SCROLLABLE);
@@ -440,9 +442,11 @@ static void on_scr_event(lv_event_t *e) {
 static void back_async(void *u) { (void)u; ui_pop(); }
 static void on_back(lv_event_t *e) { (void)e; lv_async_call(back_async, NULL); }
 
+static int scr_light_mode = -1;
+
 /* ── screen builder ───────────────────────────────────────────── */
 lv_obj_t * screen_appliances_create(void) {
-    if (scr_root) {
+    if (scr_root && scr_light_mode == settings.home_light_mode) {
         /* Reuse: refresh data before returning */
         g_last_unk_count = -1;
         g_last_sig_count = -1;
@@ -450,38 +454,25 @@ lv_obj_t * screen_appliances_create(void) {
         rebuild_custom_list();
         return scr_root;
     }
+    if (scr_root) { lv_obj_del(scr_root); scr_root = NULL; }
+    scr_light_mode = settings.home_light_mode;
 
     scr_root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(COL_BG), 0);
     lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(scr_root, on_scr_event, LV_EVENT_ALL, NULL);
 
-    /* ── Back button (top-left) ── */
-    lv_obj_t *back_btn = lv_btn_create(scr_root);
-    lv_obj_set_size(back_btn, SX(110), SY(48));
-    lv_obj_align(back_btn, LV_ALIGN_TOP_LEFT, SX(8), SY(8));
-    lv_obj_set_style_bg_color(back_btn, lv_color_hex(0x1e3050), 0);
-    lv_obj_set_style_radius(back_btn, 10, 0);
-    lv_obj_set_style_border_width(back_btn, 0, 0);
-    lv_obj_set_ext_click_area(back_btn, 25);
-    lv_obj_add_event_cb(back_btn, on_back, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *back_lbl = lv_label_create(back_btn);
-    lv_obj_set_style_text_color(back_lbl, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(back_lbl, SF(20), 0);
-    lv_label_set_text_fmt(back_lbl, LV_SYMBOL_LEFT " %s", tr("Terug", "Back"));
-    lv_obj_center(back_lbl);
-
     /* ── Close ("X") button in top-right corner ── */
     lv_obj_t *close_btn = lv_btn_create(scr_root);
     lv_obj_set_size(close_btn, DISP_VER < 600 ? 76 : 84, DISP_VER < 600 ? 50 : 56);
     lv_obj_align(close_btn, LV_ALIGN_TOP_RIGHT, 0, 0);
-    lv_obj_set_style_bg_color(close_btn, lv_color_hex(0x1e3050), 0);
+    lv_obj_set_style_bg_color(close_btn, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_set_style_radius(close_btn, 8, 0);
     lv_obj_set_style_border_width(close_btn, 0, 0);
     lv_obj_set_ext_click_area(close_btn, 30);
     lv_obj_add_event_cb(close_btn, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t *close_lbl = lv_label_create(close_btn);
-    lv_obj_set_style_text_color(close_lbl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(close_lbl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(close_lbl, SF(22), 0);
     lv_label_set_text(close_lbl, "X");
     lv_obj_center(close_lbl);

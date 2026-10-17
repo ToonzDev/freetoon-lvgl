@@ -15,18 +15,19 @@
 #include "homeassistant.h"
 #include "icons.h"
 #include "settings.h"
+#include "theme.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
 
-#define COL_BG        0x0e1a2a
-#define COL_CARD      0x1a2940
-#define COL_TEXT_HI   0xffffff
-#define COL_TEXT_DIM  0x88aabb
-#define COL_ON        0xffcc44
-#define COL_OFF       0x3a4658
-#define COL_OFFLINE   0x6e6e6e
-#define COL_ACCENT    0x44aaff
+#define COL_BG        THEME_BG
+#define COL_CARD      THEME_CARD_BG
+#define COL_TEXT_HI   THEME_TEXT_HI
+#define COL_TEXT_DIM  THEME_TEXT_DIM
+#define COL_ON        (settings.home_light_mode ? 0xd97706 : 0xffcc44)
+#define COL_OFF       THEME_OFF
+#define COL_OFFLINE   (settings.home_light_mode ? 0x94a3b8 : 0x6e6e6e)
+#define COL_ACCENT    THEME_ACCENT_BLUE
 
 /* Per-row widgets, kept so refresh_cb can repaint state without rebuilding.
  * dev_idx maps the row back to ha_devices[]. */
@@ -83,7 +84,8 @@ static lv_obj_t * make_card(int h) {
     lv_obj_t * c = lv_obj_create(list);
     lv_obj_set_size(c, lv_pct(100), h);
     lv_obj_set_style_bg_color(c, lv_color_hex(COL_CARD), 0);
-    lv_obj_set_style_border_width(c, 0, 0);
+    lv_obj_set_style_border_color(c, lv_color_hex(THEME_BORDER), 0);
+    lv_obj_set_style_border_width(c, 1, 0);
     lv_obj_set_style_radius(c, 12, 0);
     lv_obj_set_style_pad_all(c, 8, 0);
     lv_obj_clear_flag(c, LV_OBJ_FLAG_SCROLLABLE);
@@ -283,9 +285,13 @@ static void refresh_cb(lv_timer_t * t) {
     }
 }
 
+static int scr_light_mode = -1;
+
 lv_obj_t * screen_lights_create(void) {
     /* Singleton scaffold; rows are (re)built on SCREEN_LOADED. */
-    if (scr_root) return scr_root;
+    if (scr_root && scr_light_mode == settings.home_light_mode) return scr_root;
+    if (scr_root) { lv_obj_del(scr_root); scr_root = NULL; }
+    scr_light_mode = settings.home_light_mode;
 
     scr_root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(COL_BG), 0);
@@ -303,12 +309,12 @@ lv_obj_t * screen_lights_create(void) {
     lv_obj_t * back = lv_btn_create(scr_root);
     lv_obj_set_size(back, 110, 46);
     lv_obj_align(back, LV_ALIGN_TOP_RIGHT, -16, 12);
-    lv_obj_set_style_bg_color(back, lv_color_hex(0x3a4658), 0);
+    lv_obj_set_style_bg_color(back, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_set_style_radius(back, 8, 0);
     lv_obj_set_ext_click_area(back, 20);
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(back);
-    lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(bl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_label_set_text(bl, tr("< Terug", "< Back"));
     lv_obj_center(bl);
 

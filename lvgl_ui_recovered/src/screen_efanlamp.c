@@ -10,17 +10,19 @@
 #include "screens.h"
 #include "display.h"
 #include "i18n.h"
+#include "settings.h"
+#include "theme.h"
 #include "efanlamp.h"
 #include <stdio.h>
 #include <string.h>
 
 /* ── colours ──────────────────────────────────────────────────── */
-#define COL_BG       0x0e1a2a
-#define COL_CARD     0x1a2940
-#define COL_TEXT_HI  0xffffff
-#define COL_TEXT_DIM 0x88aabb
-#define COL_ACCENT   0x4FC3F7
-#define COL_BTN      0x1e3550
+#define COL_BG       THEME_BG
+#define COL_CARD     THEME_CARD_BG
+#define COL_TEXT_HI  THEME_TEXT_HI
+#define COL_TEXT_DIM THEME_TEXT_DIM
+#define COL_ACCENT   THEME_ACCENT_BLUE
+#define COL_BTN      THEME_BTN_BG
 
 /* ── state ─────────────────────────────────────────────────────── */
 static lv_obj_t   * scr_root      = NULL;
@@ -40,7 +42,8 @@ static lv_obj_t * make_btn(lv_obj_t * parent, const char * label,
     lv_obj_set_style_bg_color(b, lv_color_hex(col), 0);
     lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(b, SX(8), 0);
-    lv_obj_set_style_border_width(b, 0, 0);
+    lv_obj_set_style_border_color(b, lv_color_hex(THEME_BORDER), 0);
+    lv_obj_set_style_border_width(b, settings.home_light_mode ? 1 : 0, 0);
     lv_obj_t * l = lv_label_create(b);
     lv_label_set_text(l, label);
     lv_obj_set_style_text_color(l, lv_color_hex(COL_TEXT_HI), 0);
@@ -51,8 +54,8 @@ static lv_obj_t * make_btn(lv_obj_t * parent, const char * label,
 }
 
 static void highlight_btn(lv_obj_t * btn, int active) {
-    lv_obj_set_style_border_width(btn, active ? SX(3) : 0, 0);
-    lv_obj_set_style_border_color(btn, lv_color_hex(COL_TEXT_HI), 0);
+    lv_obj_set_style_border_width(btn, active ? SX(3) : (settings.home_light_mode ? 1 : 0), 0);
+    lv_obj_set_style_border_color(btn, lv_color_hex(active ? (settings.home_light_mode ? 0x1d4ed8 : COL_TEXT_HI) : THEME_BORDER), 0);
 }
 
 /* ── fan button handler ───────────────────────────────────────── */
@@ -136,7 +139,7 @@ lv_obj_t * screen_efanlamp_create(void) {
     lv_obj_t * div1 = lv_obj_create(scr_root);
     lv_obj_set_size(div1, LV_HOR_RES - SX(20), 1);
     lv_obj_set_pos(div1, SX(10), SY(90));
-    lv_obj_set_style_bg_color(div1, lv_color_hex(0x2a4060), 0);
+    lv_obj_set_style_bg_color(div1, lv_color_hex(THEME_BORDER), 0);
     lv_obj_set_style_border_width(div1, 0, 0);
 
     /* ── fan speed row: [Uit][1][2][3][4][5][6]  [Achteruit] ── */

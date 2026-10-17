@@ -15,6 +15,8 @@
 #include "stats.h"
 #include "airhist.h"
 #include "homewizard.h"
+#include "settings.h"
+#include "theme.h"
 #include <stdio.h>
 #include <math.h>
 #include <string.h>
@@ -322,18 +324,22 @@ static int load_for_period(void) {
 static void style_metric_tab(int i, int sel) {
     if (i < 0 || i >= N_METRIC || !tab_metric_btns[i]) return;
     lv_obj_set_style_bg_color(tab_metric_btns[i],
-        lv_color_hex(sel ? metrics[i].color : 0x1a2a44), 0);
+        lv_color_hex(sel ? metrics[i].color : THEME_CARD_BG), 0);
     lv_obj_set_style_border_color(tab_metric_btns[i],
-        lv_color_hex(sel ? 0xffffff : 0x335577), 0);
+        lv_color_hex(sel ? (settings.home_light_mode ? 0x1d4ed8 : 0xffffff) : THEME_BORDER), 0);
     lv_obj_set_style_border_width(tab_metric_btns[i], sel ? 2 : 1, 0);
+    lv_obj_t * lbl = lv_obj_get_child(tab_metric_btns[i], 0);
+    if (lbl) lv_obj_set_style_text_color(lbl, lv_color_hex(sel ? 0xffffff : THEME_TEXT_HI), 0);
 }
 static void style_period_tab(int i, int sel) {
     if (i < 0 || i >= N_PERIOD || !tab_period_btns[i]) return;
     lv_obj_set_style_bg_color(tab_period_btns[i],
-        lv_color_hex(sel ? 0x3388aa : 0x1a2a44), 0);
+        lv_color_hex(sel ? (settings.home_light_mode ? 0x2563eb : 0x3388aa) : THEME_CARD_BG), 0);
     lv_obj_set_style_border_color(tab_period_btns[i],
-        lv_color_hex(sel ? 0xffffff : 0x335577), 0);
+        lv_color_hex(sel ? (settings.home_light_mode ? 0x1d4ed8 : 0xffffff) : THEME_BORDER), 0);
     lv_obj_set_style_border_width(tab_period_btns[i], sel ? 2 : 1, 0);
+    lv_obj_t * lbl = lv_obj_get_child(tab_period_btns[i], 0);
+    if (lbl) lv_obj_set_style_text_color(lbl, lv_color_hex(sel ? 0xffffff : THEME_TEXT_HI), 0);
 }
 
 /* Diff a cumulative series in place to per-sample usage deltas (Wh / mL).
@@ -547,31 +553,36 @@ static void on_period_tap(lv_event_t * e) {
     reload_and_render();
 }
 
+static int scr_light_mode = -1;
+
 lv_obj_t * screen_stats_create(void) {
-    if (scr_root) {
+    if (scr_root && scr_light_mode == settings.home_light_mode) {
         reload_and_render();
         return scr_root;
     }
+    if (scr_root) { lv_obj_del(scr_root); scr_root = NULL; }
+    scr_light_mode = settings.home_light_mode;
+
     scr_root = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(scr_root, lv_color_hex(0x0f1a2a), 0);
+    lv_obj_set_style_bg_color(scr_root, lv_color_hex(THEME_BG), 0);
     lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
 
     /* Header */
     lv_obj_t * back = lv_btn_create(scr_root);
     lv_obj_set_size(back, 140, 70);
     lv_obj_align(back, LV_ALIGN_TOP_LEFT, 12, 12);
-    lv_obj_set_style_bg_color(back, lv_color_hex(0x223344), 0);
+    lv_obj_set_style_bg_color(back, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_set_style_radius(back, 12, 0);
     lv_obj_set_ext_click_area(back, 20);
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(back);
     lv_label_set_text(bl, tr("< Terug", "< Back"));
-    lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(bl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(bl, SF(22), 0);
     lv_obj_center(bl);
 
     lv_obj_t * title = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(title, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(title, SF(28), 0);
     lv_label_set_text(title, tr("Statistieken", "Statistics"));
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 180, 26);
@@ -580,13 +591,13 @@ lv_obj_t * screen_stats_create(void) {
     lv_obj_t * dev_btn = lv_btn_create(scr_root);
     lv_obj_set_size(dev_btn, SX(160), SY(50));
     lv_obj_align(dev_btn, LV_ALIGN_TOP_RIGHT, SX(-12), 18);
-    lv_obj_set_style_bg_color(dev_btn, lv_color_hex(0x1e3050), 0);
+    lv_obj_set_style_bg_color(dev_btn, lv_color_hex(THEME_BTN_ACCENT), 0);
     lv_obj_set_style_radius(dev_btn, 10, 0);
     lv_obj_set_style_border_width(dev_btn, 0, 0);
     lv_obj_add_event_cb(dev_btn, on_devices_btn, LV_EVENT_CLICKED, NULL);
     lv_obj_t * dbl = lv_label_create(dev_btn);
     lv_label_set_text(dbl, tr("Apparaten " LV_SYMBOL_RIGHT, "Devices " LV_SYMBOL_RIGHT));
-    lv_obj_set_style_text_color(dbl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(dbl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(dbl, SF(17), 0);
     lv_obj_center(dbl);
 
@@ -602,7 +613,6 @@ lv_obj_t * screen_stats_create(void) {
         lv_obj_add_event_cb(t, on_metric_tap, LV_EVENT_CLICKED, (void *)(long)i);
         lv_obj_t * lbl = lv_label_create(t);
         lv_label_set_text(lbl, metric_title(i));
-        lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
         lv_obj_set_style_text_font(lbl, SF(20), 0);
         lv_obj_center(lbl);
         tab_metric_btns[i] = t;
@@ -629,7 +639,6 @@ lv_obj_t * screen_stats_create(void) {
         lv_obj_add_event_cb(t, on_period_tap, LV_EVENT_CLICKED, (void *)(long)i);
         lv_obj_t * lbl = lv_label_create(t);
         lv_label_set_text(lbl, periods[i]);
-        lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
         lv_obj_set_style_text_font(lbl, SF(17), 0);
         lv_obj_center(lbl);
         tab_period_btns[i] = t;
@@ -640,22 +649,22 @@ lv_obj_t * screen_stats_create(void) {
     btn_nav_prev = lv_btn_create(scr_root);
     lv_obj_set_size(btn_nav_prev, SX(46), SY(32));
     lv_obj_set_pos(btn_nav_prev, SX(360), SY(214));
-    lv_obj_set_style_bg_color(btn_nav_prev, lv_color_hex(0x1e3050), 0);
+    lv_obj_set_style_bg_color(btn_nav_prev, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_set_style_radius(btn_nav_prev, 6, 0);
-    lv_obj_set_style_border_color(btn_nav_prev, lv_color_hex(0x335577), 0);
+    lv_obj_set_style_border_color(btn_nav_prev, lv_color_hex(THEME_BORDER), 0);
     lv_obj_set_style_border_width(btn_nav_prev, 1, 0);
     lv_obj_set_ext_click_area(btn_nav_prev, 10);
     lv_obj_add_event_cb(btn_nav_prev, on_nav_prev, LV_EVENT_CLICKED, NULL);
     lv_obj_t * lbl_prev = lv_label_create(btn_nav_prev);
     lv_label_set_text(lbl_prev, LV_SYMBOL_LEFT);
-    lv_obj_set_style_text_color(lbl_prev, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lbl_prev, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_prev, SF(16), 0);
     lv_obj_center(lbl_prev);
 
     lbl_nav_range = lv_label_create(scr_root);
     lv_obj_set_size(lbl_nav_range, SX(550), SY(30));
     lv_obj_set_pos(lbl_nav_range, SX(390), SY(218));
-    lv_obj_set_style_text_color(lbl_nav_range, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lbl_nav_range, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_nav_range, SF(18), 0);
     lv_obj_set_style_text_align(lbl_nav_range, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(lbl_nav_range, "");
@@ -663,21 +672,21 @@ lv_obj_t * screen_stats_create(void) {
     btn_nav_next = lv_btn_create(scr_root);
     lv_obj_set_size(btn_nav_next, SX(46), SY(32));
     lv_obj_set_pos(btn_nav_next, SX(944), SY(214));
-    lv_obj_set_style_bg_color(btn_nav_next, lv_color_hex(0x1e3050), 0);
+    lv_obj_set_style_bg_color(btn_nav_next, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_set_style_radius(btn_nav_next, 6, 0);
-    lv_obj_set_style_border_color(btn_nav_next, lv_color_hex(0x335577), 0);
+    lv_obj_set_style_border_color(btn_nav_next, lv_color_hex(THEME_BORDER), 0);
     lv_obj_set_style_border_width(btn_nav_next, 1, 0);
     lv_obj_set_ext_click_area(btn_nav_next, 10);
     lv_obj_add_event_cb(btn_nav_next, on_nav_next, LV_EVENT_CLICKED, NULL);
     lv_obj_t * lbl_next = lv_label_create(btn_nav_next);
     lv_label_set_text(lbl_next, LV_SYMBOL_RIGHT);
-    lv_obj_set_style_text_color(lbl_next, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lbl_next, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_next, SF(16), 0);
     lv_obj_center(lbl_next);
 
     /* Headline */
     lbl_metric_name = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_metric_name, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_color(lbl_metric_name, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_metric_name, SF(22), 0);
     lv_label_set_text(lbl_metric_name, metric_title(0));
     lv_obj_align(lbl_metric_name, LV_ALIGN_TOP_LEFT, SX(30), SY(245));
@@ -685,13 +694,13 @@ lv_obj_t * screen_stats_create(void) {
     /* Repurposed as the "Current" / "Period total" caption above the
      * value. Was rendering a duplicated unit ("W" under "369.0 W"). */
     lbl_unit = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_unit, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_color(lbl_unit, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_unit, SF(18), 0);
     lv_label_set_text(lbl_unit, tr("Huidig", "Current"));
     lv_obj_align(lbl_unit, LV_ALIGN_TOP_LEFT, SX(30), SY(280));
 
     lbl_value = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_value, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lbl_value, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_value, SF(36), 0);
     lv_label_set_text(lbl_value, "--");
     lv_obj_align(lbl_value, LV_ALIGN_TOP_LEFT, SX(30), SY(310));
@@ -712,8 +721,8 @@ lv_obj_t * screen_stats_create(void) {
      * labels (place_x_labels) under the chart since lv_chart's bar tick
      * labels never rendered reliably. */
     lv_chart_set_axis_tick(chart, LV_CHART_AXIS_PRIMARY_X, 6, 0, 2, 0, false, 14);
-    lv_obj_set_style_bg_color(chart, lv_color_hex(0x1a2a44), 0);
-    lv_obj_set_style_border_color(chart, lv_color_hex(0x335577), 0);
+    lv_obj_set_style_bg_color(chart, lv_color_hex(THEME_CARD_BG), 0);
+    lv_obj_set_style_border_color(chart, lv_color_hex(THEME_BORDER), 0);
     lv_obj_set_style_border_width(chart, 1, 0);
     lv_obj_set_style_radius(chart, 12, 0);
     cs = lv_chart_add_series(chart, lv_color_hex(metrics[0].color),
@@ -722,7 +731,7 @@ lv_obj_t * screen_stats_create(void) {
     /* Manual X-axis label widgets under the chart. */
     for (int i = 0; i < XLBL_COUNT; i++) {
         g_xlbl[i] = lv_label_create(scr_root);
-        lv_obj_set_style_text_color(g_xlbl[i], lv_color_hex(0x88aabb), 0);
+        lv_obj_set_style_text_color(g_xlbl[i], lv_color_hex(THEME_TEXT_DIM), 0);
         lv_obj_set_style_text_font(g_xlbl[i], SF(14), 0);
         lv_label_set_text(g_xlbl[i], "");
         lv_obj_add_flag(g_xlbl[i], LV_OBJ_FLAG_HIDDEN);
