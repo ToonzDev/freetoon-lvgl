@@ -15,6 +15,7 @@
 #include "icons.h"
 #include "settings.h"
 #include "theme.h"
+#include "lvgl/src/extra/libs/gif/lv_gif.h"
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -40,7 +41,15 @@ static lv_timer_t * refresh_timer = NULL;
 #define RADAR_ZOOM_STEP  64
 static int radar_zoom = 195;             /* fits 550-wide source into 380 */
 
-static void on_back(lv_event_t * e) { (void)e; ui_pop(); }
+static void on_back(lv_event_t * e) {
+    (void)e;
+    if (radar_img) {
+        lv_gif_t * g = (lv_gif_t *)radar_img;
+        if (g->timer) lv_timer_pause(g->timer);
+    }
+    ui_pop();
+}
+
 static void on_radar_zoom(lv_event_t * e) {
     intptr_t d = (intptr_t)lv_event_get_user_data(e);
     int z = radar_zoom + (int)d;
@@ -52,7 +61,18 @@ static void on_radar_zoom(lv_event_t * e) {
 
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
-    if (!scr_root || lv_scr_act() != scr_root) return;
+    if (!scr_root) return;
+    if (lv_scr_act() != scr_root) {
+        if (radar_img) {
+            lv_gif_t * g = (lv_gif_t *)radar_img;
+            if (g->timer) lv_timer_pause(g->timer);
+        }
+        return;
+    }
+    if (radar_img) {
+        lv_gif_t * g = (lv_gif_t *)radar_img;
+        if (g->timer) lv_timer_resume(g->timer);
+    }
     weather_state_t wx;
     weather_get_snapshot(&wx);
     lv_label_set_text(lbl_title, wx.weatherreport_title);
@@ -132,10 +152,18 @@ static void refresh_cb(lv_timer_t * t) {
 static int scr_light_mode = -1;
 
 lv_obj_t * screen_forecast_create(void) {
-    if (scr_root && scr_light_mode == settings.home_light_mode) return scr_root;
+    if (scr_root && scr_light_mode == settings.home_light_mode) {
+        if (radar_img) {
+            lv_gif_t * g = (lv_gif_t *)radar_img;
+            if (g->timer) lv_timer_resume(g->timer);
+        }
+        return scr_root;
+    }
     if (scr_root) {
         lv_obj_del(scr_root);
         scr_root = NULL;
+        radar_img = NULL;
+        radar_loaded = 0;
     }
     scr_light_mode = settings.home_light_mode;
 
