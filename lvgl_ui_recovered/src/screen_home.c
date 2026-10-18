@@ -956,20 +956,25 @@ static sonos_view_t * make_sonos_view(lv_obj_t * parent) {
 
     v->lbl_zone = lv_label_create(v->root);
     lv_obj_set_style_text_color(v->lbl_zone, lv_color_hex(0x44aaff), 0);
-    lv_obj_set_style_text_font(v->lbl_zone, SF(15), 0);
-    lv_obj_align(v->lbl_zone, LV_ALIGN_TOP_LEFT, SX(2), SY(5));
+    lv_obj_set_style_text_font(v->lbl_zone, SF(18), 0);
+    lv_obj_align(v->lbl_zone, LV_ALIGN_TOP_LEFT, SX(2), SY(4));
     lv_label_set_text(v->lbl_zone, "Sonos");
 
     v->lbl_vol = lv_label_create(v->root);
     lv_obj_set_style_text_color(v->lbl_vol, lv_color_hex(COL_TEXT_DIM), 0);
-    lv_obj_set_style_text_font(v->lbl_vol, SF(14), 0);
+    lv_obj_set_style_text_font(v->lbl_vol, SF(15), 0);
     lv_obj_align(v->lbl_vol, LV_ALIGN_TOP_RIGHT, SX(-2), SY(5));
     lv_label_set_text(v->lbl_vol, "");
 
-    /* Album art thumbnail (46x46, rounded corners) */
+    /* Album art thumbnail (42x42, rounded corners) */
+    lv_coord_t y_art = (DISP_VER < 600) ? 28 : SY(32);
+    lv_coord_t y_artist = (DISP_VER < 600) ? 28 : SY(32);
+    lv_coord_t y_title = (DISP_VER < 600) ? 46 : SY(52);
+    lv_coord_t y_status = (DISP_VER < 600) ? 64 : SY(72);
+
     v->art_box = lv_obj_create(v->root);
-    lv_obj_set_size(v->art_box, SUNI(46), SUNI(46));
-    lv_obj_set_pos(v->art_box, SX(2), SY(24));
+    lv_obj_set_size(v->art_box, SUNI(42), SUNI(42));
+    lv_obj_set_pos(v->art_box, SX(2), y_art);
     lv_obj_set_style_radius(v->art_box, 6, 0);
     lv_obj_set_style_clip_corner(v->art_box, true, 0);
     lv_obj_set_style_bg_color(v->art_box, lv_color_hex(0x132135), 0);
@@ -987,7 +992,7 @@ static sonos_view_t * make_sonos_view(lv_obj_t * parent) {
     lv_obj_set_style_text_font(v->lbl_artist, SF(16), 0);
     lv_label_set_long_mode(v->lbl_artist, LV_LABEL_LONG_DOT);
     lv_obj_set_width(v->lbl_artist, LV_PCT(96));
-    lv_obj_align(v->lbl_artist, LV_ALIGN_TOP_LEFT, SX(2), SY(24));
+    lv_obj_align(v->lbl_artist, LV_ALIGN_TOP_LEFT, SX(2), y_artist);
     lv_label_set_text(v->lbl_artist, "");
 
     v->lbl_title = lv_label_create(v->root);
@@ -995,45 +1000,48 @@ static sonos_view_t * make_sonos_view(lv_obj_t * parent) {
     lv_obj_set_style_text_font(v->lbl_title, SF(14), 0);
     lv_label_set_long_mode(v->lbl_title, LV_LABEL_LONG_DOT);
     lv_obj_set_width(v->lbl_title, LV_PCT(96));
-    lv_obj_align(v->lbl_title, LV_ALIGN_TOP_LEFT, SX(2), SY(44));
+    lv_obj_align(v->lbl_title, LV_ALIGN_TOP_LEFT, SX(2), y_title);
     lv_label_set_text(v->lbl_title, "");
 
     v->lbl_status = lv_label_create(v->root);
     lv_obj_set_style_text_color(v->lbl_status, lv_color_hex(0xffcc44), 0);
     lv_obj_set_style_text_font(v->lbl_status, SF(12), 0);
-    lv_obj_align(v->lbl_status, LV_ALIGN_TOP_LEFT, SX(2), SY(64));
+    lv_obj_align(v->lbl_status, LV_ALIGN_TOP_LEFT, SX(2), y_status);
     lv_label_set_text(v->lbl_status, "");
 
     lv_obj_t * bar = lv_obj_create(v->root);
-    lv_obj_set_size(bar, LV_PCT(98), SY(34));
+    lv_obj_set_size(bar, LV_PCT(96), (DISP_VER < 600) ? 34 : SY(38));
     lv_obj_align(bar, LV_ALIGN_BOTTOM_MID, 0, SY(-2));
     lv_obj_set_style_bg_opa(bar, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(bar, 0, 0);
     lv_obj_set_style_pad_all(bar, 0, 0);
+    lv_obj_set_style_pad_hor(bar, SX(4), 0);
     lv_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_flex_flow(bar, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(bar, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_flex_align(bar, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-    #define MAKE_TBTN(btn_ptr, lbl_ptr, sym, w, cb) do { \
+    int btn_w = (DISP_HOR < 1000) ? 52 : SX(58);
+    int btn_h = (DISP_VER < 600) ? 32 : SY(34);
+
+    #define MAKE_TBTN(btn_ptr, lbl_ptr, sym, w, fsz, cb) do { \
         btn_ptr = lv_btn_create(bar); \
-        lv_obj_set_size(btn_ptr, SX(w), SY(28)); \
+        lv_obj_set_size(btn_ptr, w, btn_h); \
         lv_obj_set_style_bg_color(btn_ptr, lv_color_hex(settings.home_light_mode ? 0xccdaea : 0x223a56), 0); \
-        lv_obj_set_style_radius(btn_ptr, 6, 0); \
+        lv_obj_set_style_radius(btn_ptr, 8, 0); \
         lv_obj_set_style_pad_all(btn_ptr, 0, 0); \
+        lv_obj_set_ext_click_area(btn_ptr, 10); \
         lv_obj_add_event_cb(btn_ptr, cb, LV_EVENT_CLICKED, NULL); \
         lbl_ptr = lv_label_create(btn_ptr); \
         lv_obj_set_style_text_color(lbl_ptr, lv_color_hex(settings.home_light_mode ? 0x1e2838 : 0xffffff), 0); \
-        lv_obj_set_style_text_font(lbl_ptr, SF(14), 0); \
+        lv_obj_set_style_text_font(lbl_ptr, SF(fsz), 0); \
         lv_label_set_text(lbl_ptr, sym); \
         lv_obj_center(lbl_ptr); \
     } while (0)
 
     lv_obj_t * dummy;
-    MAKE_TBTN(v->btn_voldn, dummy, LV_SYMBOL_MINUS, 30, on_sonos_voldn);
-    MAKE_TBTN(v->btn_prev,  dummy, LV_SYMBOL_PREV,  30, on_sonos_prev);
-    MAKE_TBTN(v->btn_play,  v->lbl_play, LV_SYMBOL_PLAY, 36, on_sonos_playpause);
-    MAKE_TBTN(v->btn_next,  dummy, LV_SYMBOL_NEXT,  30, on_sonos_next);
-    MAKE_TBTN(v->btn_volup, dummy, LV_SYMBOL_PLUS,  30, on_sonos_volup);
+    MAKE_TBTN(v->btn_prev, dummy,       LV_SYMBOL_PREV, btn_w, 18, on_sonos_prev);
+    MAKE_TBTN(v->btn_play, v->lbl_play, LV_SYMBOL_PLAY, btn_w + SX(8), 20, on_sonos_playpause);
+    MAKE_TBTN(v->btn_next, dummy,       LV_SYMBOL_NEXT, btn_w, 18, on_sonos_next);
     #undef MAKE_TBTN
 
     return v;
@@ -1044,13 +1052,17 @@ static void update_sonos_view(sonos_view_t * v) {
     sonos_state_t st;
     sonos_get_snapshot(&st);
 
+    lv_coord_t y_artist = (DISP_VER < 600) ? 28 : SY(32);
+    lv_coord_t y_title = (DISP_VER < 600) ? 46 : SY(52);
+    lv_coord_t y_status = (DISP_VER < 600) ? 64 : SY(72);
+
     if (!settings.sonos_enabled) {
         if (v->art_box) lv_obj_add_flag(v->art_box, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_pos(v->lbl_artist, SX(2), SY(24));
+        lv_obj_set_pos(v->lbl_artist, SX(2), y_artist);
         lv_obj_set_width(v->lbl_artist, LV_PCT(96));
-        lv_obj_set_pos(v->lbl_title, SX(2), SY(44));
+        lv_obj_set_pos(v->lbl_title, SX(2), y_title);
         lv_obj_set_width(v->lbl_title, LV_PCT(96));
-        lv_obj_set_pos(v->lbl_status, SX(2), SY(64));
+        lv_obj_set_pos(v->lbl_status, SX(2), y_status);
         lv_obj_set_width(v->lbl_status, LV_PCT(96));
         lv_label_set_text(v->lbl_zone, "Sonos (uit)");
         lv_label_set_text(v->lbl_artist, tr("Niet ingeschakeld", "Disabled"));
@@ -1063,11 +1075,11 @@ static void update_sonos_view(sonos_view_t * v) {
 
     if (!st.connected) {
         if (v->art_box) lv_obj_add_flag(v->art_box, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_pos(v->lbl_artist, SX(2), SY(24));
+        lv_obj_set_pos(v->lbl_artist, SX(2), y_artist);
         lv_obj_set_width(v->lbl_artist, LV_PCT(96));
-        lv_obj_set_pos(v->lbl_title, SX(2), SY(44));
+        lv_obj_set_pos(v->lbl_title, SX(2), y_title);
         lv_obj_set_width(v->lbl_title, LV_PCT(96));
-        lv_obj_set_pos(v->lbl_status, SX(2), SY(64));
+        lv_obj_set_pos(v->lbl_status, SX(2), y_status);
         lv_obj_set_width(v->lbl_status, LV_PCT(96));
         lv_label_set_text_fmt(v->lbl_zone, "%s (offline)", st.zone[0] ? st.zone : "Sonos");
         lv_label_set_text(v->lbl_artist, tr("Geen verbinding", "No connection"));
@@ -1089,19 +1101,19 @@ static void update_sonos_view(sonos_view_t * v) {
             lv_obj_invalidate(v->img_art);
             lv_obj_clear_flag(v->art_box, LV_OBJ_FLAG_HIDDEN);
 
-            lv_obj_set_pos(v->lbl_artist, SX(52), SY(24));
-            lv_obj_set_width(v->lbl_artist, SX(134));
-            lv_obj_set_pos(v->lbl_title, SX(52), SY(44));
-            lv_obj_set_width(v->lbl_title, SX(134));
-            lv_obj_set_pos(v->lbl_status, SX(52), SY(64));
-            lv_obj_set_width(v->lbl_status, SX(134));
+            lv_obj_set_pos(v->lbl_artist, SX(50), y_artist);
+            lv_obj_set_width(v->lbl_artist, SX(136));
+            lv_obj_set_pos(v->lbl_title, SX(50), y_title);
+            lv_obj_set_width(v->lbl_title, SX(136));
+            lv_obj_set_pos(v->lbl_status, SX(50), y_status);
+            lv_obj_set_width(v->lbl_status, SX(136));
         } else {
             if (v->art_box) lv_obj_add_flag(v->art_box, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_set_pos(v->lbl_artist, SX(2), SY(24));
+            lv_obj_set_pos(v->lbl_artist, SX(2), y_artist);
             lv_obj_set_width(v->lbl_artist, LV_PCT(96));
-            lv_obj_set_pos(v->lbl_title, SX(2), SY(44));
+            lv_obj_set_pos(v->lbl_title, SX(2), y_title);
             lv_obj_set_width(v->lbl_title, LV_PCT(96));
-            lv_obj_set_pos(v->lbl_status, SX(2), SY(64));
+            lv_obj_set_pos(v->lbl_status, SX(2), y_status);
             lv_obj_set_width(v->lbl_status, LV_PCT(96));
         }
     }
@@ -1831,26 +1843,29 @@ static void update_tile_lights(void) {
     if (tile_lights_lbl_default) lv_obj_add_flag(tile_lights_lbl_default, LV_OBJ_FLAG_HIDDEN);
 
     if (has1 && has2) {
+        lv_coord_t btn_h = (DISP_VER < 600) ? 32 : SY(38);
+        lv_coord_t y1 = (DISP_VER < 600) ? 40 : SY(40);
+        lv_coord_t y2 = (DISP_VER < 600) ? 76 : SY(84);
         if (tile_lights_btn1) {
-            lv_obj_set_size(tile_lights_btn1, LV_PCT(92), SY(38));
-            lv_obj_align(tile_lights_btn1, LV_ALIGN_TOP_MID, 0, SY(36));
+            lv_obj_set_size(tile_lights_btn1, LV_PCT(92), btn_h);
+            lv_obj_align(tile_lights_btn1, LV_ALIGN_TOP_MID, 0, y1);
             update_tile_light_btn(tile_lights_btn1, tile_lights_lbl1_name, tile_lights_sw1, tile_lights_lbl1_st, idx1);
         }
         if (tile_lights_btn2) {
-            lv_obj_set_size(tile_lights_btn2, LV_PCT(92), SY(38));
-            lv_obj_align(tile_lights_btn2, LV_ALIGN_TOP_MID, 0, SY(80));
+            lv_obj_set_size(tile_lights_btn2, LV_PCT(92), btn_h);
+            lv_obj_align(tile_lights_btn2, LV_ALIGN_TOP_MID, 0, y2);
             update_tile_light_btn(tile_lights_btn2, tile_lights_lbl2_name, tile_lights_sw2, tile_lights_lbl2_st, idx2);
         }
     } else if (has1) {
         if (tile_lights_btn1) {
-            lv_obj_set_size(tile_lights_btn1, LV_PCT(92), SY(46));
+            lv_obj_set_size(tile_lights_btn1, LV_PCT(92), (DISP_VER < 600) ? 38 : SY(46));
             lv_obj_align(tile_lights_btn1, LV_ALIGN_CENTER, 0, SY(12));
             update_tile_light_btn(tile_lights_btn1, tile_lights_lbl1_name, tile_lights_sw1, tile_lights_lbl1_st, idx1);
         }
         if (tile_lights_btn2) lv_obj_add_flag(tile_lights_btn2, LV_OBJ_FLAG_HIDDEN);
     } else {
         if (tile_lights_btn2) {
-            lv_obj_set_size(tile_lights_btn2, LV_PCT(92), SY(46));
+            lv_obj_set_size(tile_lights_btn2, LV_PCT(92), (DISP_VER < 600) ? 38 : SY(46));
             lv_obj_align(tile_lights_btn2, LV_ALIGN_CENTER, 0, SY(12));
             update_tile_light_btn(tile_lights_btn2, tile_lights_lbl2_name, tile_lights_sw2, tile_lights_lbl2_st, idx2);
         }
@@ -4381,9 +4396,12 @@ lv_obj_t * screen_home_create(void) {
         lv_label_set_text(tile_lights_lbl_default, tr("Lampen", "Lights"));
         lv_obj_align(tile_lights_lbl_default, LV_ALIGN_CENTER, 0, 6);
 
+        lv_coord_t btn_h = (DISP_VER < 600) ? 32 : SY(38);
+        lv_coord_t y1 = (DISP_VER < 600) ? 40 : SY(40);
+        lv_coord_t y2 = (DISP_VER < 600) ? 76 : SY(84);
         tile_lights_btn1 = lv_btn_create(lt.tile);
-        lv_obj_set_size(tile_lights_btn1, LV_PCT(92), SY(38));
-        lv_obj_align(tile_lights_btn1, LV_ALIGN_TOP_MID, 0, SY(36));
+        lv_obj_set_size(tile_lights_btn1, LV_PCT(92), btn_h);
+        lv_obj_align(tile_lights_btn1, LV_ALIGN_TOP_MID, 0, y1);
         lv_obj_set_style_radius(tile_lights_btn1, 8, 0);
         lv_obj_set_style_bg_color(tile_lights_btn1, lv_color_hex(settings.home_light_mode ? 0xedf2f7 : 0x1e2838), 0);
         lv_obj_set_style_border_width(tile_lights_btn1, 0, 0);
@@ -4417,8 +4435,8 @@ lv_obj_t * screen_home_create(void) {
         lv_obj_add_flag(tile_lights_btn1, LV_OBJ_FLAG_HIDDEN);
 
         tile_lights_btn2 = lv_btn_create(lt.tile);
-        lv_obj_set_size(tile_lights_btn2, LV_PCT(92), SY(38));
-        lv_obj_align(tile_lights_btn2, LV_ALIGN_TOP_MID, 0, SY(80));
+        lv_obj_set_size(tile_lights_btn2, LV_PCT(92), btn_h);
+        lv_obj_align(tile_lights_btn2, LV_ALIGN_TOP_MID, 0, y2);
         lv_obj_set_style_radius(tile_lights_btn2, 8, 0);
         lv_obj_set_style_bg_color(tile_lights_btn2, lv_color_hex(settings.home_light_mode ? 0xedf2f7 : 0x1e2838), 0);
         lv_obj_set_style_border_width(tile_lights_btn2, 0, 0);

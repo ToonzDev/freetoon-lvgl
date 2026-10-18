@@ -710,13 +710,10 @@ static void on_clock_moon_phase_change(lv_event_t * e) {
 }
 
 static lv_obj_t * lbl_vnc_val = NULL;
-static lv_obj_t * lbl_vnc_web_val = NULL;
 static void on_vnc_change(lv_event_t * e) {
     settings.vnc_enabled = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
     if (lbl_vnc_val)
         lv_label_set_text(lbl_vnc_val, settings.vnc_enabled ? tr("Aan", "On") : tr("Uit", "Off"));
-    if (lbl_vnc_web_val)
-        lv_label_set_text(lbl_vnc_web_val, settings.vnc_enabled ? tr("Aan", "On") : tr("Uit", "Off"));
     settings_save();
     vnc_apply_state(settings.vnc_enabled);
 }
@@ -1667,11 +1664,11 @@ static void rotate_add_cb(lv_obj_t * sc, const char * id, const char * label, in
 static void open_rotate_modal(lv_event_t * e) {
     (void)e;
     lv_obj_t * p = modal_open(tr("Tegel automatisch wisselen", "Auto-rotate tile"), 540);
-    int y = 70;
+    int y = (DISP_VER < 600) ? 60 : 70;
 
     lv_obj_t * r = panel_row(p, y, tr("Inhoud pagina-2 slot 1 wisselen", "Rotate page-2 slot 1 content"), NULL);
     sw_rotate = row_switch(r, settings.tile_rotate_enabled, NULL);
-    y += 86;
+    y += (DISP_VER < 600) ? 70 : 86;
 
     lv_obj_t * lbl = lv_label_create(p);
     lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
@@ -1685,7 +1682,7 @@ static void open_rotate_modal(lv_event_t * e) {
     lv_textarea_set_accepted_chars(ta_rotate_secs, "0123456789");
     char sbuf[8]; snprintf(sbuf, sizeof sbuf, "%d", settings.tile_rotate_seconds);
     lv_textarea_set_text(ta_rotate_secs, sbuf);
-    y += 58;
+    y += (DISP_VER < 600) ? 48 : 58;
 
     rotate_cb_count = 0;
 
@@ -1694,10 +1691,10 @@ static void open_rotate_modal(lv_event_t * e) {
     lv_obj_set_style_text_font(pick, SF(18), 0);
     lv_label_set_text(pick, tr("Wissel tussen:", "Cycle through:"));
     lv_obj_align(pick, LV_ALIGN_TOP_LEFT, SX(4), y);
-    y += 34;
+    y += (DISP_VER < 600) ? 28 : 34;
 
     lv_obj_t * sc = lv_obj_create(p);
-    lv_obj_set_size(sc, SX(820), SY(200));
+    lv_obj_set_size(sc, SX(820), (DISP_VER < 600) ? 112 : SY(180));
     lv_obj_align(sc, LV_ALIGN_TOP_LEFT, 0, y);
     lv_obj_set_style_bg_opa(sc, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(sc, 0, 0);
@@ -1726,7 +1723,7 @@ static void open_rotate_modal(lv_event_t * e) {
         lv_label_set_long_mode(m, LV_LABEL_LONG_WRAP);
         lv_label_set_text(m, tr("Geen integraties aan. Zet ze aan bij Integraties, of installeer er een uit de Marketplace.", "No integrations on. Enable them under Integrations, or install one from the Marketplace."));
     }
-    y += 208;
+    y += (DISP_VER < 600) ? 118 : 190;
 
     /* Remark pointing at the marketplace for more. */
     lv_obj_t * note = lv_label_create(p);
@@ -2238,7 +2235,7 @@ static void open_news_modal(lv_event_t * e) {
        turned off (the ticker tap is otherwise the only entry point). */
     lv_obj_t * onb = lv_btn_create(p);
     lv_obj_set_size(onb, SX(220), SY(46));
-    lv_obj_align(onb, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(onb, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     lv_obj_set_style_bg_color(onb, lv_color_hex(0x2a4060), 0);
     lv_obj_add_event_cb(onb, on_news_open_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * onl = lv_label_create(onb); lv_label_set_text(onl, tr("Nieuws openen", "Open news")); lv_obj_center(onl);
@@ -2249,29 +2246,29 @@ static void open_news_modal(lv_event_t * e) {
     lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl, SF(22), 0);
     lv_label_set_text(lbl, tr("RSS-feeds (tik om te verwijderen):", "RSS feeds (tap to remove):"));
-    lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     y += 36;
     news_feeds_list = lv_list_create(p);
     lv_obj_set_size(news_feeds_list, SX(740), SY(150));
-    lv_obj_align(news_feeds_list, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(news_feeds_list, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     lv_obj_set_style_bg_color(news_feeds_list, lv_color_hex(0x0e1a2a), 0);
     news_feeds_rebuild();
     y += 158;
 
     ta_news_url = lv_textarea_create(p);
     lv_obj_set_size(ta_news_url, SX(470), SY(44));
-    lv_obj_align(ta_news_url, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(ta_news_url, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     lv_textarea_set_one_line(ta_news_url, true);
     lv_textarea_set_placeholder_text(ta_news_url, tr("https://... RSS-feed", "https://... RSS feed"));
     lv_obj_t * addb = lv_btn_create(p);
     lv_obj_set_size(addb, SX(120), SY(44));
-    lv_obj_align(addb, LV_ALIGN_TOP_LEFT, SX(484), y);
+    lv_obj_align(addb, LV_ALIGN_TOP_LEFT, SX(484), SY(y));
     lv_obj_set_style_bg_color(addb, lv_color_hex(0x2e6e3a), 0);
     lv_obj_add_event_cb(addb, on_news_add_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * al = lv_label_create(addb); lv_label_set_text(al, tr("Toevoegen", "Add")); lv_obj_center(al);
     lv_obj_t * tbtn = lv_btn_create(p);
     lv_obj_set_size(tbtn, SX(120), SY(44));
-    lv_obj_align(tbtn, LV_ALIGN_TOP_LEFT, SX(614), y);
+    lv_obj_align(tbtn, LV_ALIGN_TOP_LEFT, SX(614), SY(y));
     lv_obj_set_style_bg_color(tbtn, lv_color_hex(0x33445a), 0);
     lv_obj_add_event_cb(tbtn, on_news_test, LV_EVENT_CLICKED, NULL);
     lv_obj_t * tl = lv_label_create(tbtn); lv_label_set_text(tl, tr("Test", "Test")); lv_obj_center(tl);
@@ -2290,7 +2287,7 @@ static void open_news_modal(lv_event_t * e) {
     lv_obj_set_width(lbl_news_status, SX(800));
     lv_label_set_long_mode(lbl_news_status, LV_LABEL_LONG_WRAP);
     lv_label_set_text(lbl_news_status, "");
-    lv_obj_align(lbl_news_status, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(lbl_news_status, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     y += 30;
 
     lv_obj_t * hint = lv_label_create(p);
@@ -2305,12 +2302,12 @@ static void open_news_modal(lv_event_t * e) {
            "Headlines scroll above the forecast; tap them to get a QR code that "
            "opens the article on your phone. Any RSS/Atom feed works "
            "(default: NOS Nieuws)."));
-    lv_obj_align(hint, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(hint, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     y += 70;
 
     lv_obj_t * btn = lv_btn_create(p);
     lv_obj_set_size(btn, SX(240), SY(50));
-    lv_obj_align(btn, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(btn, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     lv_obj_set_style_bg_color(btn, lv_color_hex(0x3a6090), 0);
     lv_obj_add_event_cb(btn, on_news_apply, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(btn);
@@ -2937,7 +2934,7 @@ static void open_tile_slots_modal(lv_event_t * e) {
 
     /* 8 real physical slots hosted in a vertical scroller */
     lv_obj_t * sc = lv_obj_create(p);
-    lv_obj_set_size(sc, SX(820), SY(372));
+    lv_obj_set_size(sc, SX(820), (DISP_VER < 600) ? 250 : SY(320));
     lv_obj_align(sc, LV_ALIGN_TOP_LEFT, 0, SY(64));
     lv_obj_set_style_bg_opa(sc, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(sc, 0, 0);
@@ -3846,13 +3843,13 @@ static void open_web_modal(lv_event_t * e) {
     lv_obj_set_style_text_font(lcap, SF(14), 0);
     lv_label_set_text(lcap, tr("Openen in een browser op (telefoon/tablet/pc):",
                                "Open in a browser at (phone/tablet/PC):"));
-    lv_obj_align(lcap, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(lcap, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     lv_obj_t * lurl = lv_label_create(p);
     lv_obj_set_style_text_color(lurl, lv_color_hex(0x66ccff), 0);
     lv_obj_set_style_text_font(lurl, SF(22), 0);
     lv_label_set_text(lurl, _url);
-    lv_obj_align(lurl, LV_ALIGN_TOP_LEFT, SX(4), y + 22);
-    y += 66;
+    lv_obj_align(lurl, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 26));
+    y += 90;
 
     lv_obj_t * r_en = panel_row(p, y, tr("Login vereist (browser)", "Login required (browser)"), NULL);
     row_switch(r_en, settings.pwa_login_enabled, on_pwa_enabled_change);
@@ -3862,10 +3859,10 @@ static void open_web_modal(lv_event_t * e) {
     lv_obj_set_style_text_color(lu, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lu, SF(22), 0);
     lv_label_set_text(lu, tr("Gebruikersnaam:", "Username:"));
-    lv_obj_align(lu, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(lu, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     ta_pwa_user = lv_textarea_create(p);
     lv_obj_set_size(ta_pwa_user, SX(420), SY(44));
-    lv_obj_align(ta_pwa_user, LV_ALIGN_TOP_LEFT, SX(260), y - 4);
+    lv_obj_align(ta_pwa_user, LV_ALIGN_TOP_LEFT, SX(260), SY(y - 4));
     lv_textarea_set_one_line(ta_pwa_user, true);
     lv_textarea_set_text(ta_pwa_user, settings.pwa_login_user);
     y += 60;
@@ -3874,10 +3871,10 @@ static void open_web_modal(lv_event_t * e) {
     lv_obj_set_style_text_color(lp, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lp, SF(22), 0);
     lv_label_set_text(lp, tr("Wachtwoord:", "Password:"));
-    lv_obj_align(lp, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(lp, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     ta_pwa_pass = lv_textarea_create(p);
     lv_obj_set_size(ta_pwa_pass, SX(420), SY(44));
-    lv_obj_align(ta_pwa_pass, LV_ALIGN_TOP_LEFT, SX(260), y - 4);
+    lv_obj_align(ta_pwa_pass, LV_ALIGN_TOP_LEFT, SX(260), SY(y - 4));
     lv_textarea_set_one_line(ta_pwa_pass, true);
     lv_textarea_set_password_mode(ta_pwa_pass, true);
     lv_textarea_set_text(ta_pwa_pass, settings.pwa_login_pass);
@@ -3885,7 +3882,7 @@ static void open_web_modal(lv_event_t * e) {
 
     lv_obj_t * b_apply = lv_btn_create(p);
     lv_obj_set_size(b_apply, SX(220), SY(50));
-    lv_obj_align(b_apply, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(b_apply, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     lv_obj_set_style_bg_color(b_apply, lv_color_hex(0xc06030), 0);
     lv_obj_add_event_cb(b_apply, on_pwa_apply_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * la = lv_label_create(b_apply);
@@ -3896,7 +3893,7 @@ static void open_web_modal(lv_event_t * e) {
      * faster to find when the password is genuinely lost. */
     lv_obj_t * b_reset = lv_btn_create(p);
     lv_obj_set_size(b_reset, SX(200), SY(50));
-    lv_obj_align(b_reset, LV_ALIGN_TOP_LEFT, SX(244), y);
+    lv_obj_align(b_reset, LV_ALIGN_TOP_LEFT, SX(244), SY(y));
     lv_obj_set_style_bg_color(b_reset, lv_color_hex(0x444444), 0);
     lv_obj_add_event_cb(b_reset, on_pwa_reset_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * lr = lv_label_create(b_reset);
@@ -3914,15 +3911,8 @@ static void open_web_modal(lv_event_t * e) {
            "Empty password = next browser visit prompts to set one.\n"
            "Reset password = same, in one tap (when you forgot it).\n"
            "Turn the toggle off to disable login entirely."));
-    lv_obj_align(note, LV_ALIGN_TOP_LEFT, SX(4), y + 60);
+    lv_obj_align(note, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 60));
     y += 130;
-
-    /* VNC remote control (x11vnc server on port 5900) */
-    lv_obj_t * r_vnc = panel_row(p, y, tr("VNC schermovername (poort 5900)",
-                                          "VNC remote control (port 5900)"), &lbl_vnc_web_val);
-    lv_label_set_text(lbl_vnc_web_val, settings.vnc_enabled ? tr("Aan", "On") : tr("Uit", "Off"));
-    row_switch(r_vnc, settings.vnc_enabled, on_vnc_change);
-    y += 82;
 }
 
 static void on_pin_enabled_change(lv_event_t * e) {

@@ -12,6 +12,7 @@
 #include "settings.h"
 #include "backlight.h"
 #include "boxtalk.h"
+#include "sonos.h"
 #include <stdio.h>
 #include <unistd.h>
 
@@ -90,6 +91,10 @@ void ui_wake_now(void) {
     wake_pending = 1;
 }
 
+int ui_is_dimmed(void) {
+    return is_dimmed;
+}
+
 /* Set the active backlight — either the fixed value, or following the ambient
    light sensor (auto-brightness, Toon 2). Falls back to fixed if no sensor. */
 static void apply_active_brightness(void) {
@@ -110,6 +115,7 @@ void ui_idle_tick(void) {
          * 15s background query last cached. Not polling — this is one
          * query per wake. */
         boxtalk_request_indoor_refresh();
+        sonos_request_refresh();
         ui_pop();
         is_dimmed = 0;
         apply_active_brightness();

@@ -321,36 +321,39 @@ lv_obj_t * screen_energy_timeline_create(void) {
     int hdr_y = SY(8);
     int hdr_h = SY(50);
 
-    /* ── Back button ── */
-    lv_obj_t *back = lv_btn_create(scr_root);
-    lv_obj_set_size(back, SX(130), SY(46));
-    lv_obj_align(back, LV_ALIGN_TOP_LEFT, SX(8), hdr_y + SY(3));
-    lv_obj_set_style_bg_color(back, lv_color_hex(THEME_BTN_BG), 0);
-    lv_obj_set_style_radius(back, 10, 0);
-    lv_obj_set_style_border_width(back, 0, 0);
-    lv_obj_set_ext_click_area(back, 25);
-    lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *bl = lv_label_create(back);
-    lv_obj_set_style_text_color(bl, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(bl, SF(18), 0);
-    lv_label_set_text_fmt(bl, LV_SYMBOL_LEFT " %s", tr("Terug", "Back"));
-    lv_obj_center(bl);
+    int x_w = (DISP_HOR < 1000) ? 68 : 74;
+    int x_h = (DISP_VER < 600) ? 44 : 48;
+
+    /* ── Close ("X") button in top-right corner ── */
+    lv_obj_t *x = lv_btn_create(scr_root);
+    lv_obj_set_size(x, x_w, x_h);
+    lv_obj_align(x, LV_ALIGN_TOP_RIGHT, SX(-8), hdr_y + SY(2));
+    lv_obj_set_style_bg_color(x, lv_color_hex(THEME_BTN_BG), 0);
+    lv_obj_set_style_radius(x, 10, 0);
+    lv_obj_set_style_border_width(x, 0, 0);
+    lv_obj_set_ext_click_area(x, 25);
+    lv_obj_add_event_cb(x, on_back, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *xl = lv_label_create(x);
+    lv_label_set_text(xl, LV_SYMBOL_CLOSE);
+    lv_obj_set_style_text_color(xl, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(xl, SF(22), 0);
+    lv_obj_center(xl);
 
     /* ── Title ── */
     lv_obj_t *title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(title, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(title, SF(22), 0);
     lv_label_set_text(title, tr("Apparaten tijdlijn", "Device timeline"));
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, hdr_y + SY(12));
+    lv_obj_align(title, LV_ALIGN_TOP_LEFT, SX(16), hdr_y + SY(12));
 
-    /* ── Range buttons ── */
+    /* ── Range buttons (to the left of the close button) ── */
     const int range_h[] = {1, 2, 4};
     const char *range_lbl[] = {"1u", "2u", "4u"};
     for (int i = 0; i < 3; i++) {
         btn_range[i] = lv_btn_create(scr_root);
         lv_obj_set_size(btn_range[i], SX(64), SY(36));
         lv_obj_align(btn_range[i], LV_ALIGN_TOP_RIGHT,
-                     -(SX(74) * (2 - i)) - SX(8), hdr_y + SY(7));
+                     -(SX(74) * (2 - i)) - SX(8) - x_w - SX(10), hdr_y + SY(7));
         lv_obj_set_style_radius(btn_range[i], 8, 0);
         lv_obj_set_style_border_width(btn_range[i], 0, 0);
         lv_obj_add_event_cb(btn_range[i], on_range, LV_EVENT_CLICKED,

@@ -53,6 +53,7 @@ void sonos_volume_up(void);       /* +2 */
 void sonos_volume_down(void);     /* -2 */
 void sonos_set_volume(int vol);
 void sonos_set_zone(const char * zone);
+void sonos_request_refresh(void);     /* immediate wake poll */
 
 #define SONOS_MAX_ITEMS 48
 

@@ -123,6 +123,57 @@ static int parse_time_seconds(const char * str) {
     return atoi(str);
 }
 
+static void xml_unescape_in_place(char * s) {
+    if (!s || !*s) return;
+    for (int pass = 0; pass < 4; pass++) {
+        char * r = s;
+        char * w = s;
+        int changed = 0;
+        while (*r) {
+            if (*r == '&') {
+                if (strncmp(r, "&amp;", 5) == 0) {
+                    *w++ = '&'; r += 5; changed = 1;
+                } else if (strncmp(r, "&apos;", 6) == 0) {
+                    *w++ = '\''; r += 6; changed = 1;
+                } else if (strncmp(r, "&apo;", 5) == 0) {
+                    *w++ = '\''; r += 5; changed = 1;
+                } else if (strncmp(r, "&#39;", 5) == 0) {
+                    *w++ = '\''; r += 5; changed = 1;
+                } else if (strncmp(r, "&#039;", 6) == 0) {
+                    *w++ = '\''; r += 6; changed = 1;
+                } else if (strncmp(r, "&#x27;", 6) == 0 || strncmp(r, "&#X27;", 6) == 0) {
+                    *w++ = '\''; r += 6; changed = 1;
+                } else if (strncmp(r, "&quot;", 6) == 0) {
+                    *w++ = '"'; r += 6; changed = 1;
+                } else if (strncmp(r, "&#34;", 5) == 0) {
+                    *w++ = '"'; r += 5; changed = 1;
+                } else if (strncmp(r, "&lt;", 4) == 0) {
+                    *w++ = '<'; r += 4; changed = 1;
+                } else if (strncmp(r, "&gt;", 4) == 0) {
+                    *w++ = '>'; r += 4; changed = 1;
+                } else if (strncmp(r, "&nbsp;", 6) == 0) {
+                    *w++ = ' '; r += 6; changed = 1;
+                } else if (strncmp(r, "&#8216;", 7) == 0 || strncmp(r, "&#8217;", 7) == 0 ||
+                           strncmp(r, "&rsquo;", 7) == 0 || strncmp(r, "&lsquo;", 7) == 0) {
+                    *w++ = '\''; r += 7; changed = 1;
+                } else if (strncmp(r, "&#8220;", 7) == 0 || strncmp(r, "&#8221;", 7) == 0 ||
+                           strncmp(r, "&rdquo;", 7) == 0 || strncmp(r, "&ldquo;", 7) == 0) {
+                    *w++ = '"'; r += 7; changed = 1;
+                } else if (strncmp(r, "&#8211;", 7) == 0 || strncmp(r, "&#8212;", 7) == 0 ||
+                           strncmp(r, "&ndash;", 7) == 0 || strncmp(r, "&mdash;", 7) == 0) {
+                    *w++ = '-'; r += 7; changed = 1;
+                } else {
+                    *w++ = *r++;
+                }
+            } else {
+                *w++ = *r++;
+            }
+        }
+        *w = '\0';
+        if (!changed) break;
+    }
+}
+
 static void clean_url(char * url) {
     if (!url) return;
     char * p;
@@ -191,48 +242,11 @@ static int extract_xml_tag(const char * xml, const char * tag, char * out, size_
 
     size_t o = 0;
     while (p < end && o + 1 < outsz) {
-        if (*p == '&') {
-            if (strncmp(p, "&amp;", 5) == 0) { out[o++] = '&'; p += 5; }
-            else if (strncmp(p, "&lt;", 4) == 0) { out[o++] = '<'; p += 4; }
-            else if (strncmp(p, "&gt;", 4) == 0) { out[o++] = '>'; p += 4; }
-            else if (strncmp(p, "&quot;", 6) == 0) { out[o++] = '"'; p += 6; }
-            else if (strncmp(p, "&#39;", 5) == 0 || strncmp(p, "&apos;", 6) == 0) {
-                out[o++] = '\'';
-                p += (p[1] == '#' ? 5 : 6);
-            } else {
-                out[o++] = *p++;
-            }
-        } else {
-            out[o++] = *p++;
-        }
+        out[o++] = *p++;
     }
     out[o] = 0;
 
-    /* Second unescape pass for doubly-nested DIDL/XML entities */
-    if (strstr(out, "&amp;") || strstr(out, "&quot;") || strstr(out, "&#39;")) {
-        char tmp[1024];
-        snprintf(tmp, sizeof tmp, "%s", out);
-        size_t to = 0;
-        const char * tp = tmp;
-        while (*tp && to + 1 < outsz) {
-            if (*tp == '&') {
-                if (strncmp(tp, "&amp;", 5) == 0) { out[to++] = '&'; tp += 5; }
-                else if (strncmp(tp, "&lt;", 4) == 0) { out[to++] = '<'; tp += 4; }
-                else if (strncmp(tp, "&gt;", 4) == 0) { out[to++] = '>'; tp += 4; }
-                else if (strncmp(tp, "&quot;", 6) == 0) { out[to++] = '"'; tp += 6; }
-                else if (strncmp(tp, "&#39;", 5) == 0 || strncmp(tp, "&apos;", 6) == 0) {
-                    out[to++] = '\'';
-                    tp += (tp[1] == '#' ? 5 : 6);
-                } else {
-                    out[to++] = *tp++;
-                }
-            } else {
-                out[to++] = *tp++;
-            }
-        }
-        out[to] = 0;
-    }
-
+    xml_unescape_in_place(out);
     return (o > 0);
 }
 
@@ -263,6 +277,7 @@ static int extract_xml_attr(const char * xml, const char * attr, char * out, siz
     if (len >= outsz) len = outsz - 1;
     memcpy(out, p, len);
     out[len] = 0;
+    xml_unescape_in_place(out);
     return 1;
 }
 
@@ -925,16 +940,34 @@ static void poll_state(void) {
         return;
     }
 
-    /* Bootstrap discovery if active IP unknown */
+    /* Fast-path IP recovery before expensive network scans */
     if (!g_active_ip[0]) {
-        if (!g_bootstrap_ip[0]) {
+        if (settings.sonos_host[0]) {
+            if (update_topology(settings.sonos_host) > 0 && g_active_ip[0]) {
+                /* Successfully resolved from saved host */
+            }
+        }
+        if (!g_active_ip[0]) {
+            for (int i = 0; i < g_room_count; i++) {
+                if (g_rooms[i].ip[0] && update_topology(g_rooms[i].ip) > 0 && g_active_ip[0]) {
+                    break;
+                }
+            }
+        }
+        if (!g_active_ip[0] && g_bootstrap_ip[0]) {
+            if (update_topology(g_bootstrap_ip) > 0 && g_active_ip[0]) {
+                /* Resolved from bootstrap */
+            }
+        }
+        /* Fall back to subnet scan ONLY if all known cached IPs fail */
+        if (!g_active_ip[0]) {
             sonos_tcp_discover(g_bootstrap_ip, sizeof g_bootstrap_ip);
             if (!g_bootstrap_ip[0]) {
                 sonos_ssdp_discover(g_bootstrap_ip, sizeof g_bootstrap_ip, 1200);
             }
-        }
-        if (g_bootstrap_ip[0]) {
-            update_topology(g_bootstrap_ip);
+            if (g_bootstrap_ip[0]) {
+                update_topology(g_bootstrap_ip);
+            }
         }
         if (!g_active_ip[0]) {
             pthread_mutex_lock(&g_sonos_mtx);
@@ -947,29 +980,36 @@ static void poll_state(void) {
     char * buf = malloc(32768);
     if (!buf) return;
 
-    sonos_state_t st = {0};
-    st.connected = 1;
+    /* Start with a copy of current state to avoid wiping metadata on a single packet drop */
+    pthread_mutex_lock(&g_sonos_mtx);
+    sonos_state_t st = sonos_state;
+    pthread_mutex_unlock(&g_sonos_mtx);
+
     snprintf(st.zone, sizeof st.zone, "%s", settings.sonos_zone[0] ? settings.sonos_zone : "Sonos");
 
     /* 1. GetTransportInfo */
     buf[0] = 0;
     int rc = sonos_soap(g_active_ip, "/MediaRenderer/AVTransport/Control",
                         "urn:schemas-upnp-org:service:AVTransport:1",
-                        "GetTransportInfo", "<InstanceID>0</InstanceID>", buf, 32768, 3);
+                        "GetTransportInfo", "<InstanceID>0</InstanceID>", buf, 32768, 2);
     if (rc == 0) {
         g_poll_fail_count = 0;
+        st.connected = 1;
         char state[32] = "";
         extract_xml_tag(buf, "CurrentTransportState", state, sizeof state);
         st.playing = (strcmp(state, "PLAYING") == 0 || strcmp(state, "TRANSITIONING") == 0);
     } else {
-        /* Absorb single network hiccups with a 3-consecutive-failure threshold */
+        /* Transient glitch: do not instantly disconnect or clear IP */
         g_poll_fail_count++;
-        if (g_poll_fail_count >= 3) {
-            g_active_ip[0] = 0;
-            g_bootstrap_ip[0] = 0;
+        if (g_poll_fail_count >= 8) {
             pthread_mutex_lock(&g_sonos_mtx);
             sonos_state.connected = 0;
             pthread_mutex_unlock(&g_sonos_mtx);
+        }
+        /* Only forget IPs after persistent prolonged failure (30 failed polls) */
+        if (g_poll_fail_count >= 30) {
+            g_active_ip[0] = 0;
+            g_bootstrap_ip[0] = 0;
         }
         free(buf);
         return;
@@ -979,7 +1019,7 @@ static void poll_state(void) {
     buf[0] = 0;
     rc = sonos_soap(g_active_ip, "/MediaRenderer/AVTransport/Control",
                     "urn:schemas-upnp-org:service:AVTransport:1",
-                    "GetPositionInfo", "<InstanceID>0</InstanceID>", buf, 32768, 3);
+                    "GetPositionInfo", "<InstanceID>0</InstanceID>", buf, 32768, 2);
     if (rc == 0) {
         char dur_str[32] = "", rel_str[32] = "", track_uri[256] = "";
         extract_xml_tag(buf, "TrackDuration", dur_str, sizeof dur_str);
@@ -1006,13 +1046,23 @@ static void poll_state(void) {
         if (st.is_radio && stream[0]) {
             /* Radio stream with currently playing song info */
             if (title[0]) snprintf(st.album, sizeof st.album, "%s", title);
-            snprintf(st.title, sizeof st.title, "%s", stream);
-            snprintf(st.artist, sizeof st.artist, "%s", artist[0] ? artist : title);
+            char * sep = strstr(stream, " - ");
+            if (sep) {
+                *sep = 0;
+                snprintf(st.artist, sizeof st.artist, "%s", stream);
+                snprintf(st.title, sizeof st.title, "%s", sep + 3);
+            } else {
+                snprintf(st.title, sizeof st.title, "%s", stream);
+                snprintf(st.artist, sizeof st.artist, "%s", artist[0] ? artist : title);
+            }
         } else {
             snprintf(st.title, sizeof st.title, "%s", title);
             snprintf(st.artist, sizeof st.artist, "%s", artist);
             snprintf(st.album, sizeof st.album, "%s", album);
         }
+        xml_unescape_in_place(st.title);
+        xml_unescape_in_place(st.artist);
+        xml_unescape_in_place(st.album);
 
         if (art[0]) {
             if (art[0] == '/') {
@@ -1044,16 +1094,23 @@ static void poll_state(void) {
     check_trigger_art_download(st.art_url);
 }
 
+void sonos_request_refresh(void) {
+    g_force_poll = 1;
+}
+
 static void * sonos_worker(void * arg) {
     (void)arg;
     while (1) {
         poll_state();
-        for (int i = 0; i < 20; i++) {
+        /* When dimmed, poll every ~8s to preserve network/WiFi power-save.
+         * When awake, poll every 2s for responsive playback feedback. */
+        int max_slices = ui_is_dimmed() ? 80 : 20;
+        for (int i = 0; i < max_slices; i++) {
             if (g_force_poll) {
                 g_force_poll = 0;
                 break;
             }
-            usleep(100000); /* 100 ms slices = 2 s total */
+            usleep(100000); /* 100 ms slices */
         }
     }
     return NULL;
@@ -1278,6 +1335,9 @@ int sonos_get_favorites(char favs[][64], int max_favs) {
 }
 
 static int get_sonos_playlists(sonos_item_t items[], int max_items) {
+    if (!g_active_ip[0] && g_bootstrap_ip[0]) {
+        update_topology(g_bootstrap_ip);
+    }
     if (!g_active_ip[0] || max_items <= 0) return 0;
 
     char * buf = malloc(65536);
@@ -1301,13 +1361,28 @@ static int get_sonos_playlists(sonos_item_t items[], int max_items) {
     int count = 0;
     const char * cur = buf;
     while (cur) {
-        const char * p1 = strstr(cur, "<item");
-        const char * p2 = strstr(cur, "&lt;item");
-        if (!p1 && !p2) break;
-        cur = (p1 && p2) ? (p1 < p2 ? p1 : p2) : (p1 ? p1 : p2);
+        const char * p1 = strstr(cur, "<container");
+        const char * p2 = strstr(cur, "&lt;container");
+        const char * p3 = strstr(cur, "<item");
+        const char * p4 = strstr(cur, "&lt;item");
+        const char * p = NULL;
+        if (p1 && (!p || p1 < p)) p = p1;
+        if (p2 && (!p || p2 < p)) p = p2;
+        if (p3 && (!p || p3 < p)) p = p3;
+        if (p4 && (!p || p4 < p)) p = p4;
+        if (!p) break;
+        cur = p;
         if (count >= max_items) break;
-        const char * end_item = strstr(cur, "</item>");
-        if (!end_item) end_item = strstr(cur, "&lt;/item&gt;");
+
+        const char * e1 = strstr(cur, "</container>");
+        const char * e2 = strstr(cur, "&lt;/container&gt;");
+        const char * e3 = strstr(cur, "</item>");
+        const char * e4 = strstr(cur, "&lt;/item&gt;");
+        const char * end_item = NULL;
+        if (e1 && (!end_item || e1 < end_item)) end_item = e1;
+        if (e2 && (!end_item || e2 < end_item)) end_item = e2;
+        if (e3 && (!end_item || e3 < end_item)) end_item = e3;
+        if (e4 && (!end_item || e4 < end_item)) end_item = e4;
         if (!end_item) break;
 
         char title[64] = "", uri[128] = "";
@@ -1358,13 +1433,29 @@ void sonos_play_favorite(const char * name) {
 
 void sonos_play_playlist(const char * name) {
     if (!name || !name[0] || !g_active_ip[0]) return;
-    /* Browse SQ: for playlist URI and set */
-    char enc_name[128];
-    xml_escape(name, enc_name, sizeof enc_name);
-    char body[384];
+    char uri[256] = "";
+    if (strncmp(name, "file://", 7) == 0) {
+        snprintf(uri, sizeof uri, "%s", name);
+    } else {
+        sonos_item_t items[SONOS_MAX_ITEMS];
+        int n = get_sonos_playlists(items, SONOS_MAX_ITEMS);
+        for (int i = 0; i < n; i++) {
+            if (strcmp(items[i].name, name) == 0 && items[i].uri[0]) {
+                snprintf(uri, sizeof uri, "%s", items[i].uri);
+                break;
+            }
+        }
+        if (!uri[0]) {
+            snprintf(uri, sizeof uri, "file:///jffs/settings/savedqueues.rsq#%s", name);
+        }
+    }
+
+    char esc_uri[384];
+    xml_escape(uri, esc_uri, sizeof esc_uri);
+    char body[512];
     snprintf(body, sizeof body,
-             "<InstanceID>0</InstanceID><CurrentURI>file:///jffs/settings/savedqueues.rsq#%s</CurrentURI><CurrentURIMetaData></CurrentURIMetaData>",
-             enc_name);
+             "<InstanceID>0</InstanceID><CurrentURI>%s</CurrentURI><CurrentURIMetaData></CurrentURIMetaData>",
+             esc_uri);
     send_upnp_cmd("/MediaRenderer/AVTransport/Control",
                   "urn:schemas-upnp-org:service:AVTransport:1",
                   "SetAVTransportURI", body);

@@ -192,7 +192,7 @@ static void on_item_click(lv_event_t * e) {
     if (s_cur_source == SONOS_SRC_FAVORITES) {
         sonos_play_favorite(it->name);
     } else if (s_cur_source == SONOS_SRC_PLAYLISTS) {
-        sonos_play_playlist(it->name);
+        sonos_play_playlist(it->uri[0] ? it->uri : it->name);
     } else if (s_cur_source == SONOS_SRC_SPOTIFY) {
         sonos_play_spotify(it->uri);
     }
@@ -442,22 +442,10 @@ void screen_sonos_show(void) {
     lv_dropdown_set_selected(s_dd_zone, sel_idx);
     lv_obj_add_event_cb(s_dd_zone, on_zone_change, LV_EVENT_VALUE_CHANGED, NULL);
 
-    /* Settings button */
-    lv_obj_t * b_set = lv_btn_create(s_modal);
-    lv_obj_set_size(b_set, SX(56), SY(52));
-    lv_obj_align(b_set, LV_ALIGN_TOP_RIGHT, SX(-84), SY(10));
-    lv_obj_set_style_bg_color(b_set, lv_color_hex(THEME_BTN_BG), 0);
-    lv_obj_set_style_radius(b_set, 10, 0);
-    lv_obj_add_event_cb(b_set, on_settings_click, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * sl = lv_label_create(b_set);
-    lv_label_set_text(sl, LV_SYMBOL_SETTINGS);
-    lv_obj_set_style_text_color(sl, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_center(sl);
-
     /* Close button */
-    lv_obj_t * b_close = lv_btn_create(s_modal);
     int cb_w = (DISP_HOR < 1000) ? 68 : 76;
     int cb_h = (DISP_VER < 600) ? 46 : 52;
+    lv_obj_t * b_close = lv_btn_create(s_modal);
     lv_obj_set_size(b_close, cb_w, cb_h);
     lv_obj_align(b_close, LV_ALIGN_TOP_RIGHT, SX(-12), SY(8));
     lv_obj_set_style_bg_color(b_close, lv_color_hex(THEME_BTN_BG), 0);
@@ -469,6 +457,20 @@ void screen_sonos_show(void) {
     lv_obj_set_style_text_font(cl, SF(22), 0);
     lv_obj_set_style_text_color(cl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_center(cl);
+
+    /* Settings button (matching size, to the left of the close button) */
+    lv_obj_t * b_set = lv_btn_create(s_modal);
+    lv_obj_set_size(b_set, cb_w, cb_h);
+    lv_obj_align(b_set, LV_ALIGN_TOP_RIGHT, SX(-12) - cb_w - SX(10), SY(8));
+    lv_obj_set_style_bg_color(b_set, lv_color_hex(THEME_BTN_BG), 0);
+    lv_obj_set_style_radius(b_set, 10, 0);
+    lv_obj_set_ext_click_area(b_set, 25);
+    lv_obj_add_event_cb(b_set, on_settings_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * sl = lv_label_create(b_set);
+    lv_label_set_text(sl, LV_SYMBOL_SETTINGS);
+    lv_obj_set_style_text_font(sl, SF(22), 0);
+    lv_obj_set_style_text_color(sl, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_center(sl);
 
     /* --- Left Card: Now Playing --- */
     lv_obj_t * card_left = lv_obj_create(s_modal);

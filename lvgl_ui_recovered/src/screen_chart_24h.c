@@ -360,54 +360,47 @@ lv_obj_t * screen_chart_24h_create(const integration_meta_t * meta) {
     lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(scr, on_scr_delete, LV_EVENT_DELETE, NULL);
 
-    /* ---- Top Bar: Back Button ---- */
-    lv_obj_t * btn_back = lv_btn_create(scr);
-    lv_obj_set_size(btn_back, SX(110), SY(48));
-    lv_obj_align(btn_back, LV_ALIGN_TOP_LEFT, SX(12), SY(10));
-    lv_obj_set_style_bg_color(btn_back, lv_color_hex(COL_CARD), 0);
-    lv_obj_set_style_radius(btn_back, 10, 0);
-    lv_obj_set_ext_click_area(btn_back, 25);
-    lv_obj_add_event_cb(btn_back, on_back, LV_EVENT_CLICKED, NULL);
+    /* ---- Top Bar: Close ("X") Button (Top Right) ---- */
+    int x_w = (DISP_HOR < 1000) ? 68 : 74;
+    int x_h = (DISP_VER < 600) ? 46 : 50;
+    lv_obj_t * btn_close = lv_btn_create(scr);
+    lv_obj_set_size(btn_close, x_w, x_h);
+    lv_obj_align(btn_close, LV_ALIGN_TOP_RIGHT, SX(-12), SY(10));
+    lv_obj_set_style_bg_color(btn_close, lv_color_hex(COL_CARD), 0);
+    lv_obj_set_style_radius(btn_close, 10, 0);
+    lv_obj_set_ext_click_area(btn_close, 25);
+    lv_obj_add_event_cb(btn_close, on_back, LV_EVENT_CLICKED, NULL);
 
-    lv_obj_t * lbl_back = lv_label_create(btn_back);
-    lv_label_set_text(lbl_back, tr(LV_SYMBOL_LEFT " Terug", LV_SYMBOL_LEFT " Back"));
-    lv_obj_set_style_text_font(lbl_back, SF(18), 0);
-    lv_obj_set_style_text_color(lbl_back, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_center(lbl_back);
+    lv_obj_t * lbl_close = lv_label_create(btn_close);
+    lv_label_set_text(lbl_close, LV_SYMBOL_CLOSE);
+    lv_obj_set_style_text_font(lbl_close, SF(22), 0);
+    lv_obj_set_style_text_color(lbl_close, lv_color_hex(COL_TEXT_HI), 0);
+    lv_obj_center(lbl_close);
 
-    /* ---- Top Bar: Title ---- */
-    const char * title_text = g_ctx->meta.detail_title[0] ? g_ctx->meta.detail_title : g_ctx->meta.name;
-    lv_obj_t * title = lv_label_create(scr);
-    g_ctx->lbl_title = title;
-    lv_obj_set_style_text_font(title, SF(22), 0);
-    lv_obj_set_style_text_color(title, lv_color_hex(COL_TEXT_HI), 0);
-    lv_label_set_text(title, title_text);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, SY(14));
-
-    /* ---- Top Bar: Controls (Auto, ▲, ▼) ---- */
+    /* ---- Top Bar: Controls (Auto, ▲, ▼) (Top Left) ---- */
     lv_obj_t * ctl_box = lv_obj_create(scr);
-    lv_obj_set_size(ctl_box, SX(240), SY(48));
-    lv_obj_align(ctl_box, LV_ALIGN_TOP_RIGHT, SX(-12), SY(10));
+    lv_obj_set_size(ctl_box, SX(200), SY(48));
+    lv_obj_align(ctl_box, LV_ALIGN_TOP_LEFT, SX(12), SY(10));
     lv_obj_set_style_bg_opa(ctl_box, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(ctl_box, 0, 0);
     lv_obj_set_style_pad_all(ctl_box, 0, 0);
     lv_obj_clear_flag(ctl_box, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t * btn_down = lv_btn_create(ctl_box);
-    lv_obj_set_size(btn_down, SX(44), SY(44));
-    lv_obj_align(btn_down, LV_ALIGN_RIGHT_MID, 0, 0);
-    lv_obj_set_style_bg_color(btn_down, lv_color_hex(COL_CARD), 0);
-    lv_obj_set_style_radius(btn_down, 8, 0);
-    lv_obj_set_ext_click_area(btn_down, 15);
-    lv_obj_add_event_cb(btn_down, on_scale_down, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * ld = lv_label_create(btn_down);
-    lv_label_set_text(ld, LV_SYMBOL_DOWN);
-    lv_obj_set_style_text_font(ld, SF(18), 0);
-    lv_obj_center(ld);
+    lv_obj_t * btn_auto = lv_btn_create(ctl_box);
+    lv_obj_set_size(btn_auto, SX(64), SY(44));
+    lv_obj_align(btn_auto, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_obj_set_style_bg_color(btn_auto, lv_color_hex(COL_CARD), 0);
+    lv_obj_set_style_radius(btn_auto, 8, 0);
+    lv_obj_set_ext_click_area(btn_auto, 15);
+    lv_obj_add_event_cb(btn_auto, on_scale_auto, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * la = lv_label_create(btn_auto);
+    lv_label_set_text(la, "Auto");
+    lv_obj_set_style_text_font(la, SF(14), 0);
+    lv_obj_center(la);
 
     lv_obj_t * btn_up = lv_btn_create(ctl_box);
     lv_obj_set_size(btn_up, SX(44), SY(44));
-    lv_obj_align(btn_up, LV_ALIGN_RIGHT_MID, SX(-48), 0);
+    lv_obj_align(btn_up, LV_ALIGN_LEFT_MID, SX(70), 0);
     lv_obj_set_style_bg_color(btn_up, lv_color_hex(COL_CARD), 0);
     lv_obj_set_style_radius(btn_up, 8, 0);
     lv_obj_set_ext_click_area(btn_up, 15);
@@ -417,17 +410,26 @@ lv_obj_t * screen_chart_24h_create(const integration_meta_t * meta) {
     lv_obj_set_style_text_font(lu, SF(18), 0);
     lv_obj_center(lu);
 
-    lv_obj_t * btn_auto = lv_btn_create(ctl_box);
-    lv_obj_set_size(btn_auto, SX(64), SY(44));
-    lv_obj_align(btn_auto, LV_ALIGN_RIGHT_MID, SX(-96), 0);
-    lv_obj_set_style_bg_color(btn_auto, lv_color_hex(COL_CARD), 0);
-    lv_obj_set_style_radius(btn_auto, 8, 0);
-    lv_obj_set_ext_click_area(btn_auto, 15);
-    lv_obj_add_event_cb(btn_auto, on_scale_auto, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * la = lv_label_create(btn_auto);
-    lv_label_set_text(la, "Auto");
-    lv_obj_set_style_text_font(la, SF(14), 0);
-    lv_obj_center(la);
+    lv_obj_t * btn_down = lv_btn_create(ctl_box);
+    lv_obj_set_size(btn_down, SX(44), SY(44));
+    lv_obj_align(btn_down, LV_ALIGN_LEFT_MID, SX(120), 0);
+    lv_obj_set_style_bg_color(btn_down, lv_color_hex(COL_CARD), 0);
+    lv_obj_set_style_radius(btn_down, 8, 0);
+    lv_obj_set_ext_click_area(btn_down, 15);
+    lv_obj_add_event_cb(btn_down, on_scale_down, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * ld = lv_label_create(btn_down);
+    lv_label_set_text(ld, LV_SYMBOL_DOWN);
+    lv_obj_set_style_text_font(ld, SF(18), 0);
+    lv_obj_center(ld);
+
+    /* ---- Top Bar: Title ---- */
+    const char * title_text = g_ctx->meta.detail_title[0] ? g_ctx->meta.detail_title : g_ctx->meta.name;
+    lv_obj_t * title = lv_label_create(scr);
+    g_ctx->lbl_title = title;
+    lv_obj_set_style_text_font(title, SF(22), 0);
+    lv_obj_set_style_text_color(title, lv_color_hex(COL_TEXT_HI), 0);
+    lv_label_set_text(title, title_text);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, SY(14));
 
     /* ---- Interactive Legend Bar ---- */
     lv_obj_t * leg_bar = lv_obj_create(scr);
@@ -479,10 +481,10 @@ lv_obj_t * screen_chart_24h_create(const integration_meta_t * meta) {
     }
 
     /* ---- Main 24-Hour Chart ---- */
-    int chart_w = SX(DISP_HOR > 800 ? 910 : 710);
-    int chart_h = SY(DISP_VER > 480 ? 390 : 290);
-    int chart_x = SX(DISP_HOR > 800 ? 70 : 60);
-    int chart_y = SY(DISP_VER > 480 ? 125 : 115);
+    int chart_x = (DISP_HOR < 1000) ? 52 : 60;
+    int chart_w = DISP_HOR - chart_x - SX(16);
+    int chart_y = (DISP_VER < 600) ? 106 : SY(120);
+    int chart_h = DISP_VER - chart_y - ((DISP_VER < 600) ? 26 : SY(32));
 
     lv_obj_t * chart = lv_chart_create(scr);
     g_ctx->chart = chart;

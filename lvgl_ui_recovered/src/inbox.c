@@ -93,6 +93,16 @@ void inbox_parse_dataset(const char * xml) {
         xml_text(start, stop, "type",       m->type,     sizeof(m->type));
         xml_text(start, stop, "subType",    m->sub_type, sizeof(m->sub_type));
         xml_text(start, stop, "text",       m->text,     sizeof(m->text));
+
+        /* CR2: Suppress continuous system notification about Service Center connection */
+        if (strstr(m->text, "Service Center") || strstr(m->text, "Service center") ||
+            strstr(m->text, "service center") || strstr(m->text, "ServiceCenter") ||
+            strstr(m->type, "ServiceCenter") || strstr(m->sub_type, "ServiceCenter")) {
+            memset(m, 0, sizeof(*m));
+            p = stop + strlen("</notification>");
+            continue;
+        }
+
         char date_buf[24] = {0};
         if (xml_text(start, stop, "creationDate", date_buf, sizeof(date_buf)))
             m->creation_date = atol(date_buf);

@@ -464,17 +464,19 @@ lv_obj_t * screen_appliances_create(void) {
 
     /* ── Close ("X") button in top-right corner ── */
     lv_obj_t *close_btn = lv_btn_create(scr_root);
-    lv_obj_set_size(close_btn, DISP_VER < 600 ? 76 : 84, DISP_VER < 600 ? 50 : 56);
-    lv_obj_align(close_btn, LV_ALIGN_TOP_RIGHT, 0, 0);
+    int cb_w = (DISP_HOR < 1000) ? 68 : 74;
+    int cb_h = (DISP_VER < 600) ? 46 : 50;
+    lv_obj_set_size(close_btn, cb_w, cb_h);
+    lv_obj_align(close_btn, LV_ALIGN_TOP_RIGHT, SX(-12), SY(8));
     lv_obj_set_style_bg_color(close_btn, lv_color_hex(THEME_BTN_BG), 0);
-    lv_obj_set_style_radius(close_btn, 8, 0);
+    lv_obj_set_style_radius(close_btn, 10, 0);
     lv_obj_set_style_border_width(close_btn, 0, 0);
     lv_obj_set_ext_click_area(close_btn, 30);
     lv_obj_add_event_cb(close_btn, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t *close_lbl = lv_label_create(close_btn);
     lv_obj_set_style_text_color(close_lbl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(close_lbl, SF(22), 0);
-    lv_label_set_text(close_lbl, "X");
+    lv_label_set_text(close_lbl, LV_SYMBOL_CLOSE);
     lv_obj_center(close_lbl);
 
     /* ── Title ── */

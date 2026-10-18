@@ -321,24 +321,26 @@ lv_obj_t * screen_adapters_create(void) {
     lv_obj_add_event_cb(scr_root, on_scr_event, LV_EVENT_SCREEN_LOADED,   NULL);
     lv_obj_add_event_cb(scr_root, on_scr_event, LV_EVENT_SCREEN_UNLOADED, NULL);
 
-    lv_obj_t * back = lv_btn_create(scr_root);
-    lv_obj_set_size(back, 140, 52);
-    lv_obj_align(back, LV_ALIGN_TOP_LEFT, 20, 14);
-    lv_obj_set_style_bg_color(back, lv_color_hex(THEME_BTN_BG), 0);
-    lv_obj_set_style_radius(back, 10, 0);
-    lv_obj_set_ext_click_area(back, 20);
-    lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * bl = lv_label_create(back);
-    lv_obj_set_style_text_color(bl, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(bl, SF(22), 0);
-    lv_label_set_text(bl, tr("< Terug", "< Back"));
-    lv_obj_center(bl);
+    lv_obj_t * x = lv_btn_create(scr_root);
+    int x_w = (DISP_HOR < 1000) ? 68 : 74;
+    int x_h = (DISP_VER < 600) ? 46 : 50;
+    lv_obj_set_size(x, x_w, x_h);
+    lv_obj_align(x, LV_ALIGN_TOP_RIGHT, SX(-16), SY(12));
+    lv_obj_set_style_bg_color(x, lv_color_hex(THEME_BTN_BG), 0);
+    lv_obj_set_style_radius(x, 12, 0);
+    lv_obj_set_ext_click_area(x, 25);
+    lv_obj_add_event_cb(x, on_back, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * xl = lv_label_create(x);
+    lv_label_set_text(xl, LV_SYMBOL_CLOSE);
+    lv_obj_set_style_text_font(xl, SF(22), 0);
+    lv_obj_set_style_text_color(xl, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_center(xl);
 
     lv_obj_t * title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(title, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_set_style_text_font(title, SF(28), 0);
     lv_label_set_text(title, tr("Adapters", "Adapters"));
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, 180, 24);
+    lv_obj_align(title, LV_ALIGN_TOP_LEFT, SX(24), SY(20));
 
     /* Meteradapter card + buttons. */
     lv_obj_t * mcard = mk_card(SY(86), tr("Meteradapter", "Meteradapter"), tr("Slimme meter - Z-Wave", "Smart meter - Z-Wave"),
