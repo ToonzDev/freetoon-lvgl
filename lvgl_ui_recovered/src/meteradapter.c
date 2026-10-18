@@ -210,18 +210,28 @@ void probe_happ_pwrusage(void) {
 
 static int parse_rrd_delta(const char * body, float * out_delta, float * out_latest) {
     if (!body || !out_delta) return 0;
-    const char * cur = body;
+    const char * p = strchr(body, '{');
+    if (!p) p = body;
     float first = -1.0f, last = -1.0f;
-    while ((cur = strchr(cur, ':')) != NULL) {
-        cur++;
-        while (*cur == ' ' || *cur == '\t') cur++;
-        if (strncmp(cur, "null", 4) != 0 && strncmp(cur, "NaN", 3) != 0 && strncmp(cur, "nan", 3) != 0) {
+    while (*p) {
+        const char * k1 = strchr(p, '"');
+        if (!k1) break;
+        const char * k2 = strchr(k1 + 1, '"');
+        if (!k2) break;
+        const char * col = strchr(k2 + 1, ':');
+        if (!col) break;
+        const char * v = col + 1;
+        while (*v == ' ' || *v == '\t') v++;
+        if (strncmp(v, "null", 4) != 0 && strncmp(v, "NaN", 3) != 0 && strncmp(v, "nan", 3) != 0) {
             char * endp = NULL;
-            float val = strtof(cur, &endp);
-            if (endp != cur && val >= 0.0f) {
+            float val = strtof(v, &endp);
+            if (endp != v && val >= 0.0f) {
                 if (first < 0.0f) first = val;
                 last = val;
             }
+            p = (endp && endp > v) ? endp : v + 1;
+        } else {
+            p = v + 4;
         }
     }
     if (first >= 0.0f && last >= first) {
