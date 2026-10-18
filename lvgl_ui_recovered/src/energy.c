@@ -35,31 +35,49 @@ float energy_power_w(void) {
     }
 }
 
-/* Cumulative gas — the Toon's own happ_pwrusage HTTP path doesn't expose it, so
- * source 0 has none. <0 means "no gas reading available". */
+/* Cumulative gas (<0 means "no gas reading available"). */
 float energy_gas_m3(void) {
     if (settings.client_mode) {
         if (hw_state.connected_p1) return hw_state.gas_m3;
+        if (meter_state.gas_m3 > 0) return meter_state.gas_m3;
         if (settings.enable_ha && ha_state.have_gas) return ha_state.energy_gas_m3;
     }
     switch (settings.energy_source) {
         case 1:  return hw_state.connected_p1 ? hw_state.gas_m3 : -1.0f;
         case 2:  return p1esp_state.connected ? p1esp_state.gas_m3 : -1.0f;
         case 3:  return ha_state.have_gas ? ha_state.energy_gas_m3 : -1.0f;
-        default: return -1.0f;
+        default: return meter_state.gas_m3 > 0 ? meter_state.gas_m3 : -1.0f;
     }
 }
 
-/* Trailing-hour gas. Both P1 pollers derive this from the cumulative counter;
- * HA gives us only the counter itself, so there is nothing to report there. */
+/* Trailing-hour gas. */
 float energy_gas_hour_m3(void) {
     if (settings.client_mode) {
         if (hw_state.connected_p1) return hw_state.gas_hour_m3;
+        if (meter_state.gas_now_m3h > 0) return meter_state.gas_now_m3h;
+        if (meter_state.gas_today_m3 >= 0) return meter_state.gas_today_m3;
     }
     switch (settings.energy_source) {
         case 1:  return hw_state.connected_p1 ? hw_state.gas_hour_m3 : -1.0f;
         case 2:  return p1esp_state.connected ? p1esp_state.gas_hour_m3 : -1.0f;
-        default: return -1.0f;
+        default:
+            if (meter_state.gas_now_m3h > 0) return meter_state.gas_now_m3h;
+            return meter_state.gas_today_m3 >= 0 ? meter_state.gas_today_m3 : -1.0f;
+    }
+}
+
+/* Today's total gas in m³ (<0 when unavailable). */
+float energy_gas_today_m3(void) {
+    if (settings.client_mode) {
+        if (meter_state.gas_today_m3 >= 0) return meter_state.gas_today_m3;
+        if (hw_state.connected_p1 && hw_state.gas_hour_m3 >= 0) return hw_state.gas_hour_m3;
+        if (settings.enable_ha && ha_state.have_gas) return ha_state.energy_gas_m3;
+    }
+    switch (settings.energy_source) {
+        case 1:  return hw_state.connected_p1 ? hw_state.gas_hour_m3 : -1.0f;
+        case 2:  return p1esp_state.connected ? p1esp_state.gas_hour_m3 : -1.0f;
+        case 3:  return ha_state.have_gas ? ha_state.energy_gas_m3 : -1.0f;
+        default: return meter_state.gas_today_m3 >= 0 ? meter_state.gas_today_m3 : -1.0f;
     }
 }
 

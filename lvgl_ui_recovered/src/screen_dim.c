@@ -590,18 +590,24 @@ static void refresh_cb(lv_timer_t * t) {
         if (e >= 1000) snprintf(etxt, sizeof etxt, "%.1f kW", e / 1000.0f);
         else           snprintf(etxt, sizeof etxt, "%.0f W", e);
 
-        float gh = energy_gas_hour_m3();
+        float g_today = energy_gas_today_m3();
+        float gh = (g_today >= 0) ? g_today : energy_gas_hour_m3();
         int   g_conn = (gh >= 0);
         float g = gh; if (g < 0) g = 0;
-        float gr = g / DIM_G_FULL_M3H;
+        float gr = (g_today >= 0) ? (g / 5.0f) : (g / DIM_G_FULL_M3H);
+        if (gr > 1.0f) gr = 1.0f;
         char gtxt[24];
-        snprintf(gtxt, sizeof gtxt, "%.2f m3/h", g);
+        if (g_today >= 0) {
+            snprintf(gtxt, sizeof gtxt, "%.2f m3", g);
+        } else {
+            snprintf(gtxt, sizeof gtxt, "%.2f m3/h", g);
+        }
 
         int show = settings.show_dim_bars;
         /* Keep the energy/gas section visible whenever the toggle is on — show an
          * empty bar + "--" when the source is offline, instead of vanishing (the
          * P1 drops out intermittently, which made gas/energy "disappear"). */
-        if (!g_conn) { gr = 0; snprintf(gtxt, sizeof gtxt, "-- m3/h"); }
+        if (!g_conn) { gr = 0; snprintf(gtxt, sizeof gtxt, "-- m3"); }
         if (!e_conn) { er = 0; snprintf(etxt, sizeof etxt, "-- W"); }
         if (!settings.dim_bars_swap) {             /* default: gas LEFT, energy RIGHT */
             dim_bar_set(bar_l_env, bar_l_fill, bar_l_cap, -1, show, 0, gr, 0xffaa33, gtxt);

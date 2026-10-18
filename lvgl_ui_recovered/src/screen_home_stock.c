@@ -372,12 +372,28 @@ static void refresh_slot(slot_t * s) {
         lv_obj_set_style_text_color(s->val, lv_color_hex(low ? C_ALERT : C_TITLE), 0);
         if (s->banner) (low ? lv_obj_clear_flag : lv_obj_add_flag)(s->banner, LV_OBJ_FLAG_HIDDEN);
         break; }
-    case TT_INDOOR:  snprintf(b, sizeof b, "%.1f°", toon_state.indoor_temp);     comma(b); lv_label_set_text(s->val, b); break;
+    case TT_INDOOR:  snprintf(b, sizeof b, "%.1f°", display_indoor_temp(toon_state.indoor_temp)); comma(b); lv_label_set_text(s->val, b); break;
     case TT_CO2:     snprintf(b, sizeof b, "%d ppm", toon_state.eco2);                     lv_label_set_text(s->val, b); break;
     case TT_TVOC:    snprintf(b, sizeof b, "%d ppb", toon_state.tvoc);                     lv_label_set_text(s->val, b); break;
     case TT_BOILIN:  snprintf(b, sizeof b, "%.1f°", toon_state.boiler_in_temp);  comma(b); lv_label_set_text(s->val, b); break;
     case TT_BOILOUT: snprintf(b, sizeof b, "%.1f°", toon_state.boiler_out_temp); comma(b); lv_label_set_text(s->val, b); break;
-    case TT_GAS:     strcpy(b, "--"); lv_label_set_text(s->val, b); break;
+    case TT_GAS: {
+        float g = energy_gas_today_m3();
+        if (g >= 0) {
+            snprintf(b, sizeof b, "%.2f m3", g);
+            comma(b);
+        } else {
+            float gh = energy_gas_hour_m3();
+            if (gh >= 0) {
+                snprintf(b, sizeof b, "%.2f m3/h", gh);
+                comma(b);
+            } else {
+                strcpy(b, "--");
+            }
+        }
+        lv_label_set_text(s->val, b);
+        break;
+    }
     case TT_VENT:
         if (vent_state.connected) { snprintf(b, sizeof b, "%d%%", vent_state.speed_pct); lv_label_set_text(s->val, b); }
         else lv_label_set_text(s->val, "--");

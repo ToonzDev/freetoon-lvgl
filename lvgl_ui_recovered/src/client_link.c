@@ -403,6 +403,30 @@ static int parse_rrd_val(const char * body, float * out) {
     return 1;
 }
 
+static int parse_rrd_delta(const char * body, float * out_delta, float * out_latest) {
+    if (!body || !out_delta) return 0;
+    const char * cur = body;
+    float first = -1.0f, last = -1.0f;
+    while ((cur = strchr(cur, ':')) != NULL) {
+        cur++;
+        while (*cur == ' ' || *cur == '\t') cur++;
+        if (strncmp(cur, "null", 4) != 0 && strncmp(cur, "NaN", 3) != 0 && strncmp(cur, "nan", 3) != 0) {
+            char * endp = NULL;
+            float val = strtof(cur, &endp);
+            if (endp != cur && val >= 0.0f) {
+                if (first < 0.0f) first = val;
+                last = val;
+            }
+        }
+    }
+    if (first >= 0.0f && last >= first) {
+        *out_delta = (last - first) / 1000.0f;
+        if (out_latest) *out_latest = last / 1000.0f;
+        return 1;
+    }
+    return 0;
+}
+
 static void poll_stock_master(void) {
     char url[256];
     char buf[4096];
@@ -497,11 +521,21 @@ static void poll_stock_master(void) {
         rrd_counter++;
         if (rrd_counter >= 20) {
             rrd_counter = 0;
-            snprintf(url, sizeof url, "http://%s:10080/hcb_rrd?action=getRrdData&loggerName=gas_flow&rra=5min&samples=1", settings.master_host);
+            time_t now_ts = time(NULL);
+            struct tm ltm;
+            localtime_r(&now_ts, &ltm);
+            ltm.tm_hour = 0; ltm.tm_min = 0; ltm.tm_sec = 0;
+            time_t midnight = mktime(&ltm);
+            snprintf(url, sizeof url,
+                     "http://%s:10080/hcb_rrd?action=getRrdData&loggerName=gas_quantity&rra=5yrhours&from=%ld&to=%ld&readableTime=1&nullForNaN=1&samples=24",
+                     settings.master_host, (long)midnight, (long)now_ts);
             if (http_fetch_to(url, buf, sizeof buf, 2) == 0) {
-                float gw = 0.0f;
-                if (parse_rrd_val(buf, &gw)) {
-                    hw_state.gas_m3 = gw;
+                float d = 0.0f, tot = 0.0f;
+                if (parse_rrd_delta(buf, &d, &tot)) {
+                    meter_state.gas_today_m3 = d;
+                    meter_state.gas_m3 = tot;
+                    hw_state.gas_m3 = tot;
+                    hw_state.gas_hour_m3 = d;
                     hw_state.connected_p1 = 1;
                 }
             }

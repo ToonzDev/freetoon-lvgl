@@ -14,6 +14,7 @@ int   energy_connected(void);
 float energy_power_w(void);          /* watts; negative = exporting */
 float energy_gas_m3(void);           /* cumulative m³, or <0 when unavailable */
 float energy_gas_hour_m3(void);      /* trailing hour m³, or <0 when unavailable */
+float energy_gas_today_m3(void);     /* today's gas in m³, or <0 when unavailable */
 const char * energy_offline_label(void);   /* "P1 offline" / "Initializing..." etc */
 
 /* Solar production (watts). Independent of energy_source — a meter can only see

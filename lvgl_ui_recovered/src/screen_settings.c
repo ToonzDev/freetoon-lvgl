@@ -1065,8 +1065,14 @@ static void open_heating_modal(lv_event_t * e) {
 
     /* indoor temp calibration */
     lv_obj_t * r = panel_row(p, y, tr("Correctie binnentemperatuur", "Indoor temp offset"), &lbl_offset_val);
-    lv_label_set_text_fmt(lbl_offset_val, "%+.1f C", settings.temp_offset_centi / 100.0f);
-    sl_offset = row_slider(r, -500, 500, settings.temp_offset_centi, on_offset_change);
+    if (settings.client_mode) {
+        lv_label_set_text(lbl_offset_val, tr("Beheerd door Master", "Managed by Master"));
+        sl_offset = row_slider(r, -500, 500, 0, on_offset_change);
+        lv_obj_add_state(sl_offset, LV_STATE_DISABLED);
+    } else {
+        lv_label_set_text_fmt(lbl_offset_val, "%+.1f C", settings.temp_offset_centi / 100.0f);
+        sl_offset = row_slider(r, -500, 500, settings.temp_offset_centi, on_offset_change);
+    }
     y += 90;
 
     /* boiler control type */

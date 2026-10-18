@@ -159,6 +159,8 @@ settings_t settings = {
 
 float display_indoor_temp(float raw) {
     if (raw <= 0) return raw;
+    /* In client mode, the master Toon already applies its own calibration */
+    if (settings.client_mode) return raw;
     return raw + (float)settings.temp_offset_centi / 100.0f;
 }
 

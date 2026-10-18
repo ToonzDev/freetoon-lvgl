@@ -564,16 +564,22 @@ static void refresh_cb(lv_timer_t * t) {
         if (e >= 1000) snprintf(etxt, sizeof etxt, "%.1f kW", e / 1000.0f);
         else           snprintf(etxt, sizeof etxt, "%.0f W", e);
 
-        float gh = energy_gas_hour_m3();
+        float g_today = energy_gas_today_m3();
+        float gh = (g_today >= 0) ? g_today : energy_gas_hour_m3();
         int   g_conn = (gh >= 0);
         float g = gh; if (g < 0) g = 0;
         char gtxt[24];
-        snprintf(gtxt, sizeof gtxt, "%.2f m3/h", g);
+        if (g_today >= 0) {
+            snprintf(gtxt, sizeof gtxt, "%.2f m3", g);
+        } else {
+            snprintf(gtxt, sizeof gtxt, "%.2f m3/h", g);
+        }
 
         en_set_bar(en_pwr_fill, en_pwr_lbl, en_pwr_w, e / DIM_E_FULL_W,
                    e_conn ? etxt : tr("-- W", "-- W"));
-        en_set_bar(en_gas_fill, en_gas_lbl, en_gas_w, g / DIM_G_FULL_M3H,
-                   g_conn ? gtxt : tr("-- m3/h", "-- m3/h"));
+        en_set_bar(en_gas_fill, en_gas_lbl, en_gas_w,
+                   (g_today >= 0) ? (g / 5.0f) : (g / DIM_G_FULL_M3H),
+                   g_conn ? gtxt : tr("-- m3", "-- m3"));
 
         /* show_dim_bars off → hide both blocks' contents (per-block visibility in
          * the dim layout is handled separately by hiding the whole box at create). */

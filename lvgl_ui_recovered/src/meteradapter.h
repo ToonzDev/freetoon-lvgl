@@ -13,6 +13,9 @@ typedef struct {
     volatile float power_w;      /* live electricity flow, W */
     volatile float avg_w;        /* average usage, W (if published) */
     volatile long  last_flow_s;  /* time() of the last flow notify, 0 = never */
+    volatile float gas_today_m3; /* today's gas usage in m³, <0 = unavailable */
+    volatile float gas_now_m3h;  /* current gas flow rate in m³/h (from gasUsage) */
+    volatile float gas_m3;       /* cumulative total gas in m³ */
     /* NILM — step-change device detection */
     char   nilm_device[40];      /* matched device name + direction, e.g. "Fridge ON" */
     int    nilm_direction;       /* +1 = on, -1 = off */

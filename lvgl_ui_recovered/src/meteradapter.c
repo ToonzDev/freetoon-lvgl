@@ -155,6 +155,34 @@ void probe_happ_pwrusage(void) {
             }
         }
 
+        /* Check gas usage (supports both smart meters and analog pulse meters) */
+        const char * p_gu = strstr(buf, "\"gasUsage\"");
+        if (p_gu) {
+            float g_val = 0.0f;
+            int got_g = 0;
+            const char * p_val = strstr(p_gu, "\"value\"");
+            if (p_val) {
+                p_val += 7;
+                while (*p_val == ' ' || *p_val == ':' || *p_val == '\t') p_val++;
+                if (*p_val != 'n' && *p_val != 'N') {
+                    if (sscanf(p_val, "%f", &g_val) == 1) got_g = 1;
+                }
+            }
+            if (!got_g) {
+                const char * p_avg = strstr(p_gu, "\"avgValue\"");
+                if (p_avg) {
+                    p_avg += 10;
+                    while (*p_avg == ' ' || *p_avg == ':' || *p_avg == '\t') p_avg++;
+                    if (*p_avg != 'n' && *p_avg != 'N') {
+                        if (sscanf(p_avg, "%f", &g_val) == 1) got_g = 1;
+                    }
+                }
+            }
+            if (got_g && g_val >= 0.0f) {
+                meter_state.gas_now_m3h = g_val / 1000.0f; /* L/h to m³/h */
+            }
+        }
+
         if (got_usage) {
             float net_w = usage_w - prod_w;
             if (log_budget > 0 || last_status != 1) {
@@ -180,8 +208,33 @@ void probe_happ_pwrusage(void) {
     }
 }
 
+static int parse_rrd_delta(const char * body, float * out_delta, float * out_latest) {
+    if (!body || !out_delta) return 0;
+    const char * cur = body;
+    float first = -1.0f, last = -1.0f;
+    while ((cur = strchr(cur, ':')) != NULL) {
+        cur++;
+        while (*cur == ' ' || *cur == '\t') cur++;
+        if (strncmp(cur, "null", 4) != 0 && strncmp(cur, "NaN", 3) != 0 && strncmp(cur, "nan", 3) != 0) {
+            char * endp = NULL;
+            float val = strtof(cur, &endp);
+            if (endp != cur && val >= 0.0f) {
+                if (first < 0.0f) first = val;
+                last = val;
+            }
+        }
+    }
+    if (first >= 0.0f && last >= first) {
+        *out_delta = (last - first) / 1000.0f;
+        if (out_latest) *out_latest = last / 1000.0f;
+        return 1;
+    }
+    return 0;
+}
+
 static void *watchdog_thread(void *arg) {
     (void)arg;
+    int rrd_tick = 11; /* trigger RRD gas query on first loop after 5s */
     for (;;) {
         sleep(5);
         time_t now = time(NULL);
@@ -193,6 +246,27 @@ static void *watchdog_thread(void *arg) {
             if (meter_state.last_flow_s == 0 || (now - meter_state.last_flow_s) >= 4) {
                 probe_happ_pwrusage();
                 now = time(NULL);
+            }
+
+            /* Query RRD gas_quantity hourly archive every ~60 seconds to compute today's gas */
+            if (++rrd_tick >= 12) {
+                rrd_tick = 0;
+                struct tm ltm;
+                localtime_r(&now, &ltm);
+                ltm.tm_hour = 0; ltm.tm_min = 0; ltm.tm_sec = 0;
+                time_t midnight = mktime(&ltm);
+                char rrd_url[256];
+                snprintf(rrd_url, sizeof rrd_url,
+                         "http://127.0.0.1:10080/hcb_rrd?action=getRrdData&loggerName=gas_quantity&rra=5yrhours&from=%ld&to=%ld&readableTime=1&nullForNaN=1&samples=24",
+                         (long)midnight, (long)now);
+                char rrd_buf[2048];
+                if (http_fetch_to(rrd_url, rrd_buf, sizeof rrd_buf, 2) == 0) {
+                    float d = 0.0f, tot = 0.0f;
+                    if (parse_rrd_delta(rrd_buf, &d, &tot)) {
+                        meter_state.gas_today_m3 = d;
+                        meter_state.gas_m3 = tot;
+                    }
+                }
             }
         }
 
@@ -209,6 +283,7 @@ static void *watchdog_thread(void *arg) {
 }
 
 int meteradapter_start(void) {
+    meter_state.gas_today_m3 = -1.0f;
     pthread_t t;
     if (pthread_create(&t, NULL, watchdog_thread, NULL) != 0) return -1;
     pthread_detach(t);
