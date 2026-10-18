@@ -17,6 +17,7 @@
 #include "homewizard.h"
 #include "settings.h"
 #include "theme.h"
+#include "boxtalk.h"
 #include <stdio.h>
 #include <math.h>
 #include <string.h>
@@ -63,10 +64,10 @@ typedef struct {
     int local_hist;
 } metric_t;
 static const metric_t metrics[4] = {
-    {"Electricity", "W",     "kWh",  "elec_flow",  "elec_quantity_nt", "elec_quantity_lt", 0xaa77ff, 0},
-    {"Gas",         "l/h",   "m3",   "gas_flow",   "gas_quantity",     NULL,                0xffaa44, 0},
-    {"Water",       "l/min", "m3",   "water_flow", "water_quantity",   NULL,                0x44aaff, 0},
-    {"CV bar",      "bar",   "bar",  NULL,         NULL,               NULL,                0x5fb3ff, 2},  /* CH pressure, all periods */
+    {"Electricity", "W",     "kWh",  "elec_flow",                  "elec_quantity_nt", "elec_quantity_lt", 0xaa77ff, 0},
+    {"Gas",         "l/h",   "m3",   "gas_flow",                   "gas_quantity",     NULL,                0xffaa44, 0},
+    {"Water",       "l/min", "m3",   "water_flow",                 "water_quantity",   NULL,                0x44aaff, 0},
+    {"CV bar",      "bar",   "bar",  "thermstat_boilerChPressure", "thermstat_boilerChPressure", NULL,     0x5fb3ff, 0},
 };
 #define N_METRIC ((int)(sizeof metrics / sizeof metrics[0]))
 
@@ -260,7 +261,25 @@ static int load_for_period(void) {
     g_current_start_t = from;
     g_current_end_t = to;
 
-    if (m->local_hist) {                /* CH pressure — freetoon's recorder hourly ring */
+    if (selected_metric == 3) {
+        series2.n = 0;
+        int samples;
+        switch (selected_period) {
+            case PERIOD_NOW:    samples = 12; break; /* 12 x 5-minute intervals */
+            case PERIOD_HOURS:  samples = 24; break; /* 24 hourly intervals */
+            case PERIOD_DAYS:   samples = 31; break; /* 31 daily intervals */
+            case PERIOD_WEEKS:  samples = 28; break; /* 4 weeks within 30-day retention */
+            case PERIOD_MONTHS: samples = 30; break; /* up to 30 days */
+            case PERIOD_YEARS:  samples = 30; break;
+            default:            samples = 24; break;
+        }
+        int rc = stats_fetch_range("thermstat_boilerChPressure", "30days", from, to, samples, &series);
+        if (rc == 0 && series.n > 0) return 0;
+        /* Fallback if local/master hcb_rrd doesn't have thermstat_boilerChPressure */
+        return airhist_pres_series_range(from, to, 365, &series);
+    }
+
+    if (m->local_hist) {                /* freetoon's recorder hourly ring */
         series2.n = 0;
         return airhist_pres_series_range(from, to, 365, &series);
     }
@@ -360,11 +379,22 @@ static void diff_in_place(stats_series_t * s, int n, double cap) {
     }
 }
 
+static void chart_draw_event_cb(lv_event_t * e) {
+    lv_obj_draw_part_dsc_t * dsc = lv_event_get_draw_part_dsc(e);
+    if (!dsc) return;
+    if (dsc->part == LV_PART_TICKS && dsc->type == LV_CHART_DRAW_PART_TICK_LABEL && dsc->id == LV_CHART_AXIS_PRIMARY_Y) {
+        if (selected_metric == 3 && dsc->text) {
+            float v = (float)dsc->value / 10.0f;
+            lv_snprintf(dsc->text, dsc->text_length, "%.1f", v);
+        }
+    }
+}
+
 static void render_chart(void) {
     int n = series.n > STATS_MAX_SAMPLES ? STATS_MAX_SAMPLES : series.n;
     if (n < 0) n = 0;
 
-    int is_cum = (selected_period != PERIOD_NOW) && !metrics[selected_metric].local_hist;
+    int is_cum = (selected_period != PERIOD_NOW) && (selected_metric != 3) && !metrics[selected_metric].local_hist;
 
     /* Cumulative meters → per-sample usage deltas. The elec NT/LT split is
      * diffed separately then summed. */
@@ -467,14 +497,29 @@ static void render_chart(void) {
     /* Y range from 0 baseline up to ~110% of tallest bar */
     double hi = 0;
     for (int i = 0; i < g_bar_count; i++) if (g_bar_val[i] > hi) hi = g_bar_val[i];
-    double top = hi * 1.1; if (top < 1) top = 1;
+    double top;
+    if (selected_metric == 3) {
+        top = hi * 1.15;
+        if (top < 2.0) top = 2.0; /* At least 2.0 bar max range for CV bar so 1.2 bar isn't pinned to top */
+    } else {
+        top = hi * 1.1;
+        if (top < 1) top = 1;
+    }
 
     int pc = g_bar_count < 2 ? 2 : g_bar_count;
     lv_chart_set_point_count(chart, pc);
-    lv_chart_set_range(chart, LV_CHART_AXIS_PRIMARY_Y, 0, (lv_coord_t)top);
-    for (int i = 0; i < pc; i++)
-        cs->y_points[i] = (i < g_bar_count) ? (lv_coord_t)g_bar_val[i]
-                                            : LV_CHART_POINT_NONE;
+    if (selected_metric == 3) {
+        lv_coord_t top_tenth = (lv_coord_t)(top * 10.0 + 0.5);
+        lv_chart_set_range(chart, LV_CHART_AXIS_PRIMARY_Y, 0, top_tenth);
+        for (int i = 0; i < pc; i++)
+            cs->y_points[i] = (i < g_bar_count) ? (lv_coord_t)(g_bar_val[i] * 10.0 + 0.5)
+                                                : LV_CHART_POINT_NONE;
+    } else {
+        lv_chart_set_range(chart, LV_CHART_AXIS_PRIMARY_Y, 0, (lv_coord_t)top);
+        for (int i = 0; i < pc; i++)
+            cs->y_points[i] = (i < g_bar_count) ? (lv_coord_t)g_bar_val[i]
+                                                : LV_CHART_POINT_NONE;
+    }
 
     lv_chart_refresh(chart);
     place_x_labels();
@@ -510,6 +555,7 @@ static void render_chart(void) {
         if (g_time_offset == 0) {
             if (selected_metric == 0)      cur = hw_state.power_w;
             else if (selected_metric == 2) cur = hw_state.water_lpm;
+            else if (selected_metric == 3 && toon_state.water_pressure > 0.05f) cur = toon_state.water_pressure;
         }
         if (isnan(cur) || cur == 0) {
             for (int i = series.n - 1; i >= 0; i--)
@@ -730,6 +776,7 @@ lv_obj_t * screen_stats_create(void) {
     lv_obj_set_style_radius(chart, 12, 0);
     cs = lv_chart_add_series(chart, lv_color_hex(metrics[0].color),
                              LV_CHART_AXIS_PRIMARY_Y);
+    lv_obj_add_event_cb(chart, chart_draw_event_cb, LV_EVENT_DRAW_PART_BEGIN, NULL);
 
     /* Manual X-axis label widgets under the chart. */
     for (int i = 0; i < XLBL_COUNT; i++) {

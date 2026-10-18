@@ -1134,7 +1134,7 @@ typedef struct {
     char service[64];
     char control_path[64];
     char action[32];
-    char body[512];
+    char body[2048];
 } soap_cmd_t;
 
 static void * soap_cmd_worker(void * arg) {
@@ -1431,6 +1431,164 @@ void sonos_play_favorite(const char * name) {
     sonos_play();
 }
 
+static int get_active_rincon_uuid(char * out_uuid, size_t out_sz) {
+    if (!out_uuid || out_sz == 0) return 0;
+    out_uuid[0] = 0;
+
+    /* 1. Check cached g_rooms */
+    for (int i = 0; i < g_room_count; i++) {
+        if ((g_active_ip[0] && strcmp(g_rooms[i].ip, g_active_ip) == 0) ||
+            (settings.sonos_zone[0] && strcasecmp(g_rooms[i].room, settings.sonos_zone) == 0)) {
+            if (g_rooms[i].uuid[0]) {
+                snprintf(out_uuid, out_sz, "%s", g_rooms[i].uuid);
+                return 1;
+            }
+        }
+    }
+
+    /* 2. Fallback: query device_description.xml from active IP */
+    if (g_active_ip[0]) {
+        int fd = socket(AF_INET, SOCK_STREAM, 0);
+        if (fd >= 0) {
+            struct timeval tv = { .tv_sec = 2, .tv_usec = 0 };
+            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+            setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+            struct sockaddr_in sin;
+            memset(&sin, 0, sizeof(sin));
+            sin.sin_family = AF_INET;
+            sin.sin_port = htons(1400);
+            sin.sin_addr.s_addr = inet_addr(g_active_ip);
+            if (connect(fd, (struct sockaddr *)&sin, sizeof(sin)) == 0) {
+                char req[256];
+                int hlen = snprintf(req, sizeof req,
+                    "GET /xml/device_description.xml HTTP/1.1\r\n"
+                    "Host: %s:1400\r\n"
+                    "Connection: close\r\n\r\n", g_active_ip);
+                send(fd, req, hlen, 0);
+                char desc[4096];
+                int r = recv(fd, desc, sizeof(desc) - 1, 0);
+                if (r > 0) {
+                    desc[r] = 0;
+                    char * p = strstr(desc, "<UDN>uuid:");
+                    if (p) {
+                        p += 10;
+                        char * q = strchr(p, '<');
+                        if (q) {
+                            size_t len = q - p;
+                            if (len >= out_sz) len = out_sz - 1;
+                            memcpy(out_uuid, p, len);
+                            out_uuid[len] = 0;
+                            char * col = strchr(out_uuid, ':');
+                            if (col) *col = 0;
+                        }
+                    }
+                }
+            }
+            close(fd);
+        }
+    }
+    return out_uuid[0] ? 1 : 0;
+}
+
+static void url_encode(const char * src, char * dst, size_t dst_sz) {
+    if (!src || !dst || dst_sz == 0) return;
+    char * d = dst;
+    char * end = dst + dst_sz - 1;
+    while (*src && d < end) {
+        if (isalnum((unsigned char)*src) || *src == '-' || *src == '_' || *src == '.' || *src == '~') {
+            *d++ = *src;
+        } else {
+            if (d + 3 > end) break;
+            sprintf(d, "%%%02x", (unsigned char)*src);
+            d += 3;
+        }
+        src++;
+    }
+    *d = 0;
+}
+
+typedef struct {
+    char uri[512];
+    char meta[1536];
+} enqueue_play_req_t;
+
+static void * enqueue_play_worker(void * arg) {
+    enqueue_play_req_t * req = (enqueue_play_req_t *)arg;
+    if (!g_active_ip[0]) {
+        free(req);
+        return NULL;
+    }
+
+    char uuid[48] = "";
+    get_active_rincon_uuid(uuid, sizeof uuid);
+
+    /* 1. Clear queue */
+    sonos_soap(g_active_ip, "/MediaRenderer/AVTransport/Control",
+               "urn:schemas-upnp-org:service:AVTransport:1",
+               "RemoveAllTracksFromQueue", "<InstanceID>0</InstanceID>", NULL, 0, 3);
+
+    /* 2. Add URI to queue */
+    char esc_uri[1024];
+    xml_escape(req->uri, esc_uri, sizeof esc_uri);
+
+    char add_body[2048];
+    snprintf(add_body, sizeof add_body,
+             "<InstanceID>0</InstanceID>"
+             "<EnqueuedURI>%s</EnqueuedURI>"
+             "<EnqueuedURIMetaData>%s</EnqueuedURIMetaData>"
+             "<DesiredFirstTrackNumberEnqueued>0</DesiredFirstTrackNumberEnqueued>"
+             "<EnqueueAsNext>0</EnqueueAsNext>",
+             esc_uri, req->meta[0] ? req->meta : "");
+
+    sonos_soap(g_active_ip, "/MediaRenderer/AVTransport/Control",
+               "urn:schemas-upnp-org:service:AVTransport:1",
+               "AddURIToQueue", add_body, NULL, 0, 3);
+
+    /* 3. Switch playback transport to speaker's queue */
+    if (uuid[0]) {
+        char queue_uri[128];
+        snprintf(queue_uri, sizeof queue_uri, "x-rincon-queue:%s#0", uuid);
+        char set_body[256];
+        snprintf(set_body, sizeof set_body,
+                 "<InstanceID>0</InstanceID>"
+                 "<CurrentURI>%s</CurrentURI>"
+                 "<CurrentURIMetaData></CurrentURIMetaData>",
+                 queue_uri);
+        sonos_soap(g_active_ip, "/MediaRenderer/AVTransport/Control",
+                   "urn:schemas-upnp-org:service:AVTransport:1",
+                   "SetAVTransportURI", set_body, NULL, 0, 3);
+    }
+
+    /* 4. Start playback */
+    sonos_soap(g_active_ip, "/MediaRenderer/AVTransport/Control",
+               "urn:schemas-upnp-org:service:AVTransport:1",
+               "Play", "<InstanceID>0</InstanceID><Speed>1</Speed>", NULL, 0, 3);
+
+    pthread_mutex_lock(&g_sonos_mtx);
+    sonos_state.playing = 1;
+    pthread_mutex_unlock(&g_sonos_mtx);
+
+    free(req);
+    usleep(200000);
+    g_force_poll = 1;
+    return NULL;
+}
+
+static void sonos_enqueue_and_play(const char * uri, const char * meta) {
+    if (!settings.sonos_enabled || !g_active_ip[0] || !uri || !uri[0]) return;
+    enqueue_play_req_t * req = malloc(sizeof *req);
+    if (!req) return;
+    snprintf(req->uri, sizeof req->uri, "%s", uri);
+    snprintf(req->meta, sizeof req->meta, "%s", meta ? meta : "");
+
+    pthread_t t;
+    if (pthread_create(&t, NULL, enqueue_play_worker, req) == 0) {
+        pthread_detach(t);
+    } else {
+        free(req);
+    }
+}
+
 void sonos_play_playlist(const char * name) {
     if (!name || !name[0] || !g_active_ip[0]) return;
     char uri[256] = "";
@@ -1449,33 +1607,36 @@ void sonos_play_playlist(const char * name) {
             snprintf(uri, sizeof uri, "file:///jffs/settings/savedqueues.rsq#%s", name);
         }
     }
-
-    char esc_uri[384];
-    xml_escape(uri, esc_uri, sizeof esc_uri);
-    char body[512];
-    snprintf(body, sizeof body,
-             "<InstanceID>0</InstanceID><CurrentURI>%s</CurrentURI><CurrentURIMetaData></CurrentURIMetaData>",
-             esc_uri);
-    send_upnp_cmd("/MediaRenderer/AVTransport/Control",
-                  "urn:schemas-upnp-org:service:AVTransport:1",
-                  "SetAVTransportURI", body);
-    usleep(100000);
-    sonos_play();
+    sonos_enqueue_and_play(uri, "");
 }
 
 void sonos_play_spotify(const char * uri) {
     if (!uri || !uri[0] || !g_active_ip[0]) return;
-    char esc[192];
-    xml_escape(uri, esc, sizeof esc);
-    char body[384];
-    snprintf(body, sizeof body,
-             "<InstanceID>0</InstanceID><CurrentURI>%s</CurrentURI><CurrentURIMetaData></CurrentURIMetaData>",
-             esc);
-    send_upnp_cmd("/MediaRenderer/AVTransport/Control",
-                  "urn:schemas-upnp-org:service:AVTransport:1",
-                  "SetAVTransportURI", body);
-    usleep(100000);
-    sonos_play();
+
+    if (strncmp(uri, "spotify:", 8) == 0) {
+        char enc_uri[256];
+        url_encode(uri, enc_uri, sizeof enc_uri);
+
+        char cp_uri[384];
+        snprintf(cp_uri, sizeof cp_uri, "x-rincon-cpcontainer:0006206c%s", enc_uri);
+
+        char didl[1024];
+        snprintf(didl, sizeof didl,
+            "&lt;DIDL-Lite xmlns:dc=\"http://purl.org/dc/elements/1.1/\" "
+            "xmlns:upnp=\"urn:schemas-upnp-org:metadata-1-0/upnp/\" "
+            "xmlns:r=\"urn:schemas-rinconnetworks-com:metadata-1-0/\" "
+            "xmlns=\"urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/\"&gt;"
+            "&lt;item id=\"00030020%s\" restricted=\"true\"&gt;"
+            "&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;"
+            "&lt;desc id=\"cdudn\" nameSpace=\"urn:schemas-rinconnetworks-com:metadata-1-0/\"&gt;"
+            "SA_RINCON2311_X_#Svc2311-0-Token&lt;/desc&gt;"
+            "&lt;/item&gt;&lt;/DIDL-Lite&gt;",
+            enc_uri);
+
+        sonos_enqueue_and_play(cp_uri, didl);
+    } else {
+        sonos_enqueue_and_play(uri, "");
+    }
 }
 
 /* =========================================================================

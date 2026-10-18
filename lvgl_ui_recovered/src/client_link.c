@@ -558,16 +558,32 @@ static void poll_stock_master(void) {
             }
 
             /* Water pressure from hcb_rrd */
-            static const char * press_loggers[] = { "ch_pressure", "boiler_pressure", "water_pressure", "pressure" };
+            static const struct {
+                const char * name;
+                const char * rra;
+            } press_sources[] = {
+                { "thermstat_boilerChPressure", "30days" },
+                { "ch_pressure",                "5min" },
+                { "boiler_pressure",            "5min" },
+                { "water_pressure",             "5min" },
+                { "pressure",                   "5min" }
+            };
             static int press_idx = 0;
-            snprintf(url, sizeof url, "http://%s:10080/hcb_rrd?action=getRrdData&loggerName=%s&rra=5min&samples=1",
-                     settings.master_host, press_loggers[press_idx]);
-            if (http_fetch_to(url, buf, sizeof buf, 2) == 0) {
+            int n_press = (int)(sizeof(press_sources) / sizeof(press_sources[0]));
+            snprintf(url, sizeof url, "http://%s:10080/hcb_rrd?action=getRrdData&loggerName=%s&rra=%s&samples=1",
+                     settings.master_host, press_sources[press_idx].name, press_sources[press_idx].rra);
+            int prc = http_fetch_to(url, buf, sizeof buf, 2);
+            if (prc != 0) {
+                snprintf(url, sizeof url, "http://%s/hcb_rrd?action=getRrdData&loggerName=%s&rra=%s&samples=1",
+                         settings.master_host, press_sources[press_idx].name, press_sources[press_idx].rra);
+                prc = http_fetch_to(url, buf, sizeof buf, 2);
+            }
+            if (prc == 0) {
                 float bp = 0.0f;
                 if (parse_rrd_val(buf, &bp) && bp > 0.05f) {
                     toon_state.water_pressure = (bp > 10.0f) ? bp / 100.0f : bp;
                 } else {
-                    press_idx = (press_idx + 1) % 4;
+                    press_idx = (press_idx + 1) % n_press;
                 }
             }
 

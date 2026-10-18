@@ -71,27 +71,30 @@ static int http_get_body(const char * path_qs, char * out, size_t outsz) {
         host = host_buf;
     }
 
-    struct addrinfo hints, *res = NULL, *rp;
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-
-    if (getaddrinfo(host, "10080", &hints, &res) != 0 || !res) {
-        return -1;
-    }
-
+    const char * ports[] = { "10080", "80" };
     int s = -1;
-    for (rp = res; rp != NULL; rp = rp->ai_next) {
-        s = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
-        if (s < 0) continue;
-        struct timeval tv = { .tv_sec = 4, .tv_usec = 0 };
-        setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-        setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-        if (connect(s, rp->ai_addr, rp->ai_addrlen) == 0) break;
-        close(s);
-        s = -1;
+    for (int pi = 0; pi < 2 && s < 0; pi++) {
+        struct addrinfo hints, *res = NULL, *rp;
+        memset(&hints, 0, sizeof(hints));
+        hints.ai_family = AF_INET;
+        hints.ai_socktype = SOCK_STREAM;
+
+        if (getaddrinfo(host, ports[pi], &hints, &res) != 0 || !res) {
+            continue;
+        }
+
+        for (rp = res; rp != NULL; rp = rp->ai_next) {
+            s = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+            if (s < 0) continue;
+            struct timeval tv = { .tv_sec = 4, .tv_usec = 0 };
+            setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+            setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+            if (connect(s, rp->ai_addr, rp->ai_addrlen) == 0) break;
+            close(s);
+            s = -1;
+        }
+        freeaddrinfo(res);
     }
-    freeaddrinfo(res);
     if (s < 0) return -1;
 
     char req[1024];

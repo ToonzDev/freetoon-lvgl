@@ -17,6 +17,7 @@
 #include "tile_slots.h"
 #include "meteradapter.h"
 #include "client_link.h"
+#include "http.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1084,7 +1085,38 @@ static void* http_poll_thread(void* arg) {
          * BoilerInfo arrives). Use the BoxTalk query mechanism, which is the
          * protocol's intended path for query-only state-vars. A query is one
          * small XML round-trip; not the same as HTTP polling. */
-        boxtalk_request_indoor_refresh();
+        /* Periodically fetch central heating water pressure from hcb_rrd (logger thermstat_boilerChPressure) */
+        static int press_poll_cnt = 0;
+        if (++press_poll_cnt >= 5 || toon_state.water_pressure <= 0.05f) {
+            press_poll_cnt = 0;
+            char rrd_buf[256];
+            int rrc = http_fetch_to("http://127.0.0.1:10080/hcb_rrd?action=getRrdData&loggerName=thermstat_boilerChPressure&rra=30days&samples=1",
+                                    rrd_buf, sizeof rrd_buf, 2);
+            if (rrc != 0) {
+                rrc = http_fetch_to("http://127.0.0.1/hcb_rrd?action=getRrdData&loggerName=thermstat_boilerChPressure&rra=30days&samples=1",
+                                    rrd_buf, sizeof rrd_buf, 2);
+            }
+            if (rrc == 0 && !strstr(rrd_buf, "\"error\"")) {
+                const char * col = NULL;
+                const char * k1 = strchr(rrd_buf, '"');
+                if (k1) {
+                    const char * k2 = strchr(k1 + 1, '"');
+                    if (k2) col = strchr(k2 + 1, ':');
+                }
+                if (!col) col = strchr(rrd_buf, ':');
+                if (col) {
+                    col++;
+                    while (*col == ' ' || *col == '\t') col++;
+                    if (strncmp(col, "NaN", 3) != 0 && strncmp(col, "nan", 3) != 0 && strncmp(col, "null", 4) != 0) {
+                        float bp = (float)atof(col);
+                        if (bp > 0.05f) {
+                            toon_state.water_pressure = (bp > 10.0f) ? bp / 100.0f : bp;
+                        }
+                    }
+                }
+            }
+        }
+
         /* 3 s — used to be 15 s, but that was the source of "the flame icon
          * lights up half a minute after the boiler kicks in" complaints.
          * burner_on / dhw_on / active_state / setpoint all ride this poll;
