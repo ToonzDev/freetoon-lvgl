@@ -103,6 +103,16 @@ void inbox_parse_dataset(const char * xml) {
             continue;
         }
 
+        /* Suppress TSC root certificate notification (FreeToon uses curl directly and needs no restart) */
+        if ((strstr(m->text, "vertrouwde") && strstr(m->text, "certificaten")) ||
+            strstr(m->text, "webserver certificaten") ||
+            strstr(m->text, "webcertificaten") ||
+            (strcmp(m->type, "tsc") == 0 && strstr(m->text, "certificaten"))) {
+            memset(m, 0, sizeof(*m));
+            p = stop + strlen("</notification>");
+            continue;
+        }
+
         char date_buf[24] = {0};
         if (xml_text(start, stop, "creationDate", date_buf, sizeof(date_buf)))
             m->creation_date = atol(date_buf);

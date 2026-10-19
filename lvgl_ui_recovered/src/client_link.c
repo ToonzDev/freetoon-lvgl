@@ -234,6 +234,18 @@ void client_link_apply_state(const char * j) {
             jstr(obj, "type", m->type,     sizeof m->type);
             jstr(obj, "sub",  m->sub_type, sizeof m->sub_type);
             jstr(obj, "text", m->text,     sizeof m->text);
+
+            if (strstr(m->text, "Service Center") || strstr(m->text, "Service center") ||
+                strstr(m->text, "service center") || strstr(m->text, "ServiceCenter") ||
+                strstr(m->type, "ServiceCenter") || strstr(m->sub_type, "ServiceCenter") ||
+                (strstr(m->text, "vertrouwde") && strstr(m->text, "certificaten")) ||
+                strstr(m->text, "webserver certificaten") ||
+                strstr(m->text, "webcertificaten") ||
+                (strcmp(m->type, "tsc") == 0 && strstr(m->text, "certificaten"))) {
+                memset(m, 0, sizeof(*m));
+                continue;
+            }
+
             double d; if (jnum(obj, "ts",  &d)) m->creation_date = (long)d;
             if (jint(obj, "read", &v)) m->read = v;
             idx++;
