@@ -483,8 +483,17 @@ static int fetch_plugin(void) {
     return parse_ics(body);
 }
 
+static int is_waste_configured(void) {
+    if (settings.waste_plugin[0] && strcmp(settings.waste_plugin, "0") != 0) return 1;
+    if (settings.waste_ics_url[0]) return 1;
+    if (settings.waste_postcode[0] && settings.waste_housenr[0]) return 1;
+    if (access(CFG_PATH, R_OK) == 0) return 1;
+    return 0;
+}
+
 static void * waste_thread(void * arg) {
     (void)arg;
+    sleep(5);                            /* initial settling delay for WiFi at boot */
     while (1) {
         int ok = 0;
         /* Provider plugin (full stock-app mimic) wins when configured; then a
@@ -507,6 +516,17 @@ static void * waste_thread(void * arg) {
                     waste_state.items[1].label, waste_state.items[1].date,
                     waste_state.items[2].label, waste_state.items[2].date,
                     waste_state.items[3].label, waste_state.items[3].date);
+
+        /* If waste fetch failed (e.g. WiFi still connecting on boot),
+         * retry quickly (every 10s) until we get our first successful fetch,
+         * rather than sleeping 4 hours! */
+        if (!waste_state.connected && is_waste_configured()) {
+            for (int s = 0; s < 10 && !waste_state.wake_fetch; s++)
+                sleep(1);
+            waste_state.wake_fetch = 0;
+            continue;
+        }
+
         /* Sleep in 10 s steps so a settings-save wake_fetch arrives quickly. */
         for (int s = 0; s < 4 * 60 * 60 && !waste_state.wake_fetch; s += 10)
             sleep(10);

@@ -740,13 +740,20 @@ void calendar_refresh_now(void) {
         }
     }
 
-    qsort(tmp, n, sizeof tmp[0], ev_cmp);
-    if (n > CAL_MAX) n = CAL_MAX;
-    for (int i = 0; i < n; i++) calendar_state.ev[i] = tmp[i];
-    calendar_state.count = n;
-    if (ok) calendar_state.connected = 1;
+    if (ok) {
+        qsort(tmp, n, sizeof tmp[0], ev_cmp);
+        if (n > CAL_MAX) n = CAL_MAX;
+        for (int i = 0; i < n; i++) calendar_state.ev[i] = tmp[i];
+        calendar_state.count = n;
+        calendar_state.connected = 1;
+    } else {
+        if (calendar_state.count == 0)
+            calendar_state.connected = 0;
+    }
     free(buf);
 }
+
+static volatile int g_cal_wake = 0;
 
 /* One-shot refresh on a detached thread — safe to call from the LVGL/UI thread
  * (the fetch does blocking curl I/O and must never run on the UI thread). */
@@ -756,6 +763,7 @@ static void * kick_thread(void * arg) {
     return NULL;
 }
 void calendar_refresh_async(void) {
+    g_cal_wake = 1;
     pthread_t t;
     if (pthread_create(&t, NULL, kick_thread, NULL) == 0) pthread_detach(t);
 }
@@ -818,9 +826,23 @@ static void calendar_check_notifications(void) {
 
 static void * cal_thread(void * arg) {
     (void)arg;
+    sleep(5);                            /* initial settling delay for WiFi at boot */
     int since_refresh = 100000;          /* force a full fetch on the first tick */
     for (;;) {
-        if (since_refresh >= 1800) { calendar_refresh_now(); since_refresh = 0; }  /* 30 min */
+        int has_source = settings.calendar_enabled &&
+                         (settings.calendar_ha_entity[0] || settings.calendar_ics_url[0]);
+        if (since_refresh >= 1800 || (has_source && !calendar_state.connected) || g_cal_wake) {
+            g_cal_wake = 0;
+            calendar_refresh_now();
+            since_refresh = 0;
+            if (has_source && !calendar_state.connected) {
+                /* WiFi still connecting or temporary network hiccup at boot:
+                 * retry quickly (every 10s) until initial data is acquired */
+                for (int s = 0; s < 10 && !g_cal_wake; s++)
+                    sleep(1);
+                continue;
+            }
+        }
         calendar_check_notifications();  /* minute-resolution pre-event alerts */
         sleep(30);
         since_refresh += 30;

@@ -454,6 +454,7 @@ int weather_geocode(const char * city) {
 
 static void * wx_thread(void * arg) {
     (void)arg;
+    sleep(5);                            /* initial settling delay for WiFi at boot */
     static char body[64 * 1024];
     int radar_tick = 0;
     int geo_fails = 0, geo_fallback = 0;
