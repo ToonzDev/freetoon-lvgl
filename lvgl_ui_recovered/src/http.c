@@ -48,7 +48,7 @@ static int socket_http_fetch(const char * url, char * out, size_t out_max, int t
     hints.ai_socktype = SOCK_STREAM;
 
     if (getaddrinfo(host, port_str, &hints, &res) != 0 || !res) {
-        return -1;
+        return -2;
     }
 
     int s = -1;
@@ -63,7 +63,7 @@ static int socket_http_fetch(const char * url, char * out, size_t out_max, int t
         s = -1;
     }
     freeaddrinfo(res);
-    if (s < 0) return -1;
+    if (s < 0) return -2;
 
     char req[1024];
     int req_len = snprintf(req, sizeof(req),
@@ -74,7 +74,7 @@ static int socket_http_fetch(const char * url, char * out, size_t out_max, int t
         path, host);
     if (req_len <= 0 || req_len >= (int)sizeof(req) || send(s, req, req_len, 0) != req_len) {
         close(s);
-        return -1;
+        return -2;
     }
 
     /* Read header first into a scratch buffer */
@@ -101,15 +101,16 @@ static int socket_http_fetch(const char * url, char * out, size_t out_max, int t
 
     if (!body_start) {
         close(s);
-        return -1;
+        return -2;
     }
 
     /* Check status code: HTTP/1.x 200 */
     int status = 0;
     if (sscanf(hdr_buf, "HTTP/%*d.%*d %d", &status) != 1 || status != 200) {
-        /* Not 200 OK (e.g. 301/302 redirect, 404, etc.) - fallback to curl */
         close(s);
-        return -1;
+        /* If 3xx redirect, return -1 so curl -L can follow it */
+        if (status >= 300 && status < 400) return -1;
+        return -2;
     }
 
     size_t body_pre = hdr_got - (size_t)(body_start - hdr_buf);
@@ -134,11 +135,12 @@ int http_fetch_to(const char * url, char * out, size_t out_max, int timeout_s) {
 
     /* Fast-path: try direct socket fetch for plain http:// endpoints to avoid
      * expensive fork/popen(/usr/bin/curl) on Toon 1's 400MHz CPU.
-     * Falls back to curl for https://, redirects (3xx), or errors. */
+     * Falls back to curl ONLY for redirects (3xx). If host lookup or connection
+     * failed (-2), curl will also fail — return -1 immediately without forking. */
     if (strncasecmp(url, "http://", 7) == 0) {
-        if (socket_http_fetch(url, out, out_max, timeout_s) == 0) {
-            return 0;
-        }
+        int s_rc = socket_http_fetch(url, out, out_max, timeout_s);
+        if (s_rc == 0) return 0;
+        if (s_rc == -2) return -1;
     }
 
     /* Sanity check the URL — only allow http/https and pre-escaped chars,

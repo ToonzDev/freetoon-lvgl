@@ -511,6 +511,17 @@ static void poll_stock_master(void) {
         } else {
             fails++;
             if (fails >= 3) toon_state.connected = 0;
+            if (fails >= 5) {
+                fprintf(stderr, "[client_link] stock master %s unreachable (%d fails) — returning to probe\n",
+                        settings.master_host, fails);
+                break;
+            }
+        }
+
+        /* If thermostat communication failed, master is down or network is not ready — wait and retry gently */
+        if (!toon_state.connected) {
+            sleep(10);
+            continue;
         }
 
         /* 2. Electricity consumption from happ_pwrusage every ~12 seconds */
@@ -635,11 +646,11 @@ static void poll_stock_master(void) {
 static void * reader_thread(void * arg) {
     (void)arg;
     char url[160], cmd[256], line[8192], probe_buf[2048];
-    sleep(1);
+    sleep(8);                            /* initial settling delay for WiFi at boot */
     for (;;) {
         if (!host_ok(settings.master_host)) {
             toon_state.connected = 0;
-            sleep(3);
+            sleep(10);
             continue;
         }
 
@@ -654,7 +665,7 @@ static void * reader_thread(void * arg) {
                      "curl -s -N --connect-timeout 8 -A freetoon-client '%s' 2>/dev/null",
                      url);
             FILE * f = popen(cmd, "r");
-            if (!f) { toon_state.connected = 0; sleep(3); continue; }
+            if (!f) { toon_state.connected = 0; sleep(5); continue; }
             while (fgets(line, sizeof line, f)) {
                 if (strncmp(line, "data:", 5) == 0) {
                     char * j = line + 5;
@@ -664,7 +675,7 @@ static void * reader_thread(void * arg) {
             }
             pclose(f);
             toon_state.connected = 0;
-            sleep(2);
+            sleep(5);
             continue;
         }
 
@@ -673,12 +684,12 @@ static void * reader_thread(void * arg) {
         if (http_fetch_to(url, probe_buf, sizeof probe_buf, 2) == 0 && strstr(probe_buf, "currentTemp")) {
             g_is_stock_master = 1;
             poll_stock_master();
-            sleep(2);
+            sleep(5);
             continue;
         }
 
         toon_state.connected = 0;
-        sleep(3);
+        sleep(10);
     }
     return NULL;
 }
