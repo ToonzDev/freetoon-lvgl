@@ -7,6 +7,7 @@
 #include "settings.h"
 #include "display.h"
 #include "i18n.h"
+#include "screens.h"
 #define LV_USE_SJPG 1
 #include "lvgl/src/extra/libs/sjpg/tjpgd.h"
 #include "lvgl/src/extra/libs/png/lodepng.h"
@@ -28,6 +29,7 @@
 sonos_state_t sonos_state = {0};
 
 static pthread_mutex_t g_sonos_mtx = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t s_poll_mtx  = PTHREAD_MUTEX_INITIALIZER;
 static pthread_t       g_sonos_tid = 0;
 static volatile int    g_force_poll = 0;
 
@@ -355,24 +357,28 @@ static int sonos_soap(const char * ip, const char * control_path,
         return -1;
     }
 
-    if (!out_buf || out_sz == 0) {
-        close(fd);
-        return 0;
-    }
+    char scratch[1024];
+    char * target = (out_buf && out_sz > 0) ? out_buf : scratch;
+    size_t target_sz = (out_buf && out_sz > 0) ? out_sz : sizeof(scratch);
 
     size_t total = 0;
-    while (total + 1 < out_sz) {
-        ssize_t r = recv(fd, out_buf + total, out_sz - 1 - total, 0);
+    int got_200 = 0;
+    while (1) {
+        size_t cap = (total + 1 < target_sz) ? (target_sz - 1 - total) : (sizeof(scratch) - 1);
+        char * dest = (total + 1 < target_sz) ? (target + total) : scratch;
+        ssize_t r = recv(fd, dest, cap, 0);
         if (r <= 0) break;
-        total += r;
+        if (total + 1 < target_sz) {
+            total += r;
+            target[total] = 0;
+        }
+        if (!got_200 && (strstr(target, "200 OK") != NULL)) {
+            got_200 = 1;
+        }
     }
-    out_buf[total] = 0;
     close(fd);
 
-    if (strstr(out_buf, "HTTP/1.1 200 OK") || strstr(out_buf, "HTTP/1.0 200 OK")) {
-        return 0;
-    }
-    return -2;
+    return got_200 ? 0 : -2;
 }
 
 /* =========================================================================
@@ -933,10 +939,13 @@ static void check_trigger_art_download(const char * new_url) {
  * ========================================================================= */
 
 static void poll_state(void) {
+    pthread_mutex_lock(&s_poll_mtx);
+
     if (!settings.sonos_enabled) {
         pthread_mutex_lock(&g_sonos_mtx);
         sonos_state.connected = 0;
         pthread_mutex_unlock(&g_sonos_mtx);
+        pthread_mutex_unlock(&s_poll_mtx);
         return;
     }
 
@@ -973,12 +982,16 @@ static void poll_state(void) {
             pthread_mutex_lock(&g_sonos_mtx);
             sonos_state.connected = 0;
             pthread_mutex_unlock(&g_sonos_mtx);
+            pthread_mutex_unlock(&s_poll_mtx);
             return;
         }
     }
 
     char * buf = malloc(32768);
-    if (!buf) return;
+    if (!buf) {
+        pthread_mutex_unlock(&s_poll_mtx);
+        return;
+    }
 
     /* Start with a copy of current state to avoid wiping metadata on a single packet drop */
     pthread_mutex_lock(&g_sonos_mtx);
@@ -1012,6 +1025,7 @@ static void poll_state(void) {
             g_bootstrap_ip[0] = 0;
         }
         free(buf);
+        pthread_mutex_unlock(&s_poll_mtx);
         return;
     }
 
@@ -1032,6 +1046,8 @@ static void poll_state(void) {
         if (strstr(track_uri, "x-sonosapi-stream:") || strstr(track_uri, "x-rincon-mp3radio:") ||
             strstr(track_uri, "hls-radio:") || strstr(track_uri, "aac://") || strstr(track_uri, "http://")) {
             st.is_radio = 1;
+        } else {
+            st.is_radio = 0;
         }
 
         /* Extract DIDL metadata */
@@ -1092,6 +1108,7 @@ static void poll_state(void) {
     pthread_mutex_unlock(&g_sonos_mtx);
 
     check_trigger_art_download(st.art_url);
+    pthread_mutex_unlock(&s_poll_mtx);
 }
 
 void sonos_request_refresh(void) {
@@ -1140,11 +1157,11 @@ typedef struct {
 static void * soap_cmd_worker(void * arg) {
     soap_cmd_t * c = (soap_cmd_t *)arg;
     if (g_active_ip[0]) {
-        sonos_soap(g_active_ip, c->control_path, c->service, c->action, c->body, NULL, 0, 2);
+        int rc = sonos_soap(g_active_ip, c->control_path, c->service, c->action, c->body, NULL, 0, 2);
+        fprintf(stderr, "[sonos] cmd '%s' -> rc=%d\n", c->action, rc);
     }
     free(c);
-    usleep(100000);
-    g_force_poll = 1;
+    poll_state();
     return NULL;
 }
 
@@ -1400,6 +1417,70 @@ static int get_sonos_playlists(sonos_item_t items[], int max_items) {
     return count;
 }
 
+static pthread_mutex_t s_enqueue_mtx = PTHREAD_MUTEX_INITIALIZER;
+static volatile int     s_enqueue_seq = 0;
+
+typedef struct {
+    char name[64];
+    char uri[384];
+    char meta[768];
+} fav_play_req_t;
+
+static void * fav_play_worker(void * arg) {
+    fav_play_req_t * req = (fav_play_req_t *)arg;
+    if (!req) return NULL;
+
+    pthread_mutex_lock(&s_enqueue_mtx);
+    if (!g_active_ip[0]) {
+        pthread_mutex_unlock(&s_enqueue_mtx);
+        free(req);
+        return NULL;
+    }
+
+    char active_ip[32];
+    snprintf(active_ip, sizeof active_ip, "%s", g_active_ip);
+
+    char esc_uri[384], esc_meta[768];
+    xml_escape(req->uri, esc_uri, sizeof esc_uri);
+    xml_escape(req->meta, esc_meta, sizeof esc_meta);
+
+    char body[1280];
+    snprintf(body, sizeof body,
+             "<InstanceID>0</InstanceID><CurrentURI>%s</CurrentURI><CurrentURIMetaData>%s</CurrentURIMetaData>",
+             esc_uri, esc_meta);
+
+    fprintf(stderr, "[sonos] play_favorite starting for '%s'\n", req->name);
+
+    int rc_set = sonos_soap(active_ip, "/MediaRenderer/AVTransport/Control",
+                            "urn:schemas-upnp-org:service:AVTransport:1",
+                            "SetAVTransportURI", body, NULL, 0, 3);
+
+    int play_ok = 0;
+    for (int retry = 0; retry < 5; retry++) {
+        int rc = sonos_soap(active_ip, "/MediaRenderer/AVTransport/Control",
+                            "urn:schemas-upnp-org:service:AVTransport:1",
+                            "Play", "<InstanceID>0</InstanceID><Speed>1</Speed>", NULL, 0, 2);
+        if (rc == 0) {
+            play_ok = 1;
+            break;
+        }
+        usleep(50000);
+    }
+
+    fprintf(stderr, "[sonos] play_favorite result: set=%d play=%d\n", rc_set, play_ok);
+
+    if (play_ok) {
+        pthread_mutex_lock(&g_sonos_mtx);
+        sonos_state.playing = 1;
+        pthread_mutex_unlock(&g_sonos_mtx);
+        poll_state();
+    }
+
+    pthread_mutex_unlock(&s_enqueue_mtx);
+    free(req);
+    return NULL;
+}
+
 void sonos_play_favorite(const char * name) {
     if (!name || !name[0] || !g_active_ip[0]) return;
 
@@ -1414,21 +1495,18 @@ void sonos_play_favorite(const char * name) {
 
     if (!match) return;
 
-    char esc_uri[384], esc_meta[768];
-    xml_escape(match->uri, esc_uri, sizeof esc_uri);
-    xml_escape(match->meta, esc_meta, sizeof esc_meta);
+    fav_play_req_t * req = malloc(sizeof *req);
+    if (!req) return;
+    snprintf(req->name, sizeof req->name, "%s", name);
+    snprintf(req->uri,  sizeof req->uri,  "%s", match->uri);
+    snprintf(req->meta, sizeof req->meta, "%s", match->meta);
 
-    char body[1280];
-    snprintf(body, sizeof body,
-             "<InstanceID>0</InstanceID><CurrentURI>%s</CurrentURI><CurrentURIMetaData>%s</CurrentURIMetaData>",
-             esc_uri, esc_meta);
-
-    send_upnp_cmd("/MediaRenderer/AVTransport/Control",
-                  "urn:schemas-upnp-org:service:AVTransport:1",
-                  "SetAVTransportURI", body);
-
-    usleep(100000);
-    sonos_play();
+    pthread_t t;
+    if (pthread_create(&t, NULL, fav_play_worker, req) == 0) {
+        pthread_detach(t);
+    } else {
+        free(req);
+    }
 }
 
 static int get_active_rincon_uuid(char * out_uuid, size_t out_sz) {
@@ -1487,6 +1565,7 @@ static int get_active_rincon_uuid(char * out_uuid, size_t out_sz) {
             close(fd);
         }
     }
+    fprintf(stderr, "[sonos] resolved uuid='%s' for ip='%s'\n", out_uuid, g_active_ip);
     return out_uuid[0] ? 1 : 0;
 }
 
@@ -1513,9 +1592,6 @@ typedef struct {
     char name[64];
     int  seq;
 } enqueue_play_req_t;
-
-static pthread_mutex_t s_enqueue_mtx = PTHREAD_MUTEX_INITIALIZER;
-static volatile int     s_enqueue_seq = 0;
 
 static void * enqueue_play_worker(void * arg) {
     enqueue_play_req_t * req = (enqueue_play_req_t *)arg;
@@ -1557,34 +1633,25 @@ static void * enqueue_play_worker(void * arg) {
         return NULL;
     }
 
+    fprintf(stderr, "[sonos] enqueue_play starting for uri='%s' (uuid=%s, ip=%s)\n",
+            req->uri, uuid, active_ip);
+
     /* 1. Stop current playback first so speaker releases the transport lock */
-    sonos_soap(active_ip, "/MediaRenderer/AVTransport/Control",
-               "urn:schemas-upnp-org:service:AVTransport:1",
-               "Stop", "<InstanceID>0</InstanceID>", NULL, 0, 2);
+    int rc_stop = sonos_soap(active_ip, "/MediaRenderer/AVTransport/Control",
+                             "urn:schemas-upnp-org:service:AVTransport:1",
+                             "Stop", "<InstanceID>0</InstanceID>", NULL, 0, 3);
 
     /* 2. Reset transport URI so Sonos unloads previous queue and resets track pointer to 1 */
-    sonos_soap(active_ip, "/MediaRenderer/AVTransport/Control",
-               "urn:schemas-upnp-org:service:AVTransport:1",
-               "SetAVTransportURI",
-               "<InstanceID>0</InstanceID><CurrentURI></CurrentURI><CurrentURIMetaData></CurrentURIMetaData>",
-               NULL, 0, 2);
-
-    if (req->seq != s_enqueue_seq) {
-        pthread_mutex_unlock(&s_enqueue_mtx);
-        free(req);
-        return NULL;
-    }
+    int rc_clr = sonos_soap(active_ip, "/MediaRenderer/AVTransport/Control",
+                            "urn:schemas-upnp-org:service:AVTransport:1",
+                            "SetAVTransportURI",
+                            "<InstanceID>0</InstanceID><CurrentURI></CurrentURI><CurrentURIMetaData></CurrentURIMetaData>",
+                            NULL, 0, 3);
 
     /* 3. Clear speaker queue */
-    sonos_soap(active_ip, "/MediaRenderer/AVTransport/Control",
-               "urn:schemas-upnp-org:service:AVTransport:1",
-               "RemoveAllTracksFromQueue", "<InstanceID>0</InstanceID>", NULL, 0, 3);
-
-    if (req->seq != s_enqueue_seq) {
-        pthread_mutex_unlock(&s_enqueue_mtx);
-        free(req);
-        return NULL;
-    }
+    int rc_rem = sonos_soap(active_ip, "/MediaRenderer/AVTransport/Control",
+                            "urn:schemas-upnp-org:service:AVTransport:1",
+                            "RemoveAllTracksFromQueue", "<InstanceID>0</InstanceID>", NULL, 0, 3);
 
     /* 4. Add new URI to queue */
     char esc_uri[1024];
@@ -1599,17 +1666,12 @@ static void * enqueue_play_worker(void * arg) {
              "<EnqueueAsNext>0</EnqueueAsNext>",
              esc_uri, req->meta[0] ? req->meta : "");
 
-    sonos_soap(active_ip, "/MediaRenderer/AVTransport/Control",
-               "urn:schemas-upnp-org:service:AVTransport:1",
-               "AddURIToQueue", add_body, NULL, 0, 4);
-
-    if (req->seq != s_enqueue_seq) {
-        pthread_mutex_unlock(&s_enqueue_mtx);
-        free(req);
-        return NULL;
-    }
+    int rc_add = sonos_soap(active_ip, "/MediaRenderer/AVTransport/Control",
+                            "urn:schemas-upnp-org:service:AVTransport:1",
+                            "AddURIToQueue", add_body, NULL, 0, 4);
 
     /* 5. Switch playback transport to speaker's queue */
+    int rc_set = -1;
     if (uuid[0]) {
         char queue_uri[128];
         snprintf(queue_uri, sizeof queue_uri, "x-rincon-queue:%s#0", uuid);
@@ -1619,21 +1681,14 @@ static void * enqueue_play_worker(void * arg) {
                  "<CurrentURI>%s</CurrentURI>"
                  "<CurrentURIMetaData></CurrentURIMetaData>",
                  queue_uri);
-        sonos_soap(active_ip, "/MediaRenderer/AVTransport/Control",
-                   "urn:schemas-upnp-org:service:AVTransport:1",
-                   "SetAVTransportURI", set_body, NULL, 0, 3);
-    }
-
-    if (req->seq != s_enqueue_seq) {
-        pthread_mutex_unlock(&s_enqueue_mtx);
-        free(req);
-        return NULL;
+        rc_set = sonos_soap(active_ip, "/MediaRenderer/AVTransport/Control",
+                            "urn:schemas-upnp-org:service:AVTransport:1",
+                            "SetAVTransportURI", set_body, NULL, 0, 3);
     }
 
     /* 6. Start playback with retry in case speaker is still transitioning */
     int play_ok = 0;
     for (int retry = 0; retry < 5; retry++) {
-        if (req->seq != s_enqueue_seq) break;
         int rc = sonos_soap(active_ip, "/MediaRenderer/AVTransport/Control",
                             "urn:schemas-upnp-org:service:AVTransport:1",
                             "Play", "<InstanceID>0</InstanceID><Speed>1</Speed>", NULL, 0, 2);
@@ -1641,19 +1696,21 @@ static void * enqueue_play_worker(void * arg) {
             play_ok = 1;
             break;
         }
-        usleep(100000); /* 100 ms */
+        usleep(50000); /* 50 ms */
     }
+
+    fprintf(stderr, "[sonos] enqueue_play result: stop=%d clr=%d rem=%d add=%d set=%d play=%d\n",
+            rc_stop, rc_clr, rc_rem, rc_add, rc_set, play_ok);
 
     if (play_ok) {
         pthread_mutex_lock(&g_sonos_mtx);
         sonos_state.playing = 1;
         pthread_mutex_unlock(&g_sonos_mtx);
+        poll_state();
     }
 
     pthread_mutex_unlock(&s_enqueue_mtx);
     free(req);
-    usleep(150000);
-    g_force_poll = 1;
     return NULL;
 }
 

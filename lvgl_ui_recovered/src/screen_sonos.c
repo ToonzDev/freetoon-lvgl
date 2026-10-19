@@ -36,6 +36,9 @@ static lv_timer_t * s_refresh_timer = NULL;
 
 static bool s_pos_dragging = false;
 static int  s_art_last_ver = -1;
+static char     s_pending_name[64] = "";
+static uint32_t s_pending_until = 0;
+static uint32_t s_last_item_click = 0;
 
 /* Multi-source items loading (Favorites / Sonos Playlists / Spotify) */
 static sonos_spotify_cfg_t s_spot_cfg = {0};
@@ -93,6 +96,8 @@ static void on_close_click(lv_event_t * e) {
     s_lbl_fav_msg = NULL;
     s_pos_dragging = false;
     s_art_last_ver = -1;
+    s_pending_name[0] = 0;
+    s_pending_until = 0;
 }
 
 static void on_settings_click(lv_event_t * e) {
@@ -186,9 +191,19 @@ static void on_source_change(lv_event_t * e) {
 }
 
 static void on_item_click(lv_event_t * e) {
+    uint32_t now = lv_tick_get();
+    if (now - s_last_item_click < 500) {
+        return; /* Debounce accidental rapid double-tap */
+    }
+    s_last_item_click = now;
+
     int idx = (int)(intptr_t)lv_event_get_user_data(e);
     if (idx < 0 || idx >= s_item_count) return;
     const sonos_item_t * it = &s_items[idx];
+
+    snprintf(s_pending_name, sizeof s_pending_name, "%s", it->name);
+    s_pending_until = now + 4000;
+
     if (s_cur_source == SONOS_SRC_FAVORITES) {
         sonos_play_favorite(it->name);
     } else if (s_cur_source == SONOS_SRC_PLAYLISTS) {
@@ -302,9 +317,20 @@ static void sonos_modal_tick_cb(lv_timer_t * t) {
         return;
     }
 
+    /* Check pending playlist / favorite load status */
+    if (s_pending_name[0]) {
+        uint32_t now = lv_tick_get();
+        if (now > s_pending_until || (st.playing && st.title[0])) {
+            s_pending_name[0] = 0;
+        }
+    }
+
     /* Playback status */
     if (s_lbl_status) {
-        if (st.playing) {
+        if (s_pending_name[0]) {
+            lv_label_set_text_fmt(s_lbl_status, "▶ %s...", s_pending_name);
+            lv_obj_set_style_text_color(s_lbl_status, lv_color_hex(0x22cc66), 0);
+        } else if (st.playing) {
             lv_label_set_text(s_lbl_status, tr("Speelt", "Playing"));
             lv_obj_set_style_text_color(s_lbl_status, lv_color_hex(0x22cc66), 0);
         } else {
@@ -356,6 +382,7 @@ static void sonos_modal_tick_cb(lv_timer_t * t) {
     /* Track metadata */
     if (s_lbl_title) {
         if (st.title[0]) lv_label_set_text(s_lbl_title, st.title);
+        else if (s_pending_name[0]) lv_label_set_text(s_lbl_title, s_pending_name);
         else lv_label_set_text(s_lbl_title, st.playing ? tr("Geen titel", "No title") : tr("Geen muziek", "No music"));
     }
     if (s_lbl_artist) {
