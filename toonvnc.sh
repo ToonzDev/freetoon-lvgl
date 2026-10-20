@@ -21,18 +21,26 @@ INPUT=/mnt/data/fbvnc_input
 PASSFILE=/mnt/data/toonvnc.plain
 LOG=/tmp/x11vnc.log
 
-# Prefer the system x11vnc; fall back to the bundled copy. The Toon's opkg
-# feed (feed.hae.int) is VPN-only, so the installer ships x11vnc + its libs
-# under /mnt/data/x11vnc-bundle and we run it with LD_LIBRARY_PATH.
-X11VNC=/usr/bin/x11vnc
-if [ ! -x "$X11VNC" ]; then
-  if [ -x /mnt/data/x11vnc-bundle/bin/x11vnc ]; then
-    X11VNC=/mnt/data/x11vnc-bundle/bin/x11vnc
-    export LD_LIBRARY_PATH="/mnt/data/x11vnc-bundle/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-  else
-    X11VNC=x11vnc
+# Prefer the patched x11vnc if installed (built-in mt touch + fbdev pan following),
+# then system /usr/bin/x11vnc, then bundled copy under /mnt/data.
+X11VNC=""
+for _cand in \
+  /usr/local/lib/toon2-x11vnc-mt/x11vnc \
+  /mnt/data/x11vnc \
+  /usr/bin/x11vnc \
+  /mnt/data/x11vnc-bundle/bin/x11vnc
+do
+  if [ -x "$_cand" ]; then
+    X11VNC="$_cand"
+    case "$_cand" in
+      */x11vnc-bundle/*)
+        export LD_LIBRARY_PATH="/mnt/data/x11vnc-bundle/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+        ;;
+    esac
+    break
   fi
-fi
+done
+[ -n "$X11VNC" ] || X11VNC=/usr/bin/x11vnc
 
 # Capture the command (start|stop|restart|status|respawn) NOW, before the
 # geometry probe below runs `set --` — which on a device that HAS fbset would
@@ -57,6 +65,15 @@ if [ -z "$_W" ] || [ -z "$_H" ]; then            # sysfs: visible mode "U:800x48
   _res=${_res#*:}; _res=${_res%%p*}; _res=${_res%%i*}
   case "$_res" in *x*) _W=${_res%x*}; _H=${_res#*x};; esac
 fi
+if [ -z "$_W" ] || [ -z "$_H" ]; then
+  _vsize=$(cat /sys/class/graphics/fb0/virtual_size 2>/dev/null)
+  case "$_vsize" in *,*) _W=${_vsize%,*}; _H=${_vsize#*,};; esac
+fi
+if [ -z "$_W" ] || [ -z "$_H" ]; then
+  if grep -qi "i\.MX27\|ARM926" /proc/cpuinfo 2>/dev/null; then
+    _W=800; _H=480; _BPP=16
+  fi
+fi
 [ -z "$_BPP" ] && _BPP=$(cat /sys/class/graphics/fb0/bits_per_pixel 2>/dev/null)
 case "$_W"   in ''|*[!0-9]*) _W=1024;; esac      # last-resort Toon 2 defaults
 case "$_H"   in ''|*[!0-9]*) _H=600;;  esac
@@ -80,6 +97,40 @@ _off=$((_yoff * _stride))
 #   map:/dev/fb0@1024x600x32+2457600
 [ "$_off" -gt 0 ] && RAWFB="map:/dev/fb0@$GEOM+$_off"
 
+# Configure touch injection and framebuffer mapping.
+# If x11vnc has built-in multitouch injection ("mt" option from our patch),
+# write events directly into the touchscreen event device (with tslib calibration
+# on resistive screens like Toon 1). The patched x11vnc also automatically tracks
+# display pan via FBIOGET_VSCREENINFO, so static offsets are unnecessary.
+# Otherwise, fall back to the external fbvnc_input helper.
+setup_pipeinput() {
+  TOUCH_DEV=""
+  if [ -e /dev/input/touchscreen0 ]; then
+    TOUCH_DEV=/dev/input/touchscreen0
+  elif grep -q "TSC2007" /proc/bus/input/devices 2>/dev/null; then
+    TOUCH_DEV=/dev/input/event0
+  elif [ -e /dev/input/event1 ]; then
+    TOUCH_DEV=/dev/input/event1
+  elif [ -e /dev/input/event0 ]; then
+    TOUCH_DEV=/dev/input/event0
+  fi
+
+  TSLIB_OPT=""
+  if [ -f /etc/pointercal ]; then
+    TSLIB_OPT=",tslib_cal=/etc/pointercal"
+  fi
+
+  if [ -n "$TOUCH_DEV" ] && "$X11VNC" -help 2>&1 | grep -q "mt"; then
+    PIPE="-pipeinput UINPUT:mt,touch_always=1,pressure=128${TSLIB_OPT},direct_abs=$TOUCH_DEV,nouinput"
+    RAWFB="map:/dev/fb0@$GEOM"
+  elif [ -x "$INPUT" ]; then
+    PIPE="-pipeinput reopen:$INPUT"
+  else
+    echo "WARNING: no touch injection method available — view-only mode"
+    PIPE=""
+  fi
+}
+
 case "$CMD" in
   stop)
     pkill -x x11vnc 2>/dev/null && echo "x11vnc stopped" || echo "x11vnc not running"
@@ -101,12 +152,7 @@ case "$CMD" in
       echo "x11vnc already running (pid $(pgrep -x x11vnc))"
       exit 0
     fi
-    if [ ! -x "$INPUT" ]; then
-      echo "WARNING: $INPUT missing/not executable — view-only mode"
-      PIPE=""
-    else
-      PIPE="-pipeinput reopen:$INPUT"
-    fi
+    setup_pipeinput
     if [ -s "$PASSFILE" ]; then
       AUTH="-passwdfile $PASSFILE"
     else
@@ -158,11 +204,7 @@ case "$CMD" in
     fi
     # Foreground variant for inittab. Identical args to `start` minus the
     # `-bg` flag, so init keeps a real child pid and respawns on death.
-    if [ ! -x "$INPUT" ]; then
-      PIPE=""
-    else
-      PIPE="-pipeinput reopen:$INPUT"
-    fi
+    setup_pipeinput
     if [ -s "$PASSFILE" ]; then
       AUTH="-passwdfile $PASSFILE"
     else
