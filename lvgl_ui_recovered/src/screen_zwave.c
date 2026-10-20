@@ -389,7 +389,7 @@ static lv_obj_t * mk_action_btn(lv_obj_t * parent, const char * txt,
                                 uint32_t col, lv_event_cb_t cb, int x,
                                 lv_obj_t ** out_lbl) {
     lv_obj_t * b = lv_btn_create(parent);
-    lv_obj_set_size(b, SX(210), SY(56));
+    lv_obj_set_size(b, SX(300), SY(56));
     lv_obj_align(b, LV_ALIGN_LEFT_MID, SX(x), 0);
     lv_obj_set_style_bg_color(b, lv_color_hex(col), 0);
     lv_obj_set_style_radius(b, 10, 0);
@@ -397,7 +397,7 @@ static lv_obj_t * mk_action_btn(lv_obj_t * parent, const char * txt,
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t * l = lv_label_create(b);
     lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(l, SF(22), 0);
+    lv_obj_set_style_text_font(l, SF(18), 0);
     lv_label_set_text(l, txt);
     lv_obj_center(l);
     if (out_lbl) *out_lbl = l;
@@ -445,16 +445,17 @@ lv_obj_t * screen_zwave_create(void) {
     lv_label_set_text(lbl_ctrl, tr("opvragen...", "querying..."));
     lv_obj_align(lbl_ctrl, LV_ALIGN_TOP_LEFT, SX(150), SY(30));
 
+    sw_enable = lv_switch_create(scr_root);
+    lv_obj_set_size(sw_enable, SX(64), SY(32));
+    lv_obj_align(sw_enable, LV_ALIGN_TOP_RIGHT, SX(-16) - x_w - SX(16), SY(18));
+    if (settings.enable_zwave) lv_obj_add_state(sw_enable, LV_STATE_CHECKED);
+    lv_obj_add_event_cb(sw_enable, on_enable_toggled, LV_EVENT_VALUE_CHANGED, NULL);
+
     lv_obj_t * en_lbl = lv_label_create(scr_root);
     lv_obj_set_style_text_color(en_lbl, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_set_style_text_font(en_lbl, SF(18), 0);
     lv_label_set_text(en_lbl, tr("Bediening aan", "Enable control"));
-    lv_obj_align(en_lbl, LV_ALIGN_TOP_RIGHT, SX(-16) - x_w - SX(16) - SX(65), SY(24));
-
-    sw_enable = lv_switch_create(scr_root);
-    lv_obj_align(sw_enable, LV_ALIGN_TOP_RIGHT, SX(-16) - x_w - SX(16), SY(18));
-    if (settings.enable_zwave) lv_obj_add_state(sw_enable, LV_STATE_CHECKED);
-    lv_obj_add_event_cb(sw_enable, on_enable_toggled, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_align_to(en_lbl, sw_enable, LV_ALIGN_OUT_LEFT_MID, SX(-14), 0);
 
     bar_actions = lv_obj_create(scr_root);
     lv_obj_set_size(bar_actions, SX(980), SY(76));
@@ -464,8 +465,8 @@ lv_obj_t * screen_zwave_create(void) {
     lv_obj_set_style_pad_all(bar_actions, 0, 0);
     lv_obj_clear_flag(bar_actions, LV_OBJ_FLAG_SCROLLABLE);
     mk_action_btn(bar_actions, tr("+ Apparaat toevoegen", "+ Add device"), COL_OK,   on_include, 0,   &btn_inc_lbl);
-    mk_action_btn(bar_actions, tr("- Verwijderen", "- Remove"),     COL_WARN, on_exclude, 224, &btn_exc_lbl);
-    mk_action_btn(bar_actions, tr("Netwerk herstellen", "Heal network"), 0x2a4060, on_heal,    448, NULL);
+    mk_action_btn(bar_actions, tr("- Verwijderen", "- Remove"),     COL_WARN, on_exclude, 320, &btn_exc_lbl);
+    mk_action_btn(bar_actions, tr("Netwerk herstellen", "Heal network"), 0x2a4060, on_heal,    640, NULL);
     if (!settings.enable_zwave) lv_obj_add_flag(bar_actions, LV_OBJ_FLAG_HIDDEN);
 
     lbl_status = lv_label_create(scr_root);

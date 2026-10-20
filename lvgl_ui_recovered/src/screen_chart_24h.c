@@ -396,6 +396,7 @@ lv_obj_t * screen_chart_24h_create(const integration_meta_t * meta) {
     lv_obj_t * la = lv_label_create(btn_auto);
     lv_label_set_text(la, "Auto");
     lv_obj_set_style_text_font(la, SF(14), 0);
+    lv_obj_set_style_text_color(la, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_center(la);
 
     lv_obj_t * btn_up = lv_btn_create(ctl_box);
@@ -408,6 +409,7 @@ lv_obj_t * screen_chart_24h_create(const integration_meta_t * meta) {
     lv_obj_t * lu = lv_label_create(btn_up);
     lv_label_set_text(lu, LV_SYMBOL_UP);
     lv_obj_set_style_text_font(lu, SF(18), 0);
+    lv_obj_set_style_text_color(lu, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_center(lu);
 
     lv_obj_t * btn_down = lv_btn_create(ctl_box);
@@ -420,6 +422,7 @@ lv_obj_t * screen_chart_24h_create(const integration_meta_t * meta) {
     lv_obj_t * ld = lv_label_create(btn_down);
     lv_label_set_text(ld, LV_SYMBOL_DOWN);
     lv_obj_set_style_text_font(ld, SF(18), 0);
+    lv_obj_set_style_text_color(ld, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_center(ld);
 
     /* ---- Top Bar: Title ---- */

@@ -281,8 +281,8 @@ lv_obj_t * screen_thermostat_create(void) {
     lv_obj_add_flag(img_temp_flame, LV_OBJ_FLAG_HIDDEN);
 
     /* Program preset buttons — two rows centered horizontally below the indoor temp.
-     * Row 1 (SY(-28)): Scheduled / Manual mode toggle (2 wider buttons).
-     * Row 2 (SY(24)):  Comfort / Home / Sleep / Away presets (4 buttons),
+     * Row 1 (SY(-20)): Scheduled / Manual mode toggle (2 wider buttons).
+     * Row 2 (SY(36)):  Comfort / Home / Sleep / Away presets (4 buttons),
      *                  shown only when the schedule is active. */
     {
         const char * names[6] = {tr("Programma", "Scheduled"), tr("Handmatig", "Manual"),
@@ -292,13 +292,13 @@ lv_obj_t * screen_thermostat_create(void) {
                                  0xcc7733, 0x3377cc, 0x553388, 0x557788};
 
         /* Row 1: Mode buttons (0..1) */
-        const int bw_mode = SX(170), bh_mode = 44, gap_mode = SX(14);
+        const int bw_mode = SX(170), bh_mode = SY(44), gap_mode = SX(14);
         int total_mode = 2 * bw_mode + gap_mode;
         for (int i = 0; i < 2; i++) {
             lv_obj_t * b = lv_btn_create(scr_root);
             lv_obj_set_size(b, bw_mode, bh_mode);
             lv_obj_align(b, LV_ALIGN_CENTER,
-                         -total_mode / 2 + i * (bw_mode + gap_mode) + bw_mode / 2, SY(-28));
+                         -total_mode / 2 + i * (bw_mode + gap_mode) + bw_mode / 2, SY(-20));
             lv_obj_set_style_bg_color(b, lv_color_hex(cols[i]), 0);
             lv_obj_set_style_radius(b, 10, 0);
             lv_obj_set_style_border_color(b, lv_color_hex(0xffffff), 0);
@@ -314,13 +314,13 @@ lv_obj_t * screen_thermostat_create(void) {
         }
 
         /* Row 2: Preset buttons (2..5) */
-        const int bw_pre = SX(125), bh_pre = 42, gap_pre = SX(8);
+        const int bw_pre = SX(125), bh_pre = SY(42), gap_pre = SX(8);
         int total_pre = 4 * bw_pre + 3 * gap_pre;
         for (int i = 2; i < 6; i++) {
             lv_obj_t * b = lv_btn_create(scr_root);
             lv_obj_set_size(b, bw_pre, bh_pre);
             lv_obj_align(b, LV_ALIGN_CENTER,
-                         -total_pre / 2 + (i - 2) * (bw_pre + gap_pre) + bw_pre / 2, SY(24));
+                         -total_pre / 2 + (i - 2) * (bw_pre + gap_pre) + bw_pre / 2, SY(36));
             lv_obj_set_style_bg_color(b, lv_color_hex(cols[i]), 0);
             lv_obj_set_style_radius(b, 10, 0);
             lv_obj_set_style_border_color(b, lv_color_hex(0xffffff), 0);

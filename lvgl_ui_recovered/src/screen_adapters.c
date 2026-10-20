@@ -249,7 +249,7 @@ static void on_scr_event(lv_event_t * e) {
 static lv_obj_t * mk_btn(lv_obj_t * parent, const char * txt, uint32_t col,
                          lv_event_cb_t cb, lv_obj_t ** out_lbl) {
     lv_obj_t * b = lv_btn_create(parent);
-    lv_obj_set_size(b, 220, 56);
+    lv_obj_set_size(b, SX(220), SY(50));
     lv_obj_set_style_bg_color(b, lv_color_hex(col), 0);
     lv_obj_set_style_radius(b, 10, 0);
     lv_obj_set_ext_click_area(b, 8);

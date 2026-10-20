@@ -839,7 +839,7 @@ static void open_weather_modal(lv_event_t * e) {
 
     /* City name (cosmetic) + Buienradar GeoNames id (used by the API). */
     lv_obj_t * lbl_city = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_city, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lbl_city, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_city, SF(22), 0);
     lv_label_set_text(lbl_city, tr("Plaats:", "City:"));
     lv_obj_align(lbl_city, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
@@ -851,7 +851,7 @@ static void open_weather_modal(lv_event_t * e) {
     y += 60;
 
     lv_obj_t * lbl_id = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_id, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lbl_id, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_id, SF(22), 0);
     lv_label_set_text(lbl_id, tr("Buienradar-id:", "Buienradar id:"));
     lv_obj_align(lbl_id, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
@@ -976,7 +976,7 @@ static void on_waste_apply(lv_event_t * e) {
 /* small labelled one-line text field; returns the textarea */
 static lv_obj_t * waste_field(lv_obj_t * p, int x, int y, int w, const char * lbl, const char * val) {
     lv_obj_t * l = lv_label_create(p);
-    lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(l, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(l, SF(18), 0);
     lv_label_set_text(l, lbl);
     lv_obj_align(l, LV_ALIGN_TOP_LEFT, SX(x), SY(y));
@@ -1012,7 +1012,7 @@ static void open_waste_modal(lv_event_t * e) {
        stock Afvalkalender app). Fetched live; the wastefetch helper then runs
        the chosen provider's script. */
     lv_obj_t * lp = lv_label_create(p);
-    lv_obj_set_style_text_color(lp, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lp, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lp, SF(22), 0);
     lv_label_set_text(lp, tr("Afvalverwerker (provider):", "Waste collector (provider):"));
     lv_obj_align(lp, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
@@ -1421,7 +1421,7 @@ static void open_restart_confirm(lv_event_t * e) {
     lv_obj_clear_flag(g_restart_modal, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t * card = lv_obj_create(g_restart_modal);
-    lv_obj_set_size(card, SX(620), SY(250));
+    lv_obj_set_size(card, SX(620), SY(300));
     lv_obj_center(card);
     lv_obj_set_style_bg_color(card, lv_color_hex(0x16243a), 0);
     lv_obj_set_style_border_width(card, 0, 0);
@@ -1434,18 +1434,18 @@ static void open_restart_confirm(lv_event_t * e) {
     lv_obj_set_width(t, SX(560));
     lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP);
     lv_label_set_text(t, tr("freetoon-UI nu herstarten?\n\nDe instellingen worden opnieuw geladen uit toonui.cfg en komt binnen enkele seconden terug.", "Restart the freetoon UI now?\n\nIt reloads settings from toonui.cfg and comes back in a few seconds."));
-    lv_obj_align(t, LV_ALIGN_TOP_LEFT, SX(14), SY(12));
+    lv_obj_align(t, LV_ALIGN_TOP_LEFT, SX(14), SY(14));
 
     lv_obj_t * yes = lv_btn_create(card);
     lv_obj_set_size(yes, SX(180), SY(52));
-    lv_obj_align(yes, LV_ALIGN_BOTTOM_RIGHT, SX(-12), SY(-12));
+    lv_obj_align(yes, LV_ALIGN_BOTTOM_RIGHT, SX(-14), SY(-14));
     lv_obj_set_style_bg_color(yes, lv_color_hex(0x2e6e3a), 0);
     lv_obj_add_event_cb(yes, on_restart_yes, LV_EVENT_CLICKED, NULL);
     lv_obj_t * yl = lv_label_create(yes); lv_label_set_text(yl, tr("Herstart", "Restart")); lv_obj_center(yl);
 
     lv_obj_t * no = lv_btn_create(card);
     lv_obj_set_size(no, SX(180), SY(52));
-    lv_obj_align(no, LV_ALIGN_BOTTOM_LEFT, SX(12), SY(-12));
+    lv_obj_align(no, LV_ALIGN_BOTTOM_LEFT, SX(14), SY(-14));
     lv_obj_set_style_bg_color(no, lv_color_hex(0x3a4658), 0);
     lv_obj_add_event_cb(no, on_restart_no, LV_EVENT_CLICKED, NULL);
     lv_obj_t * nl = lv_label_create(no); lv_label_set_text(nl, tr("Annuleren", "Cancel")); lv_obj_center(nl);
@@ -1519,7 +1519,7 @@ static void open_domoticz(lv_event_t * e) {
     y += 82;
 
     lv_obj_t * lh = lv_label_create(p);
-    lv_obj_set_style_text_color(lh, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lh, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lh, SF(22), 0);
     lv_label_set_text(lh, tr("Host (ip:poort):", "Host (ip:port):"));
     lv_obj_align(lh, LV_ALIGN_TOP_LEFT, SX(4), y);
@@ -1531,7 +1531,7 @@ static void open_domoticz(lv_event_t * e) {
     y += 60;
 
     lv_obj_t * lu = lv_label_create(p);
-    lv_obj_set_style_text_color(lu, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lu, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lu, SF(22), 0);
     lv_label_set_text(lu, tr("Gebruiker (opt):", "User (opt):"));
     lv_obj_align(lu, LV_ALIGN_TOP_LEFT, SX(4), y);
@@ -1587,7 +1587,7 @@ static void open_client_modal(lv_event_t * e) {
     y += 90;
 
     lv_obj_t * lbl = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl, SF(22), 0);
     lv_label_set_text(lbl, tr("Master-IP:", "Master IP:"));
     lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, SX(4), y);
@@ -1658,7 +1658,7 @@ static void rotate_add_cb(lv_obj_t * sc, const char * id, const char * label, in
     lv_obj_t * cb = lv_checkbox_create(sc);
     lv_checkbox_set_text(cb, label);
     lv_obj_set_style_text_font(cb, SF(22), 0);
-    lv_obj_set_style_text_color(cb, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(cb, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_align(cb, LV_ALIGN_TOP_LEFT, SX(6), *cy);
     if (rotate_member_is_checked(id)) lv_obj_add_state(cb, LV_STATE_CHECKED);
     rotate_cb[rotate_cb_count] = cb;
@@ -1677,7 +1677,7 @@ static void open_rotate_modal(lv_event_t * e) {
     y += (DISP_VER < 600) ? 70 : 86;
 
     lv_obj_t * lbl = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl, SF(22), 0);
     lv_label_set_text(lbl, tr("Interval (s):", "Interval (s):"));
     lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, SX(4), y);
@@ -2136,7 +2136,7 @@ static void open_calendar_modal(lv_event_t * e) {
     y += 76;
 
     lv_obj_t * l1 = lv_label_create(p);
-    lv_obj_set_style_text_color(l1, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(l1, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(l1, SF(18), 0);
     lv_label_set_text(l1, tr("Home Assistant agenda-entiteit (optioneel):", "Home Assistant calendar entity (optional):"));
     lv_obj_align(l1, LV_ALIGN_TOP_LEFT, SX(4), y); y += 26;
@@ -2150,7 +2150,7 @@ static void open_calendar_modal(lv_event_t * e) {
 
     /* Multi-calendar ICS feeds list */
     lv_obj_t * l2 = lv_label_create(p);
-    lv_obj_set_style_text_color(l2, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(l2, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(l2, SF(18), 0);
     lv_label_set_text(l2, tr("iCal (.ics) kalenders:", "iCal (.ics) calendars:"));
     lv_obj_align(l2, LV_ALIGN_TOP_LEFT, SX(4), y); y += 26;
@@ -2196,7 +2196,7 @@ static void open_calendar_modal(lv_event_t * e) {
     y += 76;
 
     lv_obj_t * l3 = lv_label_create(p);
-    lv_obj_set_style_text_color(l3, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(l3, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(l3, SF(18), 0);
     lv_label_set_text(l3, tr("Minuten van tevoren:", "Minutes before:"));
     lv_obj_align(l3, LV_ALIGN_TOP_LEFT, SX(4), y + SY(8));
@@ -2249,7 +2249,7 @@ static void open_news_modal(lv_event_t * e) {
 
     /* RSS feeds — a list (tap a row to remove) + an Add box below it. */
     lv_obj_t * lbl = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl, SF(22), 0);
     lv_label_set_text(lbl, tr("RSS-feeds (tik om te verwijderen):", "RSS feeds (tap to remove):"));
     lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
@@ -2570,7 +2570,7 @@ static int ha_field_row(lv_obj_t * p, int y, const char * label,
                         int width, lv_obj_t ** ta_out,
                         const char * domain) {
     lv_obj_t * lb = lv_label_create(p);
-    lv_obj_set_style_text_color(lb, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_color(lb, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lb, SF(18), 0);
     lv_label_set_text(lb, label);
     lv_obj_align(lb, LV_ALIGN_TOP_LEFT, SX(4), y + 4);
@@ -2670,7 +2670,7 @@ static void open_ha_entities_modal(lv_event_t * e) {
 
     /* HA host */
     lv_obj_t * lh = lv_label_create(p);
-    lv_obj_set_style_text_color(lh, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lh, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lh, SF(22), 0);
     lv_label_set_text(lh, tr("HA-host:", "HA host:"));
     lv_obj_align(lh, LV_ALIGN_TOP_LEFT, SX(4), y);
@@ -2688,7 +2688,7 @@ static void open_ha_entities_modal(lv_event_t * e) {
      * Long to type on the panel — easier to paste via the web UI on :10081 —
      * but settable here so the on-device config is complete. */
     lv_obj_t * ltk = lv_label_create(p);
-    lv_obj_set_style_text_color(ltk, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(ltk, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(ltk, SF(22), 0);
     lv_label_set_text(ltk, tr("HA-token:", "HA token:"));
     lv_obj_align(ltk, LV_ALIGN_TOP_LEFT, SX(4), y);
@@ -3457,7 +3457,7 @@ static void open_otbridge_modal(lv_event_t * e) {
 
     /* Mode picker — 3-way: off / proxy / wireless. */
     lv_obj_t * mode_lbl = lv_label_create(p);
-    lv_obj_set_style_text_color(mode_lbl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(mode_lbl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(mode_lbl, SF(22), 0);
     lv_label_set_text(mode_lbl, tr("Modus:", "Mode:"));
     lv_obj_align(mode_lbl, LV_ALIGN_TOP_LEFT, SX(4), y + 12);
@@ -3497,7 +3497,7 @@ static void open_otbridge_modal(lv_event_t * e) {
 
     /* OTGW host */
     lv_obj_t * lbl_host = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_host, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lbl_host, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_host, SF(22), 0);
     lv_label_set_text(lbl_host, tr("OTGW-host:", "OTGW host:"));
     lv_obj_align(lbl_host, LV_ALIGN_TOP_LEFT, SX(4), y);
@@ -3510,7 +3510,7 @@ static void open_otbridge_modal(lv_event_t * e) {
 
     /* OTGW user/pass */
     lv_obj_t * lbl_user = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_user, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lbl_user, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_user, SF(22), 0);
     lv_label_set_text(lbl_user, tr("OTGW-gebruiker (opt):", "OTGW user (opt):"));
     lv_obj_align(lbl_user, LV_ALIGN_TOP_LEFT, SX(4), y);
@@ -3522,7 +3522,7 @@ static void open_otbridge_modal(lv_event_t * e) {
     y += 60;
 
     lv_obj_t * lbl_pass = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_pass, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lbl_pass, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_pass, SF(22), 0);
     lv_label_set_text(lbl_pass, tr("OTGW-wachtwoord (opt):", "OTGW pass (opt):"));
     lv_obj_align(lbl_pass, LV_ALIGN_TOP_LEFT, SX(4), y);
@@ -3862,7 +3862,7 @@ static void open_web_modal(lv_event_t * e) {
     y += 82;
 
     lv_obj_t * lu = lv_label_create(p);
-    lv_obj_set_style_text_color(lu, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lu, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lu, SF(22), 0);
     lv_label_set_text(lu, tr("Gebruikersnaam:", "Username:"));
     lv_obj_align(lu, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
@@ -3874,7 +3874,7 @@ static void open_web_modal(lv_event_t * e) {
     y += 60;
 
     lv_obj_t * lp = lv_label_create(p);
-    lv_obj_set_style_text_color(lp, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lp, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lp, SF(22), 0);
     lv_label_set_text(lp, tr("Wachtwoord:", "Password:"));
     lv_obj_align(lp, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
@@ -3912,7 +3912,7 @@ static void open_web_modal(lv_event_t * e) {
     lv_obj_set_style_text_font(note, SF(14), 0);
     lv_label_set_text(note,
         tr("Leeg wachtwoord = volgende browserbezoek vraagt er een in te stellen.\n"
-           "Wachtwoord resetten = hetzelfde, in één tik (als je het vergeten bent).\n"
+           "Wachtwoord resetten = hetzelfde, in 1 tik (als je het vergeten bent).\n"
            "Zet de schakelaar uit om login volledig uit te schakelen.",
            "Empty password = next browser visit prompts to set one.\n"
            "Reset password = same, in one tap (when you forgot it).\n"
@@ -3945,7 +3945,10 @@ static void on_pin_apply_click(lv_event_t * e) {
 }
 static void open_pin_settings_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open(tr("Pincode", "PIN code"), 380);
+    lv_obj_t * p = modal_open(tr("Pincode", "PIN code"), 480);
+    lv_obj_add_flag(p, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(p, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(p, LV_SCROLLBAR_MODE_AUTO);
     int y = 70;
 
     lv_obj_t * r_en = panel_row(p, y, tr("Pincode vereist voor wijzigingen", "PIN required for changes"), NULL);
@@ -3953,13 +3956,13 @@ static void open_pin_settings_modal(lv_event_t * e) {
     y += 82;
 
     lv_obj_t * lp = lv_label_create(p);
-    lv_obj_set_style_text_color(lp, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lp, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lp, SF(22), 0);
     lv_label_set_text(lp, tr("Pincode (4-6 cijfers):", "PIN (4-6 digits):"));
-    lv_obj_align(lp, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(lp, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     ta_pin_code = lv_textarea_create(p); ta_make_numeric(ta_pin_code);
     lv_obj_set_size(ta_pin_code, SX(260), SY(44));
-    lv_obj_align(ta_pin_code, LV_ALIGN_TOP_LEFT, SX(260), y - 4);
+    lv_obj_align(ta_pin_code, LV_ALIGN_TOP_LEFT, SX(260), SY(y - 4));
     lv_textarea_set_one_line(ta_pin_code, true);
     lv_textarea_set_password_mode(ta_pin_code, true);
     lv_textarea_set_max_length(ta_pin_code, sizeof settings.pin_code - 1);
@@ -3968,7 +3971,7 @@ static void open_pin_settings_modal(lv_event_t * e) {
 
     lv_obj_t * b_apply = lv_btn_create(p);
     lv_obj_set_size(b_apply, SX(220), SY(50));
-    lv_obj_align(b_apply, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(b_apply, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     lv_obj_set_style_bg_color(b_apply, lv_color_hex(0xc06030), 0);
     lv_obj_add_event_cb(b_apply, on_pin_apply_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * la = lv_label_create(b_apply);
@@ -3986,7 +3989,7 @@ static void open_pin_settings_modal(lv_event_t * e) {
            "thermostat presets (Comfort/Home/Sleep/Away),\n"
            "+/- setpoint nudges, and schedule/manual toggle.\n"
            "Empty PIN = gate stays open even if toggle is on."));
-    lv_obj_align(note, LV_ALIGN_TOP_LEFT, SX(4), y + 64);
+    lv_obj_align(note, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 60));
 }
 
 /* ===================================================================== */
@@ -4156,7 +4159,7 @@ static void rebuild_topic_checkboxes(void) {
             lv_obj_add_state(cb_topics[i], LV_STATE_CHECKED);
 
         lbl_topics[i] = lv_label_create(row);
-        lv_obj_set_style_text_color(lbl_topics[i], lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_color(lbl_topics[i], lv_color_hex(THEME_TEXT_HI), 0);
         lv_obj_set_style_text_font(lbl_topics[i], SF(18), 0);
         lv_label_set_text(lbl_topics[i], snap[i]);
         lv_obj_align(lbl_topics[i], LV_ALIGN_LEFT_MID, SX(36), 0);
@@ -4241,7 +4244,7 @@ static void open_mqtt_modal(lv_event_t * e) {
 
     /* Host */
     lv_obj_t * lbl_h = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_h, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lbl_h, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_h, SF(22), 0);
     lv_label_set_text(lbl_h, tr("Broker-host:", "Broker host:"));
     lv_obj_align(lbl_h, LV_ALIGN_TOP_LEFT, SX(4), y);
@@ -4252,7 +4255,7 @@ static void open_mqtt_modal(lv_event_t * e) {
     lv_textarea_set_text(ta_mqtt_host, settings.mqtt_host);
     /* Port — separate text area on the right */
     lv_obj_t * lbl_p = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_p, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lbl_p, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_p, SF(22), 0);
     lv_label_set_text(lbl_p, tr("Poort:", "Port:"));
     lv_obj_align(lbl_p, LV_ALIGN_TOP_LEFT, SX(640), y);
@@ -4267,7 +4270,7 @@ static void open_mqtt_modal(lv_event_t * e) {
 
     /* User */
     lv_obj_t * lbl_u = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_u, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lbl_u, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_u, SF(22), 0);
     lv_label_set_text(lbl_u, tr("Gebruiker (opt):", "User (opt):"));
     lv_obj_align(lbl_u, LV_ALIGN_TOP_LEFT, SX(4), y);
@@ -4280,7 +4283,7 @@ static void open_mqtt_modal(lv_event_t * e) {
 
     /* Pass */
     lv_obj_t * lbl_pw = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_pw, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lbl_pw, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_pw, SF(22), 0);
     lv_label_set_text(lbl_pw, tr("Wachtwoord (opt):", "Pass (opt):"));
     lv_obj_align(lbl_pw, LV_ALIGN_TOP_LEFT, SX(4), y);
@@ -4470,7 +4473,7 @@ static void open_sonos_modal(lv_event_t * e) {
 
     /* Discovered zones dropdown + Scan button */
     lv_obj_t * lbl_dd = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_dd, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lbl_dd, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_dd, SF(22), 0);
     lv_label_set_text(lbl_dd, tr("Kamer / Zone:", "Room / Zone:"));
     lv_obj_align(lbl_dd, LV_ALIGN_TOP_LEFT, SX(4), y);

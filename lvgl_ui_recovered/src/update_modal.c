@@ -365,12 +365,13 @@ void update_modal_open(lv_obj_t * parent) {
     lv_obj_add_event_cb(s_update_modal, on_modal_close_event, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t * panel = lv_obj_create(s_update_modal);
-    lv_obj_set_size(panel, SX(760), SY(470));
+    lv_obj_set_size(panel, SX(760), SY(520));
     lv_obj_center(panel);
     lv_obj_set_style_bg_color(panel, lv_color_hex(0x16243a), 0);
     lv_obj_set_style_border_width(panel, 0, 0);
     lv_obj_set_style_radius(panel, 18, 0);
-    lv_obj_set_style_pad_all(panel, 22, 0);
+    lv_obj_set_style_pad_hor(panel, SX(20), 0);
+    lv_obj_set_style_pad_ver(panel, SY(16), 0);
     lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(panel, LV_OBJ_FLAG_CLICKABLE);
 
@@ -410,16 +411,16 @@ void update_modal_open(lv_obj_t * parent) {
 
     /* Live status line */
     s_about_status_lbl = lv_label_create(panel);
-    lv_obj_set_style_text_font(s_about_status_lbl, SF(22), 0);
+    lv_obj_set_style_text_font(s_about_status_lbl, SF(20), 0);
     lv_obj_set_style_text_color(s_about_status_lbl, lv_color_hex(0xffffff), 0);
     lv_obj_set_width(s_about_status_lbl, SX(716));
     lv_label_set_long_mode(s_about_status_lbl, LV_LABEL_LONG_WRAP);
-    lv_obj_align(s_about_status_lbl, LV_ALIGN_TOP_LEFT, 0, SY(70));
+    lv_obj_align(s_about_status_lbl, LV_ALIGN_TOP_LEFT, 0, SY(62));
 
     /* Release notes box */
     lv_obj_t * notesbox = lv_obj_create(panel);
-    lv_obj_set_size(notesbox, SX(716), SY(230));
-    lv_obj_align(notesbox, LV_ALIGN_TOP_LEFT, 0, SY(110));
+    lv_obj_set_size(notesbox, SX(716), SY(185));
+    lv_obj_align(notesbox, LV_ALIGN_TOP_LEFT, 0, SY(96));
     lv_obj_set_style_bg_color(notesbox, lv_color_hex(0x0e1a2a), 0);
     lv_obj_set_style_border_width(notesbox, 0, 0);
     lv_obj_set_style_radius(notesbox, 10, 0);
@@ -457,9 +458,9 @@ void update_modal_open(lv_obj_t * parent) {
     lv_obj_set_style_text_color(au_lbl, lv_color_hex(0xc8d4e0), 0);
     lv_label_set_text_fmt(au_lbl, tr("Auto-update 's nachts (~%02d:00)",
                                      "Auto-update nightly (~%02d:00)"), settings.auto_update_hour);
-    lv_obj_align(au_lbl, LV_ALIGN_TOP_LEFT, 0, SY(350));
+    lv_obj_align(au_lbl, LV_ALIGN_TOP_LEFT, 0, SY(296));
     lv_obj_t * au_sw = lv_switch_create(panel);
-    lv_obj_align(au_sw, LV_ALIGN_TOP_LEFT, SX(320), SY(344));
+    lv_obj_align(au_sw, LV_ALIGN_TOP_LEFT, SX(320), SY(290));
     if (settings.auto_update_enabled) lv_obj_add_state(au_sw, LV_STATE_CHECKED);
     lv_obj_add_event_cb(au_sw, on_auto_update_toggle, LV_EVENT_VALUE_CHANGED, NULL);
 
@@ -468,15 +469,15 @@ void update_modal_open(lv_obj_t * parent) {
     lv_obj_set_style_text_font(ch_lbl, SF(18), 0);
     lv_obj_set_style_text_color(ch_lbl, lv_color_hex(0xc8d4e0), 0);
     lv_label_set_text(ch_lbl, tr("Beta / dev", "Beta / dev"));
-    lv_obj_align(ch_lbl, LV_ALIGN_TOP_LEFT, SX(430), SY(350));
+    lv_obj_align(ch_lbl, LV_ALIGN_TOP_LEFT, SX(430), SY(296));
     lv_obj_t * ch_sw = lv_switch_create(panel);
-    lv_obj_align(ch_sw, LV_ALIGN_TOP_LEFT, SX(600), SY(344));
+    lv_obj_align(ch_sw, LV_ALIGN_TOP_LEFT, SX(600), SY(290));
     if (settings.update_channel) lv_obj_add_state(ch_sw, LV_STATE_CHECKED);
     lv_obj_add_event_cb(ch_sw, on_channel_toggle, LV_EVENT_VALUE_CHANGED, NULL);
 
     /* Button row */
     lv_obj_t * b_check = lv_btn_create(panel);
-    lv_obj_set_size(b_check, SX(180), SY(56));
+    lv_obj_set_size(b_check, SX(180), SY(50));
     lv_obj_align(b_check, LV_ALIGN_BOTTOM_LEFT, 0, 0);
     lv_obj_set_style_bg_color(b_check, lv_color_hex(0x2a4060), 0);
     lv_obj_add_event_cb(b_check, do_check_updates, LV_EVENT_CLICKED, NULL);
@@ -488,7 +489,7 @@ void update_modal_open(lv_obj_t * parent) {
     s_update_modal_has_install = g_update_state.available ? 1 : 0;
     if (g_update_state.available) {
         lv_obj_t * b_inst = lv_btn_create(panel);
-        lv_obj_set_size(b_inst, SX(150), SY(56));
+        lv_obj_set_size(b_inst, SX(150), SY(50));
         lv_obj_align(b_inst, LV_ALIGN_BOTTOM_LEFT, SX(188), 0);
         lv_obj_set_style_bg_color(b_inst, lv_color_hex(0x2e6e3a), 0);
         lv_obj_add_event_cb(b_inst, do_install_now, LV_EVENT_CLICKED, NULL);
@@ -498,7 +499,7 @@ void update_modal_open(lv_obj_t * parent) {
         lv_obj_center(il);
 
         lv_obj_t * b_skip = lv_btn_create(panel);
-        lv_obj_set_size(b_skip, SX(96), SY(56));
+        lv_obj_set_size(b_skip, SX(96), SY(50));
         lv_obj_align(b_skip, LV_ALIGN_BOTTOM_LEFT, SX(346), 0);
         lv_obj_set_style_bg_color(b_skip, lv_color_hex(0x6a5424), 0);
         lv_obj_add_event_cb(b_skip, do_skip_version, LV_EVENT_CLICKED, NULL);
@@ -508,7 +509,7 @@ void update_modal_open(lv_obj_t * parent) {
         lv_obj_center(sl);
 
         lv_obj_t * b_dis = lv_btn_create(panel);
-        lv_obj_set_size(b_dis, SX(130), SY(56));
+        lv_obj_set_size(b_dis, SX(130), SY(50));
         lv_obj_align(b_dis, LV_ALIGN_BOTTOM_LEFT, SX(450), 0);
         lv_obj_set_style_bg_color(b_dis, lv_color_hex(0x33445a), 0);
         lv_obj_add_event_cb(b_dis, do_dismiss_to_envelope, LV_EVENT_CLICKED, NULL);
@@ -519,7 +520,7 @@ void update_modal_open(lv_obj_t * parent) {
     }
 
     lv_obj_t * x = lv_btn_create(panel);
-    lv_obj_set_size(x, SX(120), SY(56));
+    lv_obj_set_size(x, SX(120), SY(50));
     lv_obj_align(x, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     lv_obj_set_style_bg_color(x, lv_color_hex(0x33445a), 0);
     lv_obj_add_event_cb(x, on_modal_close_event, LV_EVENT_CLICKED, NULL);
