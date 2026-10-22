@@ -61,6 +61,7 @@ typedef struct integration_meta_s {
     char id[INTEG_ID_MAX];
     char name[INTEG_NAME_MAX];
     char service_id[INTEG_SERVICE_MAX];
+    char tile_type[24];                /* "media_player", "agenda_list", "switch_grid", "chart_24h", or "" */
     char tile_title[INTEG_NAME_MAX];
     char tile_color[12];               /* "0xRRGGBB" string from manifest */
     char tile_icon[16];                /* "sun" / "drop" / etc., maps via icons.h */

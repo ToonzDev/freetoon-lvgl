@@ -105,6 +105,7 @@ static int load_manifest(const char * dir_path) {
     if (!extract_str(json, "id", m->id, sizeof m->id)) return -1;
     extract_str(json, "name",       m->name,       sizeof m->name);
     extract_str(json, "service_id", m->service_id, sizeof m->service_id);
+    extract_tile_str(json, "type",          m->tile_type,     sizeof m->tile_type);
     extract_tile_str(json, "title",         m->tile_title,    sizeof m->tile_title);
     extract_tile_str(json, "color",         m->tile_color,    sizeof m->tile_color);
     extract_tile_str(json, "icon",          m->tile_icon,     sizeof m->tile_icon);

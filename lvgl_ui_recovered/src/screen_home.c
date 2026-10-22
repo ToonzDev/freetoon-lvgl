@@ -490,11 +490,14 @@ static void open_family_map(lv_event_t * e);
 
 static int open_integration_by_id(const char * b) {
     if (!b || !b[0]) return 0;
-    if (!strcmp(b, "local:agenda")) {
+    const integration_meta_t * meta = tile_slots_integration_by_id(b);
+    if (!strcmp(b, "local:agenda") || !strcmp(b, "agenda") ||
+        (meta && (!strcmp(meta->detail_type, "agenda_view") || !strcmp(meta->tile_type, "agenda_list")))) {
         screen_calendar_show();
         return 1;
     }
-    if (!strcmp(b, "local:sonos")) {
+    if (!strcmp(b, "local:sonos") || !strcmp(b, "sonos") ||
+        (meta && (!strcmp(meta->detail_type, "media_player") || !strcmp(meta->tile_type, "media_player") || !strcmp(meta->detail_type, "custom_screen")))) {
         screen_sonos_show();
         return 1;
     }
@@ -502,8 +505,18 @@ static int open_integration_by_id(const char * b) {
         ui_push(screen_stats_create());
         return 1;
     }
-    if (!strcmp(b, "local:vent")) {
+    if (!strcmp(b, "local:vent") || !strcmp(b, "ventilation") || (meta && !strcmp(meta->id, "ventilation"))) {
         ui_push(screen_vent_remote_create());
+        return 1;
+    }
+    if (!strcmp(b, "domoticz") || (meta && !strcmp(meta->id, "domoticz"))) {
+        extern lv_obj_t * screen_domoticz_create(void);
+        ui_push(screen_domoticz_create());
+        return 1;
+    }
+    if (!strcmp(b, "homeassistant") || (meta && !strcmp(meta->id, "homeassistant"))) {
+        extern lv_obj_t * screen_ha_devices_create(void);
+        ui_push(screen_ha_devices_create());
         return 1;
     }
     if (!strcmp(b, "local:family")) {
@@ -517,7 +530,6 @@ static int open_integration_by_id(const char * b) {
         ui_push(screen_chart_24h_create(tile_slots_integration_by_id("temperaturelogger")));
         return 1;
     }
-    const integration_meta_t * meta = tile_slots_integration_by_id(b);
     if (meta) {
         if (!strcmp(meta->detail_type, "chart_24h")) {
             ui_push(screen_chart_24h_create(meta));
@@ -1560,9 +1572,9 @@ static int slot_render_or_agenda(int slot, int ai, lv_obj_t * lbl_main, lv_obj_t
         const char * title_to_show = NULL;
         if (b && (!strcmp(b, "local:templogger") || !strcmp(b, "temperaturelogger"))) {
             title_to_show = tr("Temperatuur", "Temperature");
-        } else if (b && !strcmp(b, "local:agenda")) {
+        } else if (b && (!strcmp(b, "local:agenda") || !strcmp(b, "agenda") || (m && !strcmp(m->tile_type, "agenda_list")))) {
             title_to_show = tr("Agenda", "Calendar");
-        } else if (b && !strcmp(b, "local:sonos")) {
+        } else if (b && (!strcmp(b, "local:sonos") || !strcmp(b, "sonos") || (m && !strcmp(m->tile_type, "media_player")))) {
             title_to_show = "Sonos";
         } else if (b && !strcmp(b, "local:waste")) {
             title_to_show = tr("Afval", "Waste");
@@ -1583,7 +1595,7 @@ static int slot_render_or_agenda(int slot, int ai, lv_obj_t * lbl_main, lv_obj_t
         }
     }
 
-    if (b && !strcmp(b, "local:agenda")) {
+    if (b && (!strcmp(b, "local:agenda") || !strcmp(b, "agenda") || (m && !strcmp(m->tile_type, "agenda_list")))) {
         if (slot_sonos[ai]) lv_obj_add_flag(slot_sonos[ai]->root, LV_OBJ_FLAG_HIDDEN);
         if (slot_waste[ai]) lv_obj_add_flag(slot_waste[ai], LV_OBJ_FLAG_HIDDEN);
         if (slot_templogger[ai]) lv_obj_add_flag(slot_templogger[ai]->root, LV_OBJ_FLAG_HIDDEN);
@@ -1593,7 +1605,7 @@ static int slot_render_or_agenda(int slot, int ai, lv_obj_t * lbl_main, lv_obj_t
     }
     if (slot_agenda[ai]) lv_obj_add_flag(slot_agenda[ai]->root, LV_OBJ_FLAG_HIDDEN);
 
-    if (b && !strcmp(b, "local:sonos")) {
+    if (b && (!strcmp(b, "local:sonos") || !strcmp(b, "sonos") || (m && !strcmp(m->tile_type, "media_player")))) {
         if (slot_waste[ai]) lv_obj_add_flag(slot_waste[ai], LV_OBJ_FLAG_HIDDEN);
         if (slot_templogger[ai]) lv_obj_add_flag(slot_templogger[ai]->root, LV_OBJ_FLAG_HIDDEN);
         if (slot_sonos[ai]) {
