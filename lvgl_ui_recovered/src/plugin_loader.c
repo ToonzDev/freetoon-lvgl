@@ -18,11 +18,17 @@ typedef struct {
     void * dl_handle;
 } plugin_screen_ctx_t;
 
+static void async_dlclose(void * handle) {
+    if (handle) {
+        dlclose(handle);
+    }
+}
+
 static void on_plugin_screen_del(lv_event_t * e) {
     plugin_screen_ctx_t * ctx = (plugin_screen_ctx_t *)lv_event_get_user_data(e);
     if (ctx) {
         if (ctx->dl_handle) {
-            dlclose(ctx->dl_handle);
+            lv_async_call(async_dlclose, ctx->dl_handle);
         }
         free(ctx);
     }
