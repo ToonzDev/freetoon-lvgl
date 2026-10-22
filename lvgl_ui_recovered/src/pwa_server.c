@@ -40,6 +40,7 @@
 #include "screen_zwave.h"
 #include "notify.h"
 #include "update_check.h"
+#include "canonical_state.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1754,6 +1755,196 @@ static int auth_gate(int fd, const char * method, const char * path, const char 
     return 1;
 }
 
+/* -------------------------------------------------------------------------
+ * /api/v1 Core REST & SSE Event Stream
+ * ------------------------------------------------------------------------- */
+
+static int send_json_response(int fd, int code, const char * body) {
+    size_t len = body ? strlen(body) : 0;
+    char hdr[256];
+    int hn = snprintf(hdr, sizeof(hdr),
+        "HTTP/1.1 %d %s\r\nContent-Type: application/json\r\nContent-Length: %zu\r\n"
+        "Cache-Control: no-store\r\nConnection: close\r\n"
+        "Access-Control-Allow-Origin: *\r\n\r\n",
+        code, (code == 200) ? "OK" : "Error", len);
+    if (sock_send_all(fd, hdr, hn) < 0) return -1;
+    return len ? sock_send_all(fd, body, len) : 0;
+}
+
+static int handle_v1_state(int fd) {
+    char buf[4096];
+    canonical_state_render_full_json(buf, sizeof(buf));
+    return send_json_response(fd, 200, buf);
+}
+
+static int handle_v1_thermostat_get(int fd) {
+    char buf[512];
+    canonical_state_render_thermostat_json(buf, sizeof(buf));
+    return send_json_response(fd, 200, buf);
+}
+
+static int handle_v1_setpoint_post(int fd, const char * body) {
+    float v;
+    if (!extract_float(body, "value", &v)) {
+        return send_json_response(fd, 400, "{\"error\":\"Missing or invalid 'value' (expected e.g. 20.5)\"}");
+    }
+    if (canonical_state_set_setpoint(v) != 0) {
+        return send_json_response(fd, 500, "{\"error\":\"Failed to apply setpoint\"}");
+    }
+    return send_json_response(fd, 200, "{\"ok\":true}");
+}
+
+static int handle_v1_preset_post(int fd, const char * body) {
+    int s;
+    if (!extract_int(body, "state", &s)) {
+        return send_json_response(fd, 400, "{\"error\":\"Missing 'state' (0=Comfort, 1=Home, 2=Sleep, 3=Away, -1=Manual)\"}");
+    }
+    if (canonical_state_set_preset(s) != 0) {
+        return send_json_response(fd, 500, "{\"error\":\"Failed to apply preset\"}");
+    }
+    return send_json_response(fd, 200, "{\"ok\":true}");
+}
+
+static int handle_v1_boiler_get(int fd) {
+    char buf[512];
+    canonical_state_render_boiler_json(buf, sizeof(buf));
+    return send_json_response(fd, 200, buf);
+}
+
+static int handle_v1_boiler_mode_post(int fd, const char * body) {
+    int mode;
+    if (!extract_int(body, "mode", &mode)) {
+        return send_json_response(fd, 400, "{\"error\":\"Missing 'mode' (0=OpenTherm, 1=On/Off)\"}");
+    }
+    if (canonical_state_set_boiler_mode(mode) != 0) {
+        return send_json_response(fd, 500, "{\"error\":\"Failed to set boiler mode\"}");
+    }
+    return send_json_response(fd, 200, "{\"ok\":true}");
+}
+
+static int handle_v1_sensors_get(int fd) {
+    char buf[512];
+    canonical_state_render_sensors_json(buf, sizeof(buf));
+    return send_json_response(fd, 200, buf);
+}
+
+static int handle_v1_energy_live_get(int fd) {
+    char buf[512];
+    canonical_state_render_energy_json(buf, sizeof(buf));
+    return send_json_response(fd, 200, buf);
+}
+
+static int handle_v1_events(int fd) {
+    const char * hdr =
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: text/event-stream\r\n"
+        "Cache-Control: no-cache\r\n"
+        "Connection: keep-alive\r\n"
+        "X-Accel-Buffering: no\r\n"
+        "Access-Control-Allow-Origin: *\r\n\r\n";
+    if (sock_send_all(fd, hdr, strlen(hdr)) < 0) return -1;
+    struct timeval tv = { .tv_sec = 2, .tv_usec = 0 };
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+
+    char * buf = malloc(8192);
+    char * last_therm = malloc(512);
+    char * last_boiler = malloc(512);
+    char * last_sensors = malloc(512);
+    char * last_energy = malloc(512);
+    char * cur = malloc(512);
+
+    if (!buf || !last_therm || !last_boiler || !last_sensors || !last_energy || !cur) {
+        free(buf); free(last_therm); free(last_boiler);
+        free(last_sensors); free(last_energy); free(cur);
+        return -1;
+    }
+
+    last_therm[0] = last_boiler[0] = last_sensors[0] = last_energy[0] = 0;
+
+    /* Push full initial canonical state */
+    int n = canonical_state_render_full_json(buf, 8192);
+    if (n > 0) {
+        char prefix[64];
+        int pn = snprintf(prefix, sizeof(prefix), "event: state\ndata: ");
+        if (sock_send_all(fd, prefix, pn) < 0 ||
+            sock_send_all(fd, buf, n) < 0 ||
+            sock_send_all(fd, "\n\n", 2) < 0) {
+            goto cleanup;
+        }
+    }
+
+    /* Baseline snapshots */
+    canonical_state_render_thermostat_json(last_therm, 512);
+    canonical_state_render_boiler_json(last_boiler, 512);
+    canonical_state_render_sensors_json(last_sensors, 512);
+    canonical_state_render_energy_json(last_energy, 512);
+
+    int ticks = 0;
+    while (1) {
+        usleep(1000 * 1000); /* 1 Hz event loop */
+        ticks++;
+
+        /* Thermostat diff */
+        canonical_state_render_thermostat_json(cur, 512);
+        if (strcmp(cur, last_therm) != 0) {
+            int en = snprintf(buf, 8192, "event: thermostat\ndata: %s\n\n", cur);
+            if (sock_send_all(fd, buf, en) < 0) break;
+            strcpy(last_therm, cur);
+        }
+
+        /* Boiler diff */
+        canonical_state_render_boiler_json(cur, 512);
+        if (strcmp(cur, last_boiler) != 0) {
+            int en = snprintf(buf, 8192, "event: boiler\ndata: %s\n\n", cur);
+            if (sock_send_all(fd, buf, en) < 0) break;
+            strcpy(last_boiler, cur);
+        }
+
+        /* Sensors diff */
+        canonical_state_render_sensors_json(cur, 512);
+        if (strcmp(cur, last_sensors) != 0) {
+            int en = snprintf(buf, 8192, "event: sensors\ndata: %s\n\n", cur);
+            if (sock_send_all(fd, buf, en) < 0) break;
+            strcpy(last_sensors, cur);
+        }
+
+        /* Energy diff */
+        canonical_state_render_energy_json(cur, 512);
+        if (strcmp(cur, last_energy) != 0) {
+            int en = snprintf(buf, 8192, "event: energy\ndata: %s\n\n", cur);
+            if (sock_send_all(fd, buf, en) < 0) break;
+            strcpy(last_energy, cur);
+        }
+
+        /* Heartbeat every 10 seconds */
+        if (ticks >= 10) {
+            ticks = 0;
+            if (sock_send_all(fd, ": keepalive\n\n", 13) < 0) break;
+        }
+    }
+
+cleanup:
+    free(buf);
+    free(last_therm);
+    free(last_boiler);
+    free(last_sensors);
+    free(last_energy);
+    free(cur);
+    return 0;
+}
+
+static int handle_v1_app_state_post(int fd, const char * app_id, const char * body) {
+    char val[INTEG_VALUE_MAX] = "";
+    char sub[INTEG_VALUE_MAX] = "";
+    char alert[INTEG_VALUE_MAX] = "";
+    extract_str(body, "value", val, sizeof(val));
+    extract_str(body, "subtitle", sub, sizeof(sub));
+    extract_str(body, "alert", alert, sizeof(alert));
+
+    tile_slots_set_value(app_id, val[0] ? val : NULL, sub[0] ? sub : NULL, alert[0] ? alert : NULL);
+    return send_json_response(fd, 200, "{\"ok\":true}");
+}
+
 static int dispatch(int fd, char * req) {
     char method[8] = "", path[256] = "";
     if (sscanf(req, "%7s %255s", method, path) != 2) {
@@ -1782,6 +1973,15 @@ static int dispatch(int fd, char * req) {
     }
 
     if (!strcmp(method, "GET")) {
+        /* ---- /api/v1 REST & SSE Engine ---- */
+        if (!strcmp(path, "/api/v1/state"))              return handle_v1_state(fd);
+        if (!strcmp(path, "/api/v1/events"))             return handle_v1_events(fd);
+        if (!strcmp(path, "/api/v1/thermostat"))         return handle_v1_thermostat_get(fd);
+        if (!strcmp(path, "/api/v1/boiler"))             return handle_v1_boiler_get(fd);
+        if (!strcmp(path, "/api/v1/sensors"))            return handle_v1_sensors_get(fd);
+        if (!strcmp(path, "/api/v1/energy/live"))        return handle_v1_energy_live_get(fd);
+
+        /* ---- Legacy / PWA endpoints ---- */
         if (!strcmp(path, "/api/state"))         return handle_state(fd);
         if (!strcmp(path, "/api/state/stream"))  return handle_state_stream(fd);
         if (!strcmp(path, "/api/radar.gif"))     return handle_radar_gif(fd);
@@ -1800,6 +2000,12 @@ static int dispatch(int fd, char * req) {
         return serve_static(fd, path);
     }
     if (!strcmp(method, "POST")) {
+        /* ---- /api/v1 Actions ---- */
+        if (!strcmp(path, "/api/v1/thermostat/setpoint")) return handle_v1_setpoint_post(fd, body);
+        if (!strcmp(path, "/api/v1/thermostat/state"))    return handle_v1_preset_post(fd, body);
+        if (!strcmp(path, "/api/v1/boiler/mode"))         return handle_v1_boiler_mode_post(fd, body);
+
+        /* ---- Legacy / PWA endpoints ---- */
         if (!strcmp(path, "/api/setpoint")) return handle_setpoint(fd, body);
         if (!strcmp(path, "/api/program"))  return handle_program(fd, body);
         if (!strcmp(path, "/api/schedule")) return handle_schedule_post(fd, body);
@@ -1811,6 +2017,18 @@ static int dispatch(int fd, char * req) {
         if (!strcmp(path, "/api/install"))  return handle_install_post(fd, body, 0);
         if (!strcmp(path, "/api/uninstall")) return handle_install_post(fd, body, 1);
         if (!strcmp(path, "/api/vent"))     return handle_vent_post(fd, body);
+        /* POST /api/v1/marketplace/apps/<id>/state */
+        if (!strncmp(path, "/api/v1/marketplace/apps/", 25)) {
+            const char * tail = path + 25;
+            const char * slash = strchr(tail, '/');
+            if (slash && !strcmp(slash, "/state")) {
+                char app_id[48]; size_t L = (size_t)(slash - tail);
+                if (L >= sizeof(app_id)) L = sizeof(app_id) - 1;
+                memcpy(app_id, tail, L); app_id[L] = 0;
+                return handle_v1_app_state_post(fd, app_id, body);
+            }
+        }
+
         /* POST /api/packages/<id>/receive */
         if (!strncmp(path, "/api/packages/", 14)) {
             const char * tail = path + 14;

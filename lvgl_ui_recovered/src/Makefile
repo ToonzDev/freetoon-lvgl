@@ -140,7 +140,7 @@ APP_SRC       := $(ENTRY) $(GLIBC_SRC) boxtalk.c ui_stack.c screen_home.c screen
                  screen_chart_24h.c \
                  stats.c airhist.c homewizard.c p1esphome.c energy.c meteradapter.c domoticz.c weather.c otgw.c http.c inbox.c rrd_push.c templogger.c \
                  wastecollection.c ventilation.c homeassistant.c ha_mqtt.c efanlamp.c monocypher.c sha2.c sonos.c \
-                 notify.c healthcheck.c pwa_server.c packages.c mqtt_client.c \
+                 notify.c healthcheck.c pwa_server.c canonical_state.c packages.c mqtt_client.c \
                  schedule.c icons.c backlight.c settings.c bootpick.c update_check.c \
                  tile_slots.c client_link.c news.c doorbell.c calendar.c layout.c \
                  toon1_touch.c pin_modal.c update_modal.c video.c ui_cmd.c \

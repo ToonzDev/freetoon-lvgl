@@ -8,6 +8,7 @@
  */
 #include "meteradapter.h"
 #include "settings.h"
+#include "canonical_state.h"
 #include <pthread.h>
 #include <unistd.h>
 #include <time.h>
@@ -95,6 +96,7 @@ void meteradapter_on_flow(float watts) {
         fprintf(stderr, "[meteradapter] connected! live power = %.1f W\n", (double)watts);
     }
     meter_state.connected    = 1;
+    canonical_state_notify(CSTATE_EVT_ENERGY);
 }
 
 /* Probe happ_pwrusage on 127.0.0.1:10080 for live meter wattage and diagnostics.

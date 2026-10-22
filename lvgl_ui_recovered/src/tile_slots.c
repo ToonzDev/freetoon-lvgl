@@ -301,6 +301,25 @@ void tile_slots_set_from_remote(int n, const integration_meta_t * src) {
     g_integ_count = n;
 }
 
+void tile_slots_set_value(const char * integration_id, const char * val, const char * sub, const char * alert) {
+    if (!integration_id || !integration_id[0]) return;
+    for (int i = 0; i < g_integ_count; i++) {
+        if (strcmp(g_integ[i].id, integration_id) == 0) {
+            if (val) snprintf((char *)g_integ[i].latest_value, sizeof(g_integ[i].latest_value), "%s", val);
+            if (sub) snprintf((char *)g_integ[i].latest_subtitle, sizeof(g_integ[i].latest_subtitle), "%s", sub);
+            if (alert) {
+                if (strcmp(alert, (char *)g_integ[i].latest_alert) != 0) {
+                    if (alert[0]) notify_show("integration", g_integ[i].service_id, alert);
+                    else          notify_clear("integration", g_integ[i].service_id);
+                    snprintf((char *)g_integ[i].latest_alert, sizeof(g_integ[i].latest_alert), "%s", alert);
+                }
+            }
+            g_integ[i].latest_epoch = (long)time(NULL);
+            return;
+        }
+    }
+}
+
 void tile_slots_on_notify(const char * service_id, const char * xml) {
     integration_meta_t * m = tile_slots_integration_by_service(service_id);
     if (!m) return;

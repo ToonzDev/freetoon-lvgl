@@ -18,6 +18,7 @@
 #include "meteradapter.h"
 #include "client_link.h"
 #include "http.h"
+#include "canonical_state.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1161,6 +1162,7 @@ static void* http_poll_thread(void* arg) {
          * lights up half a minute after the boiler kicks in" complaints.
          * burner_on / dhw_on / active_state / setpoint all ride this poll;
          * happ_thermstat is the local loopback so the cost is negligible. */
+        canonical_state_notify(CSTATE_EVT_THERMOSTAT | CSTATE_EVT_BOILER);
         sleep(3);
     }
     return NULL;

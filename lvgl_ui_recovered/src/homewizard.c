@@ -11,6 +11,7 @@
 #include "meteradapter.h"
 #include "rrd_push.h"
 #include "settings.h"
+#include "canonical_state.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -140,6 +141,7 @@ static void poll_p1(void) {
     hw_state.current_l1_a     = (float)parse_num(j, "active_current_a",       0);
     hw_state.connected_p1     = 1;
     homewizard_unlock();
+    canonical_state_notify(CSTATE_EVT_ENERGY);
 }
 
 /* Track per-pour session totals. session_start_m3 is captured the moment
