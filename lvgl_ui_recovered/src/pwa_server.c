@@ -38,7 +38,6 @@
 #include "tile_slots.h"
 #include "packages.h"
 #include "screen_zwave.h"
-#include "sonos.h"
 #include "notify.h"
 #include "update_check.h"
 #include "canonical_state.h"
@@ -1941,16 +1940,6 @@ static int handle_v1_app_state_post(int fd, const char * app_id, const char * bo
     extract_str(body, "value", val, sizeof(val));
     extract_str(body, "subtitle", sub, sizeof(sub));
     extract_str(body, "alert", alert, sizeof(alert));
-
-    if (!strcmp(app_id, "sonos")) {
-        if (val[0]) snprintf(sonos_state.title, sizeof(sonos_state.title), "%s", val);
-        if (sub[0]) snprintf(sonos_state.artist, sizeof(sonos_state.artist), "%s", sub);
-        int playing = 0;
-        if (extract_int(body, "playing", &playing)) sonos_state.playing = playing;
-        int vol = 0;
-        if (extract_int(body, "volume", &vol)) sonos_state.volume = vol;
-        sonos_state.connected = 1;
-    }
 
     tile_slots_set_value(app_id, val[0] ? val : NULL, sub[0] ? sub : NULL, alert[0] ? alert : NULL);
     return send_json_response(fd, 200, "{\"ok\":true}");

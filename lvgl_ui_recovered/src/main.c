@@ -174,6 +174,11 @@ int main(int argc, char** argv) {
         extern int domoticz_start(void);
         if (domoticz_start() != 0) fprintf(stderr, "[main] domoticz_start failed\n");
     }
+    if (settings.sonos_enabled && settings.sonos_host[0]) {
+        extern int sonos_start(void);
+        if (sonos_start() != 0)
+            fprintf(stderr, "[main] sonos_start failed\n");
+    }
     if (weather_start() != 0)
         fprintf(stderr, "[main] weather_start failed\n");
     if (settings.show_dim_waste || settings.waste_postcode[0]) {
