@@ -129,9 +129,10 @@ BIN=$(sed -n 's/.*"binary":[ ]*"\([^"]*\)".*/\1/p' "$INTEGRATIONS_DIR/$ID/manife
 
 # 4-char inittab id from the integration id; safe to collide with existing
 # rows because upsert keys on this id and replaces.
+# Use 2345 (or blank in busybox) so it runs in all active runlevels (Toon often runs in runlevel 2 or 5).
 ROW_ID=$(echo "$ID" | tr -dc 'a-zA-Z0-9' | cut -c1-4)
 LOG_PATH="/var/volatile/tmp/integration-$ID.log"
-ROW="$ROW_ID:345:respawn:$INTEGRATIONS_DIR/$ID/$BIN >> $LOG_PATH 2>&1"
+ROW="$ROW_ID:2345:respawn:$INTEGRATIONS_DIR/$ID/$BIN >> $LOG_PATH 2>&1"
 
 log "wiring inittab row '$ROW_ID' -> $BIN"
 grep -v "^${ROW_ID}:" /etc/inittab > /etc/inittab.new 2>/dev/null || true
