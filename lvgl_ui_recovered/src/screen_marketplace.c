@@ -75,6 +75,8 @@ static const struct {
       "24-uurs temperatuurlogger met grafiek (kamer, setpoint, buiten)." },
     { "crypto", "Crypto Tracker", "1.0.0",
       "Live crypto koersen en 24h verandering via CoinGecko." },
+    { "sonos", "Sonos Player", "1.0.0",
+      "Native Sonos UPnP / SOAP controller met favorieten, radio en volume." },
     { "domoticz", "Domoticz Home Automation", "1.0.0",
       "Schakelaars, dimmers en zonwering via Domoticz HTTP JSON API." },
     { "homeassistant", "Home Assistant", "1.0.0",
@@ -278,7 +280,7 @@ static void * uninstall_thread(void * arg) {
     /* Unbind from any tile slot in settings if currently bound */
     for (int s = 0; s < TILE_SLOT_COUNT; s++) {
         const char * b = tile_slots_binding(s);
-        if (b && strcmp(b, e->id) == 0) {
+        if (b && (strcmp(b, e->id) == 0 || (strncmp(b, "local:", 6) == 0 && strcmp(b + 6, e->id) == 0))) {
             tile_slots_bind(s, "");
         }
     }
