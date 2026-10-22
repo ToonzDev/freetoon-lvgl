@@ -12,7 +12,6 @@
 #include "settings.h"
 #include "backlight.h"
 #include "boxtalk.h"
-#include "sonos.h"
 #include <stdio.h>
 #include <unistd.h>
 
@@ -115,7 +114,6 @@ void ui_idle_tick(void) {
          * 15s background query last cached. Not polling — this is one
          * query per wake. */
         boxtalk_request_indoor_refresh();
-        sonos_request_refresh();
         ui_pop();
         is_dimmed = 0;
         apply_active_brightness();

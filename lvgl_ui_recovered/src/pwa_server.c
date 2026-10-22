@@ -1589,6 +1589,7 @@ static int path_is_public(const char * path) {
     if (!strcmp(path, "/login"))         return 1;
     if (!strcmp(path, "/set-password"))  return 1;
     if (!strcmp(path, "/logout"))        return 1;
+    if (!strncmp(path, "/api/v1/marketplace/", 20)) return 1;
     return 0;
 }
 
@@ -1735,6 +1736,14 @@ static int handle_setpass_post(int fd, const char * body) {
 /* Returns 1 if dispatch may proceed with normal route handling, 0 if
  * this function already wrote the response (auth gate fired). */
 static int auth_gate(int fd, const char * method, const char * path, const char * req) {
+    /* Loopback connections from local companion daemons / scripts never need web login */
+    struct sockaddr_in peer;
+    socklen_t plen = sizeof(peer);
+    if (getpeername(fd, (struct sockaddr *)&peer, &plen) == 0) {
+        if (peer.sin_addr.s_addr == htonl(INADDR_LOOPBACK)) {
+            return 1;
+        }
+    }
     if (!settings.pwa_login_enabled) return 1;
     if (path_is_public(path)) {
         /* Even public paths need to dispatch to their handlers — but the

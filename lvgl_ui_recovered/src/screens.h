@@ -82,10 +82,6 @@ static inline lv_obj_t * screen_templogger_create(void) {
 void screen_settings_open_tile_slots_modal(void);
 /* Open single-slot assignment modal for a specific tile slot (0..7). */
 void screen_settings_open_tile_slot_single_modal(int slot);
-/* Open the Sonos configuration modal. */
-void screen_settings_open_sonos_modal(void);
-/* Open the Sonos player & favorites modal. */
-void screen_sonos_show(void);
 
 /* Called once at boot. Loads home as root. */
 void ui_init(void);

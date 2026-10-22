@@ -33,7 +33,6 @@
 #include "pin_modal.h"
 #include "update_modal.h"
 #include "efanlamp.h"
-#include "sonos.h"
 #include "domoticz.h"
 #include "templogger.h"
 #include "screen_chart_24h.h"
@@ -496,11 +495,6 @@ static int open_integration_by_id(const char * b) {
         screen_calendar_show();
         return 1;
     }
-    if (!strcmp(b, "local:sonos") || !strcmp(b, "sonos") ||
-        (meta && (!strcmp(meta->detail_type, "media_player") || !strcmp(meta->tile_type, "media_player") || !strcmp(meta->detail_type, "custom_screen")))) {
-        screen_sonos_show();
-        return 1;
-    }
     if (!strcmp(b, "local:energy")) {
         ui_push(screen_stats_create());
         return 1;
@@ -868,30 +862,7 @@ typedef struct {
 } slot_agenda_view_t;
 
 static slot_agenda_view_t * slot_agenda[4] = {0};
-
-/* Sonos UI view structure — used both for slot overlay on right-column tiles
- * and for the standalone custom layout tile (LT_SONOS). */
-typedef struct {
-    lv_obj_t * root;
-    lv_obj_t * art_box;
-    lv_obj_t * img_art;
-    int        last_art_ver;
-    lv_obj_t * lbl_zone;
-    lv_obj_t * lbl_vol;
-    lv_obj_t * lbl_artist;
-    lv_obj_t * lbl_title;
-    lv_obj_t * lbl_status;
-    lv_obj_t * btn_voldn;
-    lv_obj_t * btn_prev;
-    lv_obj_t * btn_play;
-    lv_obj_t * lbl_play;
-    lv_obj_t * btn_next;
-    lv_obj_t * btn_volup;
-} sonos_view_t;
-
-static sonos_view_t * slot_sonos[4] = {0};
-static lv_obj_t *      slot_waste[4] = {0};
-static sonos_view_t * tile_sonos_view = NULL;
+static lv_obj_t *           slot_waste[4] = {0};
 
 typedef struct {
     lv_obj_t * root;
@@ -905,262 +876,6 @@ typedef struct {
 
 static slot_templogger_view_t * slot_templogger[4] = {0};
 static lv_obj_t * lbl_title_slot[TILE_SLOT_COUNT] = {0};
-
-static void on_sonos_tile_tap(lv_event_t * e) {
-    (void)e;
-    if (!settings.sonos_enabled) {
-        screen_settings_open_sonos_modal();
-    } else {
-        screen_sonos_show();
-    }
-}
-
-static void on_sonos_voldn(lv_event_t * e) {
-    lv_event_stop_bubbling(e);
-    sonos_volume_down();
-}
-
-static void on_sonos_prev(lv_event_t * e) {
-    lv_event_stop_bubbling(e);
-    sonos_prev();
-}
-
-static void on_sonos_playpause(lv_event_t * e) {
-    lv_event_stop_bubbling(e);
-    sonos_play_pause();
-}
-
-static void on_sonos_next(lv_event_t * e) {
-    lv_event_stop_bubbling(e);
-    sonos_next();
-}
-
-static void on_sonos_volup(lv_event_t * e) {
-    lv_event_stop_bubbling(e);
-    sonos_volume_up();
-}
-
-static sonos_view_t * make_sonos_view(lv_obj_t * parent) {
-    if (!parent) return NULL;
-    sonos_view_t * v = calloc(1, sizeof(sonos_view_t));
-    if (!v) return NULL;
-
-    v->last_art_ver = -1;
-    v->root = lv_obj_create(parent);
-    lv_obj_set_size(v->root, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_pos(v->root, 0, 0);
-    lv_obj_set_style_bg_color(v->root, lv_color_hex(COL_TILE_BG), 0);
-    lv_obj_set_style_bg_opa(v->root, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(v->root, 10, 0);
-    lv_obj_set_style_pad_all(v->root, SX(6), 0);
-    lv_obj_set_style_border_width(v->root, 0, 0);
-    lv_obj_clear_flag(v->root, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(v->root, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(v->root, on_sonos_tile_tap, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_t * abar = lv_obj_create(v->root);
-    lv_obj_set_size(abar, LV_PCT(100), SY(3));
-    lv_obj_align(abar, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_style_bg_color(abar, lv_color_hex(0x2077a0), 0);
-    lv_obj_set_style_border_width(abar, 0, 0);
-    lv_obj_set_style_radius(abar, 2, 0);
-    lv_obj_clear_flag(abar, LV_OBJ_FLAG_SCROLLABLE);
-
-    v->lbl_zone = lv_label_create(v->root);
-    lv_obj_set_style_text_color(v->lbl_zone, lv_color_hex(0x44aaff), 0);
-    lv_obj_set_style_text_font(v->lbl_zone, SF(18), 0);
-    lv_obj_align(v->lbl_zone, LV_ALIGN_TOP_LEFT, SX(2), SY(4));
-    lv_label_set_text(v->lbl_zone, "Sonos");
-
-    v->lbl_vol = lv_label_create(v->root);
-    lv_obj_set_style_text_color(v->lbl_vol, lv_color_hex(COL_TEXT_DIM), 0);
-    lv_obj_set_style_text_font(v->lbl_vol, SF(15), 0);
-    lv_obj_align(v->lbl_vol, LV_ALIGN_TOP_RIGHT, SX(-2), SY(5));
-    lv_label_set_text(v->lbl_vol, "");
-
-    /* Album art thumbnail (42x42, rounded corners) */
-    lv_coord_t y_art = (DISP_VER < 600) ? 28 : SY(32);
-    lv_coord_t y_artist = (DISP_VER < 600) ? 28 : SY(32);
-    lv_coord_t y_title = (DISP_VER < 600) ? 46 : SY(52);
-    lv_coord_t y_status = (DISP_VER < 600) ? 64 : SY(72);
-
-    v->art_box = lv_obj_create(v->root);
-    lv_obj_set_size(v->art_box, SUNI(42), SUNI(42));
-    lv_obj_set_pos(v->art_box, SX(2), y_art);
-    lv_obj_set_style_radius(v->art_box, 6, 0);
-    lv_obj_set_style_clip_corner(v->art_box, true, 0);
-    lv_obj_set_style_bg_color(v->art_box, lv_color_hex(0x132135), 0);
-    lv_obj_set_style_border_width(v->art_box, 0, 0);
-    lv_obj_set_style_pad_all(v->art_box, 0, 0);
-    lv_obj_clear_flag(v->art_box, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(v->art_box, LV_OBJ_FLAG_HIDDEN);
-
-    v->img_art = lv_img_create(v->art_box);
-    lv_img_set_pivot(v->img_art, 0, 0);
-    lv_obj_set_pos(v->img_art, 0, 0);
-
-    v->lbl_artist = lv_label_create(v->root);
-    lv_obj_set_style_text_color(v->lbl_artist, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(v->lbl_artist, SF(16), 0);
-    lv_label_set_long_mode(v->lbl_artist, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(v->lbl_artist, LV_PCT(96));
-    lv_obj_align(v->lbl_artist, LV_ALIGN_TOP_LEFT, SX(2), y_artist);
-    lv_label_set_text(v->lbl_artist, "");
-
-    v->lbl_title = lv_label_create(v->root);
-    lv_obj_set_style_text_color(v->lbl_title, lv_color_hex(0xa8c4dc), 0);
-    lv_obj_set_style_text_font(v->lbl_title, SF(14), 0);
-    lv_label_set_long_mode(v->lbl_title, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(v->lbl_title, LV_PCT(96));
-    lv_obj_align(v->lbl_title, LV_ALIGN_TOP_LEFT, SX(2), y_title);
-    lv_label_set_text(v->lbl_title, "");
-
-    v->lbl_status = lv_label_create(v->root);
-    lv_obj_set_style_text_color(v->lbl_status, lv_color_hex(0xffcc44), 0);
-    lv_obj_set_style_text_font(v->lbl_status, SF(12), 0);
-    lv_obj_align(v->lbl_status, LV_ALIGN_TOP_LEFT, SX(2), y_status);
-    lv_label_set_text(v->lbl_status, "");
-
-    lv_obj_t * bar = lv_obj_create(v->root);
-    lv_obj_set_size(bar, LV_PCT(96), (DISP_VER < 600) ? 34 : SY(38));
-    lv_obj_align(bar, LV_ALIGN_BOTTOM_MID, 0, SY(-2));
-    lv_obj_set_style_bg_opa(bar, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(bar, 0, 0);
-    lv_obj_set_style_pad_all(bar, 0, 0);
-    lv_obj_set_style_pad_hor(bar, SX(4), 0);
-    lv_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_flex_flow(bar, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(bar, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    int btn_w = (DISP_HOR < 1000) ? 52 : SX(58);
-    int btn_h = (DISP_VER < 600) ? 32 : SY(34);
-
-    #define MAKE_TBTN(btn_ptr, lbl_ptr, sym, w, fsz, cb) do { \
-        btn_ptr = lv_btn_create(bar); \
-        lv_obj_set_size(btn_ptr, w, btn_h); \
-        lv_obj_set_style_bg_color(btn_ptr, lv_color_hex(settings.home_light_mode ? 0xccdaea : 0x223a56), 0); \
-        lv_obj_set_style_radius(btn_ptr, 8, 0); \
-        lv_obj_set_style_pad_all(btn_ptr, 0, 0); \
-        lv_obj_set_ext_click_area(btn_ptr, 10); \
-        lv_obj_add_event_cb(btn_ptr, cb, LV_EVENT_CLICKED, NULL); \
-        lbl_ptr = lv_label_create(btn_ptr); \
-        lv_obj_set_style_text_color(lbl_ptr, lv_color_hex(settings.home_light_mode ? 0x1e2838 : 0xffffff), 0); \
-        lv_obj_set_style_text_font(lbl_ptr, SF(fsz), 0); \
-        lv_label_set_text(lbl_ptr, sym); \
-        lv_obj_center(lbl_ptr); \
-    } while (0)
-
-    lv_obj_t * dummy;
-    MAKE_TBTN(v->btn_prev, dummy,       LV_SYMBOL_PREV, btn_w, 18, on_sonos_prev);
-    MAKE_TBTN(v->btn_play, v->lbl_play, LV_SYMBOL_PLAY, btn_w + SX(8), 20, on_sonos_playpause);
-    MAKE_TBTN(v->btn_next, dummy,       LV_SYMBOL_NEXT, btn_w, 18, on_sonos_next);
-    #undef MAKE_TBTN
-
-    return v;
-}
-
-static void update_sonos_view(sonos_view_t * v) {
-    if (!v) return;
-    sonos_state_t st;
-    sonos_get_snapshot(&st);
-
-    lv_coord_t y_artist = (DISP_VER < 600) ? 28 : SY(32);
-    lv_coord_t y_title = (DISP_VER < 600) ? 46 : SY(52);
-    lv_coord_t y_status = (DISP_VER < 600) ? 64 : SY(72);
-
-    if (!settings.sonos_enabled) {
-        if (v->art_box) lv_obj_add_flag(v->art_box, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_pos(v->lbl_artist, SX(2), y_artist);
-        lv_obj_set_width(v->lbl_artist, LV_PCT(96));
-        lv_obj_set_pos(v->lbl_title, SX(2), y_title);
-        lv_obj_set_width(v->lbl_title, LV_PCT(96));
-        lv_obj_set_pos(v->lbl_status, SX(2), y_status);
-        lv_obj_set_width(v->lbl_status, LV_PCT(96));
-        lv_label_set_text(v->lbl_zone, "Sonos (uit)");
-        lv_label_set_text(v->lbl_artist, tr("Niet ingeschakeld", "Disabled"));
-        lv_label_set_text(v->lbl_title, tr("Tik voor instellingen", "Tap for settings"));
-        lv_label_set_text(v->lbl_status, "");
-        lv_label_set_text(v->lbl_vol, "");
-        lv_label_set_text(v->lbl_play, LV_SYMBOL_PLAY);
-        return;
-    }
-
-    if (!st.connected) {
-        if (v->art_box) lv_obj_add_flag(v->art_box, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_pos(v->lbl_artist, SX(2), y_artist);
-        lv_obj_set_width(v->lbl_artist, LV_PCT(96));
-        lv_obj_set_pos(v->lbl_title, SX(2), y_title);
-        lv_obj_set_width(v->lbl_title, LV_PCT(96));
-        lv_obj_set_pos(v->lbl_status, SX(2), y_status);
-        lv_obj_set_width(v->lbl_status, LV_PCT(96));
-        lv_label_set_text_fmt(v->lbl_zone, "%s (offline)", st.zone[0] ? st.zone : "Sonos");
-        lv_label_set_text(v->lbl_artist, tr("Geen verbinding", "No connection"));
-        lv_label_set_text(v->lbl_title, tr("Controleer host/poort", "Check host/port"));
-        lv_label_set_text(v->lbl_status, "");
-        lv_label_set_text(v->lbl_vol, "");
-        lv_label_set_text(v->lbl_play, LV_SYMBOL_PLAY);
-        return;
-    }
-
-    /* Artwork update */
-    int art_ver = 0;
-    const lv_img_dsc_t * art_dsc = sonos_get_art_tile(&art_ver);
-    if (art_ver != v->last_art_ver) {
-        v->last_art_ver = art_ver;
-        if (art_dsc && v->img_art && v->art_box) {
-            lv_img_set_zoom(v->img_art, LV_IMG_ZOOM_NONE);
-            lv_img_set_src(v->img_art, art_dsc);
-            lv_obj_invalidate(v->img_art);
-            lv_obj_clear_flag(v->art_box, LV_OBJ_FLAG_HIDDEN);
-
-            lv_obj_set_pos(v->lbl_artist, SX(50), y_artist);
-            lv_obj_set_width(v->lbl_artist, SX(136));
-            lv_obj_set_pos(v->lbl_title, SX(50), y_title);
-            lv_obj_set_width(v->lbl_title, SX(136));
-            lv_obj_set_pos(v->lbl_status, SX(50), y_status);
-            lv_obj_set_width(v->lbl_status, SX(136));
-        } else {
-            if (v->art_box) lv_obj_add_flag(v->art_box, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_set_pos(v->lbl_artist, SX(2), y_artist);
-            lv_obj_set_width(v->lbl_artist, LV_PCT(96));
-            lv_obj_set_pos(v->lbl_title, SX(2), y_title);
-            lv_obj_set_width(v->lbl_title, LV_PCT(96));
-            lv_obj_set_pos(v->lbl_status, SX(2), y_status);
-            lv_obj_set_width(v->lbl_status, LV_PCT(96));
-        }
-    }
-
-    if (st.is_group) {
-        lv_label_set_text_fmt(v->lbl_zone, "Grp %s", st.zone);
-    } else {
-        lv_label_set_text(v->lbl_zone, st.zone[0] ? st.zone : "Sonos");
-    }
-
-    lv_label_set_text_fmt(v->lbl_vol, "%d%%", st.volume);
-
-    if (st.artist[0]) {
-        lv_label_set_text(v->lbl_artist, st.artist);
-    } else {
-        lv_label_set_text(v->lbl_artist, st.playing ? tr("Muziek", "Music") : tr("Geen muziek", "No music"));
-    }
-    lv_label_set_text(v->lbl_title, st.title[0] ? st.title : "");
-
-    if (!st.playing) {
-        lv_label_set_text(v->lbl_status, tr("(gepauzeerd)", "(paused)"));
-        lv_obj_set_style_text_color(v->lbl_status, lv_color_hex(settings.home_light_mode ? 0xd97706 : 0xffcc44), 0);
-    } else if (st.duration > 0 && st.elapsed >= 0) {
-        int em = st.elapsed / 60, es = st.elapsed % 60;
-        int dm = st.duration / 60, ds = st.duration % 60;
-        char tbuf[32];
-        snprintf(tbuf, sizeof tbuf, "%02d:%02d / %02d:%02d", em, es, dm, ds);
-        lv_label_set_text(v->lbl_status, tbuf);
-        lv_obj_set_style_text_color(v->lbl_status, lv_color_hex(COL_TEXT_DIM), 0);
-    } else {
-        lv_label_set_text(v->lbl_status, "");
-    }
-
-    lv_label_set_text(v->lbl_play, st.playing ? LV_SYMBOL_PAUSE : LV_SYMBOL_PLAY);
-}
 
 static void on_slot_agenda_tap(lv_event_t * e) {
     (void)e;
@@ -1574,8 +1289,6 @@ static int slot_render_or_agenda(int slot, int ai, lv_obj_t * lbl_main, lv_obj_t
             title_to_show = tr("Temperatuur", "Temperature");
         } else if (b && (!strcmp(b, "local:agenda") || !strcmp(b, "agenda") || (m && !strcmp(m->tile_type, "agenda_list")))) {
             title_to_show = tr("Agenda", "Calendar");
-        } else if (b && (!strcmp(b, "local:sonos") || !strcmp(b, "sonos") || (m && !strcmp(m->tile_type, "media_player")))) {
-            title_to_show = "Sonos";
         } else if (b && !strcmp(b, "local:waste")) {
             title_to_show = tr("Afval", "Waste");
         } else if (b && m && m->tile_title[0]) {
@@ -1596,7 +1309,6 @@ static int slot_render_or_agenda(int slot, int ai, lv_obj_t * lbl_main, lv_obj_t
     }
 
     if (b && (!strcmp(b, "local:agenda") || !strcmp(b, "agenda") || (m && !strcmp(m->tile_type, "agenda_list")))) {
-        if (slot_sonos[ai]) lv_obj_add_flag(slot_sonos[ai]->root, LV_OBJ_FLAG_HIDDEN);
         if (slot_waste[ai]) lv_obj_add_flag(slot_waste[ai], LV_OBJ_FLAG_HIDDEN);
         if (slot_templogger[ai]) lv_obj_add_flag(slot_templogger[ai]->root, LV_OBJ_FLAG_HIDDEN);
         fill_agenda_overlay(slot_agenda[ai]);
@@ -1604,18 +1316,6 @@ static int slot_render_or_agenda(int slot, int ai, lv_obj_t * lbl_main, lv_obj_t
         return 1;
     }
     if (slot_agenda[ai]) lv_obj_add_flag(slot_agenda[ai]->root, LV_OBJ_FLAG_HIDDEN);
-
-    if (b && (!strcmp(b, "local:sonos") || !strcmp(b, "sonos") || (m && !strcmp(m->tile_type, "media_player")))) {
-        if (slot_waste[ai]) lv_obj_add_flag(slot_waste[ai], LV_OBJ_FLAG_HIDDEN);
-        if (slot_templogger[ai]) lv_obj_add_flag(slot_templogger[ai]->root, LV_OBJ_FLAG_HIDDEN);
-        if (slot_sonos[ai]) {
-            update_sonos_view(slot_sonos[ai]);
-            lv_obj_clear_flag(slot_sonos[ai]->root, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_move_foreground(slot_sonos[ai]->root);
-        }
-        return 1;
-    }
-    if (slot_sonos[ai]) lv_obj_add_flag(slot_sonos[ai]->root, LV_OBJ_FLAG_HIDDEN);
 
     if (b && !strcmp(b, "local:waste")) {
         if (slot_templogger[ai]) lv_obj_add_flag(slot_templogger[ai]->root, LV_OBJ_FLAG_HIDDEN);
@@ -1643,11 +1343,44 @@ static int slot_render_or_agenda(int slot, int ai, lv_obj_t * lbl_main, lv_obj_t
 
 /* Render an integration's latest_value/subtitle into the given pair of
  * labels. Returns 1 if a binding existed (caller should skip the built-in
- * refresh path), 0 otherwise. */
+ * refresh path), 0 otherwise. Generic for any marketplace app. */
 static int render_tile_slot(int slot, lv_obj_t * lbl_main, lv_obj_t * lbl_sub) {
     const integration_meta_t * m = tile_slots_meta_for(slot);
-    if (!m) return 0;
+    if (!m) {
+        if (slot == TILE_SLOT_VENT) {
+            if (vent_fan_img) lv_obj_clear_flag(vent_fan_img, LV_OBJ_FLAG_HIDDEN);
+            if (vent_btn_low) lv_obj_clear_flag(vent_btn_low, LV_OBJ_FLAG_HIDDEN);
+            if (vent_btn_high) lv_obj_clear_flag(vent_btn_high, LV_OBJ_FLAG_HIDDEN);
+            if (vent_btn_auto) lv_obj_clear_flag(vent_btn_auto, LV_OBJ_FLAG_HIDDEN);
+            if (vent_btn_timer) lv_obj_clear_flag(vent_btn_timer, LV_OBJ_FLAG_HIDDEN);
+            if (lbl_boiler_state) lv_obj_align(lbl_boiler_state, LV_ALIGN_TOP_RIGHT, -4, 14);
+            if (lbl_boiler_pressure) lv_obj_align(lbl_boiler_pressure, LV_ALIGN_BOTTOM_MID, 0, -38);
+        } else if (slot == TILE_SLOT_ENERGY) {
+            if (lbl_energy_today) lv_obj_clear_flag(lbl_energy_today, LV_OBJ_FLAG_HIDDEN);
+            if (lbl_energy_gas) lv_obj_clear_flag(lbl_energy_gas, LV_OBJ_FLAG_HIDDEN);
+            if (lbl_energy_w) lv_obj_align(lbl_energy_w, LV_ALIGN_CENTER, 0, 6);
+        }
+        return 0;
+    }
+
+    /* An integration is bound to this slot — clear hardware-specific overlays generically */
+    if (slot == TILE_SLOT_VENT) {
+        if (vent_fan_img) lv_obj_add_flag(vent_fan_img, LV_OBJ_FLAG_HIDDEN);
+        if (vent_btn_low) lv_obj_add_flag(vent_btn_low, LV_OBJ_FLAG_HIDDEN);
+        if (vent_btn_high) lv_obj_add_flag(vent_btn_high, LV_OBJ_FLAG_HIDDEN);
+        if (vent_btn_auto) lv_obj_add_flag(vent_btn_auto, LV_OBJ_FLAG_HIDDEN);
+        if (vent_btn_timer) lv_obj_add_flag(vent_btn_timer, LV_OBJ_FLAG_HIDDEN);
+        if (lbl_boiler_state) lv_obj_align(lbl_boiler_state, LV_ALIGN_CENTER, 0, -10);
+        if (lbl_boiler_pressure) lv_obj_align(lbl_boiler_pressure, LV_ALIGN_BOTTOM_MID, 0, -10);
+    } else if (slot == TILE_SLOT_ENERGY) {
+        if (lbl_energy_today) lv_obj_add_flag(lbl_energy_today, LV_OBJ_FLAG_HIDDEN);
+        if (lbl_nilm_event) lv_obj_add_flag(lbl_nilm_event, LV_OBJ_FLAG_HIDDEN);
+        if (lbl_energy_w) lv_obj_align(lbl_energy_w, LV_ALIGN_CENTER, 0, -10);
+        if (lbl_energy_gas) lv_obj_align(lbl_energy_gas, LV_ALIGN_BOTTOM_MID, 0, -10);
+    }
+
     if (lbl_main) {
+        lv_obj_clear_flag(lbl_main, LV_OBJ_FLAG_HIDDEN);
         const char * v = (const char *)m->latest_value;
         if (v && v[0])
             lv_label_set_text_fmt(lbl_main, "%s%s%s", v,
@@ -1657,6 +1390,7 @@ static int render_tile_slot(int slot, lv_obj_t * lbl_main, lv_obj_t * lbl_sub) {
             lv_label_set_text_fmt(lbl_main, "%s...", m->tile_title);
     }
     if (lbl_sub) {
+        lv_obj_clear_flag(lbl_sub, LV_OBJ_FLAG_HIDDEN);
         const char * s = (const char *)m->latest_subtitle;
         if (s && s[0])
             lv_label_set_text_fmt(lbl_sub, "%s%s%s", s,
@@ -1721,17 +1455,6 @@ static void render_local_into(const char * id, lv_obj_t * title,
         if (title) lv_label_set_text(title, tr("Lucht", "Air"));
         if (main)  lv_label_set_text_fmt(main, "%d ppm", toon_state.eco2);
         if (sub)   lv_label_set_text(sub, air_quality_label(toon_state.eco2, toon_state.tvoc));
-    } else if (!strcmp(id, "local:sonos")) {
-        sonos_state_t st;
-        sonos_get_snapshot(&st);
-        if (title) lv_label_set_text_fmt(title, "Sonos - %s", st.zone[0] ? st.zone : "Keuken");
-        if (st.connected) {
-            if (main) lv_label_set_text(main, st.artist[0] ? st.artist : (st.playing ? tr("Speelt", "Playing") : tr("Gepauzeerd", "Paused")));
-            if (sub)  lv_label_set_text(sub, st.title[0] ? st.title : "");
-        } else {
-            if (main) lv_label_set_text(main, tr("offline", "offline"));
-            if (sub)  lv_label_set_text(sub, "");
-        }
     } else if (!strcmp(id, "local:waste")) {
         if (title) lv_label_set_text(title, tr("Afval", "Waste"));
         waste_pickup_t p1 = {0}, p2 = {0};
@@ -1925,9 +1648,6 @@ static void refresh_cb(lv_timer_t * t) {
         lv_coord_t avail_h = th - SY(46);
         fill_agenda_view(p, tile_cal_dates, tile_cal_times, tile_cal_titles, avail_h);
     }
-    if (tile_sonos_view && !lv_obj_has_flag(lv_obj_get_parent(tile_sonos_view->root), LV_OBJ_FLAG_HIDDEN)) {
-        update_sonos_view(tile_sonos_view);
-    }
 
     /* Marketplace tile overrides — if a slot is bound, render the
      * integration's data into the matching tile's labels and remember
@@ -1969,19 +1689,6 @@ static void refresh_cb(lv_timer_t * t) {
             continue;
         }
         const char * b = tile_slots_binding(TILE_SLOT_P1_0 + i);
-        if (b && !strcmp(b, "local:sonos")) {
-            sonos_state_t st;
-            sonos_get_snapshot(&st);
-            if (p1_title[i]) lv_label_set_text_fmt(p1_title[i], "Sonos - %s", st.zone[0] ? st.zone : "Keuken");
-            if (st.connected) {
-                if (p1_main[i]) lv_label_set_text(p1_main[i], st.artist[0] ? st.artist : (st.playing ? tr("Speelt", "Playing") : tr("Gepauzeerd", "Paused")));
-                if (p1_sub[i])  lv_label_set_text_fmt(p1_sub[i], "%s%s", st.title[0] ? st.title : "", (!st.playing) ? tr(" (pauze)", " (paused)") : "");
-            } else {
-                if (p1_main[i]) lv_label_set_text(p1_main[i], tr("offline", "offline"));
-                if (p1_sub[i])  lv_label_set_text(p1_sub[i], "");
-            }
-            continue;
-        }
         if (b && !strcmp(b, "local:agenda")) {
             if (p1_title[i]) lv_label_set_text(p1_title[i], tr("Agenda", "Calendar"));
             if (calendar_state.count > 0) {
@@ -4178,10 +3885,8 @@ lv_obj_t * screen_home_create(void) {
     tile_energy = energy_t.tile;
     lbl_title_slot[TILE_SLOT_ENERGY] = energy_t.title;
     slot_agenda[0] = make_slot_agenda(tile_energy, 0x4477cc);
-    slot_sonos[0]  = make_sonos_view(tile_energy);
     slot_waste[0]  = make_slot_waste(tile_energy, 0x1e3a24);
     slot_templogger[0] = make_slot_templogger(tile_energy);
-    if (slot_sonos[0]) lv_obj_add_flag(slot_sonos[0]->root, LV_OBJ_FLAG_HIDDEN);
     /* Compressed for the new 130-px tile: 28-pt W value (was 48), gas
      * total on the same baseline range below. */
     lbl_energy_w = lv_label_create(energy_t.tile);
@@ -4222,10 +3927,8 @@ lv_obj_t * screen_home_create(void) {
     tile_vent = vent.tile;
     lbl_title_slot[TILE_SLOT_VENT] = vent.title;
     slot_agenda[2] = make_slot_agenda(tile_vent, 0x4477cc);
-    slot_sonos[2]  = make_sonos_view(tile_vent);
     slot_waste[2]  = make_slot_waste(tile_vent, 0x1e3a24);
     slot_templogger[2] = make_slot_templogger(tile_vent);
-    if (slot_sonos[2]) lv_obj_add_flag(slot_sonos[2]->root, LV_OBJ_FLAG_HIDDEN);
 
     /* Speed % shares the title row with the "Vent" label so the
        top-row buttons can sit cleanly below without overlap. */
@@ -4312,10 +4015,8 @@ lv_obj_t * screen_home_create(void) {
     tile_family = family_t.tile;
     lbl_title_slot[TILE_SLOT_FAMILY] = family_t.title;
     slot_agenda[1] = make_slot_agenda(tile_family, 0x4477cc);
-    slot_sonos[1]  = make_sonos_view(tile_family);
     slot_waste[1]  = make_slot_waste(tile_family, 0x1e3a24);
     slot_templogger[1] = make_slot_templogger(tile_family);
-    if (slot_sonos[1]) lv_obj_add_flag(slot_sonos[1]->root, LV_OBJ_FLAG_HIDDEN);
     /* Two scrolling labels — the formatted address ("City > Street > Num")
      * almost always exceeds the 194-px tile width, so we use
      * SCROLL_CIRCULAR to slide the full string through the label area
@@ -4483,16 +4184,13 @@ lv_obj_t * screen_home_create(void) {
 
         /* Sonos tile in custom layout */
         tile_t sonos_t;
-        make_tile(scr_root, 0, 0, 200, 150, LT_SONOS, "Sonos", 0x2077a0, on_sonos_tile_tap, &sonos_t);
-        tile_sonos_view = make_sonos_view(sonos_t.tile);
+        make_tile(scr_root, 0, 0, 200, 150, LT_SONOS, "Sonos", 0x2077a0, NULL, &sonos_t);
     }
     tile_water = water_t.tile;
     lbl_title_slot[TILE_SLOT_WATER] = water_t.title;
     slot_agenda[3] = make_slot_agenda(tile_water, 0x4477cc);
-    slot_sonos[3]  = make_sonos_view(tile_water);
     slot_waste[3]  = make_slot_waste(tile_water, 0x1e3a24);
     slot_templogger[3] = make_slot_templogger(tile_water);
-    if (slot_sonos[3]) lv_obj_add_flag(slot_sonos[3]->root, LV_OBJ_FLAG_HIDDEN);
 
     /* Long-press on any of the four right-column tiles → tile-slots picker.
      * Same modal as Settings → Tiles. Cheap to attach; the handler only
@@ -5080,7 +4778,6 @@ void screen_home_destroy(void) {
         tile_water = NULL;
         for (int i = 0; i < 4; i++) {
             slot_agenda[i] = NULL;
-            slot_sonos[i] = NULL;
             slot_waste[i] = NULL;
             slot_templogger[i] = NULL;
             lbl_title_slot[i] = NULL;

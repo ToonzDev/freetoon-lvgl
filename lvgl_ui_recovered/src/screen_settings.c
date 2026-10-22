@@ -31,7 +31,6 @@
 #include "wastecollection.h"
 #include "update_check.h"
 #include "update_modal.h"
-#include "sonos.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -4430,184 +4429,6 @@ static void open_mqtt_modal(lv_event_t * e) {
     modal_timer = lv_timer_create(modal_timer_cb, 500, NULL);
 }
 
-/* ==================== Sonos modal ==================== */
-static lv_obj_t * sw_sonos_en = NULL;
-static lv_obj_t * ta_sonos_host = NULL;
-static lv_obj_t * ta_sonos_port = NULL;
-static lv_obj_t * ta_sonos_zone = NULL;
-static lv_obj_t * dd_sonos_zone = NULL;
-static lv_obj_t * lbl_sonos_result = NULL;
-
-static char       g_sonos_probe_status[256] = "";
-static char       g_sonos_probe_zones[SONOS_MAX_ZONES][48];
-static int        g_sonos_probe_count = 0;
-static volatile int g_sonos_probe_done = 0;
-static pthread_mutex_t g_sonos_ui_mtx = PTHREAD_MUTEX_INITIALIZER;
-
-static void * sonos_probe_worker(void * arg) {
-    (void)arg;
-    char rooms[SONOS_MAX_ZONES][48];
-    int n = sonos_probe(rooms, SONOS_MAX_ZONES);
-    pthread_mutex_lock(&g_sonos_ui_mtx);
-    g_sonos_probe_count = n;
-    if (n > 0) {
-        for (int i = 0; i < n; i++) {
-            snprintf(g_sonos_probe_zones[i], sizeof g_sonos_probe_zones[i], "%s", rooms[i]);
-        }
-        snprintf(g_sonos_probe_status, sizeof g_sonos_probe_status,
-                 tr("Gevonden: %d kamer(s)", "Found: %d room(s)"), n);
-    } else {
-        snprintf(g_sonos_probe_status, sizeof g_sonos_probe_status,
-                 tr("Geen Sonos speakers gevonden op het netwerk", "No Sonos speakers found on network"));
-    }
-    g_sonos_probe_done = 1;
-    pthread_mutex_unlock(&g_sonos_ui_mtx);
-    return NULL;
-}
-
-static void sonos_modal_tick(void) {
-    if (g_sonos_probe_done) {
-        g_sonos_probe_done = 0;
-        pthread_mutex_lock(&g_sonos_ui_mtx);
-        if (lbl_sonos_result) lv_label_set_text(lbl_sonos_result, g_sonos_probe_status);
-        if (g_sonos_probe_count > 0 && dd_sonos_zone) {
-            char opts[1024] = "";
-            int sel_idx = 0;
-            const char * cur = settings.sonos_zone;
-            for (int i = 0; i < g_sonos_probe_count; i++) {
-                if (opts[0]) strncat(opts, "\n", sizeof opts - strlen(opts) - 1);
-                strncat(opts, g_sonos_probe_zones[i], sizeof opts - strlen(opts) - 1);
-                if (cur && cur[0] && strcasecmp(cur, g_sonos_probe_zones[i]) == 0)
-                    sel_idx = i;
-            }
-            lv_dropdown_set_options(dd_sonos_zone, opts);
-            lv_dropdown_set_selected(dd_sonos_zone, (uint16_t)sel_idx);
-            if (!cur || !cur[0]) {
-                snprintf(settings.sonos_zone, sizeof settings.sonos_zone, "%s", g_sonos_probe_zones[0]);
-            }
-        }
-        pthread_mutex_unlock(&g_sonos_ui_mtx);
-    }
-}
-
-static void on_sonos_enabled_change(lv_event_t * e) {
-    settings.sonos_enabled = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
-}
-
-static void on_sonos_dd_change(lv_event_t * e) {
-    lv_obj_t * dd = lv_event_get_target(e);
-    char buf[48];
-    lv_dropdown_get_selected_str(dd, buf, sizeof buf);
-    if (ta_sonos_zone && buf[0]) lv_textarea_set_text(ta_sonos_zone, buf);
-}
-
-static void on_sonos_discover_click(lv_event_t * e) {
-    (void)e;
-    if (lbl_sonos_result)
-        lv_label_set_text(lbl_sonos_result, tr("Sonos speakers zoeken op het netwerk...", "Searching for Sonos speakers on network..."));
-
-    pthread_t tid;
-    if (pthread_create(&tid, NULL, sonos_probe_worker, NULL) == 0) {
-        pthread_detach(tid);
-    }
-}
-
-static void on_sonos_apply_click(lv_event_t * e) {
-    (void)e;
-    char z[48] = "";
-    if (dd_sonos_zone) {
-        lv_dropdown_get_selected_str(dd_sonos_zone, z, sizeof z);
-        if (z[0] && strcmp(z, tr("(nog geen kamers)", "(no rooms yet)")) != 0) {
-            snprintf(settings.sonos_zone, sizeof settings.sonos_zone, "%s", z);
-        }
-    }
-    if (sw_sonos_en) {
-        settings.sonos_enabled = lv_obj_has_state(sw_sonos_en, LV_STATE_CHECKED) ? 1 : 0;
-    }
-    settings.sonos_port = 1400;
-    settings_save();
-    sonos_set_zone(settings.sonos_zone);
-    sonos_start();
-    if (lbl_sonos_result)
-        lv_label_set_text(lbl_sonos_result, tr("Instellingen opgeslagen! Sonos actief.", "Settings saved! Sonos active."));
-}
-
-static void open_sonos_modal(lv_event_t * e) {
-    (void)e;
-    lv_obj_t * p = modal_open("Sonos", 620);
-    lv_obj_add_flag(p, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_scroll_dir(p, LV_DIR_VER);
-    lv_obj_set_scrollbar_mode(p, LV_SCROLLBAR_MODE_AUTO);
-    int y = 70;
-
-    /* Inschakelen switch */
-    lv_obj_t * r_en = panel_row(p, y, tr("Sonos inschakelen", "Sonos enabled"), NULL);
-    sw_sonos_en = row_switch(r_en, settings.sonos_enabled, on_sonos_enabled_change);
-    y += 90;
-
-    /* Discovered zones dropdown + Scan button */
-    lv_obj_t * lbl_dd = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_dd, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(lbl_dd, SF(22), 0);
-    lv_label_set_text(lbl_dd, tr("Kamer / Zone:", "Room / Zone:"));
-    lv_obj_align(lbl_dd, LV_ALIGN_TOP_LEFT, SX(4), y);
-
-    dd_sonos_zone = lv_dropdown_create(p);
-    lv_obj_set_size(dd_sonos_zone, SX(420), SY(50));
-    lv_obj_align(dd_sonos_zone, LV_ALIGN_TOP_LEFT, SX(200), y - 4);
-    lv_obj_set_style_text_font(dd_sonos_zone, SF(20), 0);
-    if (settings.sonos_zone[0]) {
-        lv_dropdown_set_options(dd_sonos_zone, settings.sonos_zone);
-    } else {
-        lv_dropdown_set_options(dd_sonos_zone, tr("(nog geen kamers)", "(no rooms yet)"));
-    }
-    lv_obj_add_event_cb(dd_sonos_zone, on_sonos_dd_change, LV_EVENT_VALUE_CHANGED, NULL);
-
-    lv_obj_t * b_scan = lv_btn_create(p);
-    lv_obj_set_size(b_scan, SX(170), SY(50));
-    lv_obj_align(b_scan, LV_ALIGN_TOP_LEFT, SX(640), y - 4);
-    lv_obj_set_style_bg_color(b_scan, lv_color_hex(0x224466), 0);
-    lv_obj_set_style_radius(b_scan, 10, 0);
-    lv_obj_add_event_cb(b_scan, on_sonos_discover_click, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * bscan_lbl = lv_label_create(b_scan);
-    lv_label_set_text(bscan_lbl, tr(LV_SYMBOL_REFRESH " Zoeken", LV_SYMBOL_REFRESH " Scan"));
-    lv_obj_set_style_text_font(bscan_lbl, SF(20), 0);
-    lv_obj_center(bscan_lbl);
-    y += 80;
-
-    /* Save button */
-    lv_obj_t * b_save = lv_btn_create(p);
-    lv_obj_set_size(b_save, SX(220), SY(54));
-    lv_obj_align(b_save, LV_ALIGN_TOP_LEFT, SX(4), y);
-    lv_obj_set_style_bg_color(b_save, lv_color_hex(0x2e6e3a), 0);
-    lv_obj_set_style_radius(b_save, 10, 0);
-    lv_obj_add_event_cb(b_save, on_sonos_apply_click, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * bsl = lv_label_create(b_save);
-    lv_label_set_text(bsl, tr(LV_SYMBOL_OK "  Opslaan", LV_SYMBOL_OK "  Save"));
-    lv_obj_set_style_text_font(bsl, SF(22), 0);
-    lv_obj_center(bsl);
-    y += 74;
-
-    /* Status feedback line */
-    lbl_sonos_result = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_sonos_result, lv_color_hex(0xa8c4dc), 0);
-    lv_obj_set_style_text_font(lbl_sonos_result, SF(18), 0);
-    lv_obj_set_width(lbl_sonos_result, SX(770));
-    lv_label_set_long_mode(lbl_sonos_result, LV_LABEL_LONG_WRAP);
-    lv_obj_align(lbl_sonos_result, LV_ALIGN_TOP_LEFT, SX(4), y);
-    lv_label_set_text(lbl_sonos_result, tr("Automatisch zoeken actief. Zoekt Sonos speakers...", "Auto-discovery active. Searching for Sonos speakers..."));
-
-    modal_tick_fn = sonos_modal_tick;
-    modal_timer = lv_timer_create(modal_timer_cb, 300, NULL);
-
-    /* Automatically trigger network discovery on open */
-    on_sonos_discover_click(NULL);
-}
-
-void screen_settings_open_sonos_modal(void) {
-    open_sonos_modal(NULL);
-}
-
 lv_obj_t * screen_settings_create(void) {
     if (scr_root && scr_light_mode == settings.home_light_mode) return scr_root;
     if (scr_root) {
@@ -4699,8 +4520,6 @@ lv_obj_t * screen_settings_create(void) {
               tr("scherminstellingen", "display settings"), open_display_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_EYE_CLOSE, tr("Schoonmaken", "Clean"),
               tr("30 s schermvergrendeling", "30 s screen lock"), open_clean_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_AUDIO, "Sonos",
-              tr("kamers & speakers", "rooms & speakers"), open_sonos_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_HOME, tr("Tegels", "Tiles"),
               tr("starttegels toewijzen", "assign home tiles"), open_tile_slots_modal); n++;
     make_tile(GX(n), GY(n), &icon_flame, NULL, tr("Temperatuurlog", "Temperature log"),

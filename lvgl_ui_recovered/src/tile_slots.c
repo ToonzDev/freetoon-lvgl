@@ -191,7 +191,6 @@ static const struct { const char * id; const char * label; } g_locals[] = {
     { "local:vent",   "Ventilatie" },
     { "local:family", "Familie" },
     { "local:air",    "Luchtkwaliteit" },
-    { "local:sonos",  "Sonos" },
     { "local:waste",  "Afval" },
     { "local:agenda", "Agenda" },
     { "local:templogger", "Temperatuurlog" },
@@ -217,10 +216,9 @@ int tile_slots_local_enabled(int i) {
         case 3: return (settings.enable_ha || (settings.client_mode && ha_state.connected)) &&
                        (settings.life360_a_entity[0] || settings.life360_b_entity[0] || settings.life360_c_entity[0] || ha_state.loc_a[0]);
         case 4: return 1;                                 /* air quality — core sensor */
-        case 5: return settings.sonos_enabled;
-        case 6: return 1;                                 /* waste pickup */
-        case 7: return settings.calendar_enabled;
-        case 8: return 1;                                 /* templogger */
+        case 5: return 1;                                 /* waste pickup */
+        case 6: return settings.calendar_enabled;
+        case 7: return 1;                                 /* templogger */
         default: return 0;
     }
 }
