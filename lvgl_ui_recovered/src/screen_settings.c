@@ -4532,9 +4532,8 @@ static void on_sonos_apply_click(lv_event_t * e) {
     settings.sonos_port = 1400;
     settings_save();
     sonos_set_zone(settings.sonos_zone);
-    sonos_start();
     if (lbl_sonos_result)
-        lv_label_set_text(lbl_sonos_result, tr("Instellingen opgeslagen! Sonos actief.", "Settings saved! Sonos active."));
+        lv_label_set_text(lbl_sonos_result, tr("Instellingen opgeslagen!", "Settings saved!"));
 }
 
 static void open_sonos_modal(lv_event_t * e) {
