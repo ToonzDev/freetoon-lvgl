@@ -118,7 +118,7 @@ CFLAGS  := $(SYSROOTFLAG) $(ARCHFLAGS) -O2 -Wall -Wextra -Wno-unused-parameter -
            -DBUILD_VERSION=\"$(BUILD_VERSION)\" \
            -I. -Ilvgl -Ilv_drivers -pthread $(GLIBC_CFLAGS) \
            -MMD -MP
-LDFLAGS := $(SYSROOTFLAG) $(ARCHFLAGS) -pthread -lm -lrt $(GLIBC_LDFLAGS) -Wl,--no-keep-memory
+LDFLAGS := $(SYSROOTFLAG) $(ARCHFLAGS) -pthread -lm -lrt -ldl -rdynamic $(GLIBC_LDFLAGS) -Wl,--no-keep-memory
 
 # Local patches to the read-only lvgl submodule, reapplied idempotently here so a
 # fresh `git submodule update` / clone doesn't silently revert them. Currently:
@@ -137,7 +137,7 @@ APP_SRC       := $(ENTRY) $(GLIBC_SRC) boxtalk.c ui_stack.c screen_home.c screen
                  screen_adapters.c screen_appliances.c screen_energy_timeline.c screen_domoticz.c screen_calendar.c screen_layout_editor.c screen_efanlamp.c \
                  screen_dim_layout_editor.c screen_dim_grid.c \
                  screen_crypto_picker.c screen_crypto.c screen_ha_picker.c screen_ha_devices.c \
-                 screen_chart_24h.c \
+                 screen_chart_24h.c plugin_loader.c \
                  stats.c airhist.c homewizard.c p1esphome.c energy.c meteradapter.c domoticz.c weather.c otgw.c http.c inbox.c rrd_push.c templogger.c \
                  wastecollection.c ventilation.c homeassistant.c ha_mqtt.c efanlamp.c monocypher.c sha2.c \
                  notify.c healthcheck.c pwa_server.c canonical_state.c packages.c mqtt_client.c \

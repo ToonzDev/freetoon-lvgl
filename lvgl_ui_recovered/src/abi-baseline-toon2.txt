@@ -22,6 +22,10 @@ close@GLIBC_2.4
 closedir@GLIBC_2.4
 connect@GLIBC_2.4
 cos@GLIBC_2.4
+dlclose@GLIBC_2.4
+dlerror@GLIBC_2.4
+dlopen@GLIBC_2.4
+dlsym@GLIBC_2.4
 fclose@GLIBC_2.4
 fcntl@GLIBC_2.4
 fflush@GLIBC_2.4
@@ -44,7 +48,6 @@ gethostbyname@GLIBC_2.4
 gethostname@GLIBC_2.4
 getpid@GLIBC_2.4
 getsockname@GLIBC_2.4
-getsockopt@GLIBC_2.4
 gettimeofday@GLIBC_2.4
 gmtime_r@GLIBC_2.4
 inet_addr@GLIBC_2.4
@@ -84,12 +87,10 @@ read@GLIBC_2.4
 readdir@GLIBC_2.4
 realloc@GLIBC_2.4
 recv@GLIBC_2.4
-recvfrom@GLIBC_2.4
 remove@GLIBC_2.4
 rename@GLIBC_2.4
 select@GLIBC_2.4
 send@GLIBC_2.4
-sendto@GLIBC_2.4
 setsockopt@GLIBC_2.4
 setvbuf@GLIBC_2.4
 sin@GLIBC_2.4
@@ -123,6 +124,7 @@ system@GLIBC_2.4
 tan@GLIBC_2.4
 time@GLIBC_2.4
 timegm@GLIBC_2.4
+uname@GLIBC_2.4
 unlink@GLIBC_2.4
 usleep@GLIBC_2.4
 vfprintf@GLIBC_2.4

@@ -36,6 +36,7 @@
 #include "domoticz.h"
 #include "templogger.h"
 #include "screen_chart_24h.h"
+#include "plugin_loader.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
@@ -533,6 +534,9 @@ static int open_integration_by_id(const char * b) {
             ui_push(screen_crypto_create());
             return 1;
         }
+        if (plugin_screen_open(meta)) {
+            return 1;
+        }
     }
     return 0;
 }
@@ -882,6 +886,12 @@ static lv_obj_t * lbl_lt_sonos_sub = NULL;
 static void on_slot_agenda_tap(lv_event_t * e) {
     (void)e;
     screen_calendar_show();
+}
+
+static void on_lt_sonos_tap(lv_event_t * e) {
+    (void)e;
+    const integration_meta_t * m = tile_slots_integration_by_id("sonos");
+    if (m) plugin_screen_open(m);
 }
 
 static slot_agenda_view_t * make_slot_agenda(lv_obj_t * tile, uint32_t bg) {
@@ -4201,7 +4211,7 @@ lv_obj_t * screen_home_create(void) {
 
         /* Sonos tile in custom layout */
         tile_t sonos_t;
-        make_tile(scr_root, 0, 0, 200, 150, LT_SONOS, "Sonos", 0x2077a0, NULL, &sonos_t);
+        make_tile(scr_root, 0, 0, 200, 150, LT_SONOS, "Sonos", 0x2077a0, on_lt_sonos_tap, &sonos_t);
         lbl_lt_sonos_main = lv_label_create(sonos_t.tile);
         lv_obj_set_style_text_color(lbl_lt_sonos_main, lv_color_hex(COL_TEXT_HI), 0);
         lv_obj_set_style_text_font(lbl_lt_sonos_main, SF(22), 0);
