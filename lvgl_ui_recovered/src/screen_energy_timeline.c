@@ -103,8 +103,10 @@ static int find_or_add_row(const char *name) {
 /* ── canvas redraw ─────────────────────────────────────────────── */
 static void redraw_canvas(void) {
     if (!canvas) return;
-    int cw = lv_obj_get_width(canvas);
-    int ch = lv_obj_get_height(canvas);
+    lv_img_dsc_t * dsc = lv_canvas_get_img(canvas);
+    if (!dsc || dsc->header.w <= 0 || dsc->header.h <= 0) return;
+    int cw = dsc->header.w;
+    int ch = dsc->header.h;
 
     lv_canvas_fill_bg(canvas, lv_color_hex(COL_CANVAS), LV_OPA_COVER);
 
@@ -234,7 +236,7 @@ static void redraw_canvas(void) {
             ? tr("Geen stap-detectie events in dit tijdvenster.",
                  "No step-change events in this time window.")
             : tr("P1 meter offline.", "P1 meter offline.");
-        lv_canvas_draw_text(canvas, SX(20), SY(40), cw - SX(40), &eld, msg);
+        lv_canvas_draw_text(canvas, SX(20), SY(80), cw - SX(40), &eld, msg);
     }
 
     /* ── rebuild label column ── */
@@ -351,16 +353,17 @@ lv_obj_t * screen_energy_timeline_create(void) {
     const char *range_lbl[] = {"1u", "2u", "4u"};
     for (int i = 0; i < 3; i++) {
         btn_range[i] = lv_btn_create(scr_root);
-        lv_obj_set_size(btn_range[i], SX(64), SY(36));
-        lv_obj_align(btn_range[i], LV_ALIGN_TOP_RIGHT,
-                     -(SX(74) * (2 - i)) - SX(8) - x_w - SX(10), hdr_y + SY(7));
-        lv_obj_set_style_radius(btn_range[i], 8, 0);
+        lv_obj_set_size(btn_range[i], x_w, x_h);
+        int btn_x_offset = SX(8) + x_w + SX(12) + (2 - i) * (x_w + SX(8));
+        lv_obj_align(btn_range[i], LV_ALIGN_TOP_RIGHT, -btn_x_offset, hdr_y + SY(2));
+        lv_obj_set_style_radius(btn_range[i], 10, 0);
         lv_obj_set_style_border_width(btn_range[i], 0, 0);
+        lv_obj_set_ext_click_area(btn_range[i], 12);
         lv_obj_add_event_cb(btn_range[i], on_range, LV_EVENT_CLICKED,
                             (void *)(intptr_t)range_h[i]);
         lv_obj_t *l = lv_label_create(btn_range[i]);
         lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(l, SF(16), 0);
+        lv_obj_set_style_text_font(l, SF(18), 0);
         lv_label_set_text(l, range_lbl[i]);
         lv_obj_center(l);
         style_range_btn(i, range_h[i] == g_range_h);
@@ -388,12 +391,16 @@ lv_obj_t * screen_energy_timeline_create(void) {
     canvas = lv_canvas_create(scr_root);
     lv_canvas_set_buffer(canvas, tl_buf, canvas_w, canvas_h,
                          LV_IMG_CF_TRUE_COLOR);
+    lv_obj_set_size(canvas, canvas_w, canvas_h);
     lv_obj_set_pos(canvas, LABEL_W, content_y);
 
     /* ── Refresh timer (30 s; also fires on log change) ── */
     if (!refresh_tmr)
         refresh_tmr = lv_timer_create(refresh_cb, 30000, NULL);
     lv_timer_pause(refresh_tmr);
+
+    lv_obj_update_layout(scr_root);
+    redraw_canvas();
 
     return scr_root;
 }

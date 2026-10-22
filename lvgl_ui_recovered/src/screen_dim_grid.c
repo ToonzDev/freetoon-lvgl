@@ -214,18 +214,24 @@ static void refresh_cb(lv_timer_t * t) {
         lv_label_set_text_fmt(lbl_temp, "%.1f°C", display_indoor_temp(toon_state.indoor_temp));
     else
         lv_label_set_text(lbl_temp, "...");
-    /* Setpoint visible at all times; "to" prefix only when the boiler is
-     * actively heating toward it (see screen_home.c for the same idea). */
-    if (toon_state.setpoint > 0) {
-        if (toon_state.burner_on)
-            lv_label_set_text_fmt(lbl_setpoint, tr("naar %.1f°C", "to %.1f°C"), toon_state.setpoint);
-        else
-            lv_label_set_text_fmt(lbl_setpoint, "%.1f°C", toon_state.setpoint);
-    } else {
-        lv_label_set_text(lbl_setpoint, "");
+    lv_obj_update_layout(lbl_temp);
+    if (dim_img_flame) lv_obj_align_to(dim_img_flame, lbl_temp, LV_ALIGN_OUT_RIGHT_MID, 12, 0);
+    if (dim_img_faucet) lv_obj_align_to(dim_img_faucet, lbl_temp, LV_ALIGN_OUT_RIGHT_MID, 12, -SY(10));
+    if (dim_img_drop) lv_obj_align_to(dim_img_drop, lbl_temp, LV_ALIGN_OUT_RIGHT_MID, 36, 8);
+
+    /* Setpoint / program / sensor metrics are dropped in dim mode (CR1) */
+    if (lbl_setpoint) {
+        if (toon_state.setpoint > 0) {
+            if (toon_state.burner_on)
+                lv_label_set_text_fmt(lbl_setpoint, tr("naar %.1f°C", "to %.1f°C"), toon_state.setpoint);
+            else
+                lv_label_set_text_fmt(lbl_setpoint, "%.1f°C", toon_state.setpoint);
+        } else {
+            lv_label_set_text(lbl_setpoint, "");
+        }
     }
 
-    lv_label_set_text(lbl_program, program_label());
+    if (lbl_program) lv_label_set_text(lbl_program, program_label());
 
     if (lbl_metrics) {
         if (!settings.show_dim_metrics) {
@@ -649,7 +655,7 @@ lv_obj_t * screen_dim_grid_create(void) {
     /* ===== peripheral blocks — each rendered INSIDE its grid cell so the
      * "Dim indeling" editor is true WYSIWYG (content lands where the cell is).
      * Within a box, offsets are raw px (the box is already cell-sized). ===== */
-    const int t1 = (DISP_VER < 600);
+    const int t1 = (DISP_VER < 600); (void)t1;
 
     /* ---- WEATHER: [icon + temp] as ONE centred row, "Buiten" under it,
      * moon bottom-left. Keeping icon+temp in a flex row means the sun always
@@ -722,47 +728,25 @@ lv_obj_t * screen_dim_grid_create(void) {
     lv_label_set_long_mode(lbl_waste, LV_LABEL_LONG_WRAP);
     lv_obj_align(lbl_waste, LV_ALIGN_TOP_MID, 0, (DISP_VER < 600) ? 90 : 92);
 
-    /* ---- THERMO: indoor temp + setpoint + program + metrics, centre-stacked ---- */
+    /* ---- THERMO: indoor temp (enlarged to 96pt clock font; setpoint/program/metrics dropped per CR1) ---- */
     int tbw = 0, tbh = 0; lv_obj_t * bx_t = dim_box(DB_THERMO, &tbw, &tbh); (void)tbh;
     lbl_temp = lv_label_create(bx_t);
     lv_obj_set_style_text_color(lbl_temp, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_temp, t1 ? &lv_font_montserrat_28 : &lv_font_montserrat_48, 0);
-    lv_label_set_text(lbl_temp, "-- C");
-    lv_obj_align(lbl_temp, LV_ALIGN_TOP_MID, 0, 2);
+    lv_obj_set_style_text_font(lbl_temp, &lv_font_montserrat_96_custom, 0);
+    lv_label_set_text(lbl_temp, "--.-°C");
+    lv_obj_align(lbl_temp, LV_ALIGN_CENTER, 0, 0);
 
-    lbl_setpoint = lv_label_create(bx_t);
-    lv_obj_set_style_text_color(lbl_setpoint, lv_color_hex(0xbbbbbb), 0);
-    lv_obj_set_style_text_font(lbl_setpoint, t1 ? &lv_font_montserrat_22 : &lv_font_montserrat_28, 0);
-    lv_label_set_text(lbl_setpoint, tr("naar -- C", "to -- C"));
-    lv_obj_align(lbl_setpoint, LV_ALIGN_TOP_MID, 0, t1 ? 42 : 58);
-
-    lbl_program = lv_label_create(bx_t);
-    lv_obj_set_style_text_color(lbl_program, lv_color_hex(0xbbbbbb), 0);
-    lv_obj_set_style_text_font(lbl_program, t1 ? &lv_font_montserrat_18 : &lv_font_montserrat_22, 0);
-    lv_label_set_text(lbl_program, "--");
-    lv_obj_align(lbl_program, LV_ALIGN_TOP_MID, 0, t1 ? 70 : 92);
-
-    lbl_metrics = lv_label_create(bx_t);
-    lv_obj_set_style_text_color(lbl_metrics, lv_color_hex(0x888888), 0);
-    lv_obj_set_style_text_font(lbl_metrics, &lv_font_montserrat_18, 0);
-    lv_obj_set_width(lbl_metrics, tbw - 8);
-    lv_obj_set_style_text_align(lbl_metrics, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(lbl_metrics, LV_LABEL_LONG_CLIP);
-    lv_label_set_text(lbl_metrics, "");
-    lv_obj_align(lbl_metrics, LV_ALIGN_TOP_MID, 0, t1 ? 94 : 122);
-
-    lbl_burner = lv_label_create(bx_t);
-    lv_obj_set_style_text_font(lbl_burner, &lv_font_montserrat_22, 0);
-    lv_label_set_text(lbl_burner, "");
-    lv_obj_align(lbl_burner, LV_ALIGN_TOP_MID, 130, t1 ? 70 : 92);
-    lv_obj_add_flag(lbl_burner, LV_OBJ_FLAG_HIDDEN);
+    lbl_setpoint = NULL;
+    lbl_program  = NULL;
+    lbl_metrics  = NULL;
+    lbl_burner   = NULL;
 
     dim_img_flame = lv_img_create(bx_t);
     lv_img_set_src(dim_img_flame, &icon_radiator);
     lv_img_set_zoom(dim_img_flame, 256);
     lv_obj_set_style_img_recolor(dim_img_flame, lv_color_hex(0xff8866), 0);
     lv_obj_set_style_img_recolor_opa(dim_img_flame, 255, 0);
-    lv_obj_align(dim_img_flame, LV_ALIGN_TOP_MID, 120, 6);
+    lv_obj_align_to(dim_img_flame, lbl_temp, LV_ALIGN_OUT_RIGHT_MID, 12, 0);
     lv_obj_add_flag(dim_img_flame, LV_OBJ_FLAG_HIDDEN);
 
     dim_img_faucet = lv_img_create(bx_t);
@@ -770,7 +754,7 @@ lv_obj_t * screen_dim_grid_create(void) {
     lv_img_set_zoom(dim_img_faucet, 256);
     lv_obj_set_style_img_recolor(dim_img_faucet, lv_color_hex(0xff5544), 0);
     lv_obj_set_style_img_recolor_opa(dim_img_faucet, 255, 0);
-    lv_obj_align(dim_img_faucet, LV_ALIGN_TOP_MID, 120, 2);
+    lv_obj_align_to(dim_img_faucet, lbl_temp, LV_ALIGN_OUT_RIGHT_MID, 12, -SY(10));
     lv_obj_add_flag(dim_img_faucet, LV_OBJ_FLAG_HIDDEN);
 
     dim_img_drop = lv_img_create(bx_t);
@@ -778,7 +762,7 @@ lv_obj_t * screen_dim_grid_create(void) {
     lv_img_set_zoom(dim_img_drop, 256);
     lv_obj_set_style_img_recolor(dim_img_drop, lv_color_hex(0xff5544), 0);
     lv_obj_set_style_img_recolor_opa(dim_img_drop, 255, 0);
-    lv_obj_align(dim_img_drop, LV_ALIGN_TOP_MID, 150, 18);
+    lv_obj_align_to(dim_img_drop, lbl_temp, LV_ALIGN_OUT_RIGHT_MID, 36, 8);
     lv_obj_add_flag(dim_img_drop, LV_OBJ_FLAG_HIDDEN);
 
     dim_img_water = lv_img_create(bx_t);

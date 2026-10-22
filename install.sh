@@ -467,7 +467,7 @@ CFG
     fi
     echo "@@STEP 6/6: UI herstarten"
     say "Restarting UI..."
-    remote "pkill -9 -x toonui 2>/dev/null; pkill -9 -x x11vnc 2>/dev/null; pkill -9 -x qt-gui 2>/dev/null; pkill -9 -f /qmf/sbin/qt-gui 2>/dev/null; pkill -9 -x startqt 2>/dev/null; true"
+    remote "killall -9 toonui 2>/dev/null || true; pkill -9 -x toonui 2>/dev/null || true; for _p in \$(pidof toonui 2>/dev/null); do kill -9 \"\$_p\" 2>/dev/null || true; done; pkill -9 -x x11vnc 2>/dev/null; pkill -9 -x qt-gui 2>/dev/null; pkill -9 -f /qmf/sbin/qt-gui 2>/dev/null; pkill -9 -x startqt 2>/dev/null; true"
     remote "kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true"
 
     rm -rf "$DL_DIR" 2>/dev/null || true
@@ -488,7 +488,7 @@ do_uninstall() {
     echo "[2/4] Restoring stock qt inittab row..."
     restore_stock_qt
     echo "[3/4] Stopping daemons..."
-    remote "pkill -9 -x toonui 2>/dev/null; pkill -9 -x x11vnc 2>/dev/null; pkill -9 -x quby_bridge 2>/dev/null; pkill -9 -x p1bridge 2>/dev/null; true"
+    remote "killall -9 toonui 2>/dev/null || true; pkill -9 -x toonui 2>/dev/null || true; for _p in \$(pidof toonui 2>/dev/null); do kill -9 \"\$_p\" 2>/dev/null || true; done; pkill -9 -x x11vnc 2>/dev/null; pkill -9 -x quby_bridge 2>/dev/null; pkill -9 -x p1bridge 2>/dev/null; true"
     echo "[4/4] Removing files..."
     remote "rm -f /mnt/data/toonui /mnt/data/ui_launcher.sh /mnt/data/companion_gate.sh /mnt/data/toonvnc.sh /mnt/data/ot_mode_switch.sh /mnt/data/fbvnc_input /mnt/data/ui_choice /mnt/data/toonvnc.plain /mnt/data/toonui.cfg"
     remote "rm -rf /mnt/data/pwa"

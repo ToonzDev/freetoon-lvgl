@@ -2013,7 +2013,7 @@ static void refresh_cb(lv_timer_t * t) {
             }
             if (p1_sub[i]) {
                 if (out > -50.0f && sp > 0.0f)
-                    lv_label_set_text_fmt(p1_sub[i], tr("buiten %.1f° · doel %.1f°", "out %.1f° · set %.1f°"), out, sp);
+                    lv_label_set_text_fmt(p1_sub[i], tr("buiten %.1f° | doel %.1f°", "out %.1f° | set %.1f°"), out, sp);
                 else if (out > -50.0f)
                     lv_label_set_text_fmt(p1_sub[i], tr("buiten %.1f°", "out %.1f°"), out);
                 else

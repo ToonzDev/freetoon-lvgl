@@ -68,6 +68,7 @@ static lv_obj_t  * g_modal_kb  = NULL;
 static float       g_modal_lo  = 0;
 static float       g_modal_hi  = 0;
 static int         g_modal_edit_idx = -1;  /* ≥0 when editing existing custom sig */
+static int         g_modal_unk_slot = -1;  /* ≥0 when naming a recent unknown step */
 static modal_mode_t g_modal_mode = MODAL_NEW;
 
 /* forward declarations */
@@ -165,10 +166,26 @@ static void on_modal_ok(lv_event_t *e) {
             settings.nilm_sig_hi[i] = g_modal_hi;
             settings.nilm_sig_count++;
         }
+        /* Remove the named item from recent unknown events ring buffer */
+        if (g_modal_unk_slot >= 0 && g_modal_unk_slot < NILM_UNKNOWN_MAX) {
+            nilm_unknowns[g_modal_unk_slot].ts = 0;
+            nilm_unknowns[g_modal_unk_slot].delta_w = 0.0f;
+        }
+        /* Also clear any other unknown events that match this newly named wattage range */
+        for (int k = 0; k < NILM_UNKNOWN_MAX; k++) {
+            if (nilm_unknowns[k].ts != 0 &&
+                nilm_unknowns[k].delta_w >= g_modal_lo - 5.0f &&
+                nilm_unknowns[k].delta_w <= g_modal_hi + 5.0f) {
+                nilm_unknowns[k].ts = 0;
+                nilm_unknowns[k].delta_w = 0.0f;
+            }
+        }
+        g_modal_unk_slot = -1;
     }
     settings_save();
     modal_close();
     rebuild_custom_list();
+    rebuild_unknown_list();
 }
 
 static void on_kb_event(lv_event_t *e) {
@@ -248,12 +265,13 @@ static void open_naming_modal(const char *prefill, float lo, float hi,
 }
 
 /* ── unknown event "Name" tap ─────────────────────────────────── */
-typedef struct { float delta_w; int direction; } unk_ctx_t;
+typedef struct { float delta_w; int direction; int slot; } unk_ctx_t;
 static void on_name_unknown(lv_event_t *e) {
     unk_ctx_t *ctx = lv_event_get_user_data(e);
     if (!ctx) return;
     float exact = ctx->delta_w;
     if (exact < 1.0f) exact = 1.0f;
+    g_modal_unk_slot = ctx->slot;
     open_naming_modal("", exact, exact, MODAL_NEW, -1, ctx->delta_w, ctx->direction);
 }
 
@@ -349,6 +367,7 @@ static void rebuild_unknown_list(void) {
 
     /* Walk ring backwards from newest slot */
     int head_slot = (nilm_unknown_count - 1) % NILM_UNKNOWN_MAX;
+    int rows_drawn = 0;
     for (int i = 0; i < total; i++) {
         int slot = (head_slot - i + NILM_UNKNOWN_MAX) % NILM_UNKNOWN_MAX;
         nilm_unknown_t *u = &nilm_unknowns[slot];
@@ -366,8 +385,8 @@ static void rebuild_unknown_list(void) {
         mk_text(row, full, 18, COL_TEXT_HI, LV_ALIGN_LEFT_MID, SX(8), 0);
 
         /* Tap-to-label hint on right */
-        mk_text(row, tr("Tik om te benoemen \xef\x84\x9e",
-                        "Tap to label \xef\x84\x9e"),
+        mk_text(row, tr("Tik om te benoemen " LV_SYMBOL_RIGHT,
+                        "Tap to label " LV_SYMBOL_RIGHT),
                 14, COL_ACCENT, LV_ALIGN_RIGHT_MID, -SX(8), 0);
 
         /* Whole row is the tap target */
@@ -375,11 +394,22 @@ static void rebuild_unknown_list(void) {
         if (ctx) {
             ctx->delta_w   = u->delta_w;
             ctx->direction = u->direction;
+            ctx->slot      = slot;
             lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
             lv_obj_add_event_cb(row, on_name_unknown, LV_EVENT_CLICKED, ctx);
             lv_obj_add_event_cb(row, (lv_event_cb_t)(void(*)(lv_event_t*))free,
                                 LV_EVENT_DELETE, ctx);
         }
+        rows_drawn++;
+    }
+
+    if (rows_drawn == 0) {
+        lv_obj_t *l = lv_label_create(unk_cont);
+        lv_obj_set_style_text_color(l, lv_color_hex(COL_TEXT_DIM), 0);
+        lv_obj_set_style_text_font(l, SF(16), 0);
+        lv_label_set_text(l, meter_state.connected
+            ? tr("Geen onbekende stappen gedetecteerd.", "No unknown step-changes detected.")
+            : tr("P1 meter offline.", "P1 meter offline."));
     }
 }
 

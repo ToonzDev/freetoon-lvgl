@@ -72,6 +72,8 @@ static lv_obj_t * sw_boiler;
 static lv_obj_t * lbl_boiler_mode;
 static lv_obj_t * lbl_boiler_ot;
 static int        pending_boiler_type = -1;
+static int        s_ot_check_countdown = -1;
+static int        s_ot_err_display_countdown = 0;
 
 /* ============================ value callbacks ============================ */
 
@@ -473,8 +475,19 @@ static void confirm_dismiss(void) {
 
 static void on_boiler_confirm_yes(lv_event_t * e) {
     (void)e;
-    if (pending_boiler_type == 0 || pending_boiler_type == 1)
+    if (pending_boiler_type == 0 || pending_boiler_type == 1) {
         boxtalk_set_boiler_type(pending_boiler_type);
+        if (pending_boiler_type == 0) {
+            /* User requested OpenTherm: start a 35-second countdown to verify OT boiler comms.
+             * happ_thermstat takes up to ~30s to exhaust retries if no boiler is connected. */
+            s_ot_check_countdown = 35;
+            s_ot_err_display_countdown = 0;
+            toon_state.ot_comm_error = 0;
+        } else {
+            s_ot_check_countdown = -1;
+            s_ot_err_display_countdown = 0;
+        }
+    }
     confirm_dismiss();
 }
 
@@ -482,8 +495,8 @@ static void on_boiler_confirm_no(lv_event_t * e) {
     (void)e;
     /* revert the switch to whatever the boiler currently reports */
     if (sw_boiler) {
-        if (toon_state.boiler_type == 1) lv_obj_add_state(sw_boiler, LV_STATE_CHECKED);
-        else                             lv_obj_clear_state(sw_boiler, LV_STATE_CHECKED);
+        if (toon_state.boiler_type == 0) lv_obj_clear_state(sw_boiler, LV_STATE_CHECKED);
+        else                             lv_obj_add_state(sw_boiler, LV_STATE_CHECKED);
     }
     confirm_dismiss();
 }
@@ -562,10 +575,72 @@ static void on_boiler_switch(lv_event_t * e) {
 /* ============================ live ticks ============================ */
 
 static void heating_tick(void) {
+    if (s_ot_err_display_countdown > 0) {
+        s_ot_err_display_countdown--;
+        if (lbl_boiler_mode) {
+            lv_label_set_text(lbl_boiler_mode, tr("Huidige modus: On/Off (OT-fout)", "Current mode: On/Off (OT error)"));
+        }
+        if (lbl_boiler_ot) {
+            lv_label_set_text(lbl_boiler_ot, tr("Geen ketelreactie: teruggezet naar On/Off", "No boiler response: reverted to On/Off"));
+        }
+        return;
+    }
+
+    /* If in OpenTherm mode and communication error is flagged (e.g. no boiler attached
+     * to keteladapter), immediately revert back to On/Off (CR6). */
+    if (toon_state.boiler_type == 0 && toon_state.ot_comm_error != 0) {
+        s_ot_check_countdown = -1;
+        s_ot_err_display_countdown = 6; /* Display error explanation for 6 seconds */
+        boxtalk_set_boiler_type(1);
+        toon_state.boiler_type = 1;
+        if (sw_boiler) {
+            lv_obj_add_state(sw_boiler, LV_STATE_CHECKED);
+        }
+        if (lbl_boiler_mode) {
+            lv_label_set_text(lbl_boiler_mode, tr("Huidige modus: On/Off (OT-fout)", "Current mode: On/Off (OT error)"));
+        }
+        if (lbl_boiler_ot) {
+            lv_label_set_text(lbl_boiler_ot, tr("Geen ketelreactie: teruggezet naar On/Off", "No boiler response: reverted to On/Off"));
+        }
+        return;
+    }
+
+    if (s_ot_check_countdown > 0) {
+        s_ot_check_countdown--;
+        if (lbl_boiler_mode) {
+            /* Keep concise so it never collides with the switch label on the right */
+            lv_label_set_text(lbl_boiler_mode, tr("Huidige modus: controleren...", "Current mode: checking..."));
+        }
+        if (lbl_boiler_ot) {
+            /* Full-width line at SY(70) displays the remaining seconds */
+            lv_label_set_text_fmt(lbl_boiler_ot,
+                tr("OpenTherm ketel zoeken... (%d s)", "Searching for OpenTherm boiler... (%d s)"),
+                s_ot_check_countdown + 1);
+        }
+        return;
+    } else if (s_ot_check_countdown == 0) {
+        s_ot_check_countdown = -1;
+        /* Timeout reached: check if OpenTherm communications are active */
+        if (toon_state.ot_comm_error != 0) {
+            /* No OpenTherm comms found: move back to On/Off (CR6) */
+            s_ot_err_display_countdown = 6;
+            boxtalk_set_boiler_type(1);
+            toon_state.boiler_type = 1;
+            if (sw_boiler) {
+                lv_obj_add_state(sw_boiler, LV_STATE_CHECKED);
+            }
+            if (lbl_boiler_mode) {
+                lv_label_set_text(lbl_boiler_mode, tr("Huidige modus: On/Off (OT-fout)", "Current mode: On/Off (OT error)"));
+            }
+            if (lbl_boiler_ot) {
+                lv_label_set_text(lbl_boiler_ot, tr("Geen ketelreactie: teruggezet naar On/Off", "No boiler response: reverted to On/Off"));
+            }
+            return;
+        }
+    }
+
     if (lbl_boiler_mode) {
-        const char * m = (toon_state.boiler_type == 1) ? "On/Off"
-                       : (toon_state.boiler_type == 0) ? "OpenTherm"
-                       : tr("detecteren...", "detecting...");
+        const char * m = (toon_state.boiler_type == 0) ? "OpenTherm" : "On/Off";
         lv_label_set_text_fmt(lbl_boiler_mode, tr("Huidige modus: %s", "Current mode: %s"), m);
     }
     if (lbl_boiler_ot) {
@@ -1092,10 +1167,13 @@ static void open_heating_modal(lv_event_t * e) {
     lv_label_set_text(hdr, tr("Ketelregeling", "Boiler control"));
     lv_obj_align(hdr, LV_ALIGN_TOP_LEFT, 0, 0);
 
+    s_ot_check_countdown = -1;
+    s_ot_err_display_countdown = 0;
     sw_boiler = lv_switch_create(box);
     lv_obj_set_size(sw_boiler, SX(64), SY(30));
     lv_obj_align(sw_boiler, LV_ALIGN_TOP_RIGHT, SX(-4), SY(2));
-    if (toon_state.boiler_type == 1) lv_obj_add_state(sw_boiler, LV_STATE_CHECKED);
+    if (toon_state.boiler_type == 0) lv_obj_clear_state(sw_boiler, LV_STATE_CHECKED);
+    else                             lv_obj_add_state(sw_boiler, LV_STATE_CHECKED);
     lv_obj_add_event_cb(sw_boiler, on_boiler_switch, LV_EVENT_VALUE_CHANGED, NULL);
 
     lv_obj_t * swlbl = lv_label_create(box);
@@ -1507,55 +1585,56 @@ static void on_domoticz_apply_click(lv_event_t * e) {
     } else {
         lv_label_set_text(lbl_domoticz_result, tr("Fout: geen verbinding - controleer host/poort.", "Error: no connection - check host/port."));
     }
+    lv_obj_scroll_to_view(lbl_domoticz_result, LV_ANIM_ON);
 }
 
 static void open_domoticz(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open("Domoticz", 430);
-    int y = 70;
+    lv_obj_t * p = modal_open("Domoticz", 540);
+    int y = SY(70);
 
     lv_obj_t * r_en = panel_row(p, y, tr("Domoticz inschakelen", "Domoticz enabled"), NULL);
     row_switch(r_en, settings.enable_domoticz, on_domoticz_enabled_change);
-    y += 82;
+    y += SY(66);
 
     lv_obj_t * lh = lv_label_create(p);
     lv_obj_set_style_text_color(lh, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lh, SF(22), 0);
     lv_label_set_text(lh, tr("Host (ip:poort):", "Host (ip:port):"));
-    lv_obj_align(lh, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(lh, LV_ALIGN_TOP_LEFT, SX(4), y + SY(8));
     ta_domoticz_host = lv_textarea_create(p); ta_make_numeric(ta_domoticz_host);
     lv_obj_set_size(ta_domoticz_host, SX(420), SY(44));
-    lv_obj_align(ta_domoticz_host, LV_ALIGN_TOP_LEFT, SX(260), y - 4);
+    lv_obj_align(ta_domoticz_host, LV_ALIGN_TOP_LEFT, SX(260), y);
     lv_textarea_set_one_line(ta_domoticz_host, true);
     lv_textarea_set_text(ta_domoticz_host, settings.domoticz_host);
-    y += 60;
+    y += SY(56);
 
     lv_obj_t * lu = lv_label_create(p);
     lv_obj_set_style_text_color(lu, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lu, SF(22), 0);
     lv_label_set_text(lu, tr("Gebruiker (opt):", "User (opt):"));
-    lv_obj_align(lu, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(lu, LV_ALIGN_TOP_LEFT, SX(4), y + SY(8));
     ta_domoticz_user = lv_textarea_create(p);
     lv_obj_set_size(ta_domoticz_user, SX(420), SY(44));
-    lv_obj_align(ta_domoticz_user, LV_ALIGN_TOP_LEFT, SX(260), y - 4);
+    lv_obj_align(ta_domoticz_user, LV_ALIGN_TOP_LEFT, SX(260), y);
     lv_textarea_set_one_line(ta_domoticz_user, true);
     lv_textarea_set_text(ta_domoticz_user, settings.domoticz_user);
-    y += 64;
+    y += SY(58);
 
     lv_obj_t * b_apply = lv_btn_create(p);
-    lv_obj_set_size(b_apply, SX(220), SY(50));
+    lv_obj_set_size(b_apply, SX(220), SY(48));
     lv_obj_align(b_apply, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_obj_set_style_bg_color(b_apply, lv_color_hex(0xc06030), 0);
     lv_obj_add_event_cb(b_apply, on_domoticz_apply_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * la = lv_label_create(b_apply); lv_label_set_text(la, tr("Opslaan + verbinden", "Save + connect")); lv_obj_center(la);
 
     lv_obj_t * b_view = lv_btn_create(p);
-    lv_obj_set_size(b_view, SX(240), SY(50));
+    lv_obj_set_size(b_view, SX(240), SY(48));
     lv_obj_align(b_view, LV_ALIGN_TOP_LEFT, SX(244), y);
     lv_obj_set_style_bg_color(b_view, lv_color_hex(0x2a4060), 0);
     lv_obj_add_event_cb(b_view, on_domoticz_view_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * lv = lv_label_create(b_view); lv_label_set_text(lv, tr("Licht/zonwering", "View lights/blinds")); lv_obj_center(lv);
-    y += 64;
+    y += SY(56);
 
     lbl_domoticz_result = lv_label_create(p);
     lv_obj_set_style_text_color(lbl_domoticz_result, lv_color_hex(0xa8c4dc), 0);
@@ -3724,7 +3803,7 @@ static void make_tile(int x, int y, const lv_img_dsc_t * icon, const char * sym,
     lv_obj_set_style_text_color(t, lv_color_hex(THEME_TEXT_HI), 0);
     lv_label_set_text(t, title);
 #ifdef TOON1
-    lv_obj_align(t, LV_ALIGN_CENTER, 0, 10);   /* clear the 40px icon above, the caption below */
+    lv_obj_align(t, LV_ALIGN_CENTER, 0, 2);   /* proper gap to caption on 480px panel */
 #else
     lv_obj_align(t, LV_ALIGN_CENTER, 0, SY(8));
 #endif

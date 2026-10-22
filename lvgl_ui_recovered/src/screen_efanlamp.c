@@ -80,14 +80,14 @@ static void refresh_cb(lv_timer_t * t) {
     } else {
         char src[32] = "";
         if (efanlamp.last_source[0])
-            snprintf(src, sizeof src, "  ·  %s", (const char *)efanlamp.last_source);
+            snprintf(src, sizeof src, "  |  %s", (const char *)efanlamp.last_source);
         if (efanlamp.fan_on)
             lv_label_set_text_fmt(lbl_status,
-                tr("Verbonden  ·  L%d%s", "Connected  ·  L%d%s"),
+                tr("Verbonden  |  L%d%s", "Connected  |  L%d%s"),
                 efanlamp.fan_speed, src);
         else
             lv_label_set_text_fmt(lbl_status,
-                tr("Verbonden  ·  uit%s", "Connected  ·  off%s"), src);
+                tr("Verbonden  |  uit%s", "Connected  |  off%s"), src);
     }
 
     /* highlight active fan speed button */

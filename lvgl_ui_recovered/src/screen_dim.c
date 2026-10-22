@@ -240,18 +240,24 @@ static void refresh_cb(lv_timer_t * t) {
         lv_label_set_text_fmt(lbl_temp, "%.1f°C", display_indoor_temp(toon_state.indoor_temp));
     else
         lv_label_set_text(lbl_temp, "...");
-    /* Setpoint visible at all times; "to" prefix only when the boiler is
-     * actively heating toward it (see screen_home.c for the same idea). */
-    if (toon_state.setpoint > 0) {
-        if (toon_state.burner_on)
-            lv_label_set_text_fmt(lbl_setpoint, tr("naar %.1f°C", "to %.1f°C"), toon_state.setpoint);
-        else
-            lv_label_set_text_fmt(lbl_setpoint, "%.1f°C", toon_state.setpoint);
-    } else {
-        lv_label_set_text(lbl_setpoint, "");
+    lv_obj_update_layout(lbl_temp);
+    if (dim_img_flame) lv_obj_align_to(dim_img_flame, lbl_temp, LV_ALIGN_OUT_RIGHT_MID, SX(16), 0);
+    if (dim_img_faucet) lv_obj_align_to(dim_img_faucet, lbl_temp, LV_ALIGN_OUT_RIGHT_MID, SX(16), -SY(10));
+    if (dim_img_drop) lv_obj_align_to(dim_img_drop, lbl_temp, LV_ALIGN_OUT_RIGHT_MID, SX(44), SY(6));
+
+    /* Setpoint / program / sensor metrics are dropped in dim mode (CR1) */
+    if (lbl_setpoint) {
+        if (toon_state.setpoint > 0) {
+            if (toon_state.burner_on)
+                lv_label_set_text_fmt(lbl_setpoint, tr("naar %.1f°C", "to %.1f°C"), toon_state.setpoint);
+            else
+                lv_label_set_text_fmt(lbl_setpoint, "%.1f°C", toon_state.setpoint);
+        } else {
+            lv_label_set_text(lbl_setpoint, "");
+        }
     }
 
-    lv_label_set_text(lbl_program, program_label());
+    if (lbl_program) lv_label_set_text(lbl_program, program_label());
 
     if (lbl_metrics) {
         if (!settings.show_dim_metrics) {
@@ -711,65 +717,26 @@ lv_obj_t * screen_dim_create(void) {
     /* Moon phase icon removed per CR11 */
     dim_moon_img = NULL;
 
+    /* Room temperature readout: enlarged to 96pt Montserrat (clock font/size).
+       Setpoint, program, and metrics (TVOC, CO2, CV bar) dropped per CR1. */
     lbl_temp = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_temp, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_temp, &lv_font_montserrat_48, 0);
-    lv_label_set_text(lbl_temp, "-- C");
-    lv_obj_align(lbl_temp, LV_ALIGN_CENTER, 0, SY(45));
+    lv_obj_set_style_text_font(lbl_temp, &lv_font_montserrat_96_custom, 0);
+    lv_label_set_text(lbl_temp, "--.-°C");
+    lv_obj_align(lbl_temp, LV_ALIGN_CENTER, 0, SY(50));
 
-    lbl_setpoint = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_setpoint, lv_color_hex(0xbbbbbb), 0);
-    /* Toon 1 (480 px tall) SY-compresses the row positions ×0.8 but the fonts
-       stay full-size, so setpoint/program/metrics collided into one blob.
-       On the short panel: smaller fonts for the secondary rows + a touch more
-       spacing. Toon 2 (600 px) keeps its original fonts/layout. */
-    lv_obj_set_style_text_font(lbl_setpoint,
-        DISP_VER < 600 ? &lv_font_montserrat_22 : &lv_font_montserrat_28, 0);
-    lv_label_set_text(lbl_setpoint, tr("naar -- C", "to -- C"));
-    lv_obj_align(lbl_setpoint, LV_ALIGN_CENTER, 0, SY(115) + (DISP_VER < 600 ? 4 : 0));
+    lbl_setpoint = NULL;
+    lbl_program  = NULL;
+    lbl_metrics  = NULL;
+    lbl_burner   = NULL;
 
-    /* Active program — sits directly under the setpoint and above the
-       air-quality / pressure metrics strip. Same vertical-ordering as the
-       home thermostat tile so the eye-tracking matches. */
-    lbl_program = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_program, lv_color_hex(0xbbbbbb), 0);
-    lv_obj_set_style_text_font(lbl_program,
-        DISP_VER < 600 ? &lv_font_montserrat_18 : &lv_font_montserrat_22, 0);
-    lv_label_set_text(lbl_program, "--");
-    lv_obj_align(lbl_program, LV_ALIGN_CENTER, 0, SY(140) + (DISP_VER < 600 ? 14 : 0));
-
-    /* Air-quality + CH-pressure strip — moved below program so the TVOC /
-       ppm / bar / AQ block doesn't shove the manual label off the layout.
-       At +170 it ends around y=492, leaving room for dim_lbl_city at y=498
-       and the forecast strip at y=518 without anything overlapping. */
-    lbl_metrics = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_metrics, lv_color_hex(0x888888), 0);
-    lv_obj_set_style_text_font(lbl_metrics,
-        DISP_VER < 600 ? &lv_font_montserrat_18 : &lv_font_montserrat_22, 0);
-    lv_label_set_text(lbl_metrics, "");
-    /* TVOC/CO2/CV row dropped lower into the gap between the thermostat mode and
-     * the weather strip (user request). Toon 1 stays put — that panel is tight. */
-    lv_obj_align(lbl_metrics, LV_ALIGN_CENTER, 0, SY(162) + (DISP_VER < 600 ? 18 : 30));
-
-    /* Burner state — sits to the right of lbl_program on the same baseline.
-       CH-heating shows "-> 90 C" (red). DHW shows the faucet+drop pair
-       slightly to the left of where the text would be. Idle hides both. */
-    lbl_burner = lv_label_create(scr_root);
-    lv_obj_set_style_text_font(lbl_burner, &lv_font_montserrat_22, 0);
-    lv_label_set_text(lbl_burner, "");
-    lv_obj_align(lbl_burner, LV_ALIGN_CENTER, SX(80), SY(140));
-    lv_obj_add_flag(lbl_burner, LV_OBJ_FLAG_HIDDEN);
-
-    /* Toon-style radiator+flame glyph, parked to the right of the big indoor
-     * temp. lbl_temp is at CENTER (0, 45) with the 96-pt font, so its right
-     * edge sits ~95 px right of centre; the icon (32 wide) at +135 leaves
-     * a clean gap. y matches the temp baseline. */
+    /* Toon-style radiator+flame glyph, parked to the right of the big indoor temp */
     dim_img_flame = lv_img_create(scr_root);
     lv_img_set_src(dim_img_flame, &icon_radiator);
     lv_img_set_zoom(dim_img_flame, 256);
     lv_obj_set_style_img_recolor(dim_img_flame, lv_color_hex(0xff8866), 0);
     lv_obj_set_style_img_recolor_opa(dim_img_flame, 255, 0);
-    lv_obj_align(dim_img_flame, LV_ALIGN_CENTER, SX(145), SY(45));
+    lv_obj_align_to(dim_img_flame, lbl_temp, LV_ALIGN_OUT_RIGHT_MID, SX(16), 0);
     lv_obj_add_flag(dim_img_flame, LV_OBJ_FLAG_HIDDEN);
 
     /* DHW faucet fully red — see screen_home.c for rationale. */
@@ -778,17 +745,16 @@ lv_obj_t * screen_dim_create(void) {
     lv_img_set_zoom(dim_img_faucet, 256);
     lv_obj_set_style_img_recolor(dim_img_faucet, lv_color_hex(0xff5544), 0);
     lv_obj_set_style_img_recolor_opa(dim_img_faucet, 255, 0);
-    lv_obj_align(dim_img_faucet, LV_ALIGN_CENTER, SX(140), SY(35));
+    lv_obj_align_to(dim_img_faucet, lbl_temp, LV_ALIGN_OUT_RIGHT_MID, SX(16), -SY(10));
     lv_obj_add_flag(dim_img_faucet, LV_OBJ_FLAG_HIDDEN);
 
-    /* DHW drop in RED to distinguish from the blue cold-water-flow drop —
-     * see comment in screen_home.c next to tile_img_drop. */
+    /* DHW drop in RED to distinguish from the blue cold-water-flow drop */
     dim_img_drop = lv_img_create(scr_root);
     lv_img_set_src(dim_img_drop, &icon_drop);
     lv_img_set_zoom(dim_img_drop, 256);
     lv_obj_set_style_img_recolor(dim_img_drop, lv_color_hex(0xff5544), 0);
     lv_obj_set_style_img_recolor_opa(dim_img_drop, 255, 0);
-    lv_obj_align(dim_img_drop, LV_ALIGN_CENTER, SX(158), SY(55));
+    lv_obj_align_to(dim_img_drop, lbl_temp, LV_ALIGN_OUT_RIGHT_MID, SX(44), SY(6));
     lv_obj_add_flag(dim_img_drop, LV_OBJ_FLAG_HIDDEN);
 
     /* Live water flow — drop icon + "X.X L/m" right of the indoor temp,

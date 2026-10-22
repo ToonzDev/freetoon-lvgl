@@ -539,25 +539,27 @@ lv_obj_t * screen_schedule_create(void) {
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(THEME_BG), 0);
     lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* Back + title */
-    lv_obj_t * back = lv_btn_create(scr_root);
-    lv_obj_set_size(back, 140, 70);
-    lv_obj_align(back, LV_ALIGN_TOP_LEFT, 12, 12);
-    lv_obj_set_style_bg_color(back, lv_color_hex(THEME_BTN_BG), 0);
-    lv_obj_set_style_radius(back, 12, 0);
-    lv_obj_set_ext_click_area(back, 20);
-    lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * bl = lv_label_create(back);
-    lv_label_set_text(bl, tr("< Terug", "< Back"));
-    lv_obj_set_style_text_color(bl, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(bl, SF(22), 0);
-    lv_obj_center(bl);
+    /* Close "X" button + title */
+    int x_w = (DISP_VER < 600) ? 60 : 70;
+    int x_h = (DISP_VER < 600) ? 46 : 50;
+    lv_obj_t * btn_close = lv_btn_create(scr_root);
+    lv_obj_set_size(btn_close, x_w, x_h);
+    lv_obj_align(btn_close, LV_ALIGN_TOP_RIGHT, SX(-12), SY(12));
+    lv_obj_set_style_bg_color(btn_close, lv_color_hex(THEME_BTN_BG), 0);
+    lv_obj_set_style_radius(btn_close, 12, 0);
+    lv_obj_set_ext_click_area(btn_close, 25);
+    lv_obj_add_event_cb(btn_close, on_back, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * xl = lv_label_create(btn_close);
+    lv_label_set_text(xl, LV_SYMBOL_CLOSE);
+    lv_obj_set_style_text_color(xl, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(xl, SF(22), 0);
+    lv_obj_center(xl);
 
     lv_obj_t * title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(title, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(title, SF(28), 0);
     lv_label_set_text(title, tr("Programma", "Schedule"));
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, 180, 26);
+    lv_obj_align(title, LV_ALIGN_TOP_LEFT, SX(30), SY(18));
 
     /* Day chips */
     for (int i = 0; i < 7; i++) {

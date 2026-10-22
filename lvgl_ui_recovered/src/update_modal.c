@@ -8,6 +8,8 @@
 #include "display.h"
 #include "i18n.h"
 #include "settings.h"
+#include "theme.h"
+#include "screens.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -137,10 +139,10 @@ static void upd_prog_tick(lv_timer_t * t) {
     fclose(f);
 
     for (int i = 0; i < UPD_STEP_COUNT; i++) {
-        if (failed > 0 && i == failed - 1)      upd_row_set(i, LV_SYMBOL_CLOSE, lv_color_hex(0xff5555));
-        else if (i < cur - 1)                   upd_row_set(i, LV_SYMBOL_OK,    lv_color_hex(0x66dd88));
-        else if (i == cur - 1 && cur > 0)       upd_row_set(i, LV_SYMBOL_RIGHT, lv_color_hex(0xffd24a));
-        else                                    upd_row_set(i, "-",             lv_color_hex(0x6b7c93));
+        if (failed > 0 && i == failed - 1)      upd_row_set(i, LV_SYMBOL_CLOSE, lv_color_hex(settings.home_light_mode ? 0xcc2222 : 0xff5555));
+        else if (i < cur - 1)                   upd_row_set(i, LV_SYMBOL_OK,    lv_color_hex(settings.home_light_mode ? 0x188a38 : 0x66dd88));
+        else if (i == cur - 1 && cur > 0)       upd_row_set(i, LV_SYMBOL_RIGHT, lv_color_hex(settings.home_light_mode ? 0xd07800 : 0xffd24a));
+        else                                    upd_row_set(i, "-",             lv_color_hex(settings.home_light_mode ? 0x8898a8 : 0x6b7c93));
     }
 
     if (s_upd_prog_msg) {
@@ -153,6 +155,11 @@ static void upd_prog_tick(lv_timer_t * t) {
             lv_label_set_text(s_upd_prog_msg,
                               tr("Herstarten... het scherm komt zo terug.",
                                  "Restarting... the screen will return shortly."));
+            static int s_restart_ticks = 0;
+            if (++s_restart_ticks >= 4) {
+                s_restart_ticks = 0;
+                ui_request_restart();
+            }
         } else {
             lv_label_set_text(s_upd_prog_msg,
                               tr("Bezig met installeren...", "Installing..."));
@@ -188,14 +195,15 @@ static void do_install_now(lv_event_t * e) {
         lv_obj_t * card = lv_obj_create(s_upd_prog_modal);
         lv_obj_set_size(card, SX(620), SY(460));
         lv_obj_center(card);
-        lv_obj_set_style_bg_color(card, lv_color_hex(0x16243a), 0);
+        lv_obj_set_style_bg_color(card, lv_color_hex(settings.home_light_mode ? 0xffffff : 0x16243a), 0);
         lv_obj_set_style_radius(card, 16, 0);
-        lv_obj_set_style_border_width(card, 0, 0);
+        lv_obj_set_style_border_width(card, settings.home_light_mode ? 1 : 0, 0);
+        lv_obj_set_style_border_color(card, lv_color_hex(0xc8d4e2), 0);
         lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
         lv_obj_t * h = lv_label_create(card);
         lv_obj_set_style_text_font(h, SF(28), 0);
-        lv_obj_set_style_text_color(h, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_color(h, lv_color_hex(THEME_TEXT_HI), 0);
         lv_label_set_text(h, tr("Update installeren", "Installing update"));
         lv_obj_align(h, LV_ALIGN_TOP_LEFT, SX(24), SY(18));
 
@@ -203,12 +211,12 @@ static void do_install_now(lv_event_t * e) {
             s_upd_prog_row[i] = lv_label_create(card);
             lv_obj_set_style_text_font(s_upd_prog_row[i], SF(20), 0);
             lv_obj_align(s_upd_prog_row[i], LV_ALIGN_TOP_LEFT, SX(28), SY(70 + i * 38));
-            upd_row_set(i, "-", lv_color_hex(0x6b7c93));
+            upd_row_set(i, "-", lv_color_hex(settings.home_light_mode ? 0x8898a8 : 0x6b7c93));
         }
 
         s_upd_prog_msg = lv_label_create(card);
         lv_obj_set_style_text_font(s_upd_prog_msg, SF(18), 0);
-        lv_obj_set_style_text_color(s_upd_prog_msg, lv_color_hex(0xcdd9e6), 0);
+        lv_obj_set_style_text_color(s_upd_prog_msg, lv_color_hex(settings.home_light_mode ? 0x3a4c5e : 0xcdd9e6), 0);
         lv_label_set_recolor(s_upd_prog_msg, true);
         lv_label_set_long_mode(s_upd_prog_msg, LV_LABEL_LONG_WRAP);
         lv_obj_set_width(s_upd_prog_msg, SX(560));
@@ -218,6 +226,7 @@ static void do_install_now(lv_event_t * e) {
         lv_obj_t * x = lv_btn_create(card);
         lv_obj_set_size(x, SX(130), SY(46));
         lv_obj_align(x, LV_ALIGN_BOTTOM_RIGHT, SX(-16), SY(-12));
+        lv_obj_set_style_bg_color(x, lv_color_hex(settings.home_light_mode ? 0x4a5a6a : 0x33445a), 0);
         lv_obj_add_event_cb(x, upd_prog_close, LV_EVENT_CLICKED, NULL);
         lv_obj_t * xl = lv_label_create(x);
         lv_label_set_text(xl, tr("Sluiten", "Close"));
@@ -303,14 +312,19 @@ static void on_channel_toggle(lv_event_t * e) {
 void update_modal_tick(void) {
     if (s_about_status_lbl && !s_install_pinned) {
         if (g_update_state.available) {
+            lv_obj_set_style_text_color(s_about_status_lbl, lv_color_hex(settings.home_light_mode ? 0x188a38 : 0x66dd88), 0);
             lv_label_set_text_fmt(s_about_status_lbl,
                                   tr("Update %s beschikbaar", "Update %s available"),
                                   g_update_state.latest_version);
         } else if (g_update_state.last_check_epoch) {
+            lv_obj_set_style_text_color(s_about_status_lbl, lv_color_hex(g_update_state.last_check_ok
+                ? (settings.home_light_mode ? 0x1e2838 : 0xffffff)
+                : (settings.home_light_mode ? 0xcc2222 : 0xff7777)), 0);
             lv_label_set_text(s_about_status_lbl, g_update_state.last_check_ok
                               ? tr("Je hebt de nieuwste versie.", "You're on the latest release.")
                               : tr("Updatecontrole mislukt - check internet.", "Update check failed - check internet."));
         } else {
+            lv_obj_set_style_text_color(s_about_status_lbl, lv_color_hex(THEME_TEXT_HI), 0);
             lv_label_set_text(s_about_status_lbl, tr("Tik \"Controleer updates\".", "Tap \"Check for updates\"."));
         }
     }
@@ -367,8 +381,9 @@ void update_modal_open(lv_obj_t * parent) {
     lv_obj_t * panel = lv_obj_create(s_update_modal);
     lv_obj_set_size(panel, SX(760), SY(520));
     lv_obj_center(panel);
-    lv_obj_set_style_bg_color(panel, lv_color_hex(0x16243a), 0);
-    lv_obj_set_style_border_width(panel, 0, 0);
+    lv_obj_set_style_bg_color(panel, lv_color_hex(settings.home_light_mode ? 0xffffff : 0x16243a), 0);
+    lv_obj_set_style_border_width(panel, settings.home_light_mode ? 1 : 0, 0);
+    lv_obj_set_style_border_color(panel, lv_color_hex(0xc8d4e2), 0);
     lv_obj_set_style_radius(panel, 18, 0);
     lv_obj_set_style_pad_hor(panel, SX(20), 0);
     lv_obj_set_style_pad_ver(panel, SY(16), 0);
@@ -391,20 +406,20 @@ void update_modal_open(lv_obj_t * parent) {
 
     lv_obj_t * t = lv_label_create(panel);
     lv_obj_set_style_text_font(t, SF(28), 0);
-    lv_obj_set_style_text_color(t, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(t, lv_color_hex(THEME_TEXT_HI), 0);
     lv_label_set_text(t, "freetoon");
     lv_obj_align(t, LV_ALIGN_TOP_LEFT, 60, 2);
 
     lv_obj_t * ver = lv_label_create(panel);
     lv_obj_set_style_text_font(ver, SF(18), 0);
-    lv_obj_set_style_text_color(ver, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_color(ver, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_label_set_text_fmt(ver, tr("%s  -  beta", "%s  -  beta"), BUILD_VERSION);
     lv_obj_align(ver, LV_ALIGN_TOP_LEFT, 60, 34);
 
     /* Credit + license line */
     lv_obj_t * cred = lv_label_create(panel);
     lv_obj_set_style_text_font(cred, SF(14), 0);
-    lv_obj_set_style_text_color(cred, lv_color_hex(0x6f8aa0), 0);
+    lv_obj_set_style_text_color(cred, lv_color_hex(settings.home_light_mode ? 0x7a8a9a : 0x6f8aa0), 0);
     lv_label_set_text(cred, tr("Alternatieve UI door Ierlandfan en Toonz  -  MIT-licentie",
                                "Alternative UI by Ierlandfan and Toonz  -  MIT License"));
     lv_obj_align(cred, LV_ALIGN_TOP_RIGHT, 0, 6);
@@ -412,7 +427,7 @@ void update_modal_open(lv_obj_t * parent) {
     /* Live status line */
     s_about_status_lbl = lv_label_create(panel);
     lv_obj_set_style_text_font(s_about_status_lbl, SF(20), 0);
-    lv_obj_set_style_text_color(s_about_status_lbl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(s_about_status_lbl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_width(s_about_status_lbl, SX(716));
     lv_label_set_long_mode(s_about_status_lbl, LV_LABEL_LONG_WRAP);
     lv_obj_align(s_about_status_lbl, LV_ALIGN_TOP_LEFT, 0, SY(62));
@@ -421,15 +436,16 @@ void update_modal_open(lv_obj_t * parent) {
     lv_obj_t * notesbox = lv_obj_create(panel);
     lv_obj_set_size(notesbox, SX(716), SY(185));
     lv_obj_align(notesbox, LV_ALIGN_TOP_LEFT, 0, SY(96));
-    lv_obj_set_style_bg_color(notesbox, lv_color_hex(0x0e1a2a), 0);
-    lv_obj_set_style_border_width(notesbox, 0, 0);
+    lv_obj_set_style_bg_color(notesbox, lv_color_hex(settings.home_light_mode ? 0xf0f4f8 : 0x0e1a2a), 0);
+    lv_obj_set_style_border_width(notesbox, settings.home_light_mode ? 1 : 0, 0);
+    lv_obj_set_style_border_color(notesbox, lv_color_hex(0xd0d8e2), 0);
     lv_obj_set_style_radius(notesbox, 10, 0);
     lv_obj_set_style_pad_all(notesbox, 12, 0);
     lv_obj_set_scroll_dir(notesbox, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(notesbox, LV_SCROLLBAR_MODE_AUTO);
     lv_obj_t * notes = lv_label_create(notesbox);
     lv_obj_set_style_text_font(notes, SF(18), 0);
-    lv_obj_set_style_text_color(notes, lv_color_hex(0xc8d4e0), 0);
+    lv_obj_set_style_text_color(notes, lv_color_hex(settings.home_light_mode ? 0x223042 : 0xc8d4e0), 0);
     lv_label_set_long_mode(notes, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(notes, SX(690));
     lv_label_set_text(notes, g_update_state.changelog[0]
@@ -455,7 +471,7 @@ void update_modal_open(lv_obj_t * parent) {
     /* Auto-update toggle */
     lv_obj_t * au_lbl = lv_label_create(panel);
     lv_obj_set_style_text_font(au_lbl, SF(18), 0);
-    lv_obj_set_style_text_color(au_lbl, lv_color_hex(0xc8d4e0), 0);
+    lv_obj_set_style_text_color(au_lbl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_label_set_text_fmt(au_lbl, tr("Auto-update 's nachts (~%02d:00)",
                                      "Auto-update nightly (~%02d:00)"), settings.auto_update_hour);
     lv_obj_align(au_lbl, LV_ALIGN_TOP_LEFT, 0, SY(296));
@@ -467,7 +483,7 @@ void update_modal_open(lv_obj_t * parent) {
     /* Release channel toggle */
     lv_obj_t * ch_lbl = lv_label_create(panel);
     lv_obj_set_style_text_font(ch_lbl, SF(18), 0);
-    lv_obj_set_style_text_color(ch_lbl, lv_color_hex(0xc8d4e0), 0);
+    lv_obj_set_style_text_color(ch_lbl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_label_set_text(ch_lbl, tr("Beta / dev", "Beta / dev"));
     lv_obj_align(ch_lbl, LV_ALIGN_TOP_LEFT, SX(430), SY(296));
     lv_obj_t * ch_sw = lv_switch_create(panel);
@@ -479,7 +495,7 @@ void update_modal_open(lv_obj_t * parent) {
     lv_obj_t * b_check = lv_btn_create(panel);
     lv_obj_set_size(b_check, SX(180), SY(50));
     lv_obj_align(b_check, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-    lv_obj_set_style_bg_color(b_check, lv_color_hex(0x2a4060), 0);
+    lv_obj_set_style_bg_color(b_check, lv_color_hex(settings.home_light_mode ? 0x2e5c8a : 0x2a4060), 0);
     lv_obj_add_event_cb(b_check, do_check_updates, LV_EVENT_CLICKED, NULL);
     lv_obj_t * cl = lv_label_create(b_check);
     lv_obj_set_style_text_font(cl, SF(18), 0);
@@ -511,7 +527,7 @@ void update_modal_open(lv_obj_t * parent) {
         lv_obj_t * b_dis = lv_btn_create(panel);
         lv_obj_set_size(b_dis, SX(130), SY(50));
         lv_obj_align(b_dis, LV_ALIGN_BOTTOM_LEFT, SX(450), 0);
-        lv_obj_set_style_bg_color(b_dis, lv_color_hex(0x33445a), 0);
+        lv_obj_set_style_bg_color(b_dis, lv_color_hex(settings.home_light_mode ? 0x4a5a6a : 0x33445a), 0);
         lv_obj_add_event_cb(b_dis, do_dismiss_to_envelope, LV_EVENT_CLICKED, NULL);
         lv_obj_t * dl = lv_label_create(b_dis);
         lv_obj_set_style_text_font(dl, SF(18), 0);
@@ -522,7 +538,7 @@ void update_modal_open(lv_obj_t * parent) {
     lv_obj_t * x = lv_btn_create(panel);
     lv_obj_set_size(x, SX(120), SY(50));
     lv_obj_align(x, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
-    lv_obj_set_style_bg_color(x, lv_color_hex(0x33445a), 0);
+    lv_obj_set_style_bg_color(x, lv_color_hex(settings.home_light_mode ? 0x4a5a6a : 0x33445a), 0);
     lv_obj_add_event_cb(x, on_modal_close_event, LV_EVENT_CLICKED, NULL);
     lv_obj_t * xl = lv_label_create(x);
     lv_obj_set_style_text_font(xl, SF(22), 0);

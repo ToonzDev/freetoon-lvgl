@@ -32,7 +32,7 @@
 #include <ctype.h>
 
 toon_state_t toon_state = { .program_state = -1, .active_state = -1,
-                            .boiler_type = -1 };
+                            .boiler_type = 1 }; /* default 1 (On/Off) per CR6 */
 
 static pthread_mutex_t g_bxt_state_mtx = PTHREAD_MUTEX_INITIALIZER;
 
@@ -138,6 +138,31 @@ static char NETCON_UUID[96]   = "qb-000000000000-0000000000:hcb_netcon";
 static char USERMSG_UUID[96]  = "qb-000000000000-0000000000:happ_usermsg";
 static char RRD_UUID[96]      = "qb-000000000000-0000000000:hcb_rrd";
 static char THERMD_UUID[96]   = "qb-000000000000-0000000000:happ_thermstat";
+static char s_therm_settings_uuid[96] = {0};
+
+static void bt_seed_thermostat_settings_uuid(void) {
+    FILE * f = fopen("/qmf/config/config_happ_thermstat.xml", "r");
+    if (!f) return;
+    char line[512];
+    char cur_uuid[96] = {0};
+    while (fgets(line, sizeof line, f)) {
+        char * u1 = strstr(line, "<uuid>");
+        if (u1) {
+            char * u2 = strstr(u1 + 6, "</uuid>");
+            if (u2 && (size_t)(u2 - (u1 + 6)) < sizeof(cur_uuid)) {
+                size_t len = u2 - (u1 + 6);
+                memcpy(cur_uuid, u1 + 6, len);
+                cur_uuid[len] = '\0';
+            }
+        }
+        if (strstr(line, "thermostatSettings") && cur_uuid[0]) {
+            snprintf(s_therm_settings_uuid, sizeof s_therm_settings_uuid, "%s", cur_uuid);
+            fprintf(stderr, "[bxt] seeded thermostatSettings uuid from config: %s\n", s_therm_settings_uuid);
+            break;
+        }
+    }
+    fclose(f);
+}
 
 static void bt_init_dev_uuids(void) {
     char hn[64] = {0};
@@ -293,10 +318,9 @@ static void handle_notify(const char* xml) {
         }
     } else if (strcmp(tail, "ThermostatInfo") == 0) {
         float v;
-        /* Learn the live (dynamic) thermostat publisher uuid, and while the CH
-         * pressure is still unseeded, re-query it against THIS uuid — the stale
-         * hardcoded startup query never answers. Capped so we don't query forever. */
-        if (src_uuid[0]) {
+        /* Learn the live (dynamic) thermostat publisher uuid, but do not let
+         * a boiler device (e.g. otgw / HappBoiler) stomp on the thermostat. */
+        if (src_uuid[0] && !strstr(src_uuid, "otgw") && strcmp(src_uuid, UUID_BOILER) != 0 && strncmp(src_uuid, "e7b8a710", 8) != 0) {
             snprintf(g_therm_pub, sizeof g_therm_pub, "%s", src_uuid);
             static int seed_tries = 0;
             if (toon_state.water_pressure <= 0.05f && seed_tries < 10) {
@@ -522,6 +546,18 @@ static void handle_msg(const char* xml) {
     }
     p++;
     boxtalk_lock();
+    if (strstr(xml, "thermostatSettings")) {
+        const char * ts = strstr(xml, "thermostatSettings");
+        const char * dev = ts;
+        while (dev > xml && strncmp(dev, "<device", 7) != 0) dev--;
+        if (strncmp(dev, "<device", 7) == 0) {
+            char u[96];
+            if (attr_value(dev, "uuid", u, sizeof u)) {
+                snprintf(s_therm_settings_uuid, sizeof s_therm_settings_uuid, "%s", u);
+                fprintf(stderr, "[bxt] learned thermostatSettings uuid = %s\n", s_therm_settings_uuid);
+            }
+        }
+    }
     if (strncmp(p, "notify", 6) == 0) {
         handle_notify(xml);
     } else if (strncmp(p, "query", 5) == 0) {
@@ -747,27 +783,31 @@ int boxtalk_subscribe_service(const char * service_id) {
  * descriptor name string is "Thermostat") — NOT "ThermostatInfo" (queries)
  * and NOT "specific1" (that route returns "Not implemented"). */
 int boxtalk_get_boiler_type(void) {
+    if (!s_therm_settings_uuid[0]) bt_seed_thermostat_settings_uuid();
+    const char * dest = s_therm_settings_uuid[0] ? s_therm_settings_uuid : (g_therm_pub[0] ? g_therm_pub : THERMD_UUID);
     char buf[512];
     snprintf(buf, sizeof(buf),
         "<action class=\"invoke\" uuid=\"%s\" destuuid=\"%s\" "
         "serviceid=\"urn:hcb-hae-com:serviceId:Thermostat\" requestid=\"%d-gbt\">"
         "<u:GetBoilerType xmlns:u=\"urn:hcb-hae-com:service:Thermostat:1\">"
         "</u:GetBoilerType></action>",
-        OUR_UUID, THERMSTAT_UUID, getpid());
+        OUR_UUID, dest, getpid());
     return send_msg(buf);
 }
 
 int boxtalk_set_boiler_type(int type) {
     if (type != 0 && type != 1) return -1;
+    if (!s_therm_settings_uuid[0]) bt_seed_thermostat_settings_uuid();
+    const char * dest = s_therm_settings_uuid[0] ? s_therm_settings_uuid : (g_therm_pub[0] ? g_therm_pub : THERMD_UUID);
     char buf[512];
     snprintf(buf, sizeof(buf),
         "<action class=\"invoke\" uuid=\"%s\" destuuid=\"%s\" "
         "serviceid=\"urn:hcb-hae-com:serviceId:Thermostat\" requestid=\"%d-sbt\">"
         "<u:SetBoilerType xmlns:u=\"urn:hcb-hae-com:service:Thermostat:1\">"
         "<ot>%d</ot></u:SetBoilerType></action>",
-        OUR_UUID, THERMSTAT_UUID, getpid(), type);
+        OUR_UUID, dest, getpid(), type);
     int rc = send_msg(buf);
-    fprintf(stderr, "[bxt] SetBoilerType ot=%d rc=%d\n", type, rc);
+    fprintf(stderr, "[bxt] SetBoilerType ot=%d rc=%d (dest=%s)\n", type, rc, dest);
     /* Optimistic local update; GetBoilerType refresh confirms. */
     if (rc == 0) toon_state.boiler_type = type;
     boxtalk_get_boiler_type();

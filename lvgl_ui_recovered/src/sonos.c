@@ -50,7 +50,7 @@ static int                g_poll_fail_count = 0;
 typedef struct {
     char title[64];
     char uri[256];
-    char meta[512];
+    char meta[1024];
 } sonos_fav_entry_t;
 
 static sonos_fav_entry_t g_favs[SONOS_MAX_ITEMS];
@@ -1331,11 +1331,16 @@ int sonos_get_favorites(char favs[][64], int max_favs) {
 
         char title[64] = "";
         char uri[256] = "";
-        char resMD[512] = "";
+        char resMD[1024] = "";
 
         extract_xml_tag(cur, "dc:title", title, sizeof title);
         extract_xml_tag(cur, "res", uri, sizeof uri);
         extract_xml_tag(cur, "r:resMD", resMD, sizeof resMD);
+
+        /* Fallback: if top-level <res> was empty, check inside <r:resMD> */
+        if (!uri[0] && resMD[0]) {
+            extract_xml_tag(resMD, "res", uri, sizeof uri);
+        }
 
         if (title[0] && uri[0]) {
             snprintf(g_favs[g_fav_count].title, sizeof g_favs[0].title, "%s", title);
@@ -1423,8 +1428,10 @@ static volatile int     s_enqueue_seq = 0;
 typedef struct {
     char name[64];
     char uri[384];
-    char meta[768];
+    char meta[1024];
 } fav_play_req_t;
+
+static void sonos_enqueue_and_play(const char * uri, const char * meta, const char * name);
 
 static void * fav_play_worker(void * arg) {
     fav_play_req_t * req = (fav_play_req_t *)arg;
@@ -1440,31 +1447,67 @@ static void * fav_play_worker(void * arg) {
     char active_ip[32];
     snprintf(active_ip, sizeof active_ip, "%s", g_active_ip);
 
-    char esc_uri[384], esc_meta[768];
-    xml_escape(req->uri, esc_uri, sizeof esc_uri);
-    xml_escape(req->meta, esc_meta, sizeof esc_meta);
+    /* If the favorite is a container (Spotify playlist / local share container),
+     * route to queue enqueue & play instead of direct stream SetAVTransportURI */
+    if (strncmp(req->uri, "x-rincon-cpcontainer:", 21) == 0 ||
+        strncmp(req->uri, "file://", 7) == 0 ||
+        strncmp(req->uri, "x-file-cifs:", 12) == 0) {
+        pthread_mutex_unlock(&s_enqueue_mtx);
+        sonos_enqueue_and_play(req->uri, req->meta, req->name);
+        free(req);
+        return NULL;
+    }
 
-    char body[1280];
+    char esc_uri[384];
+    xml_escape(req->uri, esc_uri, sizeof esc_uri);
+
+    char esc_meta[2048] = "";
+    if (req->meta[0]) {
+        /* If req->meta is already escaped XML (&lt;DIDL-Lite...), don't double-escape */
+        if (strncmp(req->meta, "&lt;", 4) == 0) {
+            snprintf(esc_meta, sizeof esc_meta, "%s", req->meta);
+        } else {
+            xml_escape(req->meta, esc_meta, sizeof esc_meta);
+        }
+    }
+
+    char body[2560];
     snprintf(body, sizeof body,
              "<InstanceID>0</InstanceID><CurrentURI>%s</CurrentURI><CurrentURIMetaData>%s</CurrentURIMetaData>",
              esc_uri, esc_meta);
 
-    fprintf(stderr, "[sonos] play_favorite starting for '%s'\n", req->name);
+    fprintf(stderr, "[sonos] play_favorite starting for '%s' uri='%s'\n", req->name, req->uri);
 
     int rc_set = sonos_soap(active_ip, "/MediaRenderer/AVTransport/Control",
                             "urn:schemas-upnp-org:service:AVTransport:1",
                             "SetAVTransportURI", body, NULL, 0, 3);
 
-    int play_ok = 0;
-    for (int retry = 0; retry < 5; retry++) {
-        int rc = sonos_soap(active_ip, "/MediaRenderer/AVTransport/Control",
+    /* Fallback: If SetAVTransportURI failed with metadata, retry with empty metadata */
+    if (rc_set != 0 && esc_meta[0]) {
+        fprintf(stderr, "[sonos] play_favorite with metadata failed (%d), retrying with empty metadata\n", rc_set);
+        char empty_body[512];
+        snprintf(empty_body, sizeof empty_body,
+                 "<InstanceID>0</InstanceID><CurrentURI>%s</CurrentURI><CurrentURIMetaData></CurrentURIMetaData>",
+                 esc_uri);
+        rc_set = sonos_soap(active_ip, "/MediaRenderer/AVTransport/Control",
                             "urn:schemas-upnp-org:service:AVTransport:1",
-                            "Play", "<InstanceID>0</InstanceID><Speed>1</Speed>", NULL, 0, 2);
-        if (rc == 0) {
-            play_ok = 1;
-            break;
+                            "SetAVTransportURI", empty_body, NULL, 0, 3);
+    }
+
+    int play_ok = 0;
+    if (rc_set == 0) {
+        for (int retry = 0; retry < 5; retry++) {
+            int rc = sonos_soap(active_ip, "/MediaRenderer/AVTransport/Control",
+                                "urn:schemas-upnp-org:service:AVTransport:1",
+                                "Play", "<InstanceID>0</InstanceID><Speed>1</Speed>", NULL, 0, 2);
+            if (rc == 0) {
+                play_ok = 1;
+                break;
+            }
+            usleep(50000);
         }
-        usleep(50000);
+    } else {
+        fprintf(stderr, "[sonos] play_favorite SetAVTransportURI failed permanently for '%s'\n", req->name);
     }
 
     fprintf(stderr, "[sonos] play_favorite result: set=%d play=%d\n", rc_set, play_ok);
@@ -1487,13 +1530,28 @@ void sonos_play_favorite(const char * name) {
     /* Search in cached favorites */
     const sonos_fav_entry_t * match = NULL;
     for (int i = 0; i < g_fav_count; i++) {
-        if (strcmp(g_favs[i].title, name) == 0) {
+        if (strcmp(g_favs[i].title, name) == 0 || strcasecmp(g_favs[i].title, name) == 0) {
             match = &g_favs[i];
             break;
         }
     }
 
-    if (!match) return;
+    /* If not found in cache (e.g. cache was not yet populated), fetch once */
+    if (!match && g_fav_count == 0) {
+        char dummy[SONOS_MAX_ITEMS][64];
+        sonos_get_favorites(dummy, SONOS_MAX_ITEMS);
+        for (int i = 0; i < g_fav_count; i++) {
+            if (strcmp(g_favs[i].title, name) == 0 || strcasecmp(g_favs[i].title, name) == 0) {
+                match = &g_favs[i];
+                break;
+            }
+        }
+    }
+
+    if (!match) {
+        fprintf(stderr, "[sonos] play_favorite: '%s' not found in %d favorites\n", name, g_fav_count);
+        return;
+    }
 
     fav_play_req_t * req = malloc(sizeof *req);
     if (!req) return;
@@ -1965,7 +2023,7 @@ int sonos_get_source_items(sonos_source_t src, int spotify_user_idx, sonos_item_
         int n = sonos_get_favorites(favs, max_items);
         for (int i = 0; i < n; i++) {
             snprintf(items[i].name, sizeof items[i].name, "%s", favs[i]);
-            items[i].uri[0] = 0;
+            snprintf(items[i].uri, sizeof items[i].uri, "%s", g_favs[i].uri);
         }
         return n;
     } else if (src == SONOS_SRC_PLAYLISTS) {
