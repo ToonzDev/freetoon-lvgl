@@ -156,31 +156,42 @@ int main(int argc, char** argv) {
         if (otgw_start() != 0)
             fprintf(stderr, "[main] otgw_start failed\n");
     }
-    /* Network, cloud & local smart home integrations — enabled in both standalone and slave mode */
-    if (vent_start() != 0)
-        fprintf(stderr, "[main] vent_start failed\n");
-    extern int efanlamp_start(void);
-    if (efanlamp_start() != 0)
-        fprintf(stderr, "[main] efanlamp_start failed\n");
-    if (ha_start() != 0)
-        fprintf(stderr, "[main] ha_start failed\n");
-    extern int ha_mqtt_start(void);
-    if (ha_mqtt_start() != 0)
-        fprintf(stderr, "[main] ha_mqtt_start failed\n");
-    extern int domoticz_start(void);
-    if (domoticz_start() != 0)
-        fprintf(stderr, "[main] domoticz_start failed\n");
-    extern int sonos_start(void);
-    if (sonos_start() != 0)
-        fprintf(stderr, "[main] sonos_start failed\n");
+    /* Network, cloud & local smart home integrations — started only when configured and enabled */
+    if (settings.enable_vent && settings.vent_host[0]) {
+        if (vent_start() != 0) fprintf(stderr, "[main] vent_start failed\n");
+    }
+    if (settings.efanlamp_host[0]) {
+        extern int efanlamp_start(void);
+        if (efanlamp_start() != 0)
+            fprintf(stderr, "[main] efanlamp_start failed\n");
+    }
+    if (settings.enable_ha && settings.ha_host[0]) {
+        if (ha_start() != 0) fprintf(stderr, "[main] ha_start failed\n");
+        extern int ha_mqtt_start(void);
+        if (ha_mqtt_start() != 0) fprintf(stderr, "[main] ha_mqtt_start failed\n");
+    }
+    if (settings.enable_domoticz && settings.domoticz_host[0]) {
+        extern int domoticz_start(void);
+        if (domoticz_start() != 0) fprintf(stderr, "[main] domoticz_start failed\n");
+    }
+    if (settings.sonos_enabled && settings.sonos_host[0]) {
+        extern int sonos_start(void);
+        if (sonos_start() != 0)
+            fprintf(stderr, "[main] sonos_start failed\n");
+    }
     if (weather_start() != 0)
         fprintf(stderr, "[main] weather_start failed\n");
-    if (waste_start() != 0)
-        fprintf(stderr, "[main] waste_start failed\n");
-    extern int news_start(void);
-    news_start();
-    extern int calendar_start(void);
-    calendar_start();
+    if (settings.show_dim_waste || settings.waste_postcode[0]) {
+        if (waste_start() != 0) fprintf(stderr, "[main] waste_start failed\n");
+    }
+    if (settings.news_enabled) {
+        extern int news_start(void);
+        news_start();
+    }
+    if (settings.calendar_enabled && (settings.calendar_ics_url[0] || settings.calendar_ha_entity[0])) {
+        extern int calendar_start(void);
+        calendar_start();
+    }
     if (healthcheck_start() != 0)
         fprintf(stderr, "[main] healthcheck_start failed\n");
     if (pwa_start() != 0)
