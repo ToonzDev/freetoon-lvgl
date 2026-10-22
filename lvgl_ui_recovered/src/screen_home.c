@@ -876,6 +876,8 @@ typedef struct {
 
 static slot_templogger_view_t * slot_templogger[4] = {0};
 static lv_obj_t * lbl_title_slot[TILE_SLOT_COUNT] = {0};
+static lv_obj_t * lbl_lt_sonos_main = NULL;
+static lv_obj_t * lbl_lt_sonos_sub = NULL;
 
 static void on_slot_agenda_tap(lv_event_t * e) {
     (void)e;
@@ -1647,6 +1649,21 @@ static void refresh_cb(lv_timer_t * t) {
         if (th <= 0) th = SY(150);
         lv_coord_t avail_h = th - SY(46);
         fill_agenda_view(p, tile_cal_dates, tile_cal_times, tile_cal_titles, avail_h);
+    }
+
+    if (lbl_lt_sonos_main) {
+        const integration_meta_t * m = tile_slots_integration_by_id("sonos");
+        if (m) {
+            const char * v = (const char *)m->latest_value;
+            const char * s = (const char *)m->latest_subtitle;
+            if (v && v[0]) lv_label_set_text(lbl_lt_sonos_main, v);
+            else           lv_label_set_text(lbl_lt_sonos_main, "Sonos...");
+            if (s && s[0]) lv_label_set_text(lbl_lt_sonos_sub, s);
+            else           lv_label_set_text(lbl_lt_sonos_sub, "");
+        } else {
+            lv_label_set_text(lbl_lt_sonos_main, "Geen Sonos");
+            lv_label_set_text(lbl_lt_sonos_sub, "");
+        }
     }
 
     /* Marketplace tile overrides — if a slot is bound, render the
@@ -4185,6 +4202,21 @@ lv_obj_t * screen_home_create(void) {
         /* Sonos tile in custom layout */
         tile_t sonos_t;
         make_tile(scr_root, 0, 0, 200, 150, LT_SONOS, "Sonos", 0x2077a0, NULL, &sonos_t);
+        lbl_lt_sonos_main = lv_label_create(sonos_t.tile);
+        lv_obj_set_style_text_color(lbl_lt_sonos_main, lv_color_hex(COL_TEXT_HI), 0);
+        lv_obj_set_style_text_font(lbl_lt_sonos_main, SF(22), 0);
+        lv_label_set_long_mode(lbl_lt_sonos_main, LV_LABEL_LONG_DOT);
+        lv_obj_set_width(lbl_lt_sonos_main, LV_PCT(90));
+        lv_obj_align(lbl_lt_sonos_main, LV_ALIGN_CENTER, 0, -8);
+        lv_label_set_text(lbl_lt_sonos_main, "Sonos...");
+
+        lbl_lt_sonos_sub = lv_label_create(sonos_t.tile);
+        lv_obj_set_style_text_color(lbl_lt_sonos_sub, lv_color_hex(COL_TEXT_DIM), 0);
+        lv_obj_set_style_text_font(lbl_lt_sonos_sub, SF(16), 0);
+        lv_label_set_long_mode(lbl_lt_sonos_sub, LV_LABEL_LONG_DOT);
+        lv_obj_set_width(lbl_lt_sonos_sub, LV_PCT(90));
+        lv_obj_align(lbl_lt_sonos_sub, LV_ALIGN_BOTTOM_MID, 0, -8);
+        lv_label_set_text(lbl_lt_sonos_sub, "");
     }
     tile_water = water_t.tile;
     lbl_title_slot[TILE_SLOT_WATER] = water_t.title;
@@ -4782,6 +4814,8 @@ void screen_home_destroy(void) {
             slot_templogger[i] = NULL;
             lbl_title_slot[i] = NULL;
         }
+        lbl_lt_sonos_main = NULL;
+        lbl_lt_sonos_sub = NULL;
         home_page1 = NULL;
         home_dot[0] = NULL;
         home_dot[1] = NULL;

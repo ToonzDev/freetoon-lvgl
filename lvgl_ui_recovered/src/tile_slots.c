@@ -156,6 +156,20 @@ static int load_manifest(const char * dir_path) {
         }
     }
 
+    /* Check for cached state.json if daemon has written one */
+    char state_path[256];
+    snprintf(state_path, sizeof state_path, "%s/state.json", dir_path);
+    FILE * sf = fopen(state_path, "r");
+    if (sf) {
+        char sbuf[512];
+        size_t sn = fread(sbuf, 1, sizeof sbuf - 1, sf);
+        sbuf[sn] = 0;
+        fclose(sf);
+        extract_str(sbuf, "value", (char *)m->latest_value, sizeof m->latest_value);
+        extract_str(sbuf, "subtitle", (char *)m->latest_subtitle, sizeof m->latest_subtitle);
+        extract_str(sbuf, "alert", (char *)m->latest_alert, sizeof m->latest_alert);
+    }
+
     g_integ_count++;
     fprintf(stderr,
         "[tiles] loaded integration: id=%s service=%s title='%s' "
@@ -179,8 +193,9 @@ const integration_meta_t * tile_slots_integration_at(int i) {
 
 const integration_meta_t * tile_slots_integration_by_id(const char * id) {
     if (!id || !id[0]) return NULL;
+    const char * bare_id = (strncmp(id, "local:", 6) == 0) ? id + 6 : id;
     for (int i = 0; i < g_integ_count; i++)
-        if (strcmp(g_integ[i].id, id) == 0) return &g_integ[i];
+        if (strcmp(g_integ[i].id, id) == 0 || strcmp(g_integ[i].id, bare_id) == 0) return &g_integ[i];
     return NULL;
 }
 
@@ -302,8 +317,9 @@ void tile_slots_set_from_remote(int n, const integration_meta_t * src) {
 
 void tile_slots_set_value(const char * integration_id, const char * val, const char * sub, const char * alert) {
     if (!integration_id || !integration_id[0]) return;
+    const char * bare_id = (strncmp(integration_id, "local:", 6) == 0) ? integration_id + 6 : integration_id;
     for (int i = 0; i < g_integ_count; i++) {
-        if (strcmp(g_integ[i].id, integration_id) == 0) {
+        if (strcmp(g_integ[i].id, integration_id) == 0 || strcmp(g_integ[i].id, bare_id) == 0) {
             if (val) snprintf((char *)g_integ[i].latest_value, sizeof(g_integ[i].latest_value), "%s", val);
             if (sub) snprintf((char *)g_integ[i].latest_subtitle, sizeof(g_integ[i].latest_subtitle), "%s", sub);
             if (alert) {
