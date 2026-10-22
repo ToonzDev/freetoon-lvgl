@@ -75,6 +75,18 @@ static const struct {
       "24-uurs temperatuurlogger met grafiek (kamer, setpoint, buiten)." },
     { "crypto", "Crypto Tracker", "1.0.0",
       "Live crypto koersen en 24h verandering via CoinGecko." },
+    { "sonos", "Sonos Player", "1.0.0",
+      "Native Sonos UPnP / SOAP controller met favorieten, radio en volume." },
+    { "domoticz", "Domoticz Home Automation", "1.0.0",
+      "Schakelaars, dimmers en zonwering via Domoticz HTTP JSON API." },
+    { "homeassistant", "Home Assistant", "1.0.0",
+      "Verbindt FreeToon met Home Assistant via REST & WebSocket." },
+    { "agenda", "Agenda & Kalender", "1.0.0",
+      "Synchroniseert afspraken uit Home Assistant en iCal/Google Calendar." },
+    { "ventilation", "Itho Ventilatie", "1.0.0",
+      "Itho CVE-S ventilatieregeling via MQTT en virtuele afstandsbediening." },
+    { "camera", "Deurbel & Camera", "1.0.0",
+      "Deurbel- en camerameldingen via webhook op poort 8765 en live video overlay." },
 };
 
 /* ===================================================================== */
