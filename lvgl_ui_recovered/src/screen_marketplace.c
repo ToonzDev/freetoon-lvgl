@@ -75,8 +75,6 @@ static const struct {
       "24-uurs temperatuurlogger met grafiek (kamer, setpoint, buiten)." },
     { "crypto", "Crypto Tracker", "1.0.0",
       "Live crypto koersen en 24h verandering via CoinGecko." },
-    { "sonos", "Sonos Player", "1.0.0",
-      "Native Sonos UPnP / SOAP controller met favorieten, radio en volume." },
     { "domoticz", "Domoticz Home Automation", "1.0.0",
       "Schakelaars, dimmers en zonwering via Domoticz HTTP JSON API." },
     { "homeassistant", "Home Assistant", "1.0.0",
