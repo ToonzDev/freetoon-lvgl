@@ -178,10 +178,6 @@ static void on_wake_tap(lv_event_t * e) {
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
     if (lv_scr_act() != scr_root) return;
-    static int n = 0;
-    if (++n % 5 == 0) fprintf(stderr, "[dim] tick t=%.2f sp=%.2f prog=%s\n",
-                              toon_state.indoor_temp, toon_state.setpoint,
-                              program_label());
 
     time_t now = time(NULL);
     struct tm tm;

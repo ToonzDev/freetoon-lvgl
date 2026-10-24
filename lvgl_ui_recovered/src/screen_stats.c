@@ -433,6 +433,7 @@ static void render_chart(void) {
     if (selected_period == PERIOD_YEARS) {
         /* Group consecutive monthly samples by calendar year -> exactly 1 bar per year */
         char cur_yy[3] = "";
+        int bar_cnt[64] = {0};
         for (int i = 0; i < n && g_bar_count < 64; i++) {
             if (isnan(series.samples[i])) continue;
             const char * yy = series.year2[i];
@@ -440,14 +441,22 @@ static void render_chart(void) {
             if (strncmp(yy, cur_yy, 2) != 0) {
                 cur_yy[0] = yy[0]; cur_yy[1] = yy[1]; cur_yy[2] = 0;
                 g_bar_val[g_bar_count] = 0;
+                bar_cnt[g_bar_count] = 0;
                 snprintf(g_bar_label[g_bar_count], sizeof g_bar_label[0], "20%s", yy);
                 g_bar_count++;
             }
             g_bar_val[g_bar_count - 1] += series.samples[i];
+            bar_cnt[g_bar_count - 1]++;
+        }
+        if (!is_cum) {
+            for (int k = 0; k < g_bar_count; k++) {
+                if (bar_cnt[k] > 0) g_bar_val[k] /= bar_cnt[k];
+            }
         }
     } else if (selected_period == PERIOD_MONTHS) {
         /* Group consecutive daily samples by calendar month+year */
         int cur_mm = -1; char cur_yy[3] = "";
+        int bar_cnt[64] = {0};
         for (int i = 0; i < n && g_bar_count < 64; i++) {
             if (isnan(series.samples[i])) continue;
             const char * lab = series.labels[i];
@@ -457,6 +466,7 @@ static void render_chart(void) {
                 cur_mm = mm;
                 cur_yy[0] = yy[0]; cur_yy[1] = yy[1]; cur_yy[2] = 0;
                 g_bar_val[g_bar_count] = 0;
+                bar_cnt[g_bar_count] = 0;
                 if (mm >= 1 && mm <= 12)
                     snprintf(g_bar_label[g_bar_count], sizeof g_bar_label[0], "%s", i18n_month_short(mm - 1));
                 else
@@ -464,6 +474,12 @@ static void render_chart(void) {
                 g_bar_count++;
             }
             g_bar_val[g_bar_count-1] += series.samples[i];
+            bar_cnt[g_bar_count-1]++;
+        }
+        if (!is_cum) {
+            for (int k = 0; k < g_bar_count; k++) {
+                if (bar_cnt[k] > 0) g_bar_val[k] /= bar_cnt[k];
+            }
         }
     } else {
         int want;

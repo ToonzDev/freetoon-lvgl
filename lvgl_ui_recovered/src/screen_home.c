@@ -3632,7 +3632,6 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_text_color(lbl_t_clock_colon, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_t_clock_colon, font_clock, 0);
     lv_label_set_text(lbl_t_clock_colon, ":");
-    clock_colon_pulse(lbl_t_clock_colon);
 
     lbl_t_clock_m = lv_label_create(clk_row);
     lv_obj_set_style_text_color(lbl_t_clock_m, lv_color_hex(COL_TEXT_HI), 0);

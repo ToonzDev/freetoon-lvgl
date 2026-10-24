@@ -210,7 +210,6 @@ static int send_msg(const char* xml) {
         rc = sock_send_all(&nul, 1);
     }
     pthread_mutex_unlock(&send_lock);
-    fprintf(stderr, "[bxt] sent %zu bytes\n", strlen(xml));
     return rc;
 }
 
@@ -288,12 +287,12 @@ static void handle_notify(const char* xml) {
 
     if (strcmp(tail, "TemperatureSensor") == 0) {
         float v;
-        if (elem_text_float(xml, "CurrentTemperature", &v)) {
+        if (elem_text_float(xml, "CurrentTemperature", &v) || elem_text_float(xml, "currentTemp", &v)) {
             /* happ_thermstat publishes the calibrated room temperature here.
              * The hardware-sensor UUID_AMBIENT is a separate (uncalibrated)
              * source — ignored for indoor_temp because it reads ~3°C high. */
-            if (strcmp(src_uuid, UUID_THERMSTAT) == 0) {
-                toon_state.indoor_temp = v;
+            if (strcmp(src_uuid, UUID_AMBIENT) != 0 && strcmp(src_uuid, UUID_BOILER) != 0) {
+                toon_state.indoor_temp = (v > 80.0f) ? v / 100.0f : v;
                 toon_state.msg_count++;
             } else if (strcmp(src_uuid, UUID_BOILER) == 0) {
                 toon_state.boiler_temp = v;
@@ -341,7 +340,9 @@ static void handle_notify(const char* xml) {
          * there's no risk of picking it up here.) The previous hardcoded
          * src_uuid filter matched only one Toon, leaving indoor_temp at 0 (and
          * the PWA/home tile showing "--") on every other device. */
-        if (elem_text_float(xml, "currentTemp", &v)) {
+        if (elem_text_float(xml, "currentTemp", &v) ||
+            elem_text_float(xml, "CurrentTemperature", &v) ||
+            elem_text_float(xml, "currentDisplayTemp", &v)) {
             toon_state.indoor_temp = (v > 80.0f) ? v / 100.0f : v;
             toon_state.msg_count++;
         }
@@ -475,10 +476,12 @@ static void handle_query_response(const char* xml) {
         /* happ_thermstat publishes the calibrated room temperature here.
          * Seeds indoor_temp until the first TemperatureSensor notify
          * arrives (and acts as a fallback for hardware-sensor outages). */
-        if (elem_text_float(xml, "CurrentTemperature", &v)) {
-            if (v > 0.0f) toon_state.indoor_temp = v;
+        if (elem_text_float(xml, "CurrentTemperature", &v) ||
+            elem_text_float(xml, "currentTemp", &v) ||
+            elem_text_float(xml, "currentDisplayTemp", &v)) {
+            if (v > 0.0f) toon_state.indoor_temp = (v > 80.0f) ? v / 100.0f : v;
             toon_state.msg_count++;
-            fprintf(stderr, "[bxt] query response CurrentTemperature = %.2f\n", v);
+            fprintf(stderr, "[bxt] query response CurrentTemperature = %.2f\n", toon_state.indoor_temp);
             return;
         }
         if (elem_text_float(xml, "BoilerChPressure", &v)) {
@@ -541,10 +544,6 @@ static void handle_msg(const char* xml) {
     const char* p = xml;
     while (*p && isspace((unsigned char)*p)) p++;
     if (*p != '<') return;
-    /* Log non-notify messages so we can see what's happening */
-    if (strncmp(p+1, "notify", 6) != 0) {
-        fprintf(stderr, "[bxt] msg: %.500s\n---\n", xml);
-    }
     p++;
     boxtalk_lock();
     if (strstr(xml, "thermostatSettings")) {
@@ -578,7 +577,9 @@ static void handle_msg(const char* xml) {
         if (!settings.client_mode && strstr(xml, "happ_thermstat") && strstr(xml, "UpdateDataSet")
             && strstr(xml, "thermostatInfo")) {
             float v;
-            if (elem_text_float(xml, "currentTemp", &v) && v > 0) {
+            if ((elem_text_float(xml, "currentTemp", &v) ||
+                 elem_text_float(xml, "currentDisplayTemp", &v) ||
+                 elem_text_float(xml, "CurrentTemperature", &v)) && v > 0) {
                 toon_state.indoor_temp = (v > 80.0f) ? v / 100.0f : v;
                 toon_state.msg_count++;
             }
@@ -639,7 +640,6 @@ static void handle_msg(const char* xml) {
             memcpy(netcon_response_buf, xml, n);
             netcon_response_buf[n] = 0;
             netcon_response_ready = 1;
-            fprintf(stderr, "[bxt] NETCON response %zu bytes\n", n);
         }
     }
     boxtalk_unlock();
@@ -985,6 +985,7 @@ static void send_initial_handshake(void) {
     send_query("efbb5c4f-7b5e-4aa8-8ab5-6b5ab204ceaa", "vocSensor", "eco2");
     /* Query calibrated room temperature — happ_thermstat owns this value;
      * the raw hardware-sensor reading is ~3°C high so we don't use it. */
+    send_query(THERMD_UUID, "ThermostatInfo", "CurrentTemperature");
     send_query("b822de89-ecbd-4f6f-9fd2-5cac18fc06c4", "ThermostatInfo", "CurrentTemperature");
     /* Query boiler CH water pressure (notifies are rare; this seeds the value
        and the http poll keeps it fresh). */
@@ -1020,6 +1021,9 @@ void boxtalk_request_setpoint_refresh(void) {
    periodic poll loop + wake-screen handler call this to force a fresh
    value into toon_state.indoor_temp. */
 void boxtalk_request_indoor_refresh(void) {
+    if (g_therm_pub[0])
+        send_query(g_therm_pub, "ThermostatInfo", "CurrentTemperature");
+    send_query(THERMD_UUID, "ThermostatInfo", "CurrentTemperature");
     send_query(THERMSTAT_UUID, "ThermostatInfo", "CurrentTemperature");
 }
 
@@ -1079,13 +1083,14 @@ static int http_get_thermstat(const char* path_with_query) {
     return http_get_thermstat_full(path_with_query, NULL, 0);
 }
 
-/* Tiny JSON value parser: finds "key":"NNN" and returns atoi. */
+/* Tiny JSON value parser: finds "key": NNN or "key":"NNN" and returns atoi. */
 static int parse_json_int(const char* json, const char* key, int dflt) {
     char needle[64];
-    snprintf(needle, sizeof(needle), "\"%s\":\"", key);
+    snprintf(needle, sizeof(needle), "\"%s\":", key);
     const char* p = strstr(json, needle);
     if (!p) return dflt;
     p += strlen(needle);
+    while (*p == ' ' || *p == '\t' || *p == '\"') p++;
     return atoi(p);
 }
 
@@ -1097,6 +1102,16 @@ static void* http_poll_thread(void* arg) {
         if (http_get_thermstat_full("action=getThermostatInfo", body, sizeof(body)) == 0) {
             toon_state.program_state = parse_json_int(body, "programState", toon_state.program_state);
             toon_state.active_state  = parse_json_int(body, "activeState",  toon_state.active_state);
+            /* Also refresh indoor temp from canonical HTTP view — prevents initial
+             * "--.-°C" or "..." delay after boot when waiting for BoxTalk change-notifies. */
+            int ct = parse_json_int(body, "currentTemp", 0);
+            if (ct <= 0) ct = parse_json_int(body, "currentDisplayTemp", 0);
+            if (ct > 0) {
+                toon_state.indoor_temp = (ct > 80) ? ct / 100.0f : (float)ct;
+                toon_state.msg_count++;
+            }
+            int hum = parse_json_int(body, "currentHumidity", 0);
+            if (hum > 0) toon_state.humidity = (float)hum;
             /* Also refresh setpoint from the canonical HTTP view in case a
                concurrent client changed it (cloud, web). Value is centi-°C. */
             int sp = parse_json_int(body, "currentSetpoint", 0);
@@ -1396,7 +1411,7 @@ int boxtalk_setpoint_decrease(void) {
 
 void boxtalk_tick(void) {
     static int wifi_poll_ticks = 0;
-    if (++wifi_poll_ticks >= 10) {
+    if (++wifi_poll_ticks >= 30) {
         wifi_poll_ticks = 0;
         boxtalk_wifi_get_status();
     }
