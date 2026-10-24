@@ -3687,7 +3687,13 @@ lv_obj_t * screen_home_create(void) {
 
     lbl_t_temp = lv_label_create(th);
     lv_obj_set_style_text_color(lbl_t_temp, lv_color_hex(COL_TEMP_YELLOW), 0);
-    lv_obj_set_style_text_font(lbl_t_temp, th_is_compact ? SF(36) : (DISP_VER < 600 ? SF(36) : SF(48)), 0);
+    const lv_font_t * font_temp;
+    if (th_w >= 450 || th_h >= 280) {
+        font_temp = SF(64);
+    } else {
+        font_temp = th_is_compact ? SF(36) : (DISP_VER < 600 ? SF(36) : SF(48));
+    }
+    lv_obj_set_style_text_font(lbl_t_temp, font_temp, 0);
     lv_label_set_text(lbl_t_temp, "--.-°C");
     lv_obj_align(lbl_t_temp, LV_ALIGN_TOP_MID, 0, (th_is_compact ? 2 : (DISP_VER < 600 ? 6 : 14)));
 
@@ -3744,7 +3750,15 @@ lv_obj_t * screen_home_create(void) {
 
     lbl_t_setpoint = lv_label_create(sp_row);
     lv_obj_set_style_text_color(lbl_t_setpoint, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(lbl_t_setpoint, th_is_compact ? SF(18) : (DISP_VER < 600 ? SF(20) : SF(24)), 0);
+    const lv_font_t * font_sp;
+    if (th_w >= 450 || th_h >= 280) {
+        font_sp = SF(48);
+    } else if (th_w >= 360 || th_h >= 240) {
+        font_sp = SF(28);
+    } else {
+        font_sp = th_is_compact ? SF(18) : (DISP_VER < 600 ? SF(20) : SF(24));
+    }
+    lv_obj_set_style_text_font(lbl_t_setpoint, font_sp, 0);
     lv_label_set_text(lbl_t_setpoint, "--.-°C");
     lv_obj_align(lbl_t_setpoint, LV_ALIGN_CENTER, 0, 0);
 
@@ -3914,15 +3928,29 @@ lv_obj_t * screen_home_create(void) {
     slot_agenda[0] = make_slot_agenda(tile_energy, 0x4477cc);
     slot_waste[0]  = make_slot_waste(tile_energy, 0x1e3a24);
     slot_templogger[0] = make_slot_templogger(tile_energy);
-    /* Compressed for the new 130-px tile: 28-pt W value (was 48), gas
-     * total on the same baseline range below. */
+    int ew = 214, eh = 130;
+    if (settings.custom_layout_enabled) {
+        const layout_tile_t * L = layout_find(LT_ENERGY);
+        if (L && L->visible) {
+            int x, y;
+            layout_cell_px(L->col, L->row, L->w, L->h, &x, &y, &ew, &eh);
+            ew -= 8; eh -= 8;
+        }
+    }
+    const lv_font_t * font_ew;
+    if (ew >= 360 || eh >= 220) {
+        font_ew = SF(64);
+    } else if (ew >= 260 || eh >= 170) {
+        font_ew = SF(48);
+    } else {
+        font_ew = SF(28);
+    }
+
     lbl_energy_w = lv_label_create(energy_t.tile);
     lv_obj_set_style_text_color(lbl_energy_w, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(lbl_energy_w, SF(28), 0);
+    lv_obj_set_style_text_font(lbl_energy_w, font_ew, 0);
     lv_label_set_text(lbl_energy_w, "-- W");
-    /* +6 sits the big number just below the tile centre — clears the
-     * "Energy" header more cleanly than the prior -8. */
-    lv_obj_align(lbl_energy_w, LV_ALIGN_CENTER, 0, 6);
+    lv_obj_align(lbl_energy_w, LV_ALIGN_CENTER, 0, (eh >= 170 ? 0 : 6));
 
     lbl_energy_gas = lv_label_create(energy_t.tile);
     lv_obj_set_style_text_color(lbl_energy_gas, lv_color_hex(COL_TEXT_DIM), 0);

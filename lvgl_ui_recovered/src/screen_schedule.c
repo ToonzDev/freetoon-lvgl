@@ -222,7 +222,7 @@ static void rebuild_day_list(void) {
 
         lv_obj_t * btn = lv_btn_create(row);
         lv_obj_set_size(btn, 110, 40);
-        lv_obj_align(btn, LV_ALIGN_RIGHT_MID, 0, 0);
+        lv_obj_align(btn, LV_ALIGN_RIGHT_MID, -4, 0);
         lv_obj_set_style_bg_color(btn, lv_color_hex(THEME_BTN_ACCENT), 0);
         lv_obj_add_event_cb(btn, on_edit_row, LV_EVENT_CLICKED, &row_data[i]);
         lv_obj_t * btn_lbl = lv_label_create(btn);
@@ -605,6 +605,7 @@ lv_obj_t * screen_schedule_create(void) {
     lv_obj_set_style_bg_opa(day_list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(day_list, 0, 0);
     lv_obj_set_style_pad_all(day_list, 0, 0);
+    lv_obj_set_style_pad_right(day_list, 18, 0);
     lv_obj_add_flag(day_list, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(day_list, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(day_list, LV_SCROLLBAR_MODE_ON);

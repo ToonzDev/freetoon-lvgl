@@ -361,10 +361,10 @@ lv_obj_t * screen_thermostat_create(void) {
                  SY(-190) - (DISP_VER < 600 ? 8 : 0));
     lv_label_set_text(lbl_water, tr("Water -- m3", "Water -- m3"));
 
-    /* Setpoint row with +/- buttons. Wider than before so "Setpoint: NN.N C"
-       has breathing room between the two buttons. */
+    /* Setpoint row with +/- buttons. Made compact so it never overlaps
+       the "Geavanceerd" button on either Toon 1 or Toon 2 per CR4. */
     lv_obj_t * sp_row = lv_obj_create(scr_root);
-    lv_obj_set_size(sp_row, SX(760), SY(130));
+    lv_obj_set_size(sp_row, SX(560), SY(130));
     /* Lift a little extra on Toon 1 so its bottom clears the Advanced btn. */
     lv_obj_align(sp_row, LV_ALIGN_BOTTOM_MID, 0,
                  SY(-40) - (DISP_VER < 600 ? 8 : 0));
@@ -463,8 +463,8 @@ lv_obj_t * screen_thermostat_create(void) {
 
     /* "Advanced" button */
     lv_obj_t * adv = lv_btn_create(scr_root);
-    lv_obj_set_size(adv, 140, 44);
-    lv_obj_align(adv, LV_ALIGN_BOTTOM_RIGHT, -20, -20);
+    lv_obj_set_size(adv, SX(140), SY(44));
+    lv_obj_align(adv, LV_ALIGN_BOTTOM_RIGHT, -SX(20), -SY(20));
     lv_obj_set_style_bg_color(adv, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_add_event_cb(adv, on_open_advanced, LV_EVENT_CLICKED, NULL);
     lv_obj_t * advl = lv_label_create(adv);

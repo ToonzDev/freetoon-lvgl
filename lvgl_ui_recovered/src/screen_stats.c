@@ -98,6 +98,7 @@ static void reload_and_render(void);
 static double g_bar_val[64];
 static char   g_bar_label[64][8];
 static int    g_bar_count = 0;
+static int    g_y_scale = 1;
 
 /* Manual X-axis labels under the chart. Up to 12 evenly-spaced bar labels. */
 #define XLBL_COUNT 24
@@ -383,9 +384,16 @@ static void chart_draw_event_cb(lv_event_t * e) {
     lv_obj_draw_part_dsc_t * dsc = lv_event_get_draw_part_dsc(e);
     if (!dsc) return;
     if (dsc->part == LV_PART_TICKS && dsc->type == LV_CHART_DRAW_PART_TICK_LABEL && dsc->id == LV_CHART_AXIS_PRIMARY_Y) {
-        if (selected_metric == 3 && dsc->text) {
-            float v = (float)dsc->value / 10.0f;
-            lv_snprintf(dsc->text, dsc->text_length, "%.1f", v);
+        if (dsc->text) {
+            if (g_y_scale == 100) {
+                float v = (float)dsc->value / 100.0f;
+                lv_snprintf(dsc->text, dsc->text_length, "%.2f", v);
+            } else if (g_y_scale == 10) {
+                float v = (float)dsc->value / 10.0f;
+                lv_snprintf(dsc->text, dsc->text_length, "%.1f", v);
+            } else {
+                lv_snprintf(dsc->text, dsc->text_length, "%d", dsc->value);
+            }
         }
     }
 }
@@ -503,22 +511,28 @@ static void render_chart(void) {
         if (top < 2.0) top = 2.0; /* At least 2.0 bar max range for CV bar so 1.2 bar isn't pinned to top */
     } else {
         top = hi * 1.1;
-        if (top < 1) top = 1;
+        if (top < 0.2) top = 0.5; /* sensible minimum top when usage is near 0 */
+    }
+
+    if (top < 2.0) {
+        g_y_scale = 100;
+    } else if (top < 10.0) {
+        g_y_scale = 10;
+    } else {
+        g_y_scale = 1;
     }
 
     int pc = g_bar_count < 2 ? 2 : g_bar_count;
     lv_chart_set_point_count(chart, pc);
-    if (selected_metric == 3) {
-        lv_coord_t top_tenth = (lv_coord_t)(top * 10.0 + 0.5);
-        lv_chart_set_range(chart, LV_CHART_AXIS_PRIMARY_Y, 0, top_tenth);
-        for (int i = 0; i < pc; i++)
-            cs->y_points[i] = (i < g_bar_count) ? (lv_coord_t)(g_bar_val[i] * 10.0 + 0.5)
-                                                : LV_CHART_POINT_NONE;
-    } else {
-        lv_chart_set_range(chart, LV_CHART_AXIS_PRIMARY_Y, 0, (lv_coord_t)top);
-        for (int i = 0; i < pc; i++)
-            cs->y_points[i] = (i < g_bar_count) ? (lv_coord_t)g_bar_val[i]
-                                                : LV_CHART_POINT_NONE;
+    lv_coord_t top_scaled = (lv_coord_t)(top * g_y_scale + 0.5);
+    if (top_scaled < 1) top_scaled = 1;
+    lv_chart_set_range(chart, LV_CHART_AXIS_PRIMARY_Y, 0, top_scaled);
+    for (int i = 0; i < pc; i++) {
+        if (i < g_bar_count) {
+            cs->y_points[i] = (lv_coord_t)(g_bar_val[i] * g_y_scale + 0.5);
+        } else {
+            cs->y_points[i] = LV_CHART_POINT_NONE;
+        }
     }
 
     lv_chart_refresh(chart);
@@ -570,7 +584,10 @@ static void render_chart(void) {
         } else {
             double total = 0;   /* g_bar_val already in kWh/m3 for cumulative */
             for (int i = 0; i < g_bar_count; i++) total += g_bar_val[i];
-            lv_label_set_text_fmt(lbl_value, "%.1f %s", total, m->unit_cum);
+            if (total < 10.0 && total > 0.0)
+                lv_label_set_text_fmt(lbl_value, "%.2f %s", total, m->unit_cum);
+            else
+                lv_label_set_text_fmt(lbl_value, "%.1f %s", total, m->unit_cum);
         }
     }
 }

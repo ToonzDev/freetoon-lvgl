@@ -4,8 +4,44 @@
 #include <string.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <dirent.h>
 
-#define BL_PATH "/sys/class/backlight/mp3309-bl/brightness"
+static char g_bl_path[320] = "";
+static int g_bl_max = 1000;
+static int g_bl_inited = 0;
+
+static void bl_init_paths(void) {
+    if (g_bl_inited) return;
+    g_bl_inited = 1;
+
+    DIR * d = opendir("/sys/class/backlight");
+    if (d) {
+        struct dirent * de;
+        while ((de = readdir(d)) != NULL) {
+            if (de->d_name[0] == '.') continue;
+            char path[320];
+            snprintf(path, sizeof(path), "/sys/class/backlight/%s/brightness", de->d_name);
+            if (access(path, F_OK) == 0) {
+                snprintf(g_bl_path, sizeof(g_bl_path), "%s", path);
+                char max_path[320];
+                snprintf(max_path, sizeof(max_path), "/sys/class/backlight/%s/max_brightness", de->d_name);
+                FILE * mf = fopen(max_path, "r");
+                if (mf) {
+                    int m = 0;
+                    if (fscanf(mf, "%d", &m) == 1 && m > 0) {
+                        g_bl_max = m;
+                    }
+                    fclose(mf);
+                }
+                break;
+            }
+        }
+        closedir(d);
+    }
+    if (!g_bl_path[0]) {
+        snprintf(g_bl_path, sizeof(g_bl_path), "/sys/class/backlight/mp3309-bl/brightness");
+    }
+}
 
 /* The LTR-303 read takes ~0.5 s (sensor integration time), so it must NEVER run
    on the UI thread — a background poller caches it and the UI reads the cache. */
@@ -54,19 +90,28 @@ int backlight_auto_level(int dim, int active) {
 }
 
 void backlight_set(int level) {
+    bl_init_paths();
     if (level < 0)    level = 0;
     if (level > 1000) level = 1000;
-    FILE * f = fopen(BL_PATH, "w");
+    int hw_val = (int)(((long long)level * g_bl_max) / 1000);
+    if (level > 0 && hw_val == 0) hw_val = 1;
+
+    FILE * f = fopen(g_bl_path, "w");
     if (!f) return;
-    fprintf(f, "%d\n", level);
+    fprintf(f, "%d\n", hw_val);
     fclose(f);
 }
 
 int backlight_get(void) {
-    FILE * f = fopen(BL_PATH, "r");
+    bl_init_paths();
+    FILE * f = fopen(g_bl_path, "r");
     if (!f) return -1;
     int v = -1;
     if (fscanf(f, "%d", &v) != 1) v = -1;
     fclose(f);
-    return v;
+    if (v < 0) return -1;
+    if (g_bl_max <= 0) return v;
+    int level = (int)(((long long)v * 1000 + (g_bl_max / 2)) / g_bl_max);
+    if (level > 1000) level = 1000;
+    return level;
 }

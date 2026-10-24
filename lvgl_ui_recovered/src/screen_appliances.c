@@ -242,7 +242,7 @@ static void open_naming_modal(const char *prefill, float lo, float hi,
     lv_obj_set_size(g_modal_ta, SX(620), SY(56));
     lv_obj_align(g_modal_ta, LV_ALIGN_TOP_LEFT, 0, SY(38));
     lv_obj_set_style_text_font(g_modal_ta, SF(20), 0);
-    lv_obj_set_style_bg_color(g_modal_ta, lv_color_hex(0x0a1020), 0);
+    lv_obj_set_style_bg_color(g_modal_ta, lv_color_hex(settings.home_light_mode ? 0xffffff : 0x0a1020), 0);
     lv_obj_set_style_text_color(g_modal_ta, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_set_style_border_color(g_modal_ta, lv_color_hex(COL_ACCENT), 0);
     lv_textarea_set_max_length(g_modal_ta, 39);
@@ -345,6 +345,11 @@ static void on_del_sig(lv_event_t *e) {
            on_del_confirm_cancel, NULL, LV_ALIGN_BOTTOM_RIGHT, -SX(120), 0);
 }
 
+static void free_user_data_cb(lv_event_t * e) {
+    void * ud = lv_event_get_user_data(e);
+    if (ud) free(ud);
+}
+
 /* ── list builders ────────────────────────────────────────────── */
 static void rebuild_unknown_list(void) {
     if (!unk_cont) return;
@@ -397,8 +402,7 @@ static void rebuild_unknown_list(void) {
             ctx->slot      = slot;
             lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
             lv_obj_add_event_cb(row, on_name_unknown, LV_EVENT_CLICKED, ctx);
-            lv_obj_add_event_cb(row, (lv_event_cb_t)(void(*)(lv_event_t*))free,
-                                LV_EVENT_DELETE, ctx);
+            lv_obj_add_event_cb(row, free_user_data_cb, LV_EVENT_DELETE, ctx);
         }
         rows_drawn++;
     }

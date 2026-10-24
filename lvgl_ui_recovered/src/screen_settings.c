@@ -206,7 +206,10 @@ static lv_obj_t * panel_row(lv_obj_t * parent, int y, const char * title,
                             lv_obj_t ** out_val_lbl) {
     lv_obj_t * row = lv_obj_create(parent);
     lv_obj_set_size(row, SX(800), SY(74));
-    lv_obj_align(row, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
+    int row_y = SY(y);
+    int min_y = SY(64) + (DISP_VER < 600 ? 12 : 6);
+    if (row_y < min_y) row_y = min_y;
+    lv_obj_align(row, LV_ALIGN_TOP_LEFT, SX(4), row_y);
     lv_obj_set_style_bg_color(row, lv_color_hex(THEME_ROW_BG), 0);
     lv_obj_set_style_border_width(row, 0, 0);
     lv_obj_set_style_radius(row, 12, 0);
@@ -452,7 +455,7 @@ static lv_obj_t * modal_open(const char * title, int panel_h) {
     lv_obj_align(x, LV_ALIGN_RIGHT_MID, 0, 0);
     lv_obj_set_style_bg_color(x, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_set_style_radius(x, 12, 0);
-    lv_obj_set_ext_click_area(x, 25);
+    lv_obj_set_ext_click_area(x, (DISP_VER < 600) ? 6 : 10);
     lv_obj_add_event_cb(x, modal_close, LV_EVENT_CLICKED, NULL);
     lv_obj_t * xl = lv_label_create(x);
     lv_label_set_text(xl, LV_SYMBOL_CLOSE);
@@ -2471,6 +2474,7 @@ static void on_int_vent(lv_event_t * e) {
 static void on_int_ha(lv_event_t * e) {
     settings.enable_ha       = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
     integ_dirty_hint();
+    settings_save();
 }
 /* Hide-offline-tiles toggle. Takes effect on the next refresh tick — no
  * restart needed because apply_offline_tile_visibility() reads the flag
@@ -2737,7 +2741,7 @@ static void on_manage_devices(lv_event_t * e) {
 static void open_ha_entities_modal(lv_event_t * e) {
     (void)e;
     lv_obj_t * p = modal_open("Home Assistant", 980);
-    int y = 70;
+    int y = (DISP_VER < 600) ? 86 : 70;
     const int tw = SX(480);
 
     /* Enable toggle — makes this a self-contained HA config (like the
@@ -3758,6 +3762,67 @@ static void open_clean_modal(lv_event_t * e) {
 /* Compact category tile — 4 fit per row. Was 308x188 with 28pt fonts
  * (only 3-wide and overflowed the screen badly); now 232x104 with 20pt
  * title so the whole grid fits in ~4 rows with minimal scrolling. */
+static const lv_img_dsc_t * get_scaled_icon(const lv_img_dsc_t * src) {
+#ifndef TOON1
+    return src;
+#else
+    if (!src || src->header.cf != LV_IMG_CF_ALPHA_8BIT) return src;
+    if (src->header.h <= 26) return src;
+
+    static struct {
+        const lv_img_dsc_t * orig;
+        lv_img_dsc_t dsc;
+        uint8_t buf[28 * 28];
+    } cache[8];
+    static int cache_cnt = 0;
+
+    for (int i = 0; i < cache_cnt; i++) {
+        if (cache[i].orig == src) return &cache[i].dsc;
+    }
+    if (cache_cnt >= 8) return src;
+
+    int idx = cache_cnt++;
+    cache[idx].orig = src;
+    int dst_h = 24;
+    int dst_w = (src->header.w * dst_h) / src->header.h;
+    if (dst_w > 28) dst_w = 28;
+    cache[idx].dsc.header.cf = LV_IMG_CF_ALPHA_8BIT;
+    cache[idx].dsc.header.w = dst_w;
+    cache[idx].dsc.header.h = dst_h;
+    cache[idx].dsc.header.always_zero = 0;
+    cache[idx].dsc.header.reserved = 0;
+    cache[idx].dsc.data_size = dst_w * dst_h;
+    cache[idx].dsc.data = cache[idx].buf;
+
+    uint8_t * dst = cache[idx].buf;
+    int sw = src->header.w;
+    int sh = src->header.h;
+    for (int dy = 0; dy < dst_h; dy++) {
+        int sy16 = (dy * sh * 256) / dst_h;
+        int y0 = sy16 >> 8;
+        int y1 = (y0 + 1 < sh) ? y0 + 1 : y0;
+        int fy = sy16 & 0xff;
+        for (int dx = 0; dx < dst_w; dx++) {
+            int sx16 = (dx * sw * 256) / dst_w;
+            int x0 = sx16 >> 8;
+            int x1 = (x0 + 1 < sw) ? x0 + 1 : x0;
+            int fx = sx16 & 0xff;
+
+            int p00 = src->data[y0 * sw + x0];
+            int p10 = src->data[y0 * sw + x1];
+            int p01 = src->data[y1 * sw + x0];
+            int p11 = src->data[y1 * sw + x1];
+
+            int top = p00 + (((p10 - p00) * fx) >> 8);
+            int bot = p01 + (((p11 - p01) * fx) >> 8);
+            int val = top + (((bot - top) * fy) >> 8);
+            dst[dy * dst_w + dx] = (uint8_t)(val < 0 ? 0 : (val > 255 ? 255 : val));
+        }
+    }
+    return &cache[idx].dsc;
+#endif
+}
+
 #define SETT_TILE_W 232
 #define SETT_TILE_H 104
 static void make_tile(int x, int y, const lv_img_dsc_t * icon, const char * sym,
@@ -3773,14 +3838,14 @@ static void make_tile(int x, int y, const lv_img_dsc_t * icon, const char * sym,
     lv_obj_add_event_cb(tile, cb, LV_EVENT_CLICKED, NULL);
 
     if (icon) {
+        icon = get_scaled_icon(icon);
         lv_obj_t * im = lv_img_create(tile);
         lv_img_set_src(im, icon);
         lv_obj_set_style_img_recolor(im, lv_color_hex(settings.home_light_mode ? 0x2563eb : 0x9fc4e6), 0);
         lv_obj_set_style_img_recolor_opa(im, 255, 0);
 #ifdef TOON1
-        /* The icon bitmap is a fixed 40px (zoom blanks these ALPHA_8BIT assets,
-         * so leave it native); pin it to the top and push the title below it. */
-        lv_obj_align(im, LV_ALIGN_TOP_MID, 0, 1);
+        /* Scaled 24px icon pinned near top with clear gap above title */
+        lv_obj_align(im, LV_ALIGN_TOP_MID, 0, 4);
 #else
         lv_obj_align(im, LV_ALIGN_TOP_MID, 0, SY(6));
 #endif
@@ -3797,7 +3862,7 @@ static void make_tile(int x, int y, const lv_img_dsc_t * icon, const char * sym,
     lv_obj_set_style_text_color(t, lv_color_hex(THEME_TEXT_HI), 0);
     lv_label_set_text(t, title);
 #ifdef TOON1
-    lv_obj_align(t, LV_ALIGN_CENTER, 0, 2);   /* proper gap to caption on 480px panel */
+    lv_obj_align(t, LV_ALIGN_CENTER, 0, 3);   /* proper gap to caption on 480px panel */
 #else
     lv_obj_align(t, LV_ALIGN_CENTER, 0, SY(8));
 #endif
