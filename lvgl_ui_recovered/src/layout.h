@@ -73,6 +73,7 @@ typedef enum {
     DB_GAS,          /* gas (m³/h) value + mini-bar */
     DB_CLOCK,        /* Time (clock) */
     DB_DATE,         /* Date */
+    DB_AGENDA,       /* Agenda / Calendar */
     DB_COUNT
 } dim_block_id_t;
 

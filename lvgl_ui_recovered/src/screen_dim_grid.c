@@ -15,6 +15,7 @@
 #include "weather.h"
 #include "wastecollection.h"
 #include "ventilation.h"
+#include "calendar.h"
 #include "meteradapter.h"   /* meter_state — for the restored dim energy bar */
 #include "layout.h"         /* customizable dim block layout (g_dim_blocks) */
 #include "icons.h"
@@ -54,6 +55,9 @@ static lv_obj_t * dim_lbl_city = NULL;
 /* Life360 — stacked TOP_RIGHT under lbl_outside, opposite the waste block. */
 static lv_obj_t * dim_lbl_life360_a = NULL;
 static lv_obj_t * dim_lbl_life360_b   = NULL;
+static lv_obj_t * dim_lbl_agenda_time = NULL;
+static lv_obj_t * dim_lbl_agenda_title = NULL;
+static lv_obj_t * dim_lbl_agenda_ev2 = NULL;
 static lv_obj_t * dim_vent_fan  = NULL;   /* spinning fan icon */
 static lv_obj_t * dim_vent_lbl  = NULL;   /* "57 %" — actual ExhFanSpeed */
 static lv_obj_t * dim_img_water = NULL;   /* drop icon, visible while pouring */
@@ -597,6 +601,34 @@ static void refresh_cb(lv_timer_t * t) {
                 else      lv_obj_add_flag(en_parts[i], LV_OBJ_FLAG_HIDDEN);
             }
     }
+
+    /* Agenda / Calendar block */
+    if (dim_lbl_agenda_time && dim_lbl_agenda_title) {
+        if (calendar_state.count > 0) {
+            const calendar_event_t * ev0 = &calendar_state.ev[0];
+            if (ev0->time[0])
+                lv_label_set_text_fmt(dim_lbl_agenda_time, "%s %s", ev0->date, ev0->time);
+            else
+                lv_label_set_text(dim_lbl_agenda_time, ev0->date);
+            lv_label_set_text(dim_lbl_agenda_title, ev0->summary);
+
+            if (dim_lbl_agenda_ev2) {
+                if (calendar_state.count > 1) {
+                    const calendar_event_t * ev1 = &calendar_state.ev[1];
+                    if (ev1->time[0])
+                        lv_label_set_text_fmt(dim_lbl_agenda_ev2, "%s %s: %s", ev1->date, ev1->time, ev1->summary);
+                    else
+                        lv_label_set_text_fmt(dim_lbl_agenda_ev2, "%s: %s", ev1->date, ev1->summary);
+                } else {
+                    lv_label_set_text(dim_lbl_agenda_ev2, "");
+                }
+            }
+        } else {
+            lv_label_set_text(dim_lbl_agenda_time, tr("Agenda", "Calendar"));
+            lv_label_set_text(dim_lbl_agenda_title, tr("Geen afspraken", "No appointments"));
+            if (dim_lbl_agenda_ev2) lv_label_set_text(dim_lbl_agenda_ev2, "");
+        }
+    }
 }
 
 /* Grid (customizable) dim — invoked by screen_dim_create() only when
@@ -871,6 +903,32 @@ lv_obj_t * screen_dim_grid_create(void) {
     int gbw = 0; lv_obj_t * bx_g = dim_box(DB_GAS, &gbw, NULL);
     en_gas_w = gbw - 8;
     en_make_bar(bx_g, en_gas_w, 6, 0xffaa33, &en_gas_track, &en_gas_fill, &en_gas_lbl);
+
+    /* ---- AGENDA: next calendar event(s) ---- */
+    int abw = 0, abh = 0; lv_obj_t * bx_a = dim_box(DB_AGENDA, &abw, &abh); (void)abh;
+    dim_lbl_agenda_time = lv_label_create(bx_a);
+    lv_obj_set_style_text_color(dim_lbl_agenda_time, lv_color_hex(0x44aaff), 0);
+    lv_obj_set_style_text_font(dim_lbl_agenda_time, SF(15), 0);
+    lv_obj_set_width(dim_lbl_agenda_time, abw - 8);
+    lv_label_set_long_mode(dim_lbl_agenda_time, LV_LABEL_LONG_DOT);
+    lv_label_set_text(dim_lbl_agenda_time, "");
+    lv_obj_align(dim_lbl_agenda_time, LV_ALIGN_TOP_LEFT, 4, 4);
+
+    dim_lbl_agenda_title = lv_label_create(bx_a);
+    lv_obj_set_style_text_color(dim_lbl_agenda_title, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(dim_lbl_agenda_title, SF(16), 0);
+    lv_obj_set_width(dim_lbl_agenda_title, abw - 8);
+    lv_label_set_long_mode(dim_lbl_agenda_title, LV_LABEL_LONG_DOT);
+    lv_label_set_text(dim_lbl_agenda_title, "");
+    lv_obj_align(dim_lbl_agenda_title, LV_ALIGN_TOP_LEFT, 4, 26);
+
+    dim_lbl_agenda_ev2 = lv_label_create(bx_a);
+    lv_obj_set_style_text_color(dim_lbl_agenda_ev2, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_font(dim_lbl_agenda_ev2, SF(14), 0);
+    lv_obj_set_width(dim_lbl_agenda_ev2, abw - 8);
+    lv_label_set_long_mode(dim_lbl_agenda_ev2, LV_LABEL_LONG_DOT);
+    lv_label_set_text(dim_lbl_agenda_ev2, "");
+    lv_obj_align(dim_lbl_agenda_ev2, LV_ALIGN_TOP_LEFT, 4, 52);
 
     if (!refresh_timer) refresh_timer = lv_timer_create(refresh_cb, 1000, NULL);
     return scr_root;

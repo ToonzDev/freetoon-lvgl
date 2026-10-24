@@ -60,6 +60,7 @@ typedef struct {
 typedef struct integration_meta_s {
     char id[INTEG_ID_MAX];
     char name[INTEG_NAME_MAX];
+    char version[24];                  /* version string from manifest.json, e.g. "1.0.1" */
     char service_id[INTEG_SERVICE_MAX];
     char tile_type[24];                /* "media_player", "agenda_list", "switch_grid", "chart_24h", or "" */
     char tile_title[INTEG_NAME_MAX];

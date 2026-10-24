@@ -431,6 +431,7 @@ static const dim_block_t DIM_DEFAULTS[DB_COUNT] = {
     [DB_GAS]      = { 9, 7, 3, 1, 1 },
     [DB_CLOCK]    = { 3, 0, 6, 2, 1 },   /* large time clock */
     [DB_DATE]     = { 3, 2, 6, 1, 1 },   /* date line below clock */
+    [DB_AGENDA]   = { 0, 4, 3, 2, 0 },   /* agenda upcoming events (default hidden) */
 };
 
 void dim_layout_reset_default(void) {
@@ -493,6 +494,7 @@ const char * dim_block_name(int id) {
         case DB_GAS:      return "Gas";
         case DB_CLOCK:    return "Klok";
         case DB_DATE:     return "Datum";
+        case DB_AGENDA:   return "Agenda";
     }
     return "?";
 }

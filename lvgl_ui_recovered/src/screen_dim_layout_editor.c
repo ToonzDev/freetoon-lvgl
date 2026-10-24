@@ -57,7 +57,7 @@ static const uint32_t DB_COL[DB_COUNT] = {
     [DB_THERMO]=0x335577, [DB_WEATHER]=0x4488aa, [DB_FORECAST]=0x66bbdd,
     [DB_WASTE]=0x88dd66,  [DB_FAMILY]=0xff8866,  [DB_VENT]=0x6666aa,
     [DB_ENERGY]=0xaa77ff, [DB_GAS]=0xffaa33,     [DB_CLOCK]=0x2b7bbb,
-    [DB_DATE]=0x486b88,
+    [DB_DATE]=0x486b88,   [DB_AGENDA]=0x4477cc,
 };
 
 static void place_rect(int i);
@@ -437,35 +437,50 @@ static void on_restore_block(lv_event_t * e) {
 
     if (replace_idx >= 0 && replace_idx < DB_COUNT) {
         int old_idx = replace_idx;
-        int col = edit_dim[old_idx].col;
-        int row = edit_dim[old_idx].row;
-        int w = edit_dim[old_idx].w;
-        int h = edit_dim[old_idx].h;
-        int min_h = (idx == DB_DATE || idx == DB_ENERGY || idx == DB_GAS) ? 1 : DIM_MIN_H;
-        if (w < DIM_MIN_W) w = DIM_MIN_W;
-        if (h < min_h) h = min_h;
-        if (col + w > LAYOUT_COLS) col = LAYOUT_COLS - w;
-        if (row + h > LAYOUT_ROWS) row = LAYOUT_ROWS - h;
+        replace_idx = -1;
 
-        edit_dim[old_idx].visible = 0;
+        if (edit_dim[idx].visible) {
+            /* Swap positions and sizes of old_idx and idx */
+            dim_block_t tmp = edit_dim[old_idx];
+            edit_dim[old_idx].col = edit_dim[idx].col;
+            edit_dim[old_idx].row = edit_dim[idx].row;
+            edit_dim[old_idx].w = edit_dim[idx].w;
+            edit_dim[old_idx].h = edit_dim[idx].h;
+            edit_dim[idx].col = tmp.col;
+            edit_dim[idx].row = tmp.row;
+            edit_dim[idx].w = tmp.w;
+            edit_dim[idx].h = tmp.h;
+        } else {
+            int col = edit_dim[old_idx].col;
+            int row = edit_dim[old_idx].row;
+            int w = edit_dim[old_idx].w;
+            int h = edit_dim[old_idx].h;
+            int min_h = (idx == DB_DATE || idx == DB_ENERGY || idx == DB_GAS) ? 1 : DIM_MIN_H;
+            if (w < DIM_MIN_W) w = DIM_MIN_W;
+            if (h < min_h) h = min_h;
+            if (col + w > LAYOUT_COLS) col = LAYOUT_COLS - w;
+            if (row + h > LAYOUT_ROWS) row = LAYOUT_ROWS - h;
 
-        if (would_overlap(idx, col, row, w, h)) {
-            if (row > 0 && !would_overlap(idx, col, row - 1, w, h)) {
-                row--;
-            } else if (!find_free_cell(idx, w, h, &col, &row)) {
-                w = DIM_MIN_W;
-                h = min_h;
-                if (!find_free_cell(idx, w, h, &col, &row)) {
-                    col = 0; row = 0;
+            edit_dim[old_idx].visible = 0;
+
+            if (would_overlap(idx, col, row, w, h)) {
+                if (row > 0 && !would_overlap(idx, col, row - 1, w, h)) {
+                    row--;
+                } else if (!find_free_cell(idx, w, h, &col, &row)) {
+                    w = DIM_MIN_W;
+                    h = min_h;
+                    if (!find_free_cell(idx, w, h, &col, &row)) {
+                        col = 0; row = 0;
+                    }
                 }
             }
-        }
 
-        edit_dim[idx].col = col;
-        edit_dim[idx].row = row;
-        edit_dim[idx].w = w;
-        edit_dim[idx].h = h;
-        edit_dim[idx].visible = 1;
+            edit_dim[idx].col = col;
+            edit_dim[idx].row = row;
+            edit_dim[idx].w = w;
+            edit_dim[idx].h = h;
+            edit_dim[idx].visible = 1;
+        }
 
         close_chooser();
         build_canvas_rects();
@@ -554,7 +569,25 @@ static void open_add_modal(lv_event_t * e) {
 
     int hidden_count = 0;
     for (int i = 0; i < DB_COUNT; i++) {
-        if (!edit_dim[i].visible) {
+        if (replace_idx >= 0) {
+            if (i == replace_idx) continue;
+            hidden_count++;
+            lv_obj_t * btn = lv_btn_create(grid);
+            lv_obj_set_size(btn, SX(160), SY(52));
+            lv_obj_set_style_bg_color(btn, lv_color_hex(DB_COL[i]), 0);
+            lv_obj_set_style_radius(btn, 10, 0);
+            lv_obj_add_event_cb(btn, on_restore_block, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+
+            lv_obj_t * bl = lv_label_create(btn);
+            if (edit_dim[i].visible) {
+                lv_label_set_text_fmt(bl, "%s %s", dim_block_name(i), tr("(wissel)", "(swap)"));
+            } else {
+                lv_label_set_text(bl, dim_block_name(i));
+            }
+            lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+            lv_obj_set_style_text_font(bl, SF(15), 0);
+            lv_obj_center(bl);
+        } else if (!edit_dim[i].visible) {
             hidden_count++;
             lv_obj_t * btn = lv_btn_create(grid);
             lv_obj_set_size(btn, SX(160), SY(52));

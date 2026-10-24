@@ -52,6 +52,8 @@ typedef struct {
     char version[32];
     lv_obj_t * row;
     lv_obj_t * badge_lbl;
+    lv_obj_t * btn_update;
+    lv_obj_t * btn_update_lbl;
     lv_obj_t * btn_action;
     lv_obj_t * btn_action_lbl;
     volatile int action_status; /* 0=idle, 1=installing, 2=uninstalling, 3=err_install, 4=err_uninstall */
@@ -350,33 +352,102 @@ static void on_action_clicked(lv_event_t * e) {
     }
 }
 
+static int semver_cmp(const char * a, const char * b) {
+    if (!a && !b) return 0;
+    if (!a || !a[0]) return -1;
+    if (!b || !b[0]) return 1;
+    while (*a == 'v' || *a == 'V' || *a == ' ') a++;
+    while (*b == 'v' || *b == 'V' || *b == ' ') b++;
+    int a1 = 0, a2 = 0, a3 = 0;
+    int b1 = 0, b2 = 0, b3 = 0;
+    sscanf(a, "%d.%d.%d", &a1, &a2, &a3);
+    sscanf(b, "%d.%d.%d", &b1, &b2, &b3);
+    if (a1 != b1) return a1 - b1;
+    if (a2 != b2) return a2 - b2;
+    if (a3 != b3) return a3 - b3;
+    return strcmp(a, b);
+}
+
+static void on_update_clicked(lv_event_t * e) {
+    integration_t * ent = (integration_t *)lv_event_get_user_data(e);
+    if (!ent) return;
+    if (ent->action_status != 0) return; /* busy */
+#ifndef WASM_BUILD
+    if (!install_helper_ok()) {
+        if (ent->btn_action_lbl)
+            lv_label_set_text(ent->btn_action_lbl, tr("Helper nodig", "Need helper"));
+        return;
+    }
+#endif
+    ent->action_status = 1;
+    if (ent->btn_action_lbl) lv_label_set_text(ent->btn_action_lbl, tr("Updaten...", "Updating..."));
+    if (ent->btn_action) lv_obj_set_style_bg_color(ent->btn_action, lv_color_hex(COL_BUSY), 0);
+    if (ent->btn_update) lv_obj_add_flag(ent->btn_update, LV_OBJ_FLAG_HIDDEN);
+#ifdef WASM_BUILD
+    char payload[96];
+    snprintf(payload, sizeof payload, "{\"id\":\"%s\"}", ent->id);
+    wasm_push_event("/api/install", payload);
+    ent->action_status = 0;
+#else
+    pthread_t t;
+    if (pthread_create(&t, NULL, install_thread, ent) == 0)
+        pthread_detach(t);
+    else
+        ent->action_status = 3;
+#endif
+}
+
 static void update_row_state(integration_t * ent) {
     if (!ent || !ent->row) return;
 
     if (ent->action_status == 1) {
+        if (ent->btn_update) lv_obj_add_flag(ent->btn_update, LV_OBJ_FLAG_HIDDEN);
         if (ent->badge_lbl) lv_label_set_text(ent->badge_lbl, "");
         if (ent->btn_action_lbl) lv_label_set_text(ent->btn_action_lbl, tr("Installeren...", "Installing..."));
         if (ent->btn_action) lv_obj_set_style_bg_color(ent->btn_action, lv_color_hex(COL_BUSY), 0);
         return;
     }
     if (ent->action_status == 2) {
+        if (ent->btn_update) lv_obj_add_flag(ent->btn_update, LV_OBJ_FLAG_HIDDEN);
+        if (ent->badge_lbl) lv_label_set_text(ent->badge_lbl, "");
         if (ent->btn_action_lbl) lv_label_set_text(ent->btn_action_lbl, tr("Verwijderen...", "Removing..."));
         if (ent->btn_action) lv_obj_set_style_bg_color(ent->btn_action, lv_color_hex(COL_BUSY), 0);
         return;
     }
     if (ent->action_status == 3 || ent->action_status == 4) {
+        if (ent->btn_update) lv_obj_add_flag(ent->btn_update, LV_OBJ_FLAG_HIDDEN);
+        if (ent->badge_lbl) lv_label_set_text(ent->badge_lbl, "");
         if (ent->btn_action_lbl) lv_label_set_text(ent->btn_action_lbl, tr("Mislukt", "Failed"));
         if (ent->btn_action) lv_obj_set_style_bg_color(ent->btn_action, lv_color_hex(COL_WARN), 0);
         return;
     }
 
-    int is_inst = (tile_slots_integration_by_id(ent->id) != NULL);
+    const integration_meta_t * meta = tile_slots_integration_by_id(ent->id);
+    int is_inst = (meta != NULL);
     ent->is_installed = is_inst;
 
+    int update_available = 0;
+    if (is_inst && meta && ent->version[0] && meta->version[0]) {
+        if (semver_cmp(ent->version, meta->version) > 0) {
+            update_available = 1;
+        }
+    }
+
     if (is_inst) {
-        if (ent->badge_lbl) {
-            lv_label_set_text_fmt(ent->badge_lbl, LV_SYMBOL_OK " %s", tr("Geinstalleerd", "Installed"));
-            lv_obj_set_style_text_color(ent->badge_lbl, lv_color_hex(0x3ec263), 0);
+        if (update_available) {
+            if (ent->badge_lbl) lv_obj_add_flag(ent->badge_lbl, LV_OBJ_FLAG_HIDDEN);
+            if (ent->btn_update) {
+                lv_obj_clear_flag(ent->btn_update, LV_OBJ_FLAG_HIDDEN);
+                if (ent->btn_update_lbl)
+                    lv_label_set_text_fmt(ent->btn_update_lbl, "%s %s", LV_SYMBOL_REFRESH, tr("Update nu", "Update now"));
+            }
+        } else {
+            if (ent->btn_update) lv_obj_add_flag(ent->btn_update, LV_OBJ_FLAG_HIDDEN);
+            if (ent->badge_lbl) {
+                lv_obj_clear_flag(ent->badge_lbl, LV_OBJ_FLAG_HIDDEN);
+                lv_label_set_text_fmt(ent->badge_lbl, LV_SYMBOL_OK " %s", tr("Geinstalleerd", "Installed"));
+                lv_obj_set_style_text_color(ent->badge_lbl, lv_color_hex(0x3ec263), 0);
+            }
         }
         if (ent->btn_action_lbl) {
             lv_label_set_text(ent->btn_action_lbl, tr("Verwijderen", "Uninstall"));
@@ -385,8 +456,10 @@ static void update_row_state(integration_t * ent) {
             lv_obj_set_style_bg_color(ent->btn_action, lv_color_hex(COL_WARN), 0);
         }
     } else {
+        if (ent->btn_update) lv_obj_add_flag(ent->btn_update, LV_OBJ_FLAG_HIDDEN);
         if (ent->badge_lbl) {
             lv_label_set_text(ent->badge_lbl, "");
+            lv_obj_add_flag(ent->badge_lbl, LV_OBJ_FLAG_HIDDEN);
         }
         if (ent->btn_action_lbl) {
             lv_label_set_text(ent->btn_action_lbl,
@@ -442,6 +515,21 @@ static void build_rows(void) {
         ent->badge_lbl = lv_label_create(ent->row);
         lv_obj_set_style_text_font(ent->badge_lbl, SF(18), 0);
         lv_obj_align(ent->badge_lbl, LV_ALIGN_RIGHT_MID, SX(-180), 0);
+
+        /* Update button (shown when an update is available) */
+        ent->btn_update = lv_btn_create(ent->row);
+        lv_obj_set_size(ent->btn_update, SX(150), SY(52));
+        lv_obj_align(ent->btn_update, LV_ALIGN_RIGHT_MID, SX(-180), 0);
+        lv_obj_set_style_radius(ent->btn_update, 10, 0);
+        lv_obj_set_style_bg_color(ent->btn_update, lv_color_hex(settings.home_light_mode ? 0x2563eb : 0x2a5d96), 0);
+        lv_obj_add_event_cb(ent->btn_update, on_update_clicked, LV_EVENT_CLICKED, ent);
+
+        ent->btn_update_lbl = lv_label_create(ent->btn_update);
+        lv_obj_set_style_text_color(ent->btn_update_lbl, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_font(ent->btn_update_lbl, SF(17), 0);
+        lv_label_set_text_fmt(ent->btn_update_lbl, "%s %s", LV_SYMBOL_REFRESH, tr("Update nu", "Update now"));
+        lv_obj_center(ent->btn_update_lbl);
+        lv_obj_add_flag(ent->btn_update, LV_OBJ_FLAG_HIDDEN);
 
         /* Action button (Install or Uninstall) */
         ent->btn_action = lv_btn_create(ent->row);
