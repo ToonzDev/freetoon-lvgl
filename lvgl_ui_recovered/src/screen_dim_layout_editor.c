@@ -45,6 +45,7 @@ static lv_obj_t * chooser_modal = NULL;
 static lv_obj_t * rects[DB_COUNT];
 static dim_block_t edit_dim[DB_COUNT];
 static int sel = -1;
+static int replace_idx = -1;
 static lv_obj_t * sel_lbl = NULL;
 
 static int drag_moved = 0, press_x0 = 0, press_y0 = 0;
@@ -64,6 +65,11 @@ static void create_rect(int i);
 static void build_canvas_rects(void);
 static void update_sel_label(void);
 static void close_chooser(void);
+static void open_add_modal(lv_event_t * e);
+static void show_block_confirm(int i);
+
+static int        confirm_idx = -1;
+static lv_obj_t * confirm_modal = NULL;
 
 static void select_block(int i) {
     sel = i;
@@ -183,6 +189,16 @@ static void rect_event(lv_event_t * e) {
         drag_moved = 0;
         drag_last_col = drag_last_row = -1;
         press_x0 = lv_obj_get_x(r); press_y0 = lv_obj_get_y(r);
+    } else if (code == LV_EVENT_LONG_PRESSED) {
+        if (!drag_moved) {
+            lv_indev_t * in = lv_indev_get_act();
+            if (in) lv_indev_wait_release(in);
+            for (int k = 0; k < DB_COUNT; k++) place_rect(k);
+            select_block(i);
+            show_block_confirm(i);
+            drag_last_col = drag_last_row = -1;
+            return;
+        }
     } else if (code == LV_EVENT_PRESSING) {
         lv_indev_t * in = lv_indev_get_act();
         lv_point_t v; lv_indev_get_vect(in, &v);
@@ -309,7 +325,101 @@ static void on_toggle_vis(lv_event_t * e) {
     update_sel_label();
 }
 
+static void confirm_close(void) {
+    if (confirm_modal) {
+        lv_obj_del(confirm_modal);
+        confirm_modal = NULL;
+    }
+    confirm_idx = -1;
+}
+
+static void on_confirm_cancel(lv_event_t * e) { (void)e; confirm_close(); }
+
+static void on_confirm_hide(lv_event_t * e) {
+    (void)e;
+    int i = confirm_idx;
+    confirm_close();
+    if (i >= 0 && i < DB_COUNT && edit_dim[i].visible) {
+        edit_dim[i].visible = 0;
+        if (rects[i]) {
+            lv_obj_del(rects[i]);
+            rects[i] = NULL;
+        }
+        sel = -1;
+        update_sel_label();
+    }
+}
+
+static void on_confirm_replace(lv_event_t * e) {
+    (void)e;
+    int i = confirm_idx;
+    confirm_close();
+    if (i >= 0 && i < DB_COUNT && edit_dim[i].visible) {
+        replace_idx = i;
+        open_add_modal(NULL);
+    }
+}
+
+static void show_block_confirm(int i) {
+    if (confirm_modal || i < 0 || i >= DB_COUNT || !edit_dim[i].visible) return;
+    confirm_idx = i;
+    confirm_modal = lv_obj_create(modal);
+    lv_obj_set_size(confirm_modal, SCR_W, SCR_H);
+    lv_obj_set_pos(confirm_modal, 0, 0);
+    lv_obj_set_style_bg_color(confirm_modal, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(confirm_modal, LV_OPA_60, 0);
+    lv_obj_set_style_border_width(confirm_modal, 0, 0);
+    lv_obj_clear_flag(confirm_modal, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_SCROLL_CHAIN);
+
+    lv_obj_t * card = lv_obj_create(confirm_modal);
+    lv_obj_set_size(card, SCR_W * 62 / 100, SY(180));
+    lv_obj_center(card);
+    lv_obj_set_style_bg_color(card, lv_color_hex(THEME_CARD_BG), 0);
+    lv_obj_set_style_border_color(card, lv_color_hex(THEME_BORDER), 0);
+    lv_obj_set_style_border_width(card, 2, 0);
+    lv_obj_set_style_radius(card, 12, 0);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t * t = lv_label_create(card);
+    lv_obj_set_style_text_color(t, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(t, SF(18), 0);
+    lv_label_set_text_fmt(t, tr("%s aanpassen of verbergen?", "Change or hide %s?"), dim_block_name(i));
+    lv_obj_align(t, LV_ALIGN_TOP_MID, 0, SY(16));
+
+    lv_obj_t * ca = lv_btn_create(card);
+    lv_obj_set_size(ca, SX(130), SY(50));
+    lv_obj_align(ca, LV_ALIGN_BOTTOM_LEFT, SX(10), SY(-14));
+    lv_obj_set_style_bg_color(ca, lv_color_hex(0x444444), 0);
+    lv_obj_add_event_cb(ca, on_confirm_cancel, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * cal = lv_label_create(ca); lv_label_set_text(cal, tr("Annuleer", "Cancel")); lv_obj_center(cal);
+
+    lv_obj_t * rep = lv_btn_create(card);
+    lv_obj_set_size(rep, SX(170), SY(50));
+    lv_obj_align(rep, LV_ALIGN_BOTTOM_MID, 0, SY(-14));
+    lv_obj_set_style_bg_color(rep, lv_color_hex(0x2a5070), 0);
+    lv_obj_add_event_cb(rep, on_confirm_replace, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * repl = lv_label_create(rep); lv_label_set_text(repl, tr("Vervang type", "Change type")); lv_obj_center(repl);
+
+    lv_obj_t * del = lv_btn_create(card);
+    lv_obj_set_size(del, SX(130), SY(50));
+    lv_obj_align(del, LV_ALIGN_BOTTOM_RIGHT, SX(-10), SY(-14));
+    lv_obj_set_style_bg_color(del, lv_color_hex(0x553355), 0);
+    lv_obj_add_event_cb(del, on_confirm_hide, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * dl = lv_label_create(del); lv_label_set_text(dl, tr("Verberg", "Hide")); lv_obj_center(dl);
+}
+
+static void on_replace_click(lv_event_t * e) {
+    (void)e;
+    if (sel < 0 || sel >= DB_COUNT || !edit_dim[sel].visible) {
+        lv_label_set_text(sel_lbl, tr("Tik eerst een blok", "Tap a block first"));
+        return;
+    }
+    replace_idx = sel;
+    open_add_modal(NULL);
+}
+
 static void close_chooser(void) {
+    replace_idx = -1;
     if (chooser_modal) {
         lv_obj_del(chooser_modal);
         chooser_modal = NULL;
@@ -324,6 +434,44 @@ static void on_chooser_close(lv_event_t * e) {
 static void on_restore_block(lv_event_t * e) {
     int idx = (int)(intptr_t)lv_event_get_user_data(e);
     if (idx < 0 || idx >= DB_COUNT) return;
+
+    if (replace_idx >= 0 && replace_idx < DB_COUNT) {
+        int old_idx = replace_idx;
+        int col = edit_dim[old_idx].col;
+        int row = edit_dim[old_idx].row;
+        int w = edit_dim[old_idx].w;
+        int h = edit_dim[old_idx].h;
+        int min_h = (idx == DB_DATE || idx == DB_ENERGY || idx == DB_GAS) ? 1 : DIM_MIN_H;
+        if (w < DIM_MIN_W) w = DIM_MIN_W;
+        if (h < min_h) h = min_h;
+        if (col + w > LAYOUT_COLS) col = LAYOUT_COLS - w;
+        if (row + h > LAYOUT_ROWS) row = LAYOUT_ROWS - h;
+
+        edit_dim[old_idx].visible = 0;
+
+        if (would_overlap(idx, col, row, w, h)) {
+            if (row > 0 && !would_overlap(idx, col, row - 1, w, h)) {
+                row--;
+            } else if (!find_free_cell(idx, w, h, &col, &row)) {
+                w = DIM_MIN_W;
+                h = min_h;
+                if (!find_free_cell(idx, w, h, &col, &row)) {
+                    col = 0; row = 0;
+                }
+            }
+        }
+
+        edit_dim[idx].col = col;
+        edit_dim[idx].row = row;
+        edit_dim[idx].w = w;
+        edit_dim[idx].h = h;
+        edit_dim[idx].visible = 1;
+
+        close_chooser();
+        build_canvas_rects();
+        select_block(idx);
+        return;
+    }
 
     int w = edit_dim[idx].w;
     int h = edit_dim[idx].h;
@@ -376,7 +524,10 @@ static void open_add_modal(lv_event_t * e) {
     lv_obj_t * title = lv_label_create(card);
     lv_obj_set_style_text_color(title, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(title, SF(20), 0);
-    lv_label_set_text(title, tr("Blok toevoegen", "Add block"));
+    if (replace_idx >= 0)
+        lv_label_set_text(title, tr("Kies nieuw type voor het blok", "Pick new type for block"));
+    else
+        lv_label_set_text(title, tr("Blok toevoegen", "Add block"));
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 0, 0);
 
     lv_obj_t * b_close = lv_btn_create(card);
@@ -481,6 +632,7 @@ lv_obj_t * screen_dim_layout_editor_create(void) {
 void screen_dim_layout_editor_show(void) {
     if (modal) lv_obj_del(modal);
     modal = NULL; chooser_modal = NULL; sel = -1;
+    replace_idx = -1; confirm_modal = NULL; confirm_idx = -1;
     drag_moved = 0; drag_last_col = -1; drag_last_row = -1;
     for (int i = 0; i < DB_COUNT; i++) {
         rects[i] = NULL;
@@ -531,14 +683,15 @@ void screen_dim_layout_editor_show(void) {
     lv_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
 
     int x = SX(8);
-    tb_btn(bar, x, SX(64), tr("Sluit", "Close"), on_cancel, NULL, 0x444444); x += SX(70);
-    tb_btn(bar, x, SX(42), "W-", on_resize, (void *)(intptr_t)0, 0x2a4060); x += SX(46);
-    tb_btn(bar, x, SX(42), "W+", on_resize, (void *)(intptr_t)1, 0x2a4060); x += SX(46);
-    tb_btn(bar, x, SX(42), "H-", on_resize, (void *)(intptr_t)2, 0x2a4060); x += SX(46);
-    tb_btn(bar, x, SX(42), "H+", on_resize, (void *)(intptr_t)3, 0x2a4060); x += SX(48);
-    tb_btn(bar, x, SX(82), tr("Verberg", "Hide"), on_toggle_vis, NULL, 0x553355); x += SX(88);
-    tb_btn(bar, x, SX(74), tr("+ Blok", "+ Block"), open_add_modal, NULL, 0x2e5e6e); x += SX(80);
-    tb_btn(bar, x, SX(92), tr("Standaard", "Default"), on_reset, NULL, 0x665522); x += SX(98);
+    tb_btn(bar, x, SX(62), tr("Sluit", "Close"), on_cancel, NULL, 0x444444); x += SX(68);
+    tb_btn(bar, x, SX(38), "W-", on_resize, (void *)(intptr_t)0, 0x2a4060); x += SX(42);
+    tb_btn(bar, x, SX(38), "W+", on_resize, (void *)(intptr_t)1, 0x2a4060); x += SX(42);
+    tb_btn(bar, x, SX(38), "H-", on_resize, (void *)(intptr_t)2, 0x2a4060); x += SX(42);
+    tb_btn(bar, x, SX(38), "H+", on_resize, (void *)(intptr_t)3, 0x2a4060); x += SX(44);
+    tb_btn(bar, x, SX(78), tr("Vervang", "Replace"), on_replace_click, NULL, 0x2a5070); x += SX(84);
+    tb_btn(bar, x, SX(78), tr("Verberg", "Hide"), on_toggle_vis, NULL, 0x553355); x += SX(84);
+    tb_btn(bar, x, SX(70), tr("+ Blok", "+ Block"), open_add_modal, NULL, 0x2e5e6e); x += SX(76);
+    tb_btn(bar, x, SX(86), tr("Standaard", "Default"), on_reset, NULL, 0x665522); x += SX(92);
 
     sel_lbl = lv_label_create(bar);
     lv_obj_set_style_text_color(sel_lbl, lv_color_hex(THEME_TEXT_HI), 0);
