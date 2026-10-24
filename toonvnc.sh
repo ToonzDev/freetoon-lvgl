@@ -5,7 +5,7 @@
 # /dev/fb0, with /mnt/data/fbvnc_input bridging remote pointer events back
 # into the touchscreen (/dev/input/event1).
 #
-# Usage:  toonvnc.sh [start|stop|restart|status|respawn]   (default: start)
+# Usage:  toonvnc.sh [start|stop|restart|status|respawn]    (default: start)
 # Connect:  vncviewer <toon-ip>:5900
 #
 # `respawn` is what /etc/inittab calls — exec x11vnc in the foreground (no
@@ -57,11 +57,11 @@ CMD="${1:-start}"
 # Toon 2 default as a last resort.
 _W=""; _H=""; _BPP=""
 if which fbset >/dev/null 2>&1; then
-  set -- $(fbset 2>/dev/null | awk '/geometry/{print $2, $3, $6}')   # W H depth
+  set -- $(fbset 2>/dev/null | awk '/geometry/{print $2, $3, $6}')    # W H depth
   _W=$1; _H=$2; _BPP=$3
 fi
-if [ -z "$_W" ] || [ -z "$_H" ]; then            # sysfs: visible mode "U:800x480p-0"
-  _res=$(head -n 1 /sys/class/graphics/fb0/modes 2>/dev/null)   # busybox head needs -n 1, NOT -1
+if [ -z "$_W" ] || [ -z "$_H" ]; then             # sysfs: visible mode "U:800x480p-0"
+  _res=$(head -n 1 /sys/class/graphics/fb0/modes 2>/dev/null)    # busybox head needs -n 1, NOT -1
   _res=${_res#*:}; _res=${_res%%p*}; _res=${_res%%i*}
   case "$_res" in *x*) _W=${_res%x*}; _H=${_res#*x};; esac
 fi
@@ -75,9 +75,17 @@ if [ -z "$_W" ] || [ -z "$_H" ]; then
   fi
 fi
 [ -z "$_BPP" ] && _BPP=$(cat /sys/class/graphics/fb0/bits_per_pixel 2>/dev/null)
-case "$_W"   in ''|*[!0-9]*) _W=1024;; esac      # last-resort Toon 2 defaults
-case "$_H"   in ''|*[!0-9]*) _H=600;;  esac
+
+# Fallbacks and Toon 1 / Toon 2 safety checks
+case "$_W"    in ''|*[!0-9]*) _W=1024;; esac      # last-resort Toon 2 defaults
+case "$_H"    in ''|*[!0-9]*) _H=600;;  esac
 case "$_BPP" in ''|*[!0-9]*) _BPP=32;; esac
+
+# Force 16-bit color depth if width is 800 (Toon 1 hardware safety check)
+if [ "$_W" = "800" ]; then
+  _BPP=16
+fi
+
 GEOM="${_W}x${_H}x${_BPP}"
 echo "toonvnc: framebuffer geometry $GEOM"
 
@@ -87,14 +95,14 @@ echo "toonvnc: framebuffer geometry $GEOM"
 # screenshot). Compute the live offset from the kernel's pan info and feed it to
 # x11vnc. On non-panned panels (yoffset 0) this is a no-op.
 RAWFB="map:/dev/fb0@$GEOM"
-_pan=$(cat /sys/class/graphics/fb0/pan 2>/dev/null)   # "xoff,yoff"
+_pan=$(cat /sys/class/graphics/fb0/pan 2>/dev/null)    # "xoff,yoff"
 _yoff=${_pan#*,}
 case "$_yoff" in ''|*[!0-9]*) _yoff=0;; esac
 _stride=$(cat /sys/class/graphics/fb0/stride 2>/dev/null)
 case "$_stride" in ''|*[!0-9]*) _stride=$((_W * _BPP / 8));; esac
 _off=$((_yoff * _stride))
 # x11vnc wants the byte offset AFTER the @WxHxB geometry, e.g.
-#   map:/dev/fb0@1024x600x32+2457600
+#    map:/dev/fb0@1024x600x32+2457600
 [ "$_off" -gt 0 ] && RAWFB="map:/dev/fb0@$GEOM+$_off"
 
 # Configure touch injection and framebuffer mapping.
