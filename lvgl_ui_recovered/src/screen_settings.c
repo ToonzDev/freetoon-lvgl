@@ -4598,8 +4598,6 @@ lv_obj_t * screen_settings_create(void) {
               tr("correctie, keteltype", "offset, boiler type"), open_heating_modal); n++;
     make_tile(GX(n), GY(n), &icon_radiator, NULL, tr("Voorkeuren", "Presets"),
               tr("schema-streefwaarden", "scheme setpoints"), open_presets_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_WIFI, tr("Webtoegang", "Web Access"),
-              tr("browser-login", "browser login"), open_web_modal); n++;
     make_tile(GX(n), GY(n), &icon_wx_cloud, NULL, tr("Weer", "Weather"),
               tr("weer op dimscherm", "weather on dim"), open_weather_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_WIFI, "WiFi",

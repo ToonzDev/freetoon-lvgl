@@ -212,10 +212,9 @@ static const lv_font_t * pick_date_font(const char * txt, lv_coord_t max_w, lv_c
     for (size_t i = 0; i < sizeof(fonts)/sizeof(fonts[0]); i++) {
         const lv_font_t * f = fonts[i];
         if (!f) continue;
-        if (max_h > 0 && lv_font_get_line_height(f) > max_h) continue;
         lv_point_t sz;
         lv_txt_get_size(&sz, txt, f, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
-        if (sz.x <= max_w) {
+        if (sz.x <= max_w && (max_h <= 0 || sz.y <= max_h)) {
             return f;
         }
     }
@@ -239,8 +238,11 @@ static void refresh_cb(lv_timer_t * t) {
     lv_obj_align_to(lbl_clock_h, lbl_clock_colon, LV_ALIGN_OUT_LEFT_MID, -SX(8), 0);
     lv_obj_align_to(lbl_clock_m, lbl_clock_colon, LV_ALIGN_OUT_RIGHT_MID, SX(8), 0);
     char dt[64];
-    i18n_date_long(dt, sizeof(dt), &tm);   /* localised — strftime is C-locale (always English) */
-    const lv_font_t * df = pick_date_font(dt, DISP_HOR - SX(120), SY(50));
+    snprintf(dt, sizeof(dt), "%s\n%d %s",
+             i18n_day_long(tm.tm_wday),
+             tm.tm_mday,
+             i18n_month_long(tm.tm_mon));
+    const lv_font_t * df = pick_date_font(dt, DISP_HOR - SX(120), SY(60));
     lv_obj_set_style_text_font(lbl_date, df, 0);
     lv_label_set_text(lbl_date, dt);
 
@@ -733,6 +735,7 @@ lv_obj_t * screen_dim_create(void) {
     lbl_date = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_date, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl_date, SF(28), 0);
+    lv_obj_set_style_text_align(lbl_date, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(lbl_date, "");
     lv_obj_align(lbl_date, LV_ALIGN_CENTER, 0, SY(-50));
 

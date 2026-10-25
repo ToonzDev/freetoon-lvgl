@@ -14,28 +14,28 @@
 #include <sys/utsname.h>
 #include <sys/stat.h>
 
-typedef struct {
-    void * dl_handle;
-} plugin_screen_ctx_t;
-
-static void async_dlclose(void * handle) {
-    if (handle) {
-        dlclose(handle);
-    }
-}
-
-static void on_plugin_screen_del(lv_event_t * e) {
-    plugin_screen_ctx_t * ctx = (plugin_screen_ctx_t *)lv_event_get_user_data(e);
-    if (ctx) {
-        if (ctx->dl_handle) {
-            lv_async_call(async_dlclose, ctx->dl_handle);
-        }
-        free(ctx);
-    }
-}
+#define MAX_CACHED_PLUGINS 8
+static struct {
+    char id[64];
+    void * handle;
+    lv_obj_t * (*create_fn)(void);
+} s_plugins[MAX_CACHED_PLUGINS];
+static int s_plugin_count = 0;
 
 int plugin_screen_open(const integration_meta_t * meta) {
     if (!meta || !meta->id[0]) return 0;
+
+    /* Check if already loaded in memory to prevent dlclose-on-thread crashes */
+    for (int i = 0; i < s_plugin_count; i++) {
+        if (strcmp(s_plugins[i].id, meta->id) == 0 && s_plugins[i].create_fn) {
+            lv_obj_t * scr = s_plugins[i].create_fn();
+            if (scr) {
+                ui_push(scr);
+                return 1;
+            }
+            return 0;
+        }
+    }
 
     struct utsname uts;
     const char * arch = "toon2";
@@ -91,10 +91,11 @@ int plugin_screen_open(const integration_meta_t * meta) {
         return 0;
     }
 
-    plugin_screen_ctx_t * ctx = calloc(1, sizeof(plugin_screen_ctx_t));
-    if (ctx) {
-        ctx->dl_handle = h;
-        lv_obj_add_event_cb(scr, on_plugin_screen_del, LV_EVENT_DELETE, ctx);
+    if (s_plugin_count < MAX_CACHED_PLUGINS) {
+        snprintf(s_plugins[s_plugin_count].id, sizeof(s_plugins[s_plugin_count].id), "%s", meta->id);
+        s_plugins[s_plugin_count].handle = h;
+        s_plugins[s_plugin_count].create_fn = create_fn;
+        s_plugin_count++;
     }
 
     ui_push(scr);

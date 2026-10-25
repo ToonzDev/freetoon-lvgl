@@ -267,6 +267,7 @@ static char       news_last_first[NEWS_TITLE_MAX] = "";
 static int        news_last_nn   = 0;
 static lv_obj_t * news_box       = NULL;
 static lv_obj_t * news_modal     = NULL;
+static lv_obj_t * map_modal      = NULL;
 static lv_obj_t * news_pane      = NULL;   /* scrollable right reading pane */
 static lv_obj_t * news_body_lbl  = NULL;   /* reading pane article text */
 static lv_obj_t * news_body_title = NULL;
@@ -544,6 +545,11 @@ static int open_integration_by_id(const char * b) {
 static int check_slot_integration_open(int slot) {
     const char * b = tile_slots_binding(slot);
     return open_integration_by_id(b);
+}
+
+static void open_waste_screen(lv_event_t * e) {
+    (void)e;
+    screen_waste_show();
 }
 
 static void open_placeholder(lv_event_t * e) {
@@ -2963,7 +2969,19 @@ static void on_page1_slot_longpress(lv_event_t * e) {
     int slot = (int)(intptr_t)lv_event_get_user_data(e);
     screen_settings_open_tile_slot_single_modal(slot);
 }
+void screen_home_dismiss_modals(void) {
+    if (news_modal) {
+        lv_obj_del_async(news_modal);
+        news_modal = NULL;
+    }
+    if (map_modal) {
+        lv_obj_del_async(map_modal);
+        map_modal = NULL;
+    }
+}
+
 void screen_home_reset_to_main(void) {
+    screen_home_dismiss_modals();
     if (home_tile_page != 0) home_show_page(0);
 }
 /* Headless-sim helper: page 2 is gesture-only, so the sim can't swipe to it. */
@@ -3246,7 +3264,6 @@ typedef struct { float lat, lon; int zoom; } map_req_t;
 
 static int g_map_zoom   = 13;      /* OSM zoom level; lower = wider area / less detail */
 static int g_map_person = 0;       /* which tracked person is shown */
-static lv_obj_t  * map_modal    = NULL;
 static lv_obj_t  * map_box      = NULL;
 static lv_obj_t  * map_imgs[4]  = {0};
 static lv_obj_t  * map_marker   = NULL;
@@ -3826,7 +3843,7 @@ lv_obj_t * screen_home_create(void) {
        the user can read at a glance what's coming when. */
     tile_t waste_big;
     make_tile(scr_root, 560, 20, 220, 200, LT_WASTE, tr("Afval", "Waste"), 0x88dd66,
-              open_placeholder, &waste_big);
+              open_waste_screen, &waste_big);
     tile_waste = waste_big.tile;
 
 #ifdef TOON1

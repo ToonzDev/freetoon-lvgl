@@ -162,9 +162,10 @@ void ui_idle_tick(void) {
                     lv_scr_load(stack[0]);
                 }
             }
-            /* Also return the home screen's swipe page to the main page, so
-             * "auto to main screen" lands on page 1 even if the user wandered
-             * to page 2. No-op when already on page 1. */
+            /* Also dismiss any top-layer modals (calendar, waste, news) and
+             * return home's swipe page to main page (CR2). */
+            screen_calendar_close();
+            screen_waste_close();
             screen_home_reset_to_main();
         }
     }
@@ -173,6 +174,9 @@ void ui_idle_tick(void) {
     uint32_t threshold = (uint32_t)settings.auto_dim_seconds * 1000u;
     if (!is_dimmed && elapsed_ms >= threshold) {
         fprintf(stderr, "[ui] dimming after %u ms idle\n", elapsed_ms);
+        screen_calendar_close();
+        screen_waste_close();
+        screen_home_dismiss_modals();
         backlight_set(settings.dim_brightness);
         ui_push(screen_dim_create());
         is_dimmed = 1;

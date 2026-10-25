@@ -34,6 +34,10 @@ static void on_close(lv_event_t * e) {
     s_lbl_page = NULL;
 }
 
+void screen_calendar_close(void) {
+    on_close(NULL);
+}
+
 /* "YYYY-MM-DD" → "wo 27 mei" (Dutch). Falls back to the raw date on error. */
 static void pretty_date(const char * iso, char * out, size_t osz) {
     const char * wd[] = {

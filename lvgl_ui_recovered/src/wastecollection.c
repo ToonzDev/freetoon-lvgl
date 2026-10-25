@@ -16,6 +16,8 @@
 
 waste_state_t waste_state = {0};
 
+static int waste_ev_cmp(const void * a, const void * b);
+
 #define CFG_PATH "/mnt/data/tsc/wastecollection.userSettings.json"
 
 /* Find "key":"VALUE" in a JSON blob, copy VALUE into out. */
@@ -133,6 +135,19 @@ static int fetch_afvalstromen(void) {
             }
             p += 5;
         }
+    }
+    waste_state.event_count = 0;
+    for (int i = 0; i < WASTE_TYPES; i++) {
+        if (waste_state.items[i].date[0] && waste_state.items[i].label[0]) {
+            snprintf(waste_state.events[waste_state.event_count].date,
+                     sizeof waste_state.events[0].date, "%s", waste_state.items[i].date);
+            snprintf(waste_state.events[waste_state.event_count].label,
+                     sizeof waste_state.events[0].label, "%s", waste_state.items[i].label);
+            waste_state.event_count++;
+        }
+    }
+    if (waste_state.event_count > 1) {
+        qsort(waste_state.events, waste_state.event_count, sizeof(waste_event_t), waste_ev_cmp);
     }
     return 0;
 }
@@ -329,6 +344,14 @@ static void ics_label_from_uid(const char * uid, char * out, size_t outsz) {
     }
 }
 
+static int waste_ev_cmp(const void * a, const void * b) {
+    const waste_event_t * ea = (const waste_event_t *)a;
+    const waste_event_t * eb = (const waste_event_t *)b;
+    int c = strcmp(ea->date, eb->date);
+    if (c != 0) return c;
+    return strcmp(ea->label, eb->label);
+}
+
 /* Generic ICS parse: the calendar's own SUMMARY text is the waste-type label,
  * so it works for any municipality (HVC, mijnafvalwijzer, Ximmio, …) regardless
  * of how they name their streams. Each distinct SUMMARY claims one of the
@@ -339,6 +362,7 @@ static int parse_ics(const char * body) {
         waste_state.items[i].label[0] = 0;
         waste_state.items[i].date[0]  = 0;
     }
+    waste_state.event_count = 0;
     int found = 0;
     const char * p = body;
     while ((p = strstr(p, "BEGIN:VEVENT")) != NULL) {
@@ -405,6 +429,24 @@ static int parse_ics(const char * body) {
         }
 
         if (date[0] && label[0] && strcmp(date, today) >= 0) {
+            /* Collect into full upcoming schedule for the big waste screen */
+            if (waste_state.event_count < WASTE_MAX_EVENTS) {
+                int dup = 0;
+                for (int e = 0; e < waste_state.event_count; e++) {
+                    if (strcmp(waste_state.events[e].date, date) == 0 &&
+                        strcmp(waste_state.events[e].label, label) == 0) {
+                        dup = 1; break;
+                    }
+                }
+                if (!dup) {
+                    snprintf(waste_state.events[waste_state.event_count].date,
+                             sizeof waste_state.events[0].date, "%s", date);
+                    snprintf(waste_state.events[waste_state.event_count].label,
+                             sizeof waste_state.events[0].label, "%s", label);
+                    waste_state.event_count++;
+                }
+            }
+
             /* Find this label's slot, or claim the next free one. */
             int slot = -1;
             for (int i = 0; i < WASTE_TYPES; i++)
@@ -427,6 +469,9 @@ static int parse_ics(const char * body) {
             }
         }
         p = evend + 1;
+    }
+    if (waste_state.event_count > 1) {
+        qsort(waste_state.events, waste_state.event_count, sizeof(waste_event_t), waste_ev_cmp);
     }
     return found ? 0 : -1;
 }

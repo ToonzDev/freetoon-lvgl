@@ -396,17 +396,57 @@ static void chart_draw_event_cb(lv_event_t * e) {
     if (!dsc) return;
     if (dsc->part == LV_PART_TICKS && dsc->type == LV_CHART_DRAW_PART_TICK_LABEL && dsc->id == LV_CHART_AXIS_PRIMARY_Y) {
         if (dsc->text) {
-            if (g_y_scale == 100) {
+            if (dsc->value == 0) {
+                lv_snprintf(dsc->text, dsc->text_length, "0");
+            } else if (g_y_scale == 100) {
                 float v = (float)dsc->value / 100.0f;
-                lv_snprintf(dsc->text, dsc->text_length, "%.2f", v);
+                if ((dsc->value % 100) == 0)
+                    lv_snprintf(dsc->text, dsc->text_length, "%d", (int)v);
+                else if ((dsc->value % 10) == 0)
+                    lv_snprintf(dsc->text, dsc->text_length, "%.1f", v);
+                else
+                    lv_snprintf(dsc->text, dsc->text_length, "%.2f", v);
             } else if (g_y_scale == 10) {
                 float v = (float)dsc->value / 10.0f;
-                lv_snprintf(dsc->text, dsc->text_length, "%.1f", v);
+                if ((dsc->value % 10) == 0)
+                    lv_snprintf(dsc->text, dsc->text_length, "%d", (int)v);
+                else
+                    lv_snprintf(dsc->text, dsc->text_length, "%.1f", v);
             } else {
                 lv_snprintf(dsc->text, dsc->text_length, "%d", dsc->value);
             }
         }
     }
+}
+
+/* Calculate a clean, human-friendly Y-axis ceiling for 4 intervals (5 ticks) */
+static double calculate_nice_top(double hi) {
+    if (hi <= 0.001) return 4.0; /* sensible fallback */
+
+    /* Headroom: target 105% of tallest bar so it doesn't touch the top ceiling */
+    double target_top = hi * 1.05;
+    double raw_step = target_top / 4.0;
+
+    double exponent = floor(log10(raw_step));
+    double mag = pow(10.0, exponent);
+    double frac = raw_step / mag; /* 1.0 <= frac <= 10.0 */
+
+    double nice_frac;
+    if (frac <= 1.0)       nice_frac = 1.0;
+    else if (frac <= 1.25) nice_frac = 1.25;
+    else if (frac <= 1.5)  nice_frac = 1.5;
+    else if (frac <= 2.0)  nice_frac = 2.0;
+    else if (frac <= 2.5)  nice_frac = 2.5;
+    else if (frac <= 3.0)  nice_frac = 3.0;
+    else if (frac <= 4.0)  nice_frac = 4.0;
+    else if (frac <= 5.0)  nice_frac = 5.0;
+    else if (frac <= 6.0)  nice_frac = 6.0;
+    else if (frac <= 7.5)  nice_frac = 7.5;
+    else if (frac <= 8.0)  nice_frac = 8.0;
+    else                   nice_frac = 10.0;
+
+    double step = nice_frac * mag;
+    return step * 4.0;
 }
 
 static void render_chart(void) {
@@ -537,28 +577,27 @@ static void render_chart(void) {
         }
     }
 
-    /* Y range from 0 baseline up to ~110% of tallest bar */
+    /* Y range from 0 baseline up to clean quantized nice-step top */
     double hi = 0;
     for (int i = 0; i < g_bar_count; i++) if (g_bar_val[i] > hi) hi = g_bar_val[i];
     double top;
     if (selected_metric == 3) {
-        top = hi * 1.15;
-        if (top <= 2.0) top = 2.0;       /* Standard 2.0 bar scale when pressure is <= 1.7 bar */
-        else if (top <= 2.5) top = 2.5;
-        else if (top <= 3.0) top = 3.0;
-        else if (top <= 3.5) top = 3.5;
-        else top = ceil(top);
+        if (hi <= 1.7) top = 2.0;       /* Standard 2.0 bar scale (ticks: 0, 0.5, 1, 1.5, 2) */
+        else if (hi <= 2.2) top = 2.5;
+        else if (hi <= 2.6) top = 3.0;
+        else top = calculate_nice_top(hi);
     } else {
-        top = hi * 1.1;
-        if (top < 0.2) top = 0.5; /* sensible minimum top when usage is near 0 */
+        top = calculate_nice_top(hi);
     }
 
-    if (top < 2.0) {
-        g_y_scale = 100;
-    } else if (top < 10.0) {
+    double step = top / 4.0;
+    /* Determine scale factor so that each of the 4 tick values is an exact integer in chart coords */
+    if (fabs(step - floor(step + 0.0001)) < 0.001) {
+        g_y_scale = 1;
+    } else if (fabs(step * 10.0 - floor(step * 10.0 + 0.0001)) < 0.001) {
         g_y_scale = 10;
     } else {
-        g_y_scale = 1;
+        g_y_scale = 100;
     }
 
     int pc = g_bar_count < 2 ? 2 : g_bar_count;

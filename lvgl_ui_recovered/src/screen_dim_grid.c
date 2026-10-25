@@ -55,9 +55,10 @@ static lv_obj_t * dim_lbl_city = NULL;
 /* Life360 — stacked TOP_RIGHT under lbl_outside, opposite the waste block. */
 static lv_obj_t * dim_lbl_life360_a = NULL;
 static lv_obj_t * dim_lbl_life360_b   = NULL;
-static lv_obj_t * dim_lbl_agenda_time = NULL;
-static lv_obj_t * dim_lbl_agenda_title = NULL;
-static lv_obj_t * dim_lbl_agenda_ev2 = NULL;
+#define MAX_DIM_AGENDA_ROWS 12
+static lv_obj_t * dim_lbl_agenda_time[MAX_DIM_AGENDA_ROWS] = {0};
+static lv_obj_t * dim_lbl_agenda_title[MAX_DIM_AGENDA_ROWS] = {0};
+static int        dim_agenda_row_count = 0;
 static lv_obj_t * dim_vent_fan  = NULL;   /* spinning fan icon */
 static lv_obj_t * dim_vent_lbl  = NULL;   /* "57 %" — actual ExhFanSpeed */
 static lv_obj_t * dim_img_water = NULL;   /* drop icon, visible while pouring */
@@ -192,14 +193,29 @@ static const lv_font_t * pick_date_font(const char * txt, lv_coord_t max_w, lv_c
     for (size_t i = 0; i < sizeof(fonts)/sizeof(fonts[0]); i++) {
         const lv_font_t * f = fonts[i];
         if (!f) continue;
-        if (max_h > 0 && lv_font_get_line_height(f) > max_h) continue;
         lv_point_t sz;
         lv_txt_get_size(&sz, txt, f, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
-        if (sz.x <= max_w) {
+        if (sz.x <= max_w && (max_h <= 0 || sz.y <= max_h)) {
             return f;
         }
     }
     return &lv_font_montserrat_14;
+}
+
+static void format_agenda_date_time(const calendar_event_t * ev, char * out, size_t outsz) {
+    if (!ev || !ev->date[0]) {
+        if (outsz) out[0] = 0;
+        return;
+    }
+    int yr = 0, mo = 0, da = 0;
+    if (sscanf(ev->date, "%4d-%2d-%2d", &yr, &mo, &da) == 3) {
+        if (ev->time[0])
+            snprintf(out, outsz, "%02d/%02d %s", da, mo, ev->time);
+        else
+            snprintf(out, outsz, "%02d/%02d", da, mo);
+    } else {
+        snprintf(out, outsz, "%s", ev->date);
+    }
 }
 
 static void refresh_cb(lv_timer_t * t) {
@@ -219,7 +235,10 @@ static void refresh_cb(lv_timer_t * t) {
     lv_obj_align_to(lbl_clock_h, lbl_clock_colon, LV_ALIGN_OUT_LEFT_MID, -8, 0);
     lv_obj_align_to(lbl_clock_m, lbl_clock_colon, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
     char dt[64];
-    i18n_date_long(dt, sizeof(dt), &tm);   /* localised — strftime is C-locale (always English) */
+    snprintf(dt, sizeof(dt), "%s\n%d %s",
+             i18n_day_long(tm.tm_wday),
+             tm.tm_mday,
+             i18n_month_long(tm.tm_mon));
     lv_coord_t max_w = s_date_box_w > 0 ? s_date_box_w - 12 : (DISP_HOR * 2 / 5);
     lv_coord_t max_h = s_date_box_h > 0 ? s_date_box_h - 8 : 60;
     const lv_font_t * df = pick_date_font(dt, max_w, max_h);
@@ -629,31 +648,28 @@ static void refresh_cb(lv_timer_t * t) {
             }
     }
 
-    /* Agenda / Calendar block */
-    if (dim_lbl_agenda_time && dim_lbl_agenda_title) {
+    /* Agenda / Calendar block — 2-column (dd/mm hh:mm + title), height-adaptive, white text */
+    if (dim_agenda_row_count > 0) {
         if (calendar_state.count > 0) {
-            const calendar_event_t * ev0 = &calendar_state.ev[0];
-            if (ev0->time[0])
-                lv_label_set_text_fmt(dim_lbl_agenda_time, "%s %s", ev0->date, ev0->time);
-            else
-                lv_label_set_text(dim_lbl_agenda_time, ev0->date);
-            lv_label_set_text(dim_lbl_agenda_title, ev0->summary);
-
-            if (dim_lbl_agenda_ev2) {
-                if (calendar_state.count > 1) {
-                    const calendar_event_t * ev1 = &calendar_state.ev[1];
-                    if (ev1->time[0])
-                        lv_label_set_text_fmt(dim_lbl_agenda_ev2, "%s %s: %s", ev1->date, ev1->time, ev1->summary);
-                    else
-                        lv_label_set_text_fmt(dim_lbl_agenda_ev2, "%s: %s", ev1->date, ev1->summary);
+            for (int r = 0; r < dim_agenda_row_count; r++) {
+                if (!dim_lbl_agenda_time[r] || !dim_lbl_agenda_title[r]) continue;
+                if (r < calendar_state.count) {
+                    char dt[32];
+                    format_agenda_date_time(&calendar_state.ev[r], dt, sizeof(dt));
+                    lv_label_set_text(dim_lbl_agenda_time[r], dt);
+                    lv_label_set_text(dim_lbl_agenda_title[r], calendar_state.ev[r].summary);
                 } else {
-                    lv_label_set_text(dim_lbl_agenda_ev2, "");
+                    lv_label_set_text(dim_lbl_agenda_time[r], "");
+                    lv_label_set_text(dim_lbl_agenda_title[r], "");
                 }
             }
         } else {
-            lv_label_set_text(dim_lbl_agenda_time, tr("Agenda", "Calendar"));
-            lv_label_set_text(dim_lbl_agenda_title, tr("Geen afspraken", "No appointments"));
-            if (dim_lbl_agenda_ev2) lv_label_set_text(dim_lbl_agenda_ev2, "");
+            if (dim_lbl_agenda_time[0]) lv_label_set_text(dim_lbl_agenda_time[0], "");
+            if (dim_lbl_agenda_title[0]) lv_label_set_text(dim_lbl_agenda_title[0], tr("Geen afspraken", "No appointments"));
+            for (int r = 1; r < dim_agenda_row_count; r++) {
+                if (dim_lbl_agenda_time[r]) lv_label_set_text(dim_lbl_agenda_time[r], "");
+                if (dim_lbl_agenda_title[r]) lv_label_set_text(dim_lbl_agenda_title[r], "");
+            }
         }
     }
 }
@@ -710,6 +726,7 @@ lv_obj_t * screen_dim_grid_create(void) {
     lbl_date = lv_label_create(bx_date);
     lv_obj_set_style_text_color(lbl_date, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl_date, SF(28), 0);
+    lv_obj_set_style_text_align(lbl_date, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(lbl_date, "");
     lv_obj_align(lbl_date, LV_ALIGN_CENTER, 0, 0);
 
@@ -934,31 +951,47 @@ lv_obj_t * screen_dim_grid_create(void) {
     en_gas_w = gbw - 8;
     en_make_bar(bx_g, en_gas_w, 6, 0xffaa33, &en_gas_track, &en_gas_fill, &en_gas_lbl);
 
-    /* ---- AGENDA: next calendar event(s) ---- */
-    int abw = 0, abh = 0; lv_obj_t * bx_a = dim_box(DB_AGENDA, &abw, &abh); (void)abh;
-    dim_lbl_agenda_time = lv_label_create(bx_a);
-    lv_obj_set_style_text_color(dim_lbl_agenda_time, lv_color_hex(0x44aaff), 0);
-    lv_obj_set_style_text_font(dim_lbl_agenda_time, SF(15), 0);
-    lv_obj_set_width(dim_lbl_agenda_time, abw - 8);
-    lv_label_set_long_mode(dim_lbl_agenda_time, LV_LABEL_LONG_DOT);
-    lv_label_set_text(dim_lbl_agenda_time, "");
-    lv_obj_align(dim_lbl_agenda_time, LV_ALIGN_TOP_LEFT, 4, 4);
+    /* ---- AGENDA: next calendar event(s) — 2-column, height-adaptive, all white text ---- */
+    int abw = 0, abh = 0; lv_obj_t * bx_a = dim_box(DB_AGENDA, &abw, &abh);
+    for (int r = 0; r < MAX_DIM_AGENDA_ROWS; r++) {
+        dim_lbl_agenda_time[r] = NULL;
+        dim_lbl_agenda_title[r] = NULL;
+    }
+    dim_agenda_row_count = 0;
 
-    dim_lbl_agenda_title = lv_label_create(bx_a);
-    lv_obj_set_style_text_color(dim_lbl_agenda_title, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(dim_lbl_agenda_title, SF(16), 0);
-    lv_obj_set_width(dim_lbl_agenda_title, abw - 8);
-    lv_label_set_long_mode(dim_lbl_agenda_title, LV_LABEL_LONG_DOT);
-    lv_label_set_text(dim_lbl_agenda_title, "");
-    lv_obj_align(dim_lbl_agenda_title, LV_ALIGN_TOP_LEFT, 4, 26);
+    if (bx_a && abh > 20) {
+        int row_h = (DISP_VER < 600) ? 20 : 22;
+        int max_fit = (abh - 6) / row_h;
+        if (max_fit < 1) max_fit = 1;
+        if (max_fit > MAX_DIM_AGENDA_ROWS) max_fit = MAX_DIM_AGENDA_ROWS;
+        dim_agenda_row_count = max_fit;
 
-    dim_lbl_agenda_ev2 = lv_label_create(bx_a);
-    lv_obj_set_style_text_color(dim_lbl_agenda_ev2, lv_color_hex(0x88aabb), 0);
-    lv_obj_set_style_text_font(dim_lbl_agenda_ev2, SF(14), 0);
-    lv_obj_set_width(dim_lbl_agenda_ev2, abw - 8);
-    lv_label_set_long_mode(dim_lbl_agenda_ev2, LV_LABEL_LONG_DOT);
-    lv_label_set_text(dim_lbl_agenda_ev2, "");
-    lv_obj_align(dim_lbl_agenda_ev2, LV_ALIGN_TOP_LEFT, 4, 52);
+        int time_col_w = (DISP_HOR < 1000) ? 92 : 102;
+        int title_x = time_col_w + 6;
+        int title_w = abw - title_x - 4;
+        if (title_w < 50) title_w = 50;
+
+        for (int r = 0; r < dim_agenda_row_count; r++) {
+            /* Col 1: Date & Time (dd/mm hh:mm) */
+            lv_obj_t * lt = lv_label_create(bx_a);
+            lv_obj_set_style_text_color(lt, lv_color_hex(0xffffff), 0);
+            lv_obj_set_style_text_font(lt, SF(15), 0);
+            lv_obj_set_width(lt, time_col_w);
+            lv_label_set_text(lt, "");
+            lv_obj_align(lt, LV_ALIGN_TOP_LEFT, 4, 3 + r * row_h);
+            dim_lbl_agenda_time[r] = lt;
+
+            /* Col 2: Event title / summary */
+            lv_obj_t * ls = lv_label_create(bx_a);
+            lv_obj_set_style_text_color(ls, lv_color_hex(0xffffff), 0);
+            lv_obj_set_style_text_font(ls, SF(15), 0);
+            lv_obj_set_width(ls, title_w);
+            lv_label_set_long_mode(ls, LV_LABEL_LONG_DOT);
+            lv_label_set_text(ls, "");
+            lv_obj_align(ls, LV_ALIGN_TOP_LEFT, title_x, 3 + r * row_h);
+            dim_lbl_agenda_title[r] = ls;
+        }
+    }
 
     if (!refresh_timer) refresh_timer = lv_timer_create(refresh_cb, 1000, NULL);
     return scr_root;

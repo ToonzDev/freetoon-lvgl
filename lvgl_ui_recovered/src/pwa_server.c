@@ -91,59 +91,10 @@ static int send_status(int fd, int code, const char * status, const char * body)
     return sock_send_all(fd, body, strlen(body));
 }
 
-/* Serve a static file from PWA_ROOT. Guards against `..` path-escape. */
+/* Static UI disabled per CR5 (use Toon's native web interface) */
 static int serve_static(int fd, const char * path) {
-    if (strstr(path, "..")) return send_status(fd, 400, "Bad Request", "..");
-    /* :10081 serves ONLY the WASM slave UI, which lives under /ui/. Bare root
-     * (and the old simple-app /index.html) 302-redirect there so opening the
-     * Toon's IP drops straight into the WASM UI — there is no other frontend. */
-    if (!strcmp(path, "/") || !strcmp(path, "/index.html")) {
-        char hdr[160];
-        int n = snprintf(hdr, sizeof hdr,
-            "HTTP/1.1 302 Found\r\nLocation: /ui/\r\n"
-            "Content-Length: 0\r\nConnection: close\r\n\r\n");
-        sock_send_all(fd, hdr, n);
-        return 0;
-    }
-    char full[512];
-    size_t plen = strlen(path);
-    /* "/" and any directory request ("/ui/", "/foo/") resolve to index.html
-     * inside that dir. Without this, fopen() opens the directory entry on
-     * glibc and fread() returns raw dirent bytes — the browser then sees an
-     * application/octet-stream blob and offers a download. */
-    if (plen == 0 || path[plen-1] == '/') {
-        snprintf(full, sizeof(full), "%s%sindex.html", PWA_ROOT, path);
-    } else {
-        snprintf(full, sizeof(full), "%s%s", PWA_ROOT, path);
-    }
-    struct stat st;
-    /* If the resolved path is a directory (request came without the trailing
-     * slash, e.g. "/ui"), redirect to add the slash so relative URLs in the
-     * served HTML resolve correctly. */
-    if (stat(full, &st) == 0 && S_ISDIR(st.st_mode)) {
-        char loc[256], hdr[384];
-        snprintf(loc, sizeof loc, "%s/", path);
-        int n = snprintf(hdr, sizeof hdr,
-            "HTTP/1.1 301 Moved Permanently\r\nLocation: %s\r\n"
-            "Content-Length: 0\r\nConnection: close\r\n\r\n", loc);
-        sock_send_all(fd, hdr, n);
-        return 0;
-    }
-    FILE * f = fopen(full, "rb");
-    if (!f) return send_status(fd, 404, "Not Found", "no");
-    if (stat(full, &st) != 0) { fclose(f); return -1; }
-    char hdr[256];
-    int n = snprintf(hdr, sizeof(hdr),
-        "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %lld\r\n"
-        "Cache-Control: no-cache\r\nConnection: close\r\n"
-        "Access-Control-Allow-Origin: *\r\n\r\n",
-        mime_for(full), (long long)st.st_size);
-    if (sock_send_all(fd, hdr, n) < 0) { fclose(f); return -1; }
-    char buf[4096];
-    size_t r;
-    while ((r = fread(buf, 1, sizeof(buf), f)) > 0)
-        if (sock_send_all(fd, buf, r) < 0) { fclose(f); return -1; }
-    fclose(f); return 0;
+    (void)path;
+    return send_status(fd, 404, "Not Found", "Not Found");
 }
 
 /* Pure-function snapshot of the live state into JSON. Reads volatile shared

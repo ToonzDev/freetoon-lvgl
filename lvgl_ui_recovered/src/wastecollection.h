@@ -7,6 +7,7 @@
  *   2 = Restafval  3 = Papier  5 = GFT  6 = Plastic */
 
 #define WASTE_TYPES 4
+#define WASTE_MAX_EVENTS 128
 
 typedef struct {
     char    label[40];      /* HVC: "Restafval"/"GFT"/... ; ICS: the raw calendar
@@ -15,10 +16,17 @@ typedef struct {
 } waste_item_t;
 
 typedef struct {
+    char    date[16];       /* "YYYY-MM-DD" */
+    char    label[40];
+} waste_event_t;
+
+typedef struct {
     volatile int connected;
     volatile int wake_fetch;   /* set to 1 to trigger an immediate re-fetch */
     char         bag_id[24];
     waste_item_t items[WASTE_TYPES];
+    waste_event_t events[WASTE_MAX_EVENTS];
+    int          event_count;
 } waste_state_t;
 
 extern waste_state_t waste_state;
