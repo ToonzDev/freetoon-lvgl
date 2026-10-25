@@ -6,7 +6,19 @@
 set -e
 
 # Prevent being killed if parent process (e.g. qt-gui / TSC child) exits
-trap '' HUP TERM
+trap '' HUP TERM INT
+
+# Decouple from parent process group / session so init killing startqt does not kill this script
+if [ "${SWITCH_DETACHED:-0}" != "1" ]; then
+    export SWITCH_DETACHED=1
+    if command -v setsid >/dev/null 2>&1; then
+        exec setsid "$0" "$@"
+    elif command -v busybox >/dev/null 2>&1 && busybox --list 2>/dev/null | grep -q '^setsid$'; then
+        exec busybox setsid "$0" "$@"
+    elif command -v python >/dev/null 2>&1; then
+        exec python -c "import os, sys; os.setsid(); os.execv(sys.argv[1], sys.argv[1:])" "$0" "$@"
+    fi
+fi
 
 LOG="/var/volatile/tmp/switch_to_freetoon.log"
 mkdir -p /var/volatile/tmp 2>/dev/null || true
@@ -39,12 +51,11 @@ fi
 rm -f /var/volatile/tmp/toonui_fails /var/volatile/tmp/toonui_restart 2>/dev/null || true
 
 # 2. Check if FreeToon is already installed
-IS_INSTALLED=0
-if [ -f "$TOONUI_BIN" ] && [ -x "$TOONUI_BIN" ] && [ -f "$UI_LAUNCHER" ] && [ -x "$UI_LAUNCHER" ]; then
-    IS_INSTALLED=1
-fi
+is_installed() {
+    [ -f "$TOONUI_BIN" ] && [ -x "$TOONUI_BIN" ] && [ -f "$UI_LAUNCHER" ] && [ -x "$UI_LAUNCHER" ]
+}
 
-if [ "$IS_INSTALLED" = 0 ]; then
+if ! is_installed; then
     log "FreeToon is NOT installed. Starting installation..."
 
     # Pre-set choice to freetoon so installer doesn't default to qt-gui on Toon 1
@@ -83,14 +94,22 @@ if [ "$IS_INSTALLED" = 0 ]; then
 
     log "Executing installer: $INSTALLER"
     chmod +x "$INSTALLER"
-    if env FORCE_DOWNLOAD=1 sh "$INSTALLER" --download >> "$LOG" 2>&1; then
+    
+    # Run installer; capture exit code without tripping set -e
+    INSTALL_RC=0
+    env FORCE_DOWNLOAD=1 sh "$INSTALLER" --download >> "$LOG" 2>&1 || INSTALL_RC=$?
+    rm -f "$TMP_INSTALLER" 2>/dev/null || true
+
+    # Step 6/6 of install.sh restarts the UI and terminates old Qt sessions,
+    # which can return code 137 / Killed. Check if the files are actually on disk:
+    if is_installed; then
+        log "FreeToon binaries and launcher verified on disk. Installation completed successfully!"
+    elif [ "$INSTALL_RC" -eq 0 ]; then
         log "Installation finished successfully."
     else
-        log "ERROR: Installer failed. See details in $LOG."
-        rm -f "$TMP_INSTALLER" 2>/dev/null || true
+        log "ERROR: Installer exited with code $INSTALL_RC and FreeToon binaries are missing. See details in $LOG."
         exit 1
     fi
-    rm -f "$TMP_INSTALLER" 2>/dev/null || true
 
     # Ensure selection remains freetoon
     echo "freetoon" > "$CHOICE_FILE"
@@ -100,41 +119,41 @@ else
 
     # Set UI preference to freetoon
     echo "freetoon" > "$CHOICE_FILE"
+fi
 
-    # Ensure inittab has FreeToon launcher row and stock qt is disabled
-    TOON_ROW="toon:345:respawn:/mnt/data/ui_launcher.sh >> /var/volatile/tmp/toonui.log 2>&1"
-    if grep -qE '^([^#].*(startqt|qt-gui).*)' "$INITTAB" 2>/dev/null; then
-        log "Disabling stock qt-gui in $INITTAB..."
-        sed -i -E 's~^([^#].*(startqt|qt-gui).*)~#FREETOON#\1~' "$INITTAB" 2>/dev/null || true
+# 3. Ensure inittab is properly wired and start FreeToon
+TOON_ROW="toon:345:respawn:/mnt/data/ui_launcher.sh >> /var/volatile/tmp/toonui.log 2>&1"
+if grep -qE '^([^#].*(startqt|qt-gui).*)' "$INITTAB" 2>/dev/null; then
+    log "Disabling stock qt-gui in $INITTAB..."
+    sed -i -E 's~^([^#].*(startqt|qt-gui).*)~#FREETOON#\1~' "$INITTAB" 2>/dev/null || true
+fi
+
+if ! grep -q '^toon:' "$INITTAB" 2>/dev/null; then
+    log "Adding FreeToon launcher to $INITTAB..."
+    echo "$TOON_ROW" >> "$INITTAB"
+fi
+
+# Switch OT bridge mode if proxy is enabled in toonui.cfg
+if [ -f /mnt/data/toonui.cfg ] && grep -q '^ot_bridge_mode=proxy' /mnt/data/toonui.cfg 2>/dev/null; then
+    if [ -x /mnt/data/ot_mode_switch.sh ]; then
+        log "Configuring OpenTherm proxy bridge..."
+        /mnt/data/ot_mode_switch.sh proxy >> "$LOG" 2>&1 || true
     fi
+fi
 
-    if ! grep -q '^toon:' "$INITTAB" 2>/dev/null; then
-        log "Adding FreeToon launcher to $INITTAB..."
-        echo "$TOON_ROW" >> "$INITTAB"
-    fi
+log "Signaling init to reload inittab..."
+kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true
+sleep 1
 
-    # Switch OT bridge mode if proxy is enabled in toonui.cfg
-    if [ -f /mnt/data/toonui.cfg ] && grep -q '^ot_bridge_mode=proxy' /mnt/data/toonui.cfg 2>/dev/null; then
-        if [ -x /mnt/data/ot_mode_switch.sh ]; then
-            log "Configuring OpenTherm proxy bridge..."
-            /mnt/data/ot_mode_switch.sh proxy >> "$LOG" 2>&1 || true
-        fi
-    fi
-
-    log "Signaling init to reload inittab..."
-    kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true
-    sleep 1
-
-    log "Stopping stock qt-gui processes..."
+# Check if stock Qt processes are still lingering and terminate them
+if pidof qt-gui >/dev/null 2>&1 || pidof startqt >/dev/null 2>&1; then
+    log "Stopping lingering stock qt-gui processes..."
     killall -9 qt-gui 2>/dev/null || true
     pkill -9 -x qt-gui 2>/dev/null || true
     pkill -9 -f /qmf/sbin/qt-gui 2>/dev/null || true
     pkill -9 -x startqt 2>/dev/null || true
-
-    # Final SIGHUP to make sure init immediately respawns ui_launcher.sh
     kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true
 fi
 
 log "FreeToon launch initiated successfully."
 exit 0
-
