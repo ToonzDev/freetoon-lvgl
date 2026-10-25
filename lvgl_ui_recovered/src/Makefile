@@ -190,7 +190,7 @@ lvgl-patches:
 
 # Recompile the version-bearing objects whenever BUILD_VERSION changes
 # (placed after `all` so it doesn't hijack the default goal).
-$(BUILDDIR)/update_check.o $(BUILDDIR)/screen_home.o $(BUILDDIR)/update_modal.o: $(VERFILE)
+$(BUILDDIR)/update_check.o $(BUILDDIR)/screen_home.o $(BUILDDIR)/update_modal.o $(BUILDDIR)/canonical_state.o $(BUILDDIR)/pwa_server.o: $(VERFILE)
 
 # The libc-replacement wrappers must NOT be built with builtins: at -O2 GCC
 # would fold __wrap_fputc's fwrite(&c,1,1,f) straight back into fputc — the very
