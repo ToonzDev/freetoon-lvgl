@@ -1,6 +1,7 @@
 /* Single-TU wrapper that pulls in the generated bitmap headers. */
 #include "icons.h"
 #include "icon_flame.h"
+#include "icon_chart.h"
 #include "icon_faucet.h"
 #include "icon_drop.h"
 #include "icon_fan.h"

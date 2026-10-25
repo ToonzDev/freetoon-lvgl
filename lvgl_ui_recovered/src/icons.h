@@ -4,6 +4,7 @@
 #include "lvgl/lvgl.h"
 
 extern const lv_img_dsc_t icon_flame;
+extern const lv_img_dsc_t icon_chart;
 extern const lv_img_dsc_t icon_faucet;
 extern const lv_img_dsc_t icon_drop;
 extern const lv_img_dsc_t icon_fan;

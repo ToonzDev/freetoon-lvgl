@@ -3763,29 +3763,27 @@ static void open_clean_modal(lv_event_t * e) {
  * (only 3-wide and overflowed the screen badly); now 232x104 with 20pt
  * title so the whole grid fits in ~4 rows with minimal scrolling. */
 static const lv_img_dsc_t * get_scaled_icon(const lv_img_dsc_t * src) {
-#ifndef TOON1
-    return src;
-#else
     if (!src || src->header.cf != LV_IMG_CF_ALPHA_8BIT) return src;
-    if (src->header.h <= 26) return src;
+    int target_h = (DISP_VER < 600) ? 18 : 22;
+    if (src->header.h <= target_h + 2) return src;
 
     static struct {
         const lv_img_dsc_t * orig;
         lv_img_dsc_t dsc;
-        uint8_t buf[28 * 28];
+        uint8_t buf[32 * 32];
     } cache[8];
     static int cache_cnt = 0;
 
     for (int i = 0; i < cache_cnt; i++) {
-        if (cache[i].orig == src) return &cache[i].dsc;
+        if (cache[i].orig == src && cache[i].dsc.header.h == target_h) return &cache[i].dsc;
     }
     if (cache_cnt >= 8) return src;
 
     int idx = cache_cnt++;
     cache[idx].orig = src;
-    int dst_h = 24;
+    int dst_h = target_h;
     int dst_w = (src->header.w * dst_h) / src->header.h;
-    if (dst_w > 28) dst_w = 28;
+    if (dst_w > 32) dst_w = 32;
     cache[idx].dsc.header.cf = LV_IMG_CF_ALPHA_8BIT;
     cache[idx].dsc.header.w = dst_w;
     cache[idx].dsc.header.h = dst_h;
@@ -3820,7 +3818,6 @@ static const lv_img_dsc_t * get_scaled_icon(const lv_img_dsc_t * src) {
         }
     }
     return &cache[idx].dsc;
-#endif
 }
 
 #define SETT_TILE_W 232
@@ -4589,7 +4586,7 @@ lv_obj_t * screen_settings_create(void) {
               tr("30 s schermvergrendeling", "30 s screen lock"), open_clean_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_HOME, tr("Tegels", "Tiles"),
               tr("starttegels toewijzen", "assign home tiles"), open_tile_slots_modal); n++;
-    make_tile(GX(n), GY(n), &icon_flame, NULL, tr("Temperatuurlog", "Temperature log"),
+    make_tile(GX(n), GY(n), &icon_chart, NULL, tr("Temperatuurlog", "Temperature log"),
               tr("24-uurs grafiek", "24-hour chart"), open_templogger); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_REFRESH, tr("UI herstarten", "Restart UI"),
               tr("instellingen herladen", "reload settings"), open_restart_confirm); n++;
