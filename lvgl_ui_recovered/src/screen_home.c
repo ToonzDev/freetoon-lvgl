@@ -4739,7 +4739,7 @@ lv_obj_t * screen_home_create(void) {
     }
 
     /* Gear in the very top-right corner of the screen. */
-    lv_coord_t gear_sz = (DISP_VER < 600) ? 50 : 54;
+    lv_coord_t gear_sz = 54;
     lv_obj_t * gear = lv_btn_create(scr_root);
     lv_obj_set_size(gear, gear_sz, gear_sz);
     lv_obj_align(gear, LV_ALIGN_TOP_RIGHT, -6, 4);
@@ -4750,7 +4750,7 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_t * gear_lbl = lv_label_create(gear);
     lv_label_set_text(gear_lbl, LV_SYMBOL_SETTINGS);
     lv_obj_set_style_text_color(gear_lbl, lv_color_hex(settings.home_light_mode ? 0x1e2838 : 0xffffff), 0);
-    lv_obj_set_style_text_font(gear_lbl, SF(24), 0);
+    lv_obj_set_style_text_font(gear_lbl, &lv_font_montserrat_24, 0);
     lv_obj_center(gear_lbl);
 
     /* Pinned device tiles were built before the forecast strip, so raise them

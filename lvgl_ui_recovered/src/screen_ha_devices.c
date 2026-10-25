@@ -134,16 +134,19 @@ lv_obj_t * screen_ha_devices_create(void) {
     lv_label_set_text(title, tr("Apparaten", "Devices"));
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 24, 14);
 
+    int x_w = (DISP_VER < 600) ? 60 : 70;
+    int x_h = (DISP_VER < 600) ? 46 : 50;
     lv_obj_t * back = lv_btn_create(scr_root);
-    lv_obj_set_size(back, 110, 44);
-    lv_obj_align(back, LV_ALIGN_TOP_RIGHT, -16, 10);
+    lv_obj_set_size(back, x_w, x_h);
+    lv_obj_align(back, LV_ALIGN_TOP_RIGHT, SX(-12), 10);
     lv_obj_set_style_bg_color(back, lv_color_hex(THEME_BTN_BG), 0);
-    lv_obj_set_style_radius(back, 8, 0);
-    lv_obj_set_ext_click_area(back, 18);
+    lv_obj_set_style_radius(back, 12, 0);
+    lv_obj_set_ext_click_area(back, 25);
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(back);
+    lv_label_set_text(bl, LV_SYMBOL_CLOSE);
     lv_obj_set_style_text_color(bl, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_label_set_text(bl, tr("< Terug", "< Back"));
+    lv_obj_set_style_text_font(bl, SF(22), 0);
     lv_obj_center(bl);
 
     /* Add-buttons row: one per device type. */

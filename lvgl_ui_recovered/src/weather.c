@@ -306,6 +306,148 @@ static int fetch_openmeteo(void) {
     return -1;
 }
 
+/* Decode HTML entities, convert UTF-8 diacritics to clean ASCII for fonts,
+ * strip HTML tags, and insert paragraph breaks between glued sentences. */
+static void sanitize_weather_text(char * s, size_t maxlen) {
+    if (!s || !*s || maxlen < 4) return;
+    char * buf = (char *)malloc(maxlen + 512);
+    if (!buf) return;
+    size_t o = 0;
+    const char * r = s;
+    while (*r && o < maxlen - 4) {
+        /* Fix missing space / paragraph break between sentence and next word:
+         * e.g. "km/u.Vanochtend" -> "km/u.\n\nVanochtend" */
+        if ((*r == '.' || *r == '!' || *r == '?') && (r[1] >= 'A' && r[1] <= 'Z')) {
+            buf[o++] = *r++;
+            buf[o++] = '\n';
+            buf[o++] = '\n';
+            continue;
+        }
+
+        /* HTML entities */
+        if (*r == '&') {
+            const char * semi = strchr(r, ';');
+            if (semi && (semi - r) <= 12) {
+                int len = (int)(semi - r + 1);
+                char ent[16];
+                memcpy(ent, r, len);
+                ent[len] = '\0';
+
+                char rep = 0;
+                if (!strcasecmp(ent, "&nbsp;"))        rep = ' ';
+                else if (!strcasecmp(ent, "&eacute;")) rep = 'e';
+                else if (!strcasecmp(ent, "&egrave;")) rep = 'e';
+                else if (!strcasecmp(ent, "&euml;"))   rep = 'e';
+                else if (!strcasecmp(ent, "&ecirc;"))  rep = 'e';
+                else if (!strcasecmp(ent, "&aacute;")) rep = 'a';
+                else if (!strcasecmp(ent, "&agrave;")) rep = 'a';
+                else if (!strcasecmp(ent, "&auml;"))   rep = 'a';
+                else if (!strcasecmp(ent, "&acirc;"))  rep = 'a';
+                else if (!strcasecmp(ent, "&oacute;")) rep = 'o';
+                else if (!strcasecmp(ent, "&ograve;")) rep = 'o';
+                else if (!strcasecmp(ent, "&ouml;"))   rep = 'o';
+                else if (!strcasecmp(ent, "&ocirc;"))  rep = 'o';
+                else if (!strcasecmp(ent, "&iacute;")) rep = 'i';
+                else if (!strcasecmp(ent, "&igrave;")) rep = 'i';
+                else if (!strcasecmp(ent, "&iuml;"))   rep = 'i';
+                else if (!strcasecmp(ent, "&icirc;"))  rep = 'i';
+                else if (!strcasecmp(ent, "&uacute;")) rep = 'u';
+                else if (!strcasecmp(ent, "&ugrave;")) rep = 'u';
+                else if (!strcasecmp(ent, "&uuml;"))   rep = 'u';
+                else if (!strcasecmp(ent, "&ucirc;"))  rep = 'u';
+                else if (!strcasecmp(ent, "&ccedil;")) rep = 'c';
+                else if (!strcasecmp(ent, "&amp;"))    rep = '&';
+                else if (!strcasecmp(ent, "&quot;"))   rep = '"';
+                else if (!strcasecmp(ent, "&apos;"))   rep = '\'';
+                else if (!strcasecmp(ent, "&lt;"))     rep = '<';
+                else if (!strcasecmp(ent, "&gt;"))     rep = '>';
+                else if (!strcasecmp(ent, "&deg;")) {
+                    buf[o++] = (char)0xC2; buf[o++] = (char)0xB0; /* degree symbol */
+                    r += len;
+                    continue;
+                } else if (ent[1] == '#') {
+                    int val = atoi(ent + 2);
+                    if (val > 0 && val < 128) rep = (char)val;
+                }
+
+                if (rep) {
+                    if (r[1] >= 'A' && r[1] <= 'Z' && rep >= 'a' && rep <= 'z')
+                        rep = rep - 'a' + 'A';
+                    buf[o++] = rep;
+                    r += len;
+                    continue;
+                } else {
+                    /* Unknown entity: drop */
+                    r += len;
+                    continue;
+                }
+            }
+        }
+
+        /* HTML tags: <br>, <p>, etc. */
+        if (*r == '<') {
+            const char * endtag = strchr(r, '>');
+            if (endtag && (endtag - r) <= 10) {
+                int tlen = (int)(endtag - r + 1);
+                if (!strncasecmp(r, "<br", 3) || !strncasecmp(r, "<p", 2)) {
+                    buf[o++] = '\n';
+                }
+                r += tlen;
+                continue;
+            }
+        }
+
+        /* UTF-8 accented characters */
+        unsigned char c0 = (unsigned char)r[0];
+        unsigned char c1 = (unsigned char)r[1];
+        if (c0 == 0xC3) {
+            char rep = 0;
+            switch (c1) {
+                case 0xA0: case 0xA1: case 0xA2: case 0xA3: case 0xA4: case 0xA5: rep = 'a'; break;
+                case 0x80: case 0x81: case 0x82: case 0x83: case 0x84: case 0x85: rep = 'A'; break;
+                case 0xA8: case 0xA9: case 0xAA: case 0xAB: rep = 'e'; break;
+                case 0x88: case 0x89: case 0x8A: case 0x8B: rep = 'E'; break;
+                case 0xAC: case 0xAD: case 0xAE: case 0xAF: rep = 'i'; break;
+                case 0x8C: case 0x8D: case 0x8E: case 0x8F: rep = 'I'; break;
+                case 0xB2: case 0xB3: case 0xB4: case 0xB5: case 0xB6: rep = 'o'; break;
+                case 0x92: case 0x93: case 0x94: case 0x95: case 0x96: rep = 'O'; break;
+                case 0xB9: case 0xBA: case 0xBB: case 0xBC: rep = 'u'; break;
+                case 0x99: case 0x9A: case 0x9B: case 0x9C: rep = 'U'; break;
+                case 0xA7: rep = 'c'; break;
+                case 0x87: rep = 'C'; break;
+                default: break;
+            }
+            if (rep) {
+                buf[o++] = rep;
+                r += 2;
+                continue;
+            }
+        } else if (c0 == 0xE2 && c1 == 0x80) {
+            unsigned char c2 = (unsigned char)r[2];
+            char rep = 0;
+            if (c2 == 0x98 || c2 == 0x99) rep = '\'';
+            else if (c2 == 0x9C || c2 == 0x9D) rep = '"';
+            else if (c2 == 0x93 || c2 == 0x94) rep = '-';
+            else if (c2 == 0xA6) {
+                buf[o++] = '.'; buf[o++] = '.'; buf[o++] = '.';
+                r += 3;
+                continue;
+            }
+            if (rep) {
+                buf[o++] = rep;
+                r += 3;
+                continue;
+            }
+        }
+
+        buf[o++] = *r++;
+    }
+    buf[o] = '\0';
+    strncpy(s, buf, maxlen - 1);
+    s[maxlen - 1] = '\0';
+    free(buf);
+}
+
 /* buienradar feed — used for the radar-map URL + the NL weather-report
  * narrative, plus nearest-KNMI-station fallback if Open-Meteo is overloaded. */
 static int parse_buienradar_extras(const char * body) {
@@ -361,13 +503,8 @@ static int parse_buienradar_extras(const char * body) {
                sizeof(weather_state.weatherreport_title));
         js_str(wr, wr_end, "text", weather_state.weatherreport_text,
                sizeof(weather_state.weatherreport_text));
-        /* Replace HTML entities the buienradar feed sometimes leaks
-           (`&nbsp;`) with regular spaces. */
-        char * p;
-        while ((p = strstr(weather_state.weatherreport_text, "&nbsp;")) != NULL) {
-            *p = ' ';
-            memmove(p + 1, p + 6, strlen(p + 6) + 1);
-        }
+        sanitize_weather_text(weather_state.weatherreport_title, sizeof(weather_state.weatherreport_title));
+        sanitize_weather_text(weather_state.weatherreport_text, sizeof(weather_state.weatherreport_text));
     }
 
     return 0;

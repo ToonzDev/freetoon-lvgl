@@ -214,17 +214,18 @@ lv_obj_t * screen_thermostat_create(void) {
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(THEME_BG), 0);
     lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* Back button — generous hit area (140x96) plus extended ext_click_area
-       so even sloppy taps near the corner register. */
+    /* Close "X" button */
+    int x_w = (DISP_VER < 600) ? 60 : 70;
+    int x_h = (DISP_VER < 600) ? 46 : 50;
     lv_obj_t * btn_back = lv_btn_create(scr_root);
-    lv_obj_set_size(btn_back, 140, 96);
-    lv_obj_align(btn_back, LV_ALIGN_TOP_LEFT, 12, 12);
+    lv_obj_set_size(btn_back, x_w, x_h);
+    lv_obj_align(btn_back, LV_ALIGN_TOP_LEFT, SX(12), SY(12));
     lv_obj_set_style_bg_color(btn_back, lv_color_hex(THEME_BTN_BG), 0);
-    lv_obj_set_style_radius(btn_back, 14, 0);
-    lv_obj_set_ext_click_area(btn_back, 20);
+    lv_obj_set_style_radius(btn_back, 12, 0);
+    lv_obj_set_ext_click_area(btn_back, 25);
     lv_obj_add_event_cb(btn_back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t * btn_back_lbl = lv_label_create(btn_back);
-    lv_label_set_text(btn_back_lbl, tr("< Terug", "< Back"));
+    lv_label_set_text(btn_back_lbl, LV_SYMBOL_CLOSE);
     lv_obj_set_style_text_color(btn_back_lbl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(btn_back_lbl, SF(22), 0);
     lv_obj_center(btn_back_lbl);
@@ -233,7 +234,7 @@ lv_obj_t * screen_thermostat_create(void) {
     lbl_clock = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_clock, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_clock, SF(28), 0);
-    lv_obj_align(lbl_clock, LV_ALIGN_TOP_LEFT, 180, 25);
+    lv_obj_align(lbl_clock, LV_ALIGN_TOP_LEFT, SX(100), SY(20));
     lv_label_set_text(lbl_clock, "--:--");
 
     lbl_date = lv_label_create(scr_root);

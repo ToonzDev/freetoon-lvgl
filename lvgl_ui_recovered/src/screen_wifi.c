@@ -440,30 +440,32 @@ lv_obj_t * screen_wifi_create(void) {
     lv_obj_add_event_cb(scr_root, on_scr_event, LV_EVENT_SCREEN_LOADED,   NULL);
     lv_obj_add_event_cb(scr_root, on_scr_event, LV_EVENT_SCREEN_UNLOADED, NULL);
 
+    int x_w = (DISP_VER < 600) ? 60 : 70;
+    int x_h = (DISP_VER < 600) ? 46 : 50;
     lv_obj_t * back = lv_btn_create(scr_root);
-    lv_obj_set_size(back, SX(140), SY(52));
-    lv_obj_align(back, LV_ALIGN_TOP_LEFT, SX(20), SY(14));
+    lv_obj_set_size(back, x_w, x_h);
+    lv_obj_align(back, LV_ALIGN_TOP_LEFT, SX(12), SY(12));
     lv_obj_set_style_bg_color(back, lv_color_hex(THEME_BTN_BG), 0);
-    lv_obj_set_style_radius(back, 10, 0);
-    lv_obj_set_ext_click_area(back, 20);
+    lv_obj_set_style_radius(back, 12, 0);
+    lv_obj_set_ext_click_area(back, 25);
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(back);
+    lv_label_set_text(bl, LV_SYMBOL_CLOSE);
     lv_obj_set_style_text_color(bl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(bl, SF(22), 0);
-    lv_label_set_text(bl, tr("< Terug", "< Back"));
     lv_obj_center(bl);
 
     lv_obj_t * title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(title, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_set_style_text_font(title, SF(28), 0);
     lv_label_set_text(title, "WiFi");
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, SX(180), SY(24));
+    lv_obj_align(title, LV_ALIGN_TOP_LEFT, SX(96), SY(20));
 
     lbl_status = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_status, lv_color_hex(COL_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_status, SF(18), 0);
     lv_label_set_text(lbl_status, tr("opvragen...", "querying..."));
-    lv_obj_align(lbl_status, LV_ALIGN_TOP_LEFT, SX(280), SY(30));
+    lv_obj_align(lbl_status, LV_ALIGN_TOP_LEFT, SX(180), SY(26));
 
     /* Scan button (top-right) */
     lv_obj_t * scan = lv_btn_create(scr_root);

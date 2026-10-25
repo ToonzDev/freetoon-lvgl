@@ -33,13 +33,7 @@ static lv_obj_t * radar_img = NULL;
 static int radar_loaded = 0;
 static lv_timer_t * refresh_timer = NULL;
 
-/* Radar zoom — LVGL convention: 256 = 100 %. Source GIF is 550x512, frame
- * is 380x380, so we clamp to a range that lets the user see detail without
- * overshooting the visible area too far. */
-#define RADAR_ZOOM_MIN  128
-#define RADAR_ZOOM_MAX  768
-#define RADAR_ZOOM_STEP  64
-static int radar_zoom = 195;             /* fits 550-wide source into 380 */
+static int radar_zoom = 200;
 
 static void on_back(lv_event_t * e) {
     (void)e;
@@ -48,15 +42,6 @@ static void on_back(lv_event_t * e) {
         if (g->timer) lv_timer_pause(g->timer);
     }
     ui_pop();
-}
-
-static void on_radar_zoom(lv_event_t * e) {
-    intptr_t d = (intptr_t)lv_event_get_user_data(e);
-    int z = radar_zoom + (int)d;
-    if (z < RADAR_ZOOM_MIN) z = RADAR_ZOOM_MIN;
-    if (z > RADAR_ZOOM_MAX) z = RADAR_ZOOM_MAX;
-    radar_zoom = z;
-    if (radar_img) lv_img_set_zoom(radar_img, radar_zoom);
 }
 
 static void refresh_cb(lv_timer_t * t) {
@@ -191,9 +176,9 @@ lv_obj_t * screen_forecast_create(void) {
     /* Radar image — buienradar serves a 500x512 PNG of the Netherlands
        precipitation map. Our weather thread saves it to disk every 5 min;
        we render via LVGL's stdio FS driver + PNG decoder. */
-    int rf_sz = (DISP_VER < 600) ? 275 : 360;
-    int rf_x = (DISP_VER < 600) ? 14 : 24;
-    int rf_y = (DISP_VER < 600) ? 44 : 52;
+    int rf_sz = (DISP_VER < 600) ? 340 : 430;
+    int rf_x = (DISP_VER < 600) ? 12 : 18;
+    int rf_y = (DISP_VER < 600) ? 12 : 16;
     lv_obj_t * radar_frame = lv_obj_create(scr_root);
     lv_obj_set_size(radar_frame, rf_sz, rf_sz);
     lv_obj_set_pos(radar_frame, rf_x, rf_y);
@@ -214,44 +199,23 @@ lv_obj_t * screen_forecast_create(void) {
     } else {
         radar_loaded = 0;
     }
+    radar_zoom = (DISP_VER < 600) ? 160 : 202;
     lv_img_set_zoom(radar_img, radar_zoom);
     lv_obj_center(radar_img);
 
-    /* Zoom + / - buttons stacked on top of the radar frame's top-left
-       corner. Translucent so they don't fully hide the map underneath. */
-    struct { lv_align_t a; int x, y; int d; const char * t; } z[] = {
-        { LV_ALIGN_TOP_LEFT, rf_x + 4, rf_y + 4,  +RADAR_ZOOM_STEP, "+" },
-        { LV_ALIGN_TOP_LEFT, rf_x + 4, rf_y + 46, -RADAR_ZOOM_STEP, "-" },
-    };
-    for (size_t i = 0; i < sizeof(z)/sizeof(z[0]); i++) {
-        lv_obj_t * b = lv_btn_create(scr_root);
-        lv_obj_set_size(b, 38, 38);
-        lv_obj_align(b, z[i].a, z[i].x, z[i].y);
-        lv_obj_set_style_bg_color(b, lv_color_hex(THEME_BTN_ACCENT), 0);
-        lv_obj_set_style_bg_opa(b, 180, 0);
-        lv_obj_set_style_radius(b, 19, 0);
-        lv_obj_add_event_cb(b, on_radar_zoom, LV_EVENT_CLICKED,
-                            (void *)(intptr_t)z[i].d);
-        lv_obj_t * bl = lv_label_create(b);
-        lv_obj_set_style_text_color(bl, lv_color_hex(THEME_TEXT_HI), 0);
-        lv_obj_set_style_text_font(bl, SF(24), 0);
-        lv_label_set_text(bl, z[i].t);
-        lv_obj_center(bl);
-    }
-
     /* Right side: title + body text */
-    int right_x = rf_x + rf_sz + (DISP_VER < 600 ? 14 : 24);
-    int right_w = DISP_HOR - right_x - (DISP_VER < 600 ? 14 : 24);
+    int right_x = rf_x + rf_sz + (DISP_VER < 600 ? 12 : 20);
+    int right_w = DISP_HOR - right_x - (DISP_VER < 600 ? 12 : 18);
     lbl_title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_title, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_title, (DISP_VER < 600 ? SF(22) : SF(28)), 0);
-    lv_obj_set_width(lbl_title, right_w - 80);
+    lv_obj_set_width(lbl_title, right_w - 76);
     lv_label_set_long_mode(lbl_title, LV_LABEL_LONG_DOT);
     lv_obj_align(lbl_title, LV_ALIGN_TOP_LEFT, right_x, rf_y);
     lv_label_set_text(lbl_title, tr("Weersverwachting", "Weather forecast"));
 
     /* Body text — vertically-scrollable container matching radar frame height */
-    int body_y = rf_y + (DISP_VER < 600 ? 30 : 38);
+    int body_y = rf_y + (DISP_VER < 600 ? 28 : 36);
     int body_h = rf_sz - (body_y - rf_y);
     lv_obj_t * body_scroll = lv_obj_create(scr_root);
     lv_obj_set_size(body_scroll, right_w, body_h);
@@ -268,10 +232,10 @@ lv_obj_t * screen_forecast_create(void) {
     lv_label_set_long_mode(lbl_body, LV_LABEL_LONG_WRAP);
     lv_label_set_text(lbl_body, tr("(laden...)", "(loading...)"));
 
-    /* 5-day forecast strip — positioned below radar & forecast text without any overlap */
+    /* 5-day forecast strip — compact height to avoid whitespace, cleanly below radar & text */
     int col_w = (DISP_HOR - 20) / WEATHER_FORECAST_DAYS;
-    int strip_y = (DISP_VER < 600) ? 336 : 435;
-    int strip_h = (DISP_VER < 600) ? 134 : 155;
+    int strip_y = (DISP_VER < 600) ? 384 : 476;
+    int strip_h = (DISP_VER < 600) ? 86  : 112;
     for (int i = 0; i < WEATHER_FORECAST_DAYS; i++) {
         lv_obj_t * col = lv_obj_create(scr_root);
         lv_obj_set_size(col, col_w - 8, strip_h);
@@ -279,7 +243,7 @@ lv_obj_t * screen_forecast_create(void) {
         lv_obj_set_style_bg_color(col, lv_color_hex(THEME_CARD_BG), 0);
         lv_obj_set_style_radius(col, 10, 0);
         lv_obj_set_style_border_width(col, 0, 0);
-        lv_obj_set_style_pad_all(col, 8, 0);
+        lv_obj_set_style_pad_all(col, 6, 0);
         lv_obj_clear_flag(col, LV_OBJ_FLAG_SCROLLABLE);
 
         /* Centred big icon */
@@ -288,38 +252,38 @@ lv_obj_t * screen_forecast_create(void) {
         lv_obj_set_style_img_recolor(fc_icon[i], lv_color_hex(settings.home_light_mode ? 0x64748b : 0xddeeff), 0);
         lv_obj_set_style_img_recolor_opa(fc_icon[i], 255, 0);
         if (DISP_VER < 600) {
-            lv_img_set_zoom(fc_icon[i], 140);
-            lv_obj_align(fc_icon[i], LV_ALIGN_CENTER, 0, 10);
+            lv_img_set_zoom(fc_icon[i], 120);
+            lv_obj_align(fc_icon[i], LV_ALIGN_CENTER, 0, 5);
         } else {
-            lv_img_set_zoom(fc_icon[i], 200);
-            lv_obj_align(fc_icon[i], LV_ALIGN_CENTER, 0, 12);
+            lv_img_set_zoom(fc_icon[i], 160);
+            lv_obj_align(fc_icon[i], LV_ALIGN_CENTER, 0, 7);
         }
 
         /* Wind-direction arrow + Bft at the bottom of each column. */
         fc_wind_arrow[i] = lv_img_create(col);
         lv_img_set_src(fc_wind_arrow[i], &icon_wind_arrow);
         lv_img_set_pivot(fc_wind_arrow[i], 16, 16);
-        lv_obj_align(fc_wind_arrow[i], LV_ALIGN_BOTTOM_LEFT, 0, 2);
+        lv_obj_align(fc_wind_arrow[i], LV_ALIGN_BOTTOM_LEFT, 0, 0);
         lv_obj_add_flag(fc_wind_arrow[i], LV_OBJ_FLAG_HIDDEN);
 
         fc_wind_lbl[i] = lv_label_create(col);
         lv_obj_set_style_text_color(fc_wind_lbl[i], lv_color_hex(THEME_TEXT_DIM), 0);
-        lv_obj_set_style_text_font(fc_wind_lbl[i], (DISP_VER < 600) ? SF(14) : SF(18), 0);
+        lv_obj_set_style_text_font(fc_wind_lbl[i], (DISP_VER < 600) ? SF(14) : SF(16), 0);
         lv_label_set_text(fc_wind_lbl[i], "");
-        lv_obj_align(fc_wind_lbl[i], LV_ALIGN_BOTTOM_LEFT, (DISP_VER < 600) ? 22 : 30, -2);
+        lv_obj_align(fc_wind_lbl[i], LV_ALIGN_BOTTOM_LEFT, (DISP_VER < 600) ? 20 : 26, -1);
 
         /* Day and temperature stacked vertically to avoid horizontal overlap */
         fc_day_lbl[i] = lv_label_create(col);
         lv_obj_set_style_text_color(fc_day_lbl[i], lv_color_hex(THEME_TEXT_HI), 0);
         lv_obj_set_style_text_font(fc_day_lbl[i], (DISP_VER < 600) ? SF(14) : SF(18), 0);
         lv_label_set_text(fc_day_lbl[i], "--");
-        lv_obj_align(fc_day_lbl[i], LV_ALIGN_TOP_MID, 0, (DISP_VER < 600 ? 2 : 4));
+        lv_obj_align(fc_day_lbl[i], LV_ALIGN_TOP_MID, 0, (DISP_VER < 600 ? 1 : 2));
 
         fc_temp_lbl[i] = lv_label_create(col);
         lv_obj_set_style_text_color(fc_temp_lbl[i], lv_color_hex(THEME_WARN_ORANGE), 0);
         lv_obj_set_style_text_font(fc_temp_lbl[i], (DISP_VER < 600) ? SF(14) : SF(18), 0);
         lv_label_set_text(fc_temp_lbl[i], "");
-        lv_obj_align(fc_temp_lbl[i], LV_ALIGN_TOP_MID, 0, (DISP_VER < 600 ? 18 : 26));
+        lv_obj_align(fc_temp_lbl[i], LV_ALIGN_TOP_MID, 0, (DISP_VER < 600 ? 17 : 22));
 
         /* Verbose desc moved to the title body — match the home band. */
         fc_desc_lbl[i] = NULL;

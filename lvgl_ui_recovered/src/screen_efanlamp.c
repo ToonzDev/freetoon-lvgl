@@ -109,16 +109,19 @@ lv_obj_t * screen_efanlamp_create(void) {
     lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
 
     /* ── header ─────────────────────────────────────────────── */
+    int x_w = (DISP_VER < 600) ? 60 : 70;
+    int x_h = (DISP_VER < 600) ? 46 : 50;
     lv_obj_t * btn_back = lv_btn_create(scr_root);
-    lv_obj_set_size(btn_back, SX(120), SY(50));
-    lv_obj_set_pos(btn_back, SX(10), SY(10));
+    lv_obj_set_size(btn_back, x_w, x_h);
+    lv_obj_align(btn_back, LV_ALIGN_TOP_RIGHT, SX(-12), SY(10));
     lv_obj_set_style_bg_color(btn_back, lv_color_hex(COL_CARD), 0);
-    lv_obj_set_style_radius(btn_back, SX(8), 0);
+    lv_obj_set_style_radius(btn_back, 12, 0);
+    lv_obj_set_ext_click_area(btn_back, 25);
     lv_obj_set_style_border_width(btn_back, 0, 0);
     lv_obj_t * lbl_back = lv_label_create(btn_back);
-    lv_label_set_text(lbl_back, tr(LV_SYMBOL_LEFT " Terug", LV_SYMBOL_LEFT " Back"));
+    lv_label_set_text(lbl_back, LV_SYMBOL_CLOSE);
     lv_obj_set_style_text_color(lbl_back, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(lbl_back, SF(20), 0);
+    lv_obj_set_style_text_font(lbl_back, SF(22), 0);
     lv_obj_center(lbl_back);
     lv_obj_add_event_cb(btn_back, on_back, LV_EVENT_CLICKED, NULL);
 

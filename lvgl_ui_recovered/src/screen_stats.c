@@ -275,9 +275,20 @@ static int load_for_period(void) {
             default:            samples = 24; break;
         }
         int rc = stats_fetch_range("thermstat_boilerChPressure", "30days", from, to, samples, &series);
-        if (rc == 0 && series.n > 0) return 0;
-        /* Fallback if local/master hcb_rrd doesn't have thermstat_boilerChPressure */
-        return airhist_pres_series_range(from, to, 365, &series);
+        if (rc != 0 || series.n == 0) {
+            /* Fallback if local/master hcb_rrd doesn't have thermstat_boilerChPressure */
+            rc = airhist_pres_series_range(from, to, 365, &series);
+        }
+        if (series.n > 0) {
+            for (int i = 0; i < series.n; i++) {
+                if (!isnan(series.samples[i]) && series.samples[i] > 0.05) {
+                    double v = series.samples[i];
+                    if (v >= 50.0)      series.samples[i] = v / 100.0; /* centibar -> bar */
+                    else if (v >= 5.0)  series.samples[i] = v / 10.0;  /* decibar  -> bar */
+                }
+            }
+        }
+        return rc;
     }
 
     if (m->local_hist) {                /* freetoon's recorder hourly ring */
@@ -518,13 +529,25 @@ static void render_chart(void) {
     if (is_cum)
         for (int i = 0; i < g_bar_count; i++) g_bar_val[i] /= 1000.0;
 
+    /* Extra safeguard: ensure CV bar values are in bar (e.g. 1.3 bar, not 13 or 130) */
+    if (selected_metric == 3) {
+        for (int i = 0; i < g_bar_count; i++) {
+            if (g_bar_val[i] >= 50.0)      g_bar_val[i] /= 100.0;
+            else if (g_bar_val[i] >= 5.0)  g_bar_val[i] /= 10.0;
+        }
+    }
+
     /* Y range from 0 baseline up to ~110% of tallest bar */
     double hi = 0;
     for (int i = 0; i < g_bar_count; i++) if (g_bar_val[i] > hi) hi = g_bar_val[i];
     double top;
     if (selected_metric == 3) {
         top = hi * 1.15;
-        if (top < 2.0) top = 2.0; /* At least 2.0 bar max range for CV bar so 1.2 bar isn't pinned to top */
+        if (top <= 2.0) top = 2.0;       /* Standard 2.0 bar scale when pressure is <= 1.7 bar */
+        else if (top <= 2.5) top = 2.5;
+        else if (top <= 3.0) top = 3.0;
+        else if (top <= 3.5) top = 3.5;
+        else top = ceil(top);
     } else {
         top = hi * 1.1;
         if (top < 0.2) top = 0.5; /* sensible minimum top when usage is near 0 */
