@@ -214,9 +214,9 @@ lv_obj_t * screen_forecast_create(void) {
     lv_obj_align(lbl_title, LV_ALIGN_TOP_LEFT, right_x, rf_y);
     lv_label_set_text(lbl_title, tr("Weersverwachting", "Weather forecast"));
 
-    /* Body text — vertically-scrollable container matching radar frame height */
-    int body_y = rf_y + (DISP_VER < 600 ? 28 : 36);
-    int body_h = rf_sz - (body_y - rf_y);
+    /* Body text — vertically-scrollable container cleanly below header (title + close button) */
+    int body_y = (DISP_VER < 600) ? 58 : 68;
+    int body_h = (rf_y + rf_sz) - body_y;
     lv_obj_t * body_scroll = lv_obj_create(scr_root);
     lv_obj_set_size(body_scroll, right_w, body_h);
     lv_obj_align(body_scroll, LV_ALIGN_TOP_LEFT, right_x, body_y);
@@ -289,6 +289,7 @@ lv_obj_t * screen_forecast_create(void) {
         fc_desc_lbl[i] = NULL;
     }
 
+    lv_obj_move_foreground(close_btn);
     refresh_cb(NULL);
     if (!refresh_timer) refresh_timer = lv_timer_create(refresh_cb, 5000, NULL);
     return scr_root;
