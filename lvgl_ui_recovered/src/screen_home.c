@@ -1948,10 +1948,9 @@ static void refresh_cb(lv_timer_t * t) {
         lv_obj_update_layout(lbl_t_temp);
         int temp_y = th_is_compact ? 2 : (DISP_VER < 600 ? 6 : 14);
         lv_obj_align(lbl_t_temp, LV_ALIGN_TOP_MID, 0, temp_y);
-        int flame_gap = th_is_compact ? 4 : 8;
-        if (tile_img_flame) lv_obj_align_to(tile_img_flame, lbl_t_temp, LV_ALIGN_OUT_RIGHT_MID, flame_gap, 0);
-        if (tile_img_faucet) lv_obj_align_to(tile_img_faucet, lbl_t_temp, LV_ALIGN_OUT_RIGHT_MID, flame_gap, 0);
-        if (tile_img_drop) lv_obj_align_to(tile_img_drop, lbl_t_temp, LV_ALIGN_OUT_RIGHT_MID, flame_gap + 16, 6);
+        if (tile_img_flame) lv_obj_align_to(tile_img_flame, lbl_t_temp, LV_ALIGN_OUT_BOTTOM_MID, 0, th_is_compact ? 2 : 4);
+        if (tile_img_faucet) lv_obj_align_to(tile_img_faucet, lbl_t_temp, LV_ALIGN_OUT_BOTTOM_MID, -10, th_is_compact ? 2 : 4);
+        if (tile_img_drop) lv_obj_align_to(tile_img_drop, tile_img_faucet, LV_ALIGN_OUT_RIGHT_MID, 6, 0);
     }
     /* Setpoint visible at all times; the "to" prefix only when the CH
      * burner is actively heating toward it (idle just shows the target
@@ -3702,7 +3701,7 @@ lv_obj_t * screen_home_create(void) {
     lv_img_set_zoom(tile_img_flame, (th_is_compact ? 180 : (DISP_VER < 600 ? 200 : 256)));
     lv_obj_set_style_img_recolor(tile_img_flame, lv_color_hex(COL_BURNER_RED), 0);
     lv_obj_set_style_img_recolor_opa(tile_img_flame, 255, 0);
-    lv_obj_align_to(tile_img_flame, lbl_t_temp, LV_ALIGN_OUT_RIGHT_MID, th_is_compact ? 4 : 8, 0);
+    lv_obj_align_to(tile_img_flame, lbl_t_temp, LV_ALIGN_OUT_BOTTOM_MID, 0, th_is_compact ? 2 : 4);
     lv_obj_add_flag(tile_img_flame, LV_OBJ_FLAG_HIDDEN);
 
     tile_img_faucet = lv_img_create(th);
@@ -3710,7 +3709,7 @@ lv_obj_t * screen_home_create(void) {
     lv_img_set_zoom(tile_img_faucet, (th_is_compact ? 180 : (DISP_VER < 600 ? 200 : 256)));
     lv_obj_set_style_img_recolor(tile_img_faucet, lv_color_hex(0xff5544), 0);
     lv_obj_set_style_img_recolor_opa(tile_img_faucet, 255, 0);
-    lv_obj_align_to(tile_img_faucet, lbl_t_temp, LV_ALIGN_OUT_RIGHT_MID, th_is_compact ? 4 : 8, 0);
+    lv_obj_align_to(tile_img_faucet, lbl_t_temp, LV_ALIGN_OUT_BOTTOM_MID, -10, th_is_compact ? 2 : 4);
     lv_obj_add_flag(tile_img_faucet, LV_OBJ_FLAG_HIDDEN);
 
     tile_img_drop = lv_img_create(th);
@@ -3718,7 +3717,7 @@ lv_obj_t * screen_home_create(void) {
     lv_img_set_zoom(tile_img_drop, (th_is_compact ? 180 : (DISP_VER < 600 ? 200 : 256)));
     lv_obj_set_style_img_recolor(tile_img_drop, lv_color_hex(0xff5544), 0);
     lv_obj_set_style_img_recolor_opa(tile_img_drop, 255, 0);
-    lv_obj_align_to(tile_img_drop, lbl_t_temp, LV_ALIGN_OUT_RIGHT_MID, th_is_compact ? 20 : 26, th_is_compact ? 4 : 8);
+    lv_obj_align_to(tile_img_drop, tile_img_faucet, LV_ALIGN_OUT_RIGHT_MID, 6, 0);
     lv_obj_add_flag(tile_img_drop, LV_OBJ_FLAG_HIDDEN);
 
     /* Setpoint row: [-] setpoint [+] */
@@ -4740,23 +4739,27 @@ lv_obj_t * screen_home_create(void) {
     }
 
     /* Gear in the very top-right corner of the screen. */
+    lv_coord_t gear_sz = (DISP_VER < 600) ? 50 : 54;
     lv_obj_t * gear = lv_btn_create(scr_root);
-    lv_obj_set_size(gear, 44, 44);
-    lv_obj_align(gear, LV_ALIGN_TOP_RIGHT, -8, 4);
+    lv_obj_set_size(gear, gear_sz, gear_sz);
+    lv_obj_align(gear, LV_ALIGN_TOP_RIGHT, -6, 4);
     lv_obj_set_style_bg_color(gear, lv_color_hex(settings.home_light_mode ? 0xd0d8e2 : 0x223344), 0);
-    lv_obj_set_style_radius(gear, 22, 0);
-    lv_obj_set_ext_click_area(gear, 14);
+    lv_obj_set_style_radius(gear, gear_sz / 2, 0);
+    lv_obj_set_ext_click_area(gear, 25);
     lv_obj_add_event_cb(gear, open_settings, LV_EVENT_CLICKED, NULL);
     lv_obj_t * gear_lbl = lv_label_create(gear);
     lv_label_set_text(gear_lbl, LV_SYMBOL_SETTINGS);
     lv_obj_set_style_text_color(gear_lbl, lv_color_hex(settings.home_light_mode ? 0x1e2838 : 0xffffff), 0);
-    lv_obj_set_style_text_font(gear_lbl, SF(18), 0);
+    lv_obj_set_style_text_font(gear_lbl, SF(24), 0);
     lv_obj_center(gear_lbl);
 
     /* Pinned device tiles were built before the forecast strip, so raise them
      * above it now that every tile exists. */
     for (int p = 0; p < home_pin_count; p++)
         if (home_pins[p].tile) lv_obj_move_foreground(home_pins[p].tile);
+
+    /* Ensure gear is always in the foreground so nothing intercepts touches */
+    lv_obj_move_foreground(gear);
 
     if (!refresh_timer) refresh_timer = lv_timer_create(refresh_cb, 500, NULL);
     return scr_root;

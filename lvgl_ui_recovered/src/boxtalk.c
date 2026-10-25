@@ -251,6 +251,36 @@ static int elem_text_float(const char* xml, const char* elem, float* out) {
     return 1;
 }
 
+static time_t s_burner_last_active_ts = 0;
+
+static void update_burner_state(int bi) {
+    time_t now = time(NULL);
+    if (bi == 1) {
+        s_burner_last_active_ts = now;
+        toon_state.burner_on = 1;
+        toon_state.dhw_on    = 0;
+    } else if (bi == 2) {
+        toon_state.burner_on = 0;
+        toon_state.dhw_on    = 1;
+    } else {
+        toon_state.dhw_on = 0;
+        /* Debounce burner off-state: hold active for 20s if still heating towards setpoint */
+        if (s_burner_last_active_ts > 0 && (now - s_burner_last_active_ts < 20) &&
+            (toon_state.setpoint > toon_state.indoor_temp)) {
+            toon_state.burner_on = 1;
+        } else {
+            toon_state.burner_on = 0;
+        }
+    }
+}
+
+static inline void set_water_pressure(float v) {
+    if (v <= 0.05f) return;
+    if (v >= 50.0f) toon_state.water_pressure = v / 100.0f;       /* centibar: 180 -> 1.80 */
+    else if (v >= 5.0f) toon_state.water_pressure = v / 10.0f;    /* decibar:  15  -> 1.50 */
+    else toon_state.water_pressure = v;                           /* bar:      1.5 -> 1.50 */
+}
+
 /* ---- BoxTalk message handlers ---- */
 /* Sensor uuids on this Toon. UUID_AMBIENT is the hardware sensor block on
  * the display (humidity + VOC + a *raw* temperature ~3°C above the actual
@@ -351,22 +381,13 @@ static void handle_notify(const char* xml) {
             toon_state.msg_count++;
         }
         if (elem_text_float(xml, "burnerInfo", &v)) {
-            /* 0=off, 1=heating, 2=hot water, 3=preheat. Accept whoever
-             * publishes — in wired mode that's happ_thermstat directly;
-             * in wireless mode the quby_bridge republishes the same
-             * field off OTGW. Either is canonical for "is the burner
-             * firing right now". */
-            toon_state.burner_on = (v == 1.0f);
-            toon_state.dhw_on    = (v == 2.0f);
+            update_burner_state((int)v);
             toon_state.msg_count++;
         }
         if (elem_text_float(xml, "BoilerChPressure", &v)) {
-            /* Some firmwares emit centibar (e.g. 180 = 1.80), others bar
-               directly. Auto-detect by magnitude. happ_thermstat keeps
-               pushing 0 even when DID 18 arrives over the Quby serial,
-               so swallow zero updates — keep the OTGW-bridge value. */
+            /* Auto-detect bar, decibar, or centibar by magnitude. */
             if (v > 0.05f)
-                toon_state.water_pressure = (v > 10.0f) ? v / 100.0f : v;
+                set_water_pressure(v);
             toon_state.msg_count++;
         }
     } else if (strcasecmp(tail, "ElectricityFlowMeter") == 0 ||
@@ -485,13 +506,10 @@ static void handle_query_response(const char* xml) {
             return;
         }
         if (elem_text_float(xml, "BoilerChPressure", &v)) {
-            /* happ_thermstat keeps answering 0.00 on this query path even
-               though DID 18 over Quby gives 1.10 bar. Drop the zero so the
-               OTGW-bridge ThermostatInfo notify wins instead. */
             if (v > 0.05f)
-                toon_state.water_pressure = (v > 10.0f) ? v / 100.0f : v;
+                set_water_pressure(v);
             toon_state.msg_count++;
-            fprintf(stderr, "[bxt] query response BoilerChPressure = %.2f\n", v);
+            fprintf(stderr, "[bxt] query response BoilerChPressure = %.2f (stored %.2f)\n", v, toon_state.water_pressure);
             return;
         }
     }
@@ -1128,8 +1146,7 @@ static void* http_poll_thread(void* arg) {
              * the canonical reliable path on this Toon. */
             int bi = parse_json_int(body, "burnerInfo", -2);
             if (bi >= 0) {
-                toon_state.burner_on = (bi == 1);
-                toon_state.dhw_on    = (bi == 2);
+                update_burner_state(bi);
             }
             /* Stooklijn target — same reasoning as burnerInfo. */
             int chsp = parse_json_int(body, "currentInternalBoilerSetpoint", -1);
@@ -1166,7 +1183,7 @@ static void* http_poll_thread(void* arg) {
                     if (strncmp(col, "NaN", 3) != 0 && strncmp(col, "nan", 3) != 0 && strncmp(col, "null", 4) != 0) {
                         float bp = (float)atof(col);
                         if (bp > 0.05f) {
-                            toon_state.water_pressure = (bp > 10.0f) ? bp / 100.0f : bp;
+                            set_water_pressure(bp);
                         }
                     }
                 }

@@ -1695,7 +1695,7 @@ static void open_client_modal(lv_event_t * e) {
     y += 110;
 
     lv_obj_t * btn = lv_btn_create(p);
-    lv_obj_set_size(btn, SX(220), SY(50));
+    lv_obj_set_size(btn, (DISP_VER < 600 ? 230 : SX(240)), SY(50));
     lv_obj_align(btn, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_obj_set_style_bg_color(btn, lv_color_hex(0x3a6090), 0);
     lv_obj_add_event_cb(btn, on_client_apply, LV_EVENT_CLICKED, NULL);

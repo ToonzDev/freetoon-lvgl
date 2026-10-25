@@ -197,6 +197,31 @@ static void on_wake_tap(lv_event_t * e) {
     ui_wake_now();
 }
 
+static const lv_font_t * pick_date_font(const char * txt, lv_coord_t max_w, lv_coord_t max_h) {
+    static const lv_font_t * const fonts[] = {
+        &lv_font_montserrat_48,
+        &lv_font_montserrat_36,
+        &lv_font_montserrat_28,
+        &lv_font_montserrat_24,
+        &lv_font_montserrat_22,
+        &lv_font_montserrat_20,
+        &lv_font_montserrat_18,
+        &lv_font_montserrat_14,
+    };
+    if (!txt || !txt[0]) return &lv_font_montserrat_22;
+    for (size_t i = 0; i < sizeof(fonts)/sizeof(fonts[0]); i++) {
+        const lv_font_t * f = fonts[i];
+        if (!f) continue;
+        if (max_h > 0 && lv_font_get_line_height(f) > max_h) continue;
+        lv_point_t sz;
+        lv_txt_get_size(&sz, txt, f, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+        if (sz.x <= max_w) {
+            return f;
+        }
+    }
+    return &lv_font_montserrat_14;
+}
+
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
     if (lv_scr_act() != scr_root) return;
@@ -215,6 +240,8 @@ static void refresh_cb(lv_timer_t * t) {
     lv_obj_align_to(lbl_clock_m, lbl_clock_colon, LV_ALIGN_OUT_RIGHT_MID, SX(8), 0);
     char dt[64];
     i18n_date_long(dt, sizeof(dt), &tm);   /* localised — strftime is C-locale (always English) */
+    const lv_font_t * df = pick_date_font(dt, DISP_HOR - SX(120), SY(50));
+    lv_obj_set_style_text_font(lbl_date, df, 0);
     lv_label_set_text(lbl_date, dt);
 
     /* Moon (top-right, beside the current-weather icon): white at night,
@@ -237,9 +264,9 @@ static void refresh_cb(lv_timer_t * t) {
     else
         lv_label_set_text(lbl_temp, "...");
     lv_obj_update_layout(lbl_temp);
-    if (dim_img_flame) lv_obj_align_to(dim_img_flame, lbl_temp, LV_ALIGN_OUT_RIGHT_MID, SX(16), 0);
-    if (dim_img_faucet) lv_obj_align_to(dim_img_faucet, lbl_temp, LV_ALIGN_OUT_RIGHT_MID, SX(16), -SY(10));
-    if (dim_img_drop) lv_obj_align_to(dim_img_drop, lbl_temp, LV_ALIGN_OUT_RIGHT_MID, SX(44), SY(6));
+    if (dim_img_flame) lv_obj_align_to(dim_img_flame, lbl_temp, LV_ALIGN_OUT_BOTTOM_MID, 0, SY(8));
+    if (dim_img_faucet) lv_obj_align_to(dim_img_faucet, lbl_temp, LV_ALIGN_OUT_BOTTOM_MID, -SX(10), SY(8));
+    if (dim_img_drop) lv_obj_align_to(dim_img_drop, dim_img_faucet, LV_ALIGN_OUT_RIGHT_MID, SX(8), 0);
 
     /* Setpoint / program / sensor metrics are dropped in dim mode (CR1) */
     if (lbl_setpoint) {
@@ -704,8 +731,8 @@ lv_obj_t * screen_dim_create(void) {
     /* All labels positioned against screen center with explicit Y offsets so
        different content widths can't drift them out of alignment. */
     lbl_date = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_date, lv_color_hex(0xbbbbbb), 0);
-    lv_obj_set_style_text_font(lbl_date, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_color(lbl_date, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lbl_date, SF(28), 0);
     lv_label_set_text(lbl_date, "");
     lv_obj_align(lbl_date, LV_ALIGN_CENTER, 0, SY(-50));
 
@@ -725,13 +752,13 @@ lv_obj_t * screen_dim_create(void) {
     lbl_metrics  = NULL;
     lbl_burner   = NULL;
 
-    /* Toon-style radiator+flame glyph, parked to the right of the big indoor temp */
+    /* Toon-style radiator+flame glyph, parked underneath the indoor temp */
     dim_img_flame = lv_img_create(scr_root);
     lv_img_set_src(dim_img_flame, &icon_radiator);
     lv_img_set_zoom(dim_img_flame, 256);
     lv_obj_set_style_img_recolor(dim_img_flame, lv_color_hex(0xff8866), 0);
     lv_obj_set_style_img_recolor_opa(dim_img_flame, 255, 0);
-    lv_obj_align_to(dim_img_flame, lbl_temp, LV_ALIGN_OUT_RIGHT_MID, SX(16), 0);
+    lv_obj_align_to(dim_img_flame, lbl_temp, LV_ALIGN_OUT_BOTTOM_MID, 0, SY(8));
     lv_obj_add_flag(dim_img_flame, LV_OBJ_FLAG_HIDDEN);
 
     /* DHW faucet fully red — see screen_home.c for rationale. */
@@ -740,7 +767,7 @@ lv_obj_t * screen_dim_create(void) {
     lv_img_set_zoom(dim_img_faucet, 256);
     lv_obj_set_style_img_recolor(dim_img_faucet, lv_color_hex(0xff5544), 0);
     lv_obj_set_style_img_recolor_opa(dim_img_faucet, 255, 0);
-    lv_obj_align_to(dim_img_faucet, lbl_temp, LV_ALIGN_OUT_RIGHT_MID, SX(16), -SY(10));
+    lv_obj_align_to(dim_img_faucet, lbl_temp, LV_ALIGN_OUT_BOTTOM_MID, -SX(10), SY(8));
     lv_obj_add_flag(dim_img_faucet, LV_OBJ_FLAG_HIDDEN);
 
     /* DHW drop in RED to distinguish from the blue cold-water-flow drop */
@@ -749,7 +776,7 @@ lv_obj_t * screen_dim_create(void) {
     lv_img_set_zoom(dim_img_drop, 256);
     lv_obj_set_style_img_recolor(dim_img_drop, lv_color_hex(0xff5544), 0);
     lv_obj_set_style_img_recolor_opa(dim_img_drop, 255, 0);
-    lv_obj_align_to(dim_img_drop, lbl_temp, LV_ALIGN_OUT_RIGHT_MID, SX(44), SY(6));
+    lv_obj_align_to(dim_img_drop, dim_img_faucet, LV_ALIGN_OUT_RIGHT_MID, SX(8), 0);
     lv_obj_add_flag(dim_img_drop, LV_OBJ_FLAG_HIDDEN);
 
     /* Live water flow — drop icon + "X.X L/m" right of the indoor temp,

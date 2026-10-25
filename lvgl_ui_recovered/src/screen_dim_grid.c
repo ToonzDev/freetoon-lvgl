@@ -175,6 +175,33 @@ static void on_wake_tap(lv_event_t * e) {
     ui_wake_now();
 }
 
+static int s_date_box_w = 0, s_date_box_h = 0;
+
+static const lv_font_t * pick_date_font(const char * txt, lv_coord_t max_w, lv_coord_t max_h) {
+    static const lv_font_t * const fonts[] = {
+        &lv_font_montserrat_48,
+        &lv_font_montserrat_36,
+        &lv_font_montserrat_28,
+        &lv_font_montserrat_24,
+        &lv_font_montserrat_22,
+        &lv_font_montserrat_20,
+        &lv_font_montserrat_18,
+        &lv_font_montserrat_14,
+    };
+    if (!txt || !txt[0]) return &lv_font_montserrat_22;
+    for (size_t i = 0; i < sizeof(fonts)/sizeof(fonts[0]); i++) {
+        const lv_font_t * f = fonts[i];
+        if (!f) continue;
+        if (max_h > 0 && lv_font_get_line_height(f) > max_h) continue;
+        lv_point_t sz;
+        lv_txt_get_size(&sz, txt, f, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+        if (sz.x <= max_w) {
+            return f;
+        }
+    }
+    return &lv_font_montserrat_14;
+}
+
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
     if (lv_scr_act() != scr_root) return;
@@ -193,6 +220,10 @@ static void refresh_cb(lv_timer_t * t) {
     lv_obj_align_to(lbl_clock_m, lbl_clock_colon, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
     char dt[64];
     i18n_date_long(dt, sizeof(dt), &tm);   /* localised — strftime is C-locale (always English) */
+    lv_coord_t max_w = s_date_box_w > 0 ? s_date_box_w - 12 : (DISP_HOR * 2 / 5);
+    lv_coord_t max_h = s_date_box_h > 0 ? s_date_box_h - 8 : 60;
+    const lv_font_t * df = pick_date_font(dt, max_w, max_h);
+    lv_obj_set_style_text_font(lbl_date, df, 0);
     lv_label_set_text(lbl_date, dt);
 
     /* Moon (top-right, beside the current-weather icon): white at night,
@@ -215,9 +246,9 @@ static void refresh_cb(lv_timer_t * t) {
     else
         lv_label_set_text(lbl_temp, "...");
     lv_obj_update_layout(lbl_temp);
-    if (dim_img_flame) lv_obj_align_to(dim_img_flame, lbl_temp, LV_ALIGN_OUT_RIGHT_MID, 12, 0);
-    if (dim_img_faucet) lv_obj_align_to(dim_img_faucet, lbl_temp, LV_ALIGN_OUT_RIGHT_MID, 12, -SY(10));
-    if (dim_img_drop) lv_obj_align_to(dim_img_drop, lbl_temp, LV_ALIGN_OUT_RIGHT_MID, 36, 8);
+    if (dim_img_flame) lv_obj_align_to(dim_img_flame, lbl_temp, LV_ALIGN_OUT_BOTTOM_MID, 0, 4);
+    if (dim_img_faucet) lv_obj_align_to(dim_img_faucet, lbl_temp, LV_ALIGN_OUT_BOTTOM_MID, -10, 4);
+    if (dim_img_drop) lv_obj_align_to(dim_img_drop, dim_img_faucet, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
 
     /* Setpoint / program / sensor metrics are dropped in dim mode (CR1) */
     if (lbl_setpoint) {
@@ -672,10 +703,13 @@ lv_obj_t * screen_dim_grid_create(void) {
     lv_obj_align_to(lbl_clock_m, lbl_clock_colon, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
 
     /* Date — inside its customizable dim box (DB_DATE) */
-    lv_obj_t * bx_date = dim_box(DB_DATE, NULL, NULL);
+    int dw = 0, dh = 0;
+    lv_obj_t * bx_date = dim_box(DB_DATE, &dw, &dh);
+    s_date_box_w = dw;
+    s_date_box_h = dh;
     lbl_date = lv_label_create(bx_date);
-    lv_obj_set_style_text_color(lbl_date, lv_color_hex(0xbbbbbb), 0);
-    lv_obj_set_style_text_font(lbl_date, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_color(lbl_date, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lbl_date, SF(28), 0);
     lv_label_set_text(lbl_date, "");
     lv_obj_align(lbl_date, LV_ALIGN_CENTER, 0, 0);
 
@@ -773,7 +807,7 @@ lv_obj_t * screen_dim_grid_create(void) {
     lv_img_set_zoom(dim_img_flame, 256);
     lv_obj_set_style_img_recolor(dim_img_flame, lv_color_hex(0xff8866), 0);
     lv_obj_set_style_img_recolor_opa(dim_img_flame, 255, 0);
-    lv_obj_align_to(dim_img_flame, lbl_temp, LV_ALIGN_OUT_RIGHT_MID, 12, 0);
+    lv_obj_align_to(dim_img_flame, lbl_temp, LV_ALIGN_OUT_BOTTOM_MID, 0, 4);
     lv_obj_add_flag(dim_img_flame, LV_OBJ_FLAG_HIDDEN);
 
     dim_img_faucet = lv_img_create(bx_t);
@@ -781,7 +815,7 @@ lv_obj_t * screen_dim_grid_create(void) {
     lv_img_set_zoom(dim_img_faucet, 256);
     lv_obj_set_style_img_recolor(dim_img_faucet, lv_color_hex(0xff5544), 0);
     lv_obj_set_style_img_recolor_opa(dim_img_faucet, 255, 0);
-    lv_obj_align_to(dim_img_faucet, lbl_temp, LV_ALIGN_OUT_RIGHT_MID, 12, -SY(10));
+    lv_obj_align_to(dim_img_faucet, lbl_temp, LV_ALIGN_OUT_BOTTOM_MID, -10, 4);
     lv_obj_add_flag(dim_img_faucet, LV_OBJ_FLAG_HIDDEN);
 
     dim_img_drop = lv_img_create(bx_t);
@@ -789,7 +823,7 @@ lv_obj_t * screen_dim_grid_create(void) {
     lv_img_set_zoom(dim_img_drop, 256);
     lv_obj_set_style_img_recolor(dim_img_drop, lv_color_hex(0xff5544), 0);
     lv_obj_set_style_img_recolor_opa(dim_img_drop, 255, 0);
-    lv_obj_align_to(dim_img_drop, lbl_temp, LV_ALIGN_OUT_RIGHT_MID, 36, 8);
+    lv_obj_align_to(dim_img_drop, dim_img_faucet, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
     lv_obj_add_flag(dim_img_drop, LV_OBJ_FLAG_HIDDEN);
 
     dim_img_water = lv_img_create(bx_t);

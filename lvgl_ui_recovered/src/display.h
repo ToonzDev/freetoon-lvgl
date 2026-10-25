@@ -55,8 +55,10 @@ static inline const lv_font_t * disp_font(int design_px) {
     int px = (design_px * DISP_HOR) / DESIGN_HOR;
     if (px >= 80) return &lv_font_montserrat_96_custom;
     if (px >= 56) return &lv_font_montserrat_64_custom;
-    if (px >= 38) return &lv_font_montserrat_48;
-    if (px >= 25) return &lv_font_montserrat_28;
+    if (px >= 42) return &lv_font_montserrat_48;
+    if (px >= 32) return &lv_font_montserrat_36;
+    if (px >= 26) return &lv_font_montserrat_28;
+    if (px >= 23) return &lv_font_montserrat_24;
     if (px >= 21) return &lv_font_montserrat_22;
     if (px >= 19) return &lv_font_montserrat_20;
     if (px >= 16) return &lv_font_montserrat_18;

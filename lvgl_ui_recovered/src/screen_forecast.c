@@ -171,19 +171,22 @@ lv_obj_t * screen_forecast_create(void) {
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(THEME_BG), 0);
     lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* Back + title */
-    lv_obj_t * back = lv_btn_create(scr_root);
-    lv_obj_set_size(back, 140, 70);
-    lv_obj_align(back, LV_ALIGN_TOP_LEFT, 12, 12);
-    lv_obj_set_style_bg_color(back, lv_color_hex(THEME_BTN_BG), 0);
-    lv_obj_set_style_radius(back, 12, 0);
-    lv_obj_set_ext_click_area(back, 20);
-    lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * bl = lv_label_create(back);
-    lv_label_set_text(bl, tr("< Terug", "< Back"));
-    lv_obj_set_style_text_color(bl, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(bl, SF(22), 0);
-    lv_obj_center(bl);
+    /* Close button top-right */
+    lv_obj_t * close_btn = lv_btn_create(scr_root);
+    int cb_w = (DISP_HOR < 1000) ? 68 : 74;
+    int cb_h = (DISP_VER < 600) ? 46 : 50;
+    lv_obj_set_size(close_btn, cb_w, cb_h);
+    lv_obj_align(close_btn, LV_ALIGN_TOP_RIGHT, SX(-12), SY(8));
+    lv_obj_set_style_bg_color(close_btn, lv_color_hex(THEME_BTN_BG), 0);
+    lv_obj_set_style_radius(close_btn, 10, 0);
+    lv_obj_set_style_border_width(close_btn, 0, 0);
+    lv_obj_set_ext_click_area(close_btn, 30);
+    lv_obj_add_event_cb(close_btn, on_back, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * close_lbl = lv_label_create(close_btn);
+    lv_obj_set_style_text_color(close_lbl, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(close_lbl, SF(22), 0);
+    lv_label_set_text(close_lbl, LV_SYMBOL_CLOSE);
+    lv_obj_center(close_lbl);
 
     /* Radar image — buienradar serves a 500x512 PNG of the Netherlands
        precipitation map. Our weather thread saves it to disk every 5 min;
@@ -237,8 +240,8 @@ lv_obj_t * screen_forecast_create(void) {
     lbl_title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_title, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_title, SF(28), 0);
-    lv_obj_set_width(lbl_title, SX(540));
-    lv_label_set_long_mode(lbl_title, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(lbl_title, SX(500));
+    lv_label_set_long_mode(lbl_title, LV_LABEL_LONG_DOT);
     lv_obj_align(lbl_title, LV_ALIGN_TOP_LEFT, SX(440), SY(100));
     lv_label_set_text(lbl_title, tr("Weersverwachting", "Weather forecast"));
 
@@ -280,16 +283,18 @@ lv_obj_t * screen_forecast_create(void) {
         lv_obj_set_style_pad_all(col, 8, 0);
         lv_obj_clear_flag(col, LV_OBJ_FLAG_SCROLLABLE);
 
-        /* Centred big icon, larger than the home band since the detail
-           screen gives us more vertical room per column. */
+        /* Centred big icon */
         fc_icon[i] = lv_img_create(col);
         lv_img_set_src(fc_icon[i], &icon_wx_cloud_lg);
         lv_obj_set_style_img_recolor(fc_icon[i], lv_color_hex(settings.home_light_mode ? 0x64748b : 0xddeeff), 0);
         lv_obj_set_style_img_recolor_opa(fc_icon[i], 255, 0);
-        /* Shrink the big icon on Toon 1's shorter strip so it fits the
-         * 84px column without crowding the day/temp/wind text. */
-        if (DISP_VER < 600) lv_img_set_zoom(fc_icon[i], 160);
-        lv_obj_align(fc_icon[i], LV_ALIGN_CENTER, 0, 0);
+        if (DISP_VER < 600) {
+            lv_img_set_zoom(fc_icon[i], 140);
+            lv_obj_align(fc_icon[i], LV_ALIGN_CENTER, 0, 4);
+        } else {
+            lv_img_set_zoom(fc_icon[i], 200);
+            lv_obj_align(fc_icon[i], LV_ALIGN_CENTER, 0, 8);
+        }
 
         /* Wind-direction arrow + Bft at the bottom of each column. */
         fc_wind_arrow[i] = lv_img_create(col);
@@ -300,21 +305,22 @@ lv_obj_t * screen_forecast_create(void) {
 
         fc_wind_lbl[i] = lv_label_create(col);
         lv_obj_set_style_text_color(fc_wind_lbl[i], lv_color_hex(THEME_TEXT_DIM), 0);
-        lv_obj_set_style_text_font(fc_wind_lbl[i], SF(18), 0);
+        lv_obj_set_style_text_font(fc_wind_lbl[i], (DISP_VER < 600) ? SF(14) : SF(18), 0);
         lv_label_set_text(fc_wind_lbl[i], "");
-        lv_obj_align(fc_wind_lbl[i], LV_ALIGN_BOTTOM_LEFT, 30, -2);
+        lv_obj_align(fc_wind_lbl[i], LV_ALIGN_BOTTOM_LEFT, (DISP_VER < 600) ? 22 : 30, -2);
 
+        /* Day and temperature stacked vertically to avoid horizontal overlap */
         fc_day_lbl[i] = lv_label_create(col);
         lv_obj_set_style_text_color(fc_day_lbl[i], lv_color_hex(THEME_TEXT_HI), 0);
-        lv_obj_set_style_text_font(fc_day_lbl[i], SF(22), 0);
+        lv_obj_set_style_text_font(fc_day_lbl[i], (DISP_VER < 600) ? SF(14) : SF(18), 0);
         lv_label_set_text(fc_day_lbl[i], "--");
-        lv_obj_align(fc_day_lbl[i], LV_ALIGN_TOP_LEFT, 0, 0);
+        lv_obj_align(fc_day_lbl[i], LV_ALIGN_TOP_MID, 0, (DISP_VER < 600 ? 0 : 2));
 
         fc_temp_lbl[i] = lv_label_create(col);
         lv_obj_set_style_text_color(fc_temp_lbl[i], lv_color_hex(THEME_WARN_ORANGE), 0);
-        lv_obj_set_style_text_font(fc_temp_lbl[i], SF(22), 0);
+        lv_obj_set_style_text_font(fc_temp_lbl[i], (DISP_VER < 600) ? SF(14) : SF(18), 0);
         lv_label_set_text(fc_temp_lbl[i], "");
-        lv_obj_align(fc_temp_lbl[i], LV_ALIGN_TOP_RIGHT, 0, 0);
+        lv_obj_align(fc_temp_lbl[i], LV_ALIGN_TOP_MID, 0, (DISP_VER < 600 ? 16 : 24));
 
         /* Verbose desc moved to the title body — match the home band. */
         fc_desc_lbl[i] = NULL;

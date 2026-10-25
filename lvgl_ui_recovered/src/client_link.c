@@ -456,6 +456,34 @@ static int parse_rrd_delta(const char * body, float * out_delta, float * out_lat
     return 0;
 }
 
+static time_t s_client_burner_last_on = 0;
+static void client_update_burner(int bi) {
+    time_t now = time(NULL);
+    if (bi == 1) {
+        s_client_burner_last_on = now;
+        toon_state.burner_on = 1;
+        toon_state.dhw_on    = 0;
+    } else if (bi == 2) {
+        toon_state.burner_on = 0;
+        toon_state.dhw_on    = 1;
+    } else {
+        toon_state.dhw_on = 0;
+        if (s_client_burner_last_on > 0 && (now - s_client_burner_last_on < 20) &&
+            (toon_state.setpoint > toon_state.indoor_temp)) {
+            toon_state.burner_on = 1;
+        } else {
+            toon_state.burner_on = 0;
+        }
+    }
+}
+
+static inline void client_set_water_pressure(float v) {
+    if (v <= 0.05f) return;
+    if (v >= 50.0f) toon_state.water_pressure = v / 100.0f;
+    else if (v >= 5.0f) toon_state.water_pressure = v / 10.0f;
+    else toon_state.water_pressure = v;
+}
+
 static void poll_stock_master(void) {
     char url[256];
     char buf[4096];
@@ -487,8 +515,7 @@ static void poll_stock_master(void) {
 
             int bi = parse_json_val(buf, "burnerInfo", -1);
             if (bi >= 0) {
-                toon_state.burner_on = (bi == 1);
-                toon_state.dhw_on    = (bi == 2);
+                client_update_burner(bi);
             }
             toon_state.modulation_level = parse_json_val(buf, "currentModulationLevel", toon_state.modulation_level);
             toon_state.ot_comm_error    = parse_json_val(buf, "otCommError", toon_state.ot_comm_error);
@@ -498,7 +525,7 @@ static void poll_stock_master(void) {
 
             float fval = 0.0f;
             if (parse_json_float(buf, "boilerPressure", &fval) || parse_json_float(buf, "chPressure", &fval)) {
-                if (fval > 0.05f) toon_state.water_pressure = (fval > 10.0f) ? fval / 100.0f : fval;
+                if (fval > 0.05f) client_set_water_pressure(fval);
             }
             if (parse_json_float(buf, "boilerOutTemp", &fval) || parse_json_float(buf, "currentBoilerTemperature", &fval)) {
                 if (fval > 0.0f) toon_state.boiler_out_temp = (fval > 150.0f) ? fval / 100.0f : fval;
@@ -604,7 +631,7 @@ static void poll_stock_master(void) {
             if (prc == 0) {
                 float bp = 0.0f;
                 if (parse_rrd_val(buf, &bp) && bp > 0.05f) {
-                    toon_state.water_pressure = (bp > 10.0f) ? bp / 100.0f : bp;
+                    client_set_water_pressure(bp);
                 } else {
                     press_idx = (press_idx + 1) % n_press;
                 }
