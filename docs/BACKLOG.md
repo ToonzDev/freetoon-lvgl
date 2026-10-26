@@ -1,27 +1,37 @@
 # FreeToon Backlog
 
-## Marketplace
+## Completed / In Testing
 
-### 1. Fix Marketplace Catalog Refresh & In-Memory Row Rebuild
-- **Issue**: Navigating to the Marketplace without restarting the UI does not show newly pushed integration updates or catalog changes. Restarting the UI is currently required for updates to appear.
-- **Root Causes**:
-  1. **Static `prev_count` in `refresh_cb()` (`screen_marketplace.c`)**:
-     `static int prev_count = -1;` retains its value across screen open/close cycles because it is never reset in `screen_marketplace_create()`. When re-entering Marketplace, if `entry_count == prev_count`, `build_rows()` is not invoked.
-  2. **GitHub Raw CDN Caching**:
-     `raw.githubusercontent.com` caches HTTP GET responses for up to 5 minutes (`max-age=300`). Requests to `CATALOG_URL` need a cache-busting query parameter (e.g. `?t=<timestamp>`) or `Cache-Control: no-cache` header.
-  3. **In-Memory Installed Manifest Cache**:
-     `tile_slots_integration_by_id()` relies on `g_integ[]` which is only rescanned from `/mnt/data/integrations` on UI startup or after an install/uninstall action. Opening Marketplace should rescan local manifests via `tile_slots_init()`.
-  4. **Manual Refresh Action**:
-     Add an explicit Refresh button in the Marketplace header to force a re-fetch of `catalog/index.json` and rescan of local manifests on demand.
+### 1. Marketplace Catalog Dynamic Refresh & Rebuild (Implemented)
+- **Status**: Fixed in current working build.
+- **Implemented Fixes**:
+  - Re-fetch catalog on every Marketplace screen entry (`start_catalog_fetch()`).
+  - Added timestamp query parameter (`?t=<timestamp>`) to bypass GitHub CDN 5-minute HTTP cache.
+  - Added explicit Refresh button (`LV_SYMBOL_REFRESH`) in Marketplace header.
+  - Rescan local installed integration manifests (`tile_slots_init()`).
+  - Cleaned up refresh timer and reset entry change detector across screen navigation.
+  - Enforce larger touch target for close ('X') and refresh buttons.
+  - Automatically sort apps with an update available to the top of the Marketplace list.
 
----
+### 2. Homescreen Swipe Left vs. Tile Click Discrimination (Implemented)
+- **Status**: Fixed in current working build.
+- **Implemented Fixes**:
+  - Added `lv_indev_wait_release(indev)` inside `on_home_gesture()` on recognized horizontal swipes to cancel pending release/click dispatch on the pressed tile.
+  - Added `tile_click_wrapper()` to check pointer gesture direction and displacement (`gesture_sum`, `scroll_sum` > 15px); any swipe drag completely suppresses tile click activation.
 
-## Homescreen & Gestures
+### 3. Page 2 Tile Slot 1 (Linksboven) Assignment Conflict (Implemented)
+- **Status**: Fixed in current working build.
+- **Implemented Fixes**:
+  - `tile_slots_bind()` clears `settings.tile_rotate_enabled` when assigning a specific integration to `TILE_SLOT_P1_0`.
+  - Auto-rotate background loop and tap handler in `screen_home.c` only run on slot 0 if slot 0 is unassigned (`!tile_slots_binding(TILE_SLOT_P1_0)`).
 
-### 2. Swipe Gesture Treated as Click on Initial Tile Component
-- **Issue**: When swiping left on the homescreen (over the tile area to switch from page 1 to page 2), the component where the swipe started also receives an unintended click event, opening that tile's modal/app while switching pages.
-- **Root Cause**:
-  In `screen_home.c`, `on_home_gesture()` handles `LV_EVENT_GESTURE` and switches pages via `home_show_page()`, but does not consume/cancel the active touch on the input device. When the finger is lifted, LVGL delivers `LV_EVENT_CLICKED` to the child tile button under the initial touch point.
-- **Solution**:
-  1. In `on_home_gesture()`, call `lv_indev_wait_release(indev)` whenever a swipe gesture is recognized to suppress subsequent click/release events for that touch sequence.
-  2. In tile click handlers, check if the input device experienced dragging or scrolling before executing the click action (e.g., verify `lv_indev_get_gesture_dir(indev) == LV_DIR_NONE` or check displacement).
+### 4. Dynamic Font Scaling for Long Titles on Page 2 Tiles (Implemented)
+- **Status**: Fixed in current working build.
+- **Implemented Fixes**:
+  - `render_tile_slot()` and `render_meta_into()` inspect the character length of `m->latest_value`.
+  - For values with `length > 15` (e.g. news headlines, Teletekst articles), the label enables multi-line text wrapping (`LV_LABEL_LONG_WRAP`) within the tile's content width and scales font dynamically to `SF(18)` or `SF(15)`. Short numeric values retain large bold fonts (`SF(28)` / `SF(48)`).
+
+### 5. Layout Editor Close & Re-open Double Free Crash (Implemented)
+- **Status**: Fixed in current working build.
+- **Implemented Fixes**:
+  - In `screen_layout_editor.c`, `on_cancel()` and `screen_layout_editor_show()` now properly reset all dangling pointers (`rects[]`, `size_btns[]`, `theme_btn`, `page_btn`, `sel_lbl`) when the editor is closed, preventing use-after-free / double-free crashes when re-opening Indeling.

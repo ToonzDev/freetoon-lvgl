@@ -308,6 +308,23 @@ typedef struct {
     lv_obj_t * sub;    /* sub-line under value */
 } tile_t;
 
+static void tile_click_wrapper(lv_event_t * e) {
+    lv_indev_t * indev = lv_indev_get_act();
+    if (indev) {
+        if (lv_indev_get_gesture_dir(indev) != LV_DIR_NONE ||
+            indev->proc.wait_until_release ||
+            indev->proc.types.pointer.gesture_sent ||
+            abs(indev->proc.types.pointer.gesture_sum.x) > 15 ||
+            abs(indev->proc.types.pointer.gesture_sum.y) > 15 ||
+            abs(indev->proc.types.pointer.scroll_sum.x) > 15 ||
+            abs(indev->proc.types.pointer.scroll_sum.y) > 15) {
+            return;
+        }
+    }
+    lv_event_cb_t orig_cb = (lv_event_cb_t)lv_event_get_user_data(e);
+    if (orig_cb) orig_cb(e);
+}
+
 /* Generic tile: w x h pixels, given title, optional click handler.
  * `ltype` is the layout_tile_type_t for this tile; when custom_layout_enabled
  * is set, the position/size/visibility come from the grid layout instead of
@@ -338,7 +355,7 @@ static void make_tile(lv_obj_t * parent, int x, int y, int w, int h, int ltype,
     lv_obj_clear_flag(t, LV_OBJ_FLAG_SCROLLABLE);
     if (click_cb) {
         lv_obj_add_flag(t, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_add_event_cb(t, click_cb, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(t, tile_click_wrapper, LV_EVENT_CLICKED, (void *)click_cb);
     }
 
     /* Thin accent bar on top */
@@ -1400,6 +1417,30 @@ static int render_tile_slot(int slot, lv_obj_t * lbl_main, lv_obj_t * lbl_sub) {
     if (lbl_main) {
         lv_obj_clear_flag(lbl_main, LV_OBJ_FLAG_HIDDEN);
         const char * v = (const char *)m->latest_value;
+        size_t vlen = v ? strlen(v) : 0;
+        lv_obj_t * pt = lv_obj_get_parent(lbl_main);
+        lv_coord_t avail_w = pt ? (lv_obj_get_width(pt) - 16) : 0;
+        if (avail_w <= 0) avail_w = SX(200);
+
+        if (vlen > 15) {
+            lv_obj_set_width(lbl_main, avail_w);
+            lv_label_set_long_mode(lbl_main, LV_LABEL_LONG_WRAP);
+            lv_obj_set_style_text_align(lbl_main, LV_TEXT_ALIGN_CENTER, 0);
+            if (vlen > 35) {
+                lv_obj_set_style_text_font(lbl_main, SF(15), 0);
+            } else {
+                lv_obj_set_style_text_font(lbl_main, SF(18), 0);
+            }
+        } else {
+            lv_obj_set_width(lbl_main, LV_SIZE_CONTENT);
+            lv_label_set_long_mode(lbl_main, LV_LABEL_LONG_CLIP);
+            if (slot >= TILE_SLOT_P1_0 && pt) {
+                lv_coord_t th = lv_obj_get_height(pt);
+                const lv_font_t * vf = (th >= 230) ? SF(48) : (th >= 130 ? SF(28) : SF(22));
+                lv_obj_set_style_text_font(lbl_main, vf, 0);
+            }
+        }
+
         if (v && v[0])
             lv_label_set_text_fmt(lbl_main, "%s%s%s", v,
                                   m->value_unit[0] ? " " : "",
@@ -1429,6 +1470,30 @@ static void render_meta_into(const integration_meta_t * m,
     if (title) lv_label_set_text(title, m->tile_title[0] ? m->tile_title : m->name);
     if (main) {
         const char * v = (const char *)m->latest_value;
+        size_t vlen = v ? strlen(v) : 0;
+        lv_obj_t * pt = lv_obj_get_parent(main);
+        lv_coord_t avail_w = pt ? (lv_obj_get_width(pt) - 16) : 0;
+        if (avail_w <= 0) avail_w = SX(200);
+
+        if (vlen > 15) {
+            lv_obj_set_width(main, avail_w);
+            lv_label_set_long_mode(main, LV_LABEL_LONG_WRAP);
+            lv_obj_set_style_text_align(main, LV_TEXT_ALIGN_CENTER, 0);
+            if (vlen > 35) {
+                lv_obj_set_style_text_font(main, SF(15), 0);
+            } else {
+                lv_obj_set_style_text_font(main, SF(18), 0);
+            }
+        } else {
+            lv_obj_set_width(main, LV_SIZE_CONTENT);
+            lv_label_set_long_mode(main, LV_LABEL_LONG_CLIP);
+            if (pt) {
+                lv_coord_t th = lv_obj_get_height(pt);
+                const lv_font_t * vf = (th >= 230) ? SF(48) : (th >= 130 ? SF(28) : SF(22));
+                lv_obj_set_style_text_font(main, vf, 0);
+            }
+        }
+
         if (v && v[0]) lv_label_set_text_fmt(main, "%s%s%s", v,
                               m->value_unit[0] ? " " : "", m->value_unit);
         else           lv_label_set_text_fmt(main, "%s...", m->tile_title);
@@ -1843,8 +1908,11 @@ static void refresh_cb(lv_timer_t * t) {
     }
 
     /* Auto-rotate: page-1 slot 0 cycles through the chosen integrations every
-     * tile_rotate_seconds. Driven off this 1 Hz refresh — no extra timer. */
-    if (settings.tile_rotate_enabled && settings.tile_rotate_members[0]) {
+     * tile_rotate_seconds. Driven off this 1 Hz refresh — no extra timer.
+     * Only runs if slot 0 has not been explicitly assigned to another integration. */
+    const char * slot0_bind = tile_slots_binding(TILE_SLOT_P1_0);
+    if (settings.tile_rotate_enabled && settings.tile_rotate_members[0] &&
+        (!slot0_bind || !slot0_bind[0])) {
         static int rot_ctr = 0, rot_idx = 0;
         int period = settings.tile_rotate_seconds < 3 ? 3 : settings.tile_rotate_seconds;
         if (++rot_ctr >= period) { rot_ctr = 0; rot_idx++; }
@@ -2946,14 +3014,16 @@ static void on_page1_slot(lv_event_t * e) {
     lv_obj_t * tapped = lv_event_get_current_target(e);
     for (int i = 0; i < g_p1_count; i++) {
         if (p1_main[i] && tapped == lv_obj_get_parent(p1_main[i])) {
-            /* If slot 0 is auto-rotating, open the currently displayed item */
-            if (i == 0 && settings.tile_rotate_enabled && settings.tile_rotate_members[0] && g_current_rot_id[0]) {
+            const char * b0 = tile_slots_binding(4 + i);
+            /* If slot 0 is auto-rotating and unassigned, open the currently displayed item */
+            if (i == 0 && settings.tile_rotate_enabled && settings.tile_rotate_members[0] &&
+                (!b0 || !b0[0]) && g_current_rot_id[0]) {
                 if (open_integration_by_id(g_current_rot_id)) return;
             }
             if (check_slot_integration_open(4 + i)) return;
 
-            /* Slot 0: efanlamp tile when configured */
-            if (i == 0 && settings.efanlamp_host[0]) {
+            /* Slot 0: efanlamp tile when configured and unassigned */
+            if (i == 0 && settings.efanlamp_host[0] && (!b0 || !b0[0])) {
                 ui_push(screen_efanlamp_create());
                 return;
             }
@@ -3031,6 +3101,7 @@ static void on_lights_handle(lv_event_t * e) {
 static void on_home_gesture(lv_event_t * e) {
     (void)e;
     lv_indev_t * indev = lv_indev_get_act();
+    if (!indev) return;
     lv_dir_t dir = lv_indev_get_gesture_dir(indev);
     lv_point_t p; lv_indev_get_point(indev, &p);
     /* When already on page 2, any right-swipe returns to page 0. A custom page 2
@@ -3038,14 +3109,21 @@ static void on_home_gesture(lv_event_t * e) {
      * thermostat zone) — gating the back-swipe on x there left the user stuck on
      * page 2 (BUG 8). The lights shortcut only applies on page 0. */
     if (home_tile_page != 0) {
-        if (dir == LV_DIR_RIGHT) home_show_page(0);
+        if (dir == LV_DIR_RIGHT) {
+            lv_indev_wait_release(indev);
+            home_show_page(0);
+        }
         return;
     }
     /* Page 0: right of x≈556 is the tile zone: swipe pages between tile sets.
      * Left of it (the thermostat) keeps the swipe-right-for-lights shortcut. */
     if (p.x >= 556) {
-        if (dir == LV_DIR_LEFT) home_show_page(1);
+        if (dir == LV_DIR_LEFT) {
+            lv_indev_wait_release(indev);
+            home_show_page(1);
+        }
     } else if (dir == LV_DIR_RIGHT) {
+        lv_indev_wait_release(indev);
         open_lights_backend();
     }
 }

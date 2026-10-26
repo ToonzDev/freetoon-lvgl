@@ -65,6 +65,11 @@ static integration_t entries[MAX_INTEGRATIONS];
 static int           entry_count = 0;
 static char          g_fetch_msg[128] = "";
 static volatile int  g_fetch_dirty = 0;
+static volatile int  s_fetch_active = 0;
+static lv_timer_t *  s_refresh_timer = NULL;
+static int           s_prev_count = -1;
+
+static void start_catalog_fetch(void);
 
 /* Built-in fallback catalog items in case remote catalog is unreachable */
 static const struct {
@@ -167,8 +172,16 @@ static void * fetch_thread(void * arg) {
     (void)arg;
     snprintf(g_fetch_msg, sizeof(g_fetch_msg), "%s", tr("Catalogus ophalen...", "Fetching catalog..."));
     g_fetch_dirty = 1;
+
+    /* Always ensure installed integration metadata is fresh */
+    tile_slots_init();
+
+    /* Append cache-busting timestamp query param to bypass CDN caching */
+    char url[256];
+    snprintf(url, sizeof url, "%s?t=%ld", CATALOG_URL, (long)time(NULL));
+
     /* Try to fetch online catalog */
-    int rc = http_fetch(CATALOG_URL, catalog_buf, sizeof catalog_buf);
+    int rc = http_fetch(url, catalog_buf, sizeof catalog_buf);
     catalog_len = (int)strlen(catalog_buf);
     if (rc == 0 && catalog_len > 0) {
         parse_catalog();
@@ -223,7 +236,21 @@ static void * fetch_thread(void * arg) {
              tr("%d integraties beschikbaar", "%d integrations available"),
              entry_count);
     g_fetch_dirty = 1;
+    s_fetch_active = 0;
     return NULL;
+}
+
+static void start_catalog_fetch(void) {
+    if (s_fetch_active) return;
+    s_fetch_active = 1;
+    snprintf(g_fetch_msg, sizeof(g_fetch_msg), "%s", tr("Catalogus ophalen...", "Fetching catalog..."));
+    g_fetch_dirty = 1;
+    pthread_t t;
+    if (pthread_create(&t, NULL, fetch_thread, NULL) == 0) {
+        pthread_detach(t);
+    } else {
+        s_fetch_active = 0;
+    }
 }
 
 /* ===================================================================== */
@@ -477,9 +504,44 @@ static void update_row_state(integration_t * ent) {
 /* ===================================================================== */
 static void on_back(lv_event_t * e) { (void)e; ui_pop(); }
 
+static int entry_has_update(const integration_t * ent) {
+    if (!ent) return 0;
+    const integration_meta_t * meta = tile_slots_integration_by_id(ent->id);
+    if (!meta) return 0;
+    if (ent->version[0] && meta->version[0] && semver_cmp(ent->version, meta->version) > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+static void sort_entries_updates_first(void) {
+    integration_t sorted[MAX_INTEGRATIONS];
+    int count = 0;
+
+    for (int i = 0; i < entry_count && count < MAX_INTEGRATIONS; i++) {
+        if (entry_has_update(&entries[i])) {
+            sorted[count++] = entries[i];
+        }
+    }
+
+    for (int i = 0; i < entry_count && count < MAX_INTEGRATIONS; i++) {
+        if (!entry_has_update(&entries[i])) {
+            sorted[count++] = entries[i];
+        }
+    }
+
+    for (int i = 0; i < count; i++) {
+        entries[i] = sorted[i];
+    }
+    entry_count = count;
+}
+
 static void build_rows(void) {
     /* Wipe any previous rows */
     lv_obj_clean(list_box);
+
+    /* Place apps with an available update on top of the list */
+    sort_entries_updates_first();
 
     for (int i = 0; i < entry_count; i++) {
         integration_t * ent = &entries[i];
@@ -553,46 +615,77 @@ static void build_rows(void) {
 /* Called by the periodic refresh timer (every 500 ms). */
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
-    static int prev_count = -1;
     if (g_fetch_dirty) {
         if (status_lbl) lv_label_set_text(status_lbl, g_fetch_msg);
         g_fetch_dirty = 0;
     }
-    if (entry_count != prev_count) {
+    if (entry_count != s_prev_count) {
         build_rows();
-        prev_count = entry_count;
+        s_prev_count = entry_count;
     }
     for (int i = 0; i < entry_count; i++) {
         update_row_state(&entries[i]);
     }
 }
 
-static int scr_light_mode = -1;
+static void on_scr_deleted(lv_event_t * e) {
+    (void)e;
+    if (s_refresh_timer) {
+        lv_timer_del(s_refresh_timer);
+        s_refresh_timer = NULL;
+    }
+    scr_root = NULL;
+    list_box = NULL;
+    status_lbl = NULL;
+}
+
+static void on_marketplace_refresh(lv_event_t * e) {
+    (void)e;
+    tile_slots_init();
+    s_prev_count = -1;
+    start_catalog_fetch();
+}
 
 lv_obj_t * screen_marketplace_create(void) {
-    if (scr_root && scr_light_mode == settings.home_light_mode) return scr_root;
-    if (scr_root) { lv_obj_del(scr_root); scr_root = NULL; }
-    scr_light_mode = settings.home_light_mode;
+    if (scr_root) {
+        lv_obj_del(scr_root);
+        scr_root = NULL;
+    }
 
     scr_root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(COL_BG), 0);
     lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(scr_root, on_scr_deleted, LV_EVENT_DELETE, NULL);
 
-    /* Header */
-    int x_w = (DISP_VER < 600) ? 60 : 70;
-    int x_h = (DISP_VER < 600) ? 46 : 50;
+    /* Header: Close ('X') button (large, easy touch target matching other screens) */
+    int x_w = (DISP_VER < 600) ? 68 : 80;
+    int x_h = (DISP_VER < 600) ? 48 : 54;
     lv_obj_t * back = lv_btn_create(scr_root);
     lv_obj_set_size(back, x_w, x_h);
     lv_obj_align(back, LV_ALIGN_TOP_RIGHT, SX(-12), SY(12));
     lv_obj_set_style_bg_color(back, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_set_style_radius(back, 12, 0);
-    lv_obj_set_ext_click_area(back, 25);
+    lv_obj_set_ext_click_area(back, 30);
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(back);
     lv_label_set_text(bl, LV_SYMBOL_CLOSE);
     lv_obj_set_style_text_color(bl, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(bl, SF(22), 0);
+    lv_obj_set_style_text_font(bl, SF(24), 0);
     lv_obj_center(bl);
+
+    /* Header: Refresh button next to 'X' */
+    lv_obj_t * b_ref = lv_btn_create(scr_root);
+    lv_obj_set_size(b_ref, x_w - SX(6), x_h);
+    lv_obj_align(b_ref, LV_ALIGN_TOP_RIGHT, SX(-12) - x_w - SX(10), SY(12));
+    lv_obj_set_style_bg_color(b_ref, lv_color_hex(THEME_BTN_BG), 0);
+    lv_obj_set_style_radius(b_ref, 12, 0);
+    lv_obj_set_ext_click_area(b_ref, 25);
+    lv_obj_add_event_cb(b_ref, on_marketplace_refresh, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * rl = lv_label_create(b_ref);
+    lv_label_set_text(rl, LV_SYMBOL_REFRESH);
+    lv_obj_set_style_text_color(rl, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(rl, SF(22), 0);
+    lv_obj_center(rl);
 
     lv_obj_t * title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(title, lv_color_hex(COL_TEXT_HI), 0);
@@ -619,14 +712,14 @@ lv_obj_t * screen_marketplace_create(void) {
     lv_obj_set_scroll_dir(list_box, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(list_box, LV_SCROLLBAR_MODE_AUTO);
 
-    /* Kick off the catalog fetch on entry. */
+    /* Reset state and start fresh catalog fetch */
     catalog_len = 0;
     entry_count = 0;
-    pthread_t t;
-    if (pthread_create(&t, NULL, fetch_thread, NULL) == 0)
-        pthread_detach(t);
+    s_prev_count = -1;
+    start_catalog_fetch();
 
-    lv_timer_create(refresh_cb, 500, NULL);
+    if (s_refresh_timer) lv_timer_del(s_refresh_timer);
+    s_refresh_timer = lv_timer_create(refresh_cb, 500, NULL);
 
     return scr_root;
 }

@@ -278,6 +278,9 @@ void tile_slots_bind(int slot, const char * integration_id) {
     if (!f) return;
     snprintf(f, sizeof settings.tile_slot_energy, "%s",
              integration_id ? integration_id : "");
+    if (slot == TILE_SLOT_P1_0 && integration_id && integration_id[0]) {
+        settings.tile_rotate_enabled = 0;
+    }
     settings_save();
     fprintf(stderr, "[tiles] slot %s bound to '%s'\n",
             tile_slot_label(slot), f);

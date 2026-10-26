@@ -50,6 +50,7 @@ static int        edit_page = 0;   /* which page the editor is currently editing
 static lv_obj_t * sel_lbl;
 static lv_obj_t * page_btn;        /* toolbar page-switch button (label shows current page) */
 static lv_obj_t * vis_btn = NULL;  /* toolbar hide/show toggle button */
+static lv_obj_t * theme_btn = NULL;/* toolbar theme toggle button */
 static void build_canvas_rects(void);   /* fwd */
 static void on_copy_p2(lv_event_t * e);  /* fwd */
 
@@ -926,11 +927,17 @@ static void on_cancel(lv_event_t * e) {
      * or get dereferenced after free. */
     close_chooser();
     if (modal) { lv_obj_del(modal); modal = NULL; }
+    for (int i = 0; i < LAYOUT_MAX_TILES; i++) rects[i] = NULL;
+    for (int i = 0; i < N_SIZES; i++) size_btns[i] = NULL;
     chooser = type_grid = NULL;
     preset_mgr = preset_list = NULL;
     name_modal = name_ta = NULL;
     confirm_modal = NULL; confirm_idx = -1;
     sel = -1;
+    sel_lbl = NULL;
+    page_btn = NULL;
+    vis_btn = NULL;
+    theme_btn = NULL;
 }
 static void on_save(lv_event_t * e) {
     (void)e;
@@ -973,7 +980,6 @@ static void build_canvas_rects(void) {
 /* Toolbar "Thema" — flip the home between freetoon dark + stock light, live.
  * The layout editor only arranges the dark home's tiles, but the theme switch
  * lives here too so the whole home look is reachable from one place. */
-static lv_obj_t * theme_btn = NULL;
 static void theme_btn_label(void) {
     if (theme_btn)
         lv_label_set_text(lv_obj_get_child(theme_btn, 0),
@@ -1040,9 +1046,11 @@ lv_obj_t * screen_layout_editor_create(void) {
 void screen_layout_editor_show(void) {
     if (modal) lv_obj_del(modal);
     modal = NULL; chooser = NULL; type_grid = NULL; sel = -1;
+    for (int i = 0; i < LAYOUT_MAX_TILES; i++) rects[i] = NULL;
+    for (int i = 0; i < N_SIZES; i++) size_btns[i] = NULL;
     preset_mgr = NULL; preset_list = NULL; name_modal = NULL; name_ta = NULL;
     confirm_modal = NULL; confirm_idx = -1; long_pressed = drag_moved = 0;
-    edit_page = 0; page_btn = NULL; theme_btn = NULL;
+    edit_page = 0; page_btn = NULL; vis_btn = NULL; theme_btn = NULL; sel_lbl = NULL;
     drag_last_col = drag_last_row = -1;
     /* Working copy; ensure we have something to edit. */
     if (g_layout.count == 0) layout_reset_default();
