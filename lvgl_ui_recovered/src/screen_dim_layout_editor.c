@@ -57,7 +57,7 @@ static const uint32_t DB_COL[DB_COUNT] = {
     [DB_THERMO]=0x335577, [DB_WEATHER]=0x4488aa, [DB_FORECAST]=0x66bbdd,
     [DB_WASTE]=0x88dd66,  [DB_FAMILY]=0xff8866,  [DB_VENT]=0x6666aa,
     [DB_ENERGY]=0xaa77ff, [DB_GAS]=0xffaa33,     [DB_CLOCK]=0x2b7bbb,
-    [DB_DATE]=0x486b88,   [DB_AGENDA]=0x4477cc,
+    [DB_DATE]=0x486b88,   [DB_AGENDA]=0x4477cc,  [DB_RAINFALL]=0x3a77aa,
 };
 
 static void place_rect(int i);

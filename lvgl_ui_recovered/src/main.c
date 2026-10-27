@@ -176,6 +176,9 @@ int main(int argc, char** argv) {
     }
     if (weather_start() != 0)
         fprintf(stderr, "[main] weather_start failed\n");
+    extern int buienradar_rain_start(void);
+    if (buienradar_rain_start() != 0)
+        fprintf(stderr, "[main] buienradar_rain_start failed\n");
     if (settings.show_dim_waste || settings.waste_postcode[0]) {
         if (waste_start() != 0) fprintf(stderr, "[main] waste_start failed\n");
     }

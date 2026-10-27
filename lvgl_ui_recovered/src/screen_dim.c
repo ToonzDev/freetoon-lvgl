@@ -67,7 +67,7 @@ static lv_timer_t * refresh_timer = NULL;
  * bars back, gated by that existing toggle (default on). Placement mirrors the
  * original (screen edges, temp-row height) — may need repositioning against the
  * new symmetric waste/weather layout (left to the layout owner to confirm). */
-#define DIM_BAR_W     44      /* bar width, design px (SX-scaled) */
+#define DIM_BAR_W     58      /* bar width, design px (SX-scaled) */
 #define DIM_BAR_INSET 20      /* gap from the screen bezel (outer edges) */
 #define DIM_BAR_Y     45      /* vertical centre = the indoor-temp row */
 #define DIM_CLOCK_H   96      /* clock font px; envelope = 2x this */
@@ -141,8 +141,8 @@ static void dim_make_bar(int side, lv_obj_t ** env, lv_obj_t ** fill,
     lv_obj_align(*fill, LV_ALIGN_BOTTOM_MID, 0, 0);
 
     *cap = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(*cap, lv_color_hex(0xbbbbbb), 0);
-    lv_obj_set_style_text_font(*cap, SF(18), 0);
+    lv_obj_set_style_text_color(*cap, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(*cap, SF(22), 0);
     lv_obj_set_style_text_align(*cap, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(*cap, "");
     lv_obj_align_to(*cap, *env,
@@ -164,7 +164,7 @@ static void dim_bar_set(lv_obj_t * env, lv_obj_t * fill, lv_obj_t * cap,
         lv_obj_add_flag(env, LV_OBJ_FLAG_HIDDEN);
         if (cap) {
             lv_label_set_text(cap, txt);
-            lv_obj_set_style_text_color(cap, lv_color_hex(color), 0);
+            lv_obj_set_style_text_color(cap, lv_color_hex(0xffffff), 0);
             lv_obj_set_style_text_font(cap, SF(22), 0);
             lv_obj_align_to(cap, env,
                 (side < 0) ? LV_ALIGN_OUT_RIGHT_MID : LV_ALIGN_OUT_LEFT_MID,
@@ -183,8 +183,8 @@ static void dim_bar_set(lv_obj_t * env, lv_obj_t * fill, lv_obj_t * cap,
     lv_obj_clear_flag(env, LV_OBJ_FLAG_HIDDEN);
     if (cap) {
         lv_label_set_text(cap, txt);
-        lv_obj_set_style_text_color(cap, lv_color_hex(color), 0);
-        lv_obj_set_style_text_font(cap, SF(18), 0);
+        lv_obj_set_style_text_color(cap, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_font(cap, SF(22), 0);
         lv_obj_align_to(cap, env,
             (side < 0) ? LV_ALIGN_OUT_BOTTOM_LEFT : LV_ALIGN_OUT_BOTTOM_RIGHT,
             0, SY(14));
@@ -270,19 +270,19 @@ static void refresh_cb(lv_timer_t * t) {
     if (dim_img_faucet) lv_obj_align_to(dim_img_faucet, lbl_temp, LV_ALIGN_OUT_BOTTOM_MID, -SX(10), SY(8));
     if (dim_img_drop) lv_obj_align_to(dim_img_drop, dim_img_faucet, LV_ALIGN_OUT_RIGHT_MID, SX(8), 0);
 
-    /* Setpoint / program / sensor metrics are dropped in dim mode (CR1) */
+    /* Setpoint / program state displayed in small font (CR2) */
     if (lbl_setpoint) {
+        const char * prog = program_label();
         if (toon_state.setpoint > 0) {
-            if (toon_state.burner_on)
-                lv_label_set_text_fmt(lbl_setpoint, tr("naar %.1f°C", "to %.1f°C"), toon_state.setpoint);
-            else
-                lv_label_set_text_fmt(lbl_setpoint, "%.1f°C", toon_state.setpoint);
+            lv_label_set_text_fmt(lbl_setpoint, "%s - %.1f°C", prog, toon_state.setpoint);
         } else {
-            lv_label_set_text(lbl_setpoint, "");
+            lv_label_set_text(lbl_setpoint, prog);
         }
+        lv_obj_update_layout(lbl_setpoint);
+        if (dim_img_flame) lv_obj_align_to(dim_img_flame, lbl_setpoint, LV_ALIGN_OUT_BOTTOM_MID, 0, SY(8));
+        if (dim_img_faucet) lv_obj_align_to(dim_img_faucet, lbl_setpoint, LV_ALIGN_OUT_BOTTOM_MID, -SX(10), SY(8));
+        if (dim_img_drop) lv_obj_align_to(dim_img_drop, dim_img_faucet, LV_ALIGN_OUT_RIGHT_MID, SX(8), 0);
     }
-
-    if (lbl_program) lv_label_set_text(lbl_program, program_label());
 
     if (lbl_metrics) {
         if (!settings.show_dim_metrics) {
@@ -743,25 +743,31 @@ lv_obj_t * screen_dim_create(void) {
     dim_moon_img = NULL;
 
     /* Room temperature readout: enlarged to 96pt Montserrat (clock font/size).
-       Setpoint, program, and metrics (TVOC, CO2, CV bar) dropped per CR1. */
+       CR2: Setpoint + program state in small font (SF(22)) under room temp. */
     lbl_temp = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_temp, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl_temp, SF(96), 0);
     lv_label_set_text(lbl_temp, "--.-°C");
-    lv_obj_align(lbl_temp, LV_ALIGN_CENTER, 0, SY(50));
+    lv_obj_align(lbl_temp, LV_ALIGN_CENTER, 0, SY(40));
 
-    lbl_setpoint = NULL;
+    lbl_setpoint = lv_label_create(scr_root);
+    lv_obj_set_style_text_color(lbl_setpoint, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lbl_setpoint, SF(22), 0);
+    lv_obj_set_style_text_align(lbl_setpoint, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(lbl_setpoint, "");
+    lv_obj_align(lbl_setpoint, LV_ALIGN_CENTER, 0, SY(90));
+
     lbl_program  = NULL;
     lbl_metrics  = NULL;
     lbl_burner   = NULL;
 
-    /* Toon-style radiator+flame glyph, parked underneath the indoor temp */
+    /* Toon-style radiator+flame glyph, parked underneath setpoint */
     dim_img_flame = lv_img_create(scr_root);
     lv_img_set_src(dim_img_flame, &icon_radiator);
     lv_img_set_zoom(dim_img_flame, 256);
     lv_obj_set_style_img_recolor(dim_img_flame, lv_color_hex(0xff8866), 0);
     lv_obj_set_style_img_recolor_opa(dim_img_flame, 255, 0);
-    lv_obj_align_to(dim_img_flame, lbl_temp, LV_ALIGN_OUT_BOTTOM_MID, 0, SY(8));
+    lv_obj_align_to(dim_img_flame, lbl_setpoint, LV_ALIGN_OUT_BOTTOM_MID, 0, SY(8));
     lv_obj_add_flag(dim_img_flame, LV_OBJ_FLAG_HIDDEN);
 
     /* DHW faucet fully red — see screen_home.c for rationale. */
@@ -770,7 +776,7 @@ lv_obj_t * screen_dim_create(void) {
     lv_img_set_zoom(dim_img_faucet, 256);
     lv_obj_set_style_img_recolor(dim_img_faucet, lv_color_hex(0xff5544), 0);
     lv_obj_set_style_img_recolor_opa(dim_img_faucet, 255, 0);
-    lv_obj_align_to(dim_img_faucet, lbl_temp, LV_ALIGN_OUT_BOTTOM_MID, -SX(10), SY(8));
+    lv_obj_align_to(dim_img_faucet, lbl_setpoint, LV_ALIGN_OUT_BOTTOM_MID, -SX(10), SY(8));
     lv_obj_add_flag(dim_img_faucet, LV_OBJ_FLAG_HIDDEN);
 
     /* DHW drop in RED to distinguish from the blue cold-water-flow drop */

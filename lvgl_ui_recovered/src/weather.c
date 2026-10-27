@@ -55,6 +55,11 @@ float weather_hour_display_temp(const weather_hour_t * h) {
 static double g_cfg_lat = 0.0, g_cfg_lon = 0.0;
 static volatile int g_wx_wake = 0;
 
+void weather_get_lat_lon(double * lat, double * lon) {
+    if (lat) *lat = (g_cfg_lat != 0.0 ? g_cfg_lat : (settings.weather_lat[0] ? atof(settings.weather_lat) : 0.0));
+    if (lon) *lon = (g_cfg_lon != 0.0 ? g_cfg_lon : (settings.weather_lon[0] ? atof(settings.weather_lon) : 0.0));
+}
+
 /* Case-insensitive strstr. Buienradar's data feed switched from lowercase keys
  * ("stationid","temperature","iconurl","actualradarurl"…) to PascalCase
  * ("StationId","Temperature","IconUrl","ActualRadarUrl"…), which silently broke
@@ -598,6 +603,12 @@ static void * wx_thread(void * arg) {
     while (1) {
         /* Resolve the configured city's exact lat/lon once (re-tried each loop
            until it sticks). Everything temperature/forecast keys off this. */
+        if (g_cfg_lat == 0.0 && g_cfg_lon == 0.0) {
+            if (settings.weather_lat[0] && settings.weather_lon[0]) {
+                g_cfg_lat = atof(settings.weather_lat);
+                g_cfg_lon = atof(settings.weather_lon);
+            }
+        }
         if (g_cfg_lat == 0.0 && g_cfg_lon == 0.0 && settings.weather_location[0]) {
             weather_geocode(settings.weather_location);
             /* The geocoder is a second host that can be down/blocked/misspelled

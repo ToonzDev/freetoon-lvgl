@@ -35,3 +35,36 @@
 - **Status**: Fixed in current working build.
 - **Implemented Fixes**:
   - In `screen_layout_editor.c`, `on_cancel()` and `screen_layout_editor_show()` now properly reset all dangling pointers (`rects[]`, `size_btns[]`, `theme_btn`, `page_btn`, `sel_lbl`) when the editor is closed, preventing use-after-free / double-free crashes when re-opening Indeling.
+
+### 6. Buienradar Rain Forecast Graph & Multi-Timeframe Radar (Implemented)
+- **Status**: Completed in Release 0.9.77.
+- **Implemented Features**:
+  - Integrated dedicated Buienradar rain background polling thread (`buienradar_rain.c`) fetching 3-hour forecast (`RainHistoryForecast`) and 24-hour forecast (`Rain24Hour`).
+  - Added homescreen tile `LT_RAINFALL` with toggle buttons (`[3u]`, `[24u]`), rainfall bars, and dynamic time markers.
+  - Added ambient dim screen block `DB_RAINFALL` with black background (`#000000`), borderless floating chart, and time labels.
+  - Added multi-timeframe view to detailed forecast screen (`screen_forecast.c`) with floating pill bar (`[ Radar ]`, `[ 3 uur ]`, `[ 24 uur ]`).
+  - Added horizontal threshold divider lines and labels (*Zwaar*, *Matig*, *Licht*) matching Buienradar mobile app.
+  - Implemented clean centered *"Geen neerslag verwacht"* display when dry, hiding chart and redundant top messages.
+  - Added GPS coordinate configuration in Settings → Weer with automatic seeding from `buienradar.userSettings.json` or fallback.
+
+---
+
+## Open / Backlog
+
+### 7. Doorbell Live Snapshot/Feed Investigation ('feed unavailable')
+- **Status**: Open / Investigation needed.
+- **Description**:
+  - After pressing the physical doorbell, the Toon correctly opens the doorbell popup via WebSocket trigger, but displays *"Doorbell: snapshot unavailable"*.
+- **Investigation Points**:
+  - **Camera Proxy vs. Event Image**: Battery-powered Eufy doorbells remain in sleep mode; check if `camera.doorbell` provides a snapshot immediately or if `image.doorbell_event_image` holds the captured doorbell press frame.
+  - **HTTP Response Verification**: Check what `/usr/bin/curl` actually downloads from `http://<ha>:8123/api/camera_proxy/camera.doorbell` to `/tmp/doorbell.jpg` (HTTP status code, 401/404/500 JSON vs valid JPEG header `FF D8 FF`).
+  - **Stream/Snapshot Wake-up Latency**: Determine if a short delay or wake-up call (or MJPEG stream via go2rtc/RTSP) is needed for battery-powered cameras.
+
+### 8. Settings Cleanup: Remove Redundant Options from 'Scherm'
+- **Status**: Open / Cleanup.
+- **Description**:
+  - Clean up and streamline `Instellingen -> Scherm` (`screen_settings.c`) by removing obsolete/redundant configuration rows:
+    1. **Taal (Language selection)**: Remove toggle; streamline default UI language.
+    2. **Licht thema: grote waarde = binnentemp**: Hardcode to 1 (`settings.stock_big_indoor = 1`) and remove the row.
+    3. **Maanstand op kloktegel**: Obsolete feature on modern clock tile; remove switch and associated row.
+

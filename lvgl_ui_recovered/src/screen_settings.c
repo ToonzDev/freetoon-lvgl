@@ -103,6 +103,8 @@ static void on_weather_feel_change(lv_event_t * e) {
  * label is purely cosmetic for the Weather screen header. */
 static lv_obj_t * ta_wx_city = NULL;
 static lv_obj_t * ta_wx_id   = NULL;
+static lv_obj_t * ta_wx_lat  = NULL;
+static lv_obj_t * ta_wx_lon  = NULL;
 static lv_obj_t * lbl_wx_status = NULL;
 static lv_obj_t * ta_master   = NULL;
 static lv_obj_t * sw_client   = NULL;
@@ -141,8 +143,16 @@ static void on_weather_apply(lv_event_t * e) {
         int id = atoi(lv_textarea_get_text(ta_wx_id));
         if (id > 0) settings.weather_location_id = id;
     }
+    if (ta_wx_lat) {
+        snprintf(settings.weather_lat, sizeof settings.weather_lat, "%s", lv_textarea_get_text(ta_wx_lat));
+    }
+    if (ta_wx_lon) {
+        snprintf(settings.weather_lon, sizeof settings.weather_lon, "%s", lv_textarea_get_text(ta_wx_lon));
+    }
     settings_save();
     weather_refresh_async();
+    extern void buienradar_rain_refresh_async(void);
+    buienradar_rain_refresh_async();
     if (lbl_wx_status)
         lv_label_set_text_fmt(lbl_wx_status,
             tr("Opgeslagen. %s = %d", "Saved. %s = %d"), settings.weather_location,
@@ -659,7 +669,8 @@ static void heating_tick(void) {
 /* Language selector — OFF = Nederlands (LANG_NL), ON = English (LANG_EN).
    Switching takes effect on the next modal/screen build (tr() reads
    settings.language live); no restart needed. */
-static lv_obj_t * lbl_lang_val = NULL;
+static lv_obj_t * lbl_lang_val __attribute__((unused)) = NULL;
+static void on_language_change(lv_event_t * e) __attribute__((unused));
 static void on_language_change(lv_event_t * e) {
     int on = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
     settings.language = on ? LANG_EN : LANG_NL;
@@ -671,6 +682,7 @@ static void on_language_change(lv_event_t * e) {
 /* Home theme — OFF = freetoon dark dashboard, ON = stock light tile-carousel.
    Applies on the next home build (return-to-home / restart); tr() & ui_init
    read settings.home_theme live. */
+static void on_stock_big_indoor_change(lv_event_t * e) __attribute__((unused));
 static void on_stock_big_indoor_change(lv_event_t * e) {
     settings.stock_big_indoor = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
     settings_save();
@@ -781,6 +793,7 @@ static void on_home_light_mode_change(lv_event_t * e) {
     scr_light_mode = -1;
 }
 
+static void on_clock_moon_phase_change(lv_event_t * e) __attribute__((unused));
 static void on_clock_moon_phase_change(lv_event_t * e) {
     settings.clock_moon_phase = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
     settings_save();
@@ -851,18 +864,6 @@ static void open_display_modal(lv_event_t * e) {
     sw_dim_bars_swap = row_switch(r, settings.dim_bars_swap, on_dim_bars_swap_change);
     y += 82;
 
-    r = panel_row(p, y, tr("Maanstand op kloktegel", "Moon phase on clock tile"), NULL);
-    row_switch(r, settings.clock_moon_phase, on_clock_moon_phase_change);
-    y += 82;
-
-    /* Language — OFF = Nederlands, ON = English. The value label shows the
-       current choice; takes effect on the next UI build (no restart). */
-    r = panel_row(p, y, tr("Taal", "Language"), &lbl_lang_val);
-    lv_label_set_text(lbl_lang_val,
-                      settings.language == LANG_EN ? "English" : "Nederlands");
-    row_switch(r, settings.language == LANG_EN, on_language_change);
-    y += 82;
-
     /* Home theme — classic Toon (stock) light tile-carousel vs freetoon dark
        dashboard. Takes effect on the next return-to-home / restart. */
     r = panel_row(p, y, tr("Thema startscherm (klassieke Toon-look)",
@@ -878,12 +879,6 @@ static void open_display_modal(lv_event_t * e) {
     lv_label_set_text(lbl_light_mode_val, settings.home_light_mode == 1
                       ? tr("Aan", "On") : tr("Uit", "Off"));
     row_switch(r, settings.home_light_mode == 1, on_home_light_mode_change);
-    y += 82;
-
-    /* Stock theme: which value is the big readout — indoor temp or setpoint. */
-    r = panel_row(p, y, tr("Licht thema: grote waarde = binnentemp",
-                           "Light theme: big readout = indoor temp"), NULL);
-    row_switch(r, settings.stock_big_indoor == 1, on_stock_big_indoor_change);
     y += 82;
 
     /* VNC remote control (x11vnc server on port 5900) */
@@ -940,6 +935,32 @@ static void open_weather_modal(lv_event_t * e) {
     char id_str[16]; snprintf(id_str, sizeof id_str, "%d",
                               settings.weather_location_id);
     lv_textarea_set_text(ta_wx_id, id_str);
+    y += 50;
+
+    lv_obj_t * lbl_lat = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl_lat, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(lbl_lat, SF(22), 0);
+    lv_label_set_text(lbl_lat, tr("Breedtegraad (Lat):", "Latitude:"));
+    lv_obj_align(lbl_lat, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
+    ta_wx_lat = lv_textarea_create(p);
+    lv_obj_set_size(ta_wx_lat, SX(380), SY(44));
+    lv_obj_align(ta_wx_lat, LV_ALIGN_TOP_LEFT, SX(240), SY(y - 4));
+    lv_textarea_set_one_line(ta_wx_lat, true);
+    lv_textarea_set_accepted_chars(ta_wx_lat, "0123456789.-");
+    lv_textarea_set_text(ta_wx_lat, settings.weather_lat);
+    y += 50;
+
+    lv_obj_t * lbl_lon = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl_lon, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(lbl_lon, SF(22), 0);
+    lv_label_set_text(lbl_lon, tr("Lengtegraad (Lon):", "Longitude:"));
+    lv_obj_align(lbl_lon, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
+    ta_wx_lon = lv_textarea_create(p);
+    lv_obj_set_size(ta_wx_lon, SX(380), SY(44));
+    lv_obj_align(ta_wx_lon, LV_ALIGN_TOP_LEFT, SX(240), SY(y - 4));
+    lv_textarea_set_one_line(ta_wx_lon, true);
+    lv_textarea_set_accepted_chars(ta_wx_lon, "0123456789.-");
+    lv_textarea_set_text(ta_wx_lon, settings.weather_lon);
     y += 50;
 
     /* Hint — where to find the id. */

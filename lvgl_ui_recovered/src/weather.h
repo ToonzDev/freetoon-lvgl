@@ -50,6 +50,7 @@ extern weather_state_t weather_state;
 /* Returns either real temperature (default) or feel temperature per settings.weather_use_feel */
 float weather_display_temp(void);
 float weather_hour_display_temp(const weather_hour_t * h);
+void weather_get_lat_lon(double * lat, double * lon);
 
 /* Thread safety primitives */
 void weather_lock(void);

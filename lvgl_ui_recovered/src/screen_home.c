@@ -37,6 +37,7 @@
 #include "templogger.h"
 #include "screen_chart_24h.h"
 #include "plugin_loader.h"
+#include "buienradar_rain.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
@@ -242,6 +243,18 @@ static lv_obj_t * tile_news_sum_lbl = NULL;
 static lv_obj_t * tile_cal_dates    = NULL;
 static lv_obj_t * tile_cal_times    = NULL;
 static lv_obj_t * tile_cal_titles   = NULL;
+/* Buienradar rain forecast tile (LT_RAINFALL) */
+static lv_obj_t * tile_rain         = NULL;
+static lv_obj_t * rain_lbl_title    = NULL;
+static lv_obj_t * rain_lbl_summary  = NULL;
+static lv_obj_t * rain_lbl_empty    = NULL;
+static lv_obj_t * rain_thresh_lbl[3] = {0};
+static lv_obj_t * rain_btn_3h       = NULL;
+static lv_obj_t * rain_btn_24h      = NULL;
+static lv_obj_t * rain_chart        = NULL;
+static lv_chart_series_t * rain_ser = NULL;
+static lv_obj_t * rain_lbl_times[4] = {0};
+static int rain_mode_24h            = 0;
 static lv_obj_t * lights_handle     = NULL;
 static lv_obj_t * lights_handle_lbl = NULL;
 static lv_obj_t * lights_handle_img = NULL;   /* backend logo (HA / Domoticz) */
@@ -835,6 +848,113 @@ static void open_forecast(lv_event_t * e) {
 static void open_inbox(lv_event_t * e) {
     (void)e;
     screen_inbox_show();
+}
+
+static void update_rain_tile_ui(void) {
+    if (!tile_rain) return;
+    buienradar_rain_snapshot_t snap;
+    buienradar_rain_get_snapshot(&snap);
+
+    int light = settings.home_light_mode;
+
+    if (rain_btn_3h) {
+        lv_obj_set_style_border_width(rain_btn_3h, (!rain_mode_24h) ? 2 : 0, 0);
+        lv_obj_set_style_border_color(rain_btn_3h, lv_color_hex(light ? 0x224488 : 0xffffff), 0);
+        lv_obj_set_style_bg_color(rain_btn_3h, lv_color_hex((!rain_mode_24h) ? (light ? 0x90c0f0 : 0x3a6090) : (light ? 0xccddee : 0x243242)), 0);
+        lv_obj_t * bl = lv_obj_get_child(rain_btn_3h, 0);
+        if (bl) lv_obj_set_style_text_color(bl, lv_color_hex((!rain_mode_24h) ? (light ? 0x112233 : 0xffffff) : (light ? 0x445566 : 0x88aabb)), 0);
+    }
+    if (rain_btn_24h) {
+        lv_obj_set_style_border_width(rain_btn_24h, (rain_mode_24h) ? 2 : 0, 0);
+        lv_obj_set_style_border_color(rain_btn_24h, lv_color_hex(light ? 0x224488 : 0xffffff), 0);
+        lv_obj_set_style_bg_color(rain_btn_24h, lv_color_hex((rain_mode_24h) ? (light ? 0x90c0f0 : 0x3a6090) : (light ? 0xccddee : 0x243242)), 0);
+        lv_obj_t * bl = lv_obj_get_child(rain_btn_24h, 0);
+        if (bl) lv_obj_set_style_text_color(bl, lv_color_hex((rain_mode_24h) ? (light ? 0x112233 : 0xffffff) : (light ? 0x445566 : 0x88aabb)), 0);
+    }
+
+    int has_rain = (!rain_mode_24h) ? snap.has_rain_3h : snap.has_rain_24h;
+
+    if (rain_lbl_empty) {
+        if (snap.is_valid && !has_rain) {
+            lv_label_set_text(rain_lbl_empty, rain_mode_24h ?
+                              tr("Geen neerslag verwacht (24u)", "No rain expected (24h)") :
+                              tr("Geen neerslag verwacht", "No rain expected"));
+            lv_obj_clear_flag(rain_lbl_empty, LV_OBJ_FLAG_HIDDEN);
+            if (rain_lbl_summary) lv_obj_add_flag(rain_lbl_summary, LV_OBJ_FLAG_HIDDEN);
+            if (rain_chart) lv_obj_add_flag(rain_chart, LV_OBJ_FLAG_HIDDEN);
+            for (int i = 0; i < 3; i++) {
+                if (rain_thresh_lbl[i]) lv_obj_add_flag(rain_thresh_lbl[i], LV_OBJ_FLAG_HIDDEN);
+            }
+            for (int i = 0; i < 4; i++) {
+                if (rain_lbl_times[i]) lv_obj_add_flag(rain_lbl_times[i], LV_OBJ_FLAG_HIDDEN);
+            }
+        } else {
+            lv_obj_add_flag(rain_lbl_empty, LV_OBJ_FLAG_HIDDEN);
+            if (rain_lbl_summary) lv_obj_clear_flag(rain_lbl_summary, LV_OBJ_FLAG_HIDDEN);
+            if (rain_chart) lv_obj_clear_flag(rain_chart, LV_OBJ_FLAG_HIDDEN);
+            for (int i = 0; i < 3; i++) {
+                if (rain_thresh_lbl[i]) lv_obj_clear_flag(rain_thresh_lbl[i], LV_OBJ_FLAG_HIDDEN);
+            }
+            for (int i = 0; i < 4; i++) {
+                if (rain_lbl_times[i]) lv_obj_clear_flag(rain_lbl_times[i], LV_OBJ_FLAG_HIDDEN);
+            }
+        }
+    }
+
+    if (!rain_mode_24h) {
+        if (rain_lbl_summary) {
+            lv_label_set_text(rain_lbl_summary, snap.summary_3h[0] ? snap.summary_3h : tr("Laden...", "Loading..."));
+        }
+        if (rain_chart && rain_ser) {
+            int n = snap.count_3h;
+            if (n <= 0) n = 38;
+            lv_chart_set_point_count(rain_chart, n);
+            for (int i = 0; i < n; i++) {
+                int v = (i < snap.count_3h) ? snap.points_3h[i].value : 0;
+                rain_ser->y_points[i] = v;
+            }
+            lv_chart_refresh(rain_chart);
+        }
+        if (snap.count_3h > 0) {
+            int n = snap.count_3h;
+            if (rain_lbl_times[0]) lv_label_set_text(rain_lbl_times[0], tr("Nu", "Now"));
+            if (rain_lbl_times[1]) lv_label_set_text(rain_lbl_times[1], snap.points_3h[n / 3].time_str);
+            if (rain_lbl_times[2]) lv_label_set_text(rain_lbl_times[2], snap.points_3h[2 * n / 3].time_str);
+            if (rain_lbl_times[3]) lv_label_set_text(rain_lbl_times[3], snap.points_3h[n - 1].time_str);
+        }
+    } else {
+        if (rain_lbl_summary) {
+            lv_label_set_text(rain_lbl_summary, snap.summary_24h[0] ? snap.summary_24h : tr("Laden...", "Loading..."));
+        }
+        if (rain_chart && rain_ser) {
+            int n = snap.count_24h;
+            if (n <= 0) n = 24;
+            lv_chart_set_point_count(rain_chart, n);
+            for (int i = 0; i < n; i++) {
+                int v = (i < snap.count_24h) ? snap.points_24h[i].value : 0;
+                rain_ser->y_points[i] = v;
+            }
+            lv_chart_refresh(rain_chart);
+        }
+        if (snap.count_24h > 0) {
+            if (rain_lbl_times[0]) lv_label_set_text(rain_lbl_times[0], "+6u");
+            if (rain_lbl_times[1]) lv_label_set_text(rain_lbl_times[1], "+12u");
+            if (rain_lbl_times[2]) lv_label_set_text(rain_lbl_times[2], "+18u");
+            if (rain_lbl_times[3]) lv_label_set_text(rain_lbl_times[3], "+24u");
+        }
+    }
+}
+
+static void on_rain_toggle_3h(lv_event_t * e) {
+    (void)e;
+    rain_mode_24h = 0;
+    update_rain_tile_ui();
+}
+
+static void on_rain_toggle_24h(lv_event_t * e) {
+    (void)e;
+    rain_mode_24h = 1;
+    update_rain_tile_ui();
 }
 
 /* ---------- refresh timer ---------- */
@@ -1696,6 +1816,7 @@ static void refresh_cb(lv_timer_t * t) {
     if (!scr_root || lv_scr_act() != scr_root) return;
 
     update_tile_lights();
+    update_rain_tile_ui();
 
     /* Only manage page-0 tile visibility while page 0 is showing — otherwise
      * this would clear the HIDDEN flag on the page-0 tiles every tick and let
@@ -2064,26 +2185,22 @@ static void refresh_cb(lv_timer_t * t) {
     }
 
     /* Preset row: selected preset in full colour with white border,
-     * unselected presets in grey values. */
+     * unselected presets in dark background. All 4 buttons remain visible (CR3). */
     {
         static const uint32_t preset_cols[4] = {0xcc7733, 0x3377cc, 0x553388, 0x557788};
         int hi = (toon_state.active_state >= 0 && toon_state.active_state <= 3)
                      ? toon_state.active_state : -1;
         for (int i = 0; i < 4; i++) {
             if (!tile_btn_preset[i]) continue;
-            if (!on_program) {
-                lv_obj_add_flag(tile_btn_preset[i], LV_OBJ_FLAG_HIDDEN);
-                continue;
-            }
             lv_obj_clear_flag(tile_btn_preset[i], LV_OBJ_FLAG_HIDDEN);
-            int sel = (i == hi);
+            int sel = (on_program && i == hi);
             lv_obj_set_style_border_width(tile_btn_preset[i], sel ? 2 : 0, 0);
             lv_obj_set_style_bg_color(tile_btn_preset[i],
-                                      lv_color_hex(sel ? preset_cols[i] : 0x243242), 0);
+                                      lv_color_hex(sel ? preset_cols[i] : (settings.home_light_mode ? 0xccddee : 0x243242)), 0);
             lv_obj_set_style_opa(tile_btn_preset[i], LV_OPA_COVER, 0);
             lv_obj_t * bl = lv_obj_get_child(tile_btn_preset[i], 0);
             if (bl) {
-                lv_obj_set_style_text_color(bl, lv_color_hex(sel ? 0xffffff : 0x88aabb), 0);
+                lv_obj_set_style_text_color(bl, lv_color_hex(sel ? 0xffffff : (settings.home_light_mode ? 0x223344 : 0x88aabb)), 0);
             }
         }
     }
@@ -3008,6 +3125,13 @@ static void home_show_page(int n) {
         if (news_box) lv_obj_add_flag(news_box, LV_OBJ_FLAG_HIDDEN);
         if (news_ticker) lv_obj_add_flag(news_ticker, LV_OBJ_FLAG_HIDDEN);
     }
+    if (tile_rain) {
+        const layout_tile_t * Lr = settings.custom_layout_enabled ? layout_find(LT_RAINFALL) : NULL;
+        if (Lr && Lr->page == 0) {
+            if (n == 0 && Lr->visible) lv_obj_clear_flag(tile_rain, LV_OBJ_FLAG_HIDDEN);
+            else lv_obj_add_flag(tile_rain, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
     home_set_dot(n);
 }
 static void on_page1_slot(lv_event_t * e) {
@@ -3815,29 +3939,30 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_align_to(tile_img_drop, tile_img_faucet, LV_ALIGN_OUT_RIGHT_MID, 6, 0);
     lv_obj_add_flag(tile_img_drop, LV_OBJ_FLAG_HIDDEN);
 
-    /* Setpoint row: [-] setpoint [+] */
+    /* Setpoint row: [-] setpoint [+] (compacted per user feedback to make room for preset buttons) */
+    int sp_row_h = th_is_compact ? 38 : (DISP_VER < 600 ? 44 : 50);
     lv_obj_t * sp_row = lv_obj_create(th);
-    lv_obj_set_size(sp_row, LV_PCT(100), (th_is_compact ? 44 : (DISP_VER < 600 ? 64 : 78)));
-    lv_obj_align(sp_row, LV_ALIGN_BOTTOM_MID, 0, (th_is_compact ? -2 : (DISP_VER < 600 ? -2 : -6)));
+    lv_obj_set_size(sp_row, LV_PCT(100), sp_row_h);
+    lv_obj_align(sp_row, LV_ALIGN_BOTTOM_MID, 0, -4);
     lv_obj_set_style_bg_opa(sp_row, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(sp_row, 0, 0);
     lv_obj_set_style_pad_all(sp_row, 0, 0);
     lv_obj_clear_flag(sp_row, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_clear_flag(sp_row, LV_OBJ_FLAG_CLICKABLE);
 
-    int btn_sz_w = th_is_compact ? 48 : (DISP_VER < 600 ? 64 : 78);
-    int btn_sz_h = th_is_compact ? 40 : (DISP_VER < 600 ? 58 : 70);
+    int btn_sz_w = th_is_compact ? 42 : (DISP_VER < 600 ? 48 : 52);
+    int btn_sz_h = th_is_compact ? 34 : (DISP_VER < 600 ? 38 : 44);
 
     lv_obj_t * btn_dn = lv_btn_create(sp_row);
     lv_obj_set_size(btn_dn, btn_sz_w, btn_sz_h);
     lv_obj_align(btn_dn, LV_ALIGN_LEFT_MID, 4, 0);
     lv_obj_set_style_bg_color(btn_dn, lv_color_hex(COL_TILE_ACCENT), 0);
-    lv_obj_set_style_radius(btn_dn, th_is_compact ? 8 : 12, 0);
-    lv_obj_set_ext_click_area(btn_dn, 12);
+    lv_obj_set_style_radius(btn_dn, th_is_compact ? 8 : 10, 0);
+    lv_obj_set_ext_click_area(btn_dn, 8);
     lv_obj_add_event_cb(btn_dn, on_tile_sp_down, LV_EVENT_CLICKED, NULL);
     lv_obj_t * btn_dn_lbl = lv_label_create(btn_dn);
     lv_label_set_text(btn_dn_lbl, "-");
-    lv_obj_set_style_text_font(btn_dn_lbl, th_is_compact ? SF(28) : (DISP_VER < 600 ? SF(36) : SF(48)), 0);
+    lv_obj_set_style_text_font(btn_dn_lbl, th_is_compact ? SF(22) : (DISP_VER < 600 ? SF(26) : SF(30)), 0);
     lv_obj_set_style_text_color(btn_dn_lbl, lv_color_hex(settings.home_light_mode ? 0x1e2838 : 0xffffff), 0);
     lv_obj_center(btn_dn_lbl);
 
@@ -3845,7 +3970,7 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_text_color(lbl_t_setpoint, lv_color_hex(COL_TEXT_HI), 0);
     const lv_font_t * font_sp;
     if (th_w >= 450 || th_h >= 280) {
-        font_sp = SF(48);
+        font_sp = SF(36);
     } else if (th_w >= 360 || th_h >= 240) {
         font_sp = SF(28);
     } else {
@@ -3859,12 +3984,12 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_size(btn_up, btn_sz_w, btn_sz_h);
     lv_obj_align(btn_up, LV_ALIGN_RIGHT_MID, -4, 0);
     lv_obj_set_style_bg_color(btn_up, lv_color_hex(COL_TILE_ACCENT), 0);
-    lv_obj_set_style_radius(btn_up, th_is_compact ? 8 : 12, 0);
-    lv_obj_set_ext_click_area(btn_up, 12);
+    lv_obj_set_style_radius(btn_up, th_is_compact ? 8 : 10, 0);
+    lv_obj_set_ext_click_area(btn_up, 8);
     lv_obj_add_event_cb(btn_up, on_tile_sp_up, LV_EVENT_CLICKED, NULL);
     lv_obj_t * btn_up_lbl = lv_label_create(btn_up);
     lv_label_set_text(btn_up_lbl, "+");
-    lv_obj_set_style_text_font(btn_up_lbl, th_is_compact ? SF(28) : (DISP_VER < 600 ? SF(36) : SF(48)), 0);
+    lv_obj_set_style_text_font(btn_up_lbl, th_is_compact ? SF(22) : (DISP_VER < 600 ? SF(26) : SF(30)), 0);
     lv_obj_set_style_text_color(btn_up_lbl, lv_color_hex(settings.home_light_mode ? 0x1e2838 : 0xffffff), 0);
     lv_obj_center(btn_up_lbl);
 
@@ -3904,10 +4029,52 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_center(pressure_banner_lbl);
     lv_obj_add_flag(pressure_banner_lbl, LV_OBJ_FLAG_EVENT_BUBBLE);
 
+    /* 4 preset buttons (Comfort, Thuis, Slapen, Weg / C, T, S, W per CR3) */
+    int p_btn_h = th_is_compact ? 26 : 30;
+    int p_row_h = p_btn_h + 2;
+    lv_obj_t * p_row = lv_obj_create(th);
+    lv_obj_set_size(p_row, LV_PCT(100), p_row_h);
+    lv_obj_set_style_bg_opa(p_row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(p_row, 0, 0);
+    lv_obj_set_style_pad_all(p_row, 0, 0);
+    lv_obj_clear_flag(p_row, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_align_to(p_row, sp_row, LV_ALIGN_OUT_TOP_MID, 0, -8);
+
+    int use_short = (th_w < 310);
+    int p_gap = 4;
+    int p_btn_w = (th_w - (th_is_compact ? 12 : 20) - (3 * p_gap)) / 4;
+    if (p_btn_w < 24) p_btn_w = 24;
+
+    const char * full_names[4] = {
+        tr("Comfort", "Comfort"),
+        tr("Thuis", "Home"),
+        tr("Slapen", "Sleep"),
+        tr("Weg", "Away")
+    };
+    const char * short_names[4] = { "C", "T", "S", "W" };
+
+    for (int i = 0; i < 4; i++) {
+        tile_btn_preset[i] = lv_btn_create(p_row);
+        lv_obj_set_size(tile_btn_preset[i], p_btn_w, p_btn_h);
+        lv_obj_align(tile_btn_preset[i], LV_ALIGN_LEFT_MID, i * (p_btn_w + p_gap), 0);
+        lv_obj_set_style_radius(tile_btn_preset[i], 6, 0);
+        lv_obj_set_style_border_width(tile_btn_preset[i], 0, 0);
+        lv_obj_set_style_border_color(tile_btn_preset[i], lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_bg_color(tile_btn_preset[i], lv_color_hex(0x243242), 0);
+        lv_obj_set_ext_click_area(tile_btn_preset[i], 4);
+        lv_obj_add_event_cb(tile_btn_preset[i], on_tile_preset, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+
+        lv_obj_t * pl = lv_label_create(tile_btn_preset[i]);
+        lv_label_set_text(pl, use_short ? short_names[i] : full_names[i]);
+        lv_obj_set_style_text_font(pl, use_short ? SF(16) : SF(13), 0);
+        lv_obj_set_style_text_color(pl, lv_color_hex(0x88aabb), 0);
+        lv_obj_center(pl);
+    }
+
+
     /* Clean up unused legacy tile widgets */
     tile_btn_mode_manual  = NULL;
     tile_btn_mode_program = NULL;
-    for (int i = 0; i < 4; i++) tile_btn_preset[i] = NULL;
     lbl_t_burner = NULL;
     lbl_t_humidity = NULL;
     lbl_t_ppm = NULL;
@@ -4833,6 +5000,140 @@ lv_obj_t * screen_home_create(void) {
         }
     }
 
+    /* --- Buienradar rain forecast tile (LT_RAINFALL) --- */
+    int rtx = SX(20), rty = SY(20), rtw = SX(330), rth = SY(180);
+    int rt_show = 0;
+    const layout_tile_t * Lr = settings.custom_layout_enabled ? layout_find(LT_RAINFALL) : NULL;
+    lv_obj_t * rain_parent = (Lr && Lr->page == 1) ? home_page1 : scr_root;
+    if (Lr && Lr->visible) {
+        layout_cell_px(Lr->col, Lr->row, Lr->w, Lr->h, &rtx, &rty, &rtw, &rth);
+        rtx += 4; rty += 4; rtw -= 8; rth -= 8;
+        rt_show = 1;
+    }
+    tile_rain = lv_obj_create(rain_parent);
+    lv_obj_set_size(tile_rain, rtw, rth);
+    lv_obj_set_pos(tile_rain, rtx, rty);
+    lv_obj_set_style_bg_color(tile_rain, lv_color_hex(COL_TILE_BG), 0);
+    lv_obj_set_style_border_width(tile_rain, 0, 0);
+    lv_obj_set_style_radius(tile_rain, 18, 0);
+    lv_obj_set_style_pad_all(tile_rain, 8, 0);
+    lv_obj_clear_flag(tile_rain, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(tile_rain, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(tile_rain, open_forecast, LV_EVENT_CLICKED, NULL);
+    if (!rt_show) lv_obj_add_flag(tile_rain, LV_OBJ_FLAG_HIDDEN);
+
+    /* Header row: Droplet icon + "Neerslag" title + 3u/24u buttons */
+    lv_obj_t * r_hdr = lv_obj_create(tile_rain);
+    lv_obj_set_size(r_hdr, LV_PCT(100), 30);
+    lv_obj_align(r_hdr, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_set_style_bg_opa(r_hdr, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(r_hdr, 0, 0);
+    lv_obj_set_style_pad_all(r_hdr, 0, 0);
+    lv_obj_clear_flag(r_hdr, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+
+    lv_obj_t * r_icon = lv_img_create(r_hdr);
+    lv_img_set_src(r_icon, &icon_drop);
+    lv_img_set_zoom(r_icon, 160);
+    lv_obj_set_style_img_recolor(r_icon, lv_color_hex(0x5a9bd3), 0);
+    lv_obj_set_style_img_recolor_opa(r_icon, 255, 0);
+    lv_obj_align(r_icon, LV_ALIGN_LEFT_MID, 2, 0);
+
+    rain_lbl_title = lv_label_create(r_hdr);
+    lv_obj_set_style_text_color(rain_lbl_title, lv_color_hex(COL_TEXT_HI), 0);
+    lv_obj_set_style_text_font(rain_lbl_title, SF(16), 0);
+    lv_label_set_text(rain_lbl_title, tr("Neerslag", "Rain"));
+    lv_obj_align_to(rain_lbl_title, r_icon, LV_ALIGN_OUT_RIGHT_MID, 6, 0);
+
+    /* Toggle buttons: 3u and 24u */
+    rain_btn_24h = lv_btn_create(r_hdr);
+    lv_obj_set_size(rain_btn_24h, 44, 24);
+    lv_obj_align(rain_btn_24h, LV_ALIGN_RIGHT_MID, -2, 0);
+    lv_obj_set_style_radius(rain_btn_24h, 6, 0);
+    lv_obj_set_ext_click_area(rain_btn_24h, 6);
+    lv_obj_add_event_cb(rain_btn_24h, on_rain_toggle_24h, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * l24 = lv_label_create(rain_btn_24h);
+    lv_label_set_text(l24, "24u");
+    lv_obj_set_style_text_font(l24, SF(13), 0);
+    lv_obj_center(l24);
+
+    rain_btn_3h = lv_btn_create(r_hdr);
+    lv_obj_set_size(rain_btn_3h, 44, 24);
+    lv_obj_align_to(rain_btn_3h, rain_btn_24h, LV_ALIGN_OUT_LEFT_MID, -6, 0);
+    lv_obj_set_style_radius(rain_btn_3h, 6, 0);
+    lv_obj_set_ext_click_area(rain_btn_3h, 6);
+    lv_obj_add_event_cb(rain_btn_3h, on_rain_toggle_3h, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * l3 = lv_label_create(rain_btn_3h);
+    lv_label_set_text(l3, "3u");
+    lv_obj_set_style_text_font(l3, SF(13), 0);
+    lv_obj_center(l3);
+
+    /* Subtitle (summary text) */
+    rain_lbl_summary = lv_label_create(tile_rain);
+    lv_obj_set_style_text_color(rain_lbl_summary, lv_color_hex(COL_TEXT_DIM), 0);
+    lv_obj_set_style_text_font(rain_lbl_summary, SF(14), 0);
+    lv_label_set_text(rain_lbl_summary, tr("Laden...", "Loading..."));
+    lv_obj_align(rain_lbl_summary, LV_ALIGN_TOP_LEFT, 6, 32);
+
+    /* Chart */
+    rain_chart = lv_chart_create(tile_rain);
+    int label_w = (rtw > 180) ? 38 : 0;
+    int chart_w = rtw - 16 - label_w;
+    int chart_h = rth - 76;
+    lv_obj_set_size(rain_chart, chart_w, chart_h);
+    lv_obj_align(rain_chart, LV_ALIGN_BOTTOM_RIGHT, -4, -20);
+    lv_obj_set_style_bg_color(rain_chart, lv_color_hex(settings.home_light_mode ? 0xeef4fa : 0x141e2a), 0);
+    lv_obj_set_style_border_color(rain_chart, lv_color_hex(settings.home_light_mode ? 0xccdae8 : 0x1e2c3e), 0);
+    lv_obj_set_style_border_width(rain_chart, 1, 0);
+    lv_obj_set_style_radius(rain_chart, 8, 0);
+    lv_obj_set_style_pad_all(rain_chart, 2, 0);
+    lv_obj_clear_flag(rain_chart, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+
+    lv_chart_set_type(rain_chart, LV_CHART_TYPE_BAR);
+    lv_chart_set_range(rain_chart, LV_CHART_AXIS_PRIMARY_Y, 0, 100);
+    lv_chart_set_div_line_count(rain_chart, 4, 0);
+    lv_obj_set_style_line_color(rain_chart, lv_color_hex(settings.home_light_mode ? 0xccddee : 0x223344), LV_PART_MAIN);
+    lv_obj_set_style_line_opa(rain_chart, LV_OPA_50, LV_PART_MAIN);
+    lv_obj_set_style_pad_column(rain_chart, 1, LV_PART_MAIN);
+    lv_obj_set_style_radius(rain_chart, 2, LV_PART_ITEMS);
+
+    rain_ser = lv_chart_add_series(rain_chart, lv_color_hex(0x5a9bd3), LV_CHART_AXIS_PRIMARY_Y);
+
+    static const char * thresh_names[] = {"Zwaar", "Matig", "Licht"};
+    for (int i = 0; i < 3; i++) {
+        if (label_w > 0) {
+            rain_thresh_lbl[i] = lv_label_create(tile_rain);
+            lv_obj_set_style_text_color(rain_thresh_lbl[i], lv_color_hex(COL_TEXT_DIM), 0);
+            lv_obj_set_style_text_font(rain_thresh_lbl[i], SF(11), 0);
+            lv_label_set_text(rain_thresh_lbl[i], thresh_names[i]);
+            int y_off = (chart_h * i) / 3 - 6;
+            lv_obj_align_to(rain_thresh_lbl[i], rain_chart, LV_ALIGN_OUT_LEFT_TOP, -4, y_off);
+        } else {
+            rain_thresh_lbl[i] = NULL;
+        }
+    }
+
+    /* Time markers under chart */
+    for (int i = 0; i < 4; i++) {
+        rain_lbl_times[i] = lv_label_create(tile_rain);
+        lv_obj_set_style_text_color(rain_lbl_times[i], lv_color_hex(COL_TEXT_DIM), 0);
+        lv_obj_set_style_text_font(rain_lbl_times[i], SF(12), 0);
+        lv_label_set_text(rain_lbl_times[i], "");
+        if (i == 0) {
+            lv_obj_align_to(rain_lbl_times[i], rain_chart, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 2);
+        } else if (i == 3) {
+            lv_obj_align_to(rain_lbl_times[i], rain_chart, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, 2);
+        } else {
+            lv_obj_align_to(rain_lbl_times[i], rain_chart, LV_ALIGN_OUT_BOTTOM_LEFT, (chart_w * i) / 3 - 6, 2);
+        }
+    }
+
+    rain_lbl_empty = lv_label_create(tile_rain);
+    lv_obj_set_style_text_color(rain_lbl_empty, lv_color_hex(COL_TEXT_HI), 0);
+    lv_obj_set_style_text_font(rain_lbl_empty, SF(15), 0);
+    lv_label_set_text(rain_lbl_empty, tr("Geen neerslag verwacht", "No rain expected"));
+    lv_obj_align(rain_lbl_empty, LV_ALIGN_CENTER, 0, 15);
+    lv_obj_add_flag(rain_lbl_empty, LV_OBJ_FLAG_HIDDEN);
+
     /* Gear in the very top-right corner of the screen. */
     lv_coord_t gear_sz = 54;
     lv_obj_t * gear = lv_btn_create(scr_root);
@@ -4961,6 +5262,16 @@ void screen_home_destroy(void) {
         lights_handle = NULL;
         lights_handle_img = NULL;
         lights_handle_lbl = NULL;
+        tile_rain = NULL;
+        rain_lbl_title = NULL;
+        rain_lbl_summary = NULL;
+        rain_btn_3h = NULL;
+        rain_btn_24h = NULL;
+        rain_chart = NULL;
+        rain_ser = NULL;
+        rain_lbl_empty = NULL;
+        for (int i = 0; i < 3; i++) rain_thresh_lbl[i] = NULL;
+        for (int i = 0; i < 4; i++) rain_lbl_times[i] = NULL;
         lv_obj_del(s);
     }
 }

@@ -36,6 +36,7 @@ typedef enum {
     LT_SLOT,            /* assignable marketplace-integration slot (uses .slot) */
     LT_SONOS,           /* Sonos controller tile */
     LT_CLOCK,           /* standalone clock and date tile */
+    LT_RAINFALL,        /* Buienradar rain forecast graph */
     LT_COUNT
 } layout_tile_type_t;
 
@@ -74,6 +75,7 @@ typedef enum {
     DB_CLOCK,        /* Time (clock) */
     DB_DATE,         /* Date */
     DB_AGENDA,       /* Agenda / Calendar */
+    DB_RAINFALL,     /* Buienradar 3h rain graph */
     DB_COUNT
 } dim_block_id_t;
 

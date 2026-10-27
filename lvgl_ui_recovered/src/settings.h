@@ -43,6 +43,8 @@ typedef struct {
                                  empty = no password). No spaces. */
     char weather_location[32];   /* Free-text location name shown in the UI
                                     (default "Medemblik"). Cosmetic for now. */
+    char weather_lat[16];        /* Latitude (e.g. "52.01") */
+    char weather_lon[16];        /* Longitude (e.g. "4.55") */
     int  weather_location_id;    /* Buienradar wikiCode for hourly-forecast
                                     fetch — default 6249 ≈ Berkhout (KNMI
                                     station closest to Medemblik). 0 disables

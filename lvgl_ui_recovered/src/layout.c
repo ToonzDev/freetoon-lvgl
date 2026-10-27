@@ -378,6 +378,7 @@ void layout_type_min(int type, int * min_w, int * min_h) {
         case LT_LIGHTS:       w = 2; h = 2; break;
         case LT_SLOT:         w = 2; h = 2; break;
         case LT_SONOS:        w = 2; h = 2; break;
+        case LT_RAINFALL:     w = 3; h = 2; break;
         default:              w = 0; h = 0; break;
     }
     if (min_w) *min_w = w;
@@ -400,6 +401,7 @@ const char * layout_type_name(int type) {
         case LT_LIGHTS:      return "Verlichting";
         case LT_SLOT:        return "Integratie";
         case LT_SONOS:       return "Sonos";
+        case LT_RAINFALL:    return "Neerslag";
         default:             return "?";
     }
 }
@@ -432,6 +434,7 @@ static const dim_block_t DIM_DEFAULTS[DB_COUNT] = {
     [DB_CLOCK]    = { 3, 0, 6, 2, 1 },   /* large time clock */
     [DB_DATE]     = { 3, 2, 6, 1, 1 },   /* date line below clock */
     [DB_AGENDA]   = { 0, 4, 3, 2, 0 },   /* agenda upcoming events (default hidden) */
+    [DB_RAINFALL] = { 0, 6, 4, 2, 0 },   /* buienradar 3h rain graph (default hidden) */
 };
 
 void dim_layout_reset_default(void) {
@@ -495,6 +498,7 @@ const char * dim_block_name(int id) {
         case DB_CLOCK:    return "Klok";
         case DB_DATE:     return "Datum";
         case DB_AGENDA:   return "Agenda";
+        case DB_RAINFALL: return "Neerslag";
     }
     return "?";
 }

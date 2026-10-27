@@ -29,6 +29,8 @@ settings_t settings = {
     .vnc_enabled       = 0,
     .vnc_pass          = "",
     .weather_location    = "De Bilt",
+    .weather_lat         = "",
+    .weather_lon         = "",
     /* GeoNames id understood by forecast.buienradar.nl/2.0/forecast/<id>.
      * 2757783 = De Bilt — central NL national fallback. The KNMI station
      * code 6249 happens to collide with an unrelated mid-east location
@@ -240,6 +242,10 @@ void settings_load(void) {
         else if (strcmp(k, "weather_location")  == 0)
             snprintf(settings.weather_location,
                      sizeof settings.weather_location, "%s", v);
+        else if (strcmp(k, "weather_lat") == 0)
+            snprintf(settings.weather_lat, sizeof settings.weather_lat, "%s", v);
+        else if (strcmp(k, "weather_lon") == 0)
+            snprintf(settings.weather_lon, sizeof settings.weather_lon, "%s", v);
         else if (strcmp(k, "ot_bridge_mode")    == 0) {
             /* Migrate legacy values to the new 3-way naming. */
             const char *m = v;
@@ -600,6 +606,65 @@ autodetect:
         }
     }
 
+    /* Auto-seed Buienradar lat/lon from TSC buienradar userSettings if not yet configured */
+    if (!settings.weather_lat[0] || !settings.weather_lon[0]) {
+        const char * paths[] = {
+            "/mnt/data/tsc/buienradar.userSettings.json",
+            "/mnt/data/tsc/buienradarUsersettings.json",
+            NULL
+        };
+        for (int pi = 0; paths[pi]; pi++) {
+            FILE * bf = fopen(paths[pi], "r");
+            if (bf) {
+                char bbuf[2048];
+                size_t n = fread(bbuf, 1, sizeof(bbuf) - 1, bf);
+                fclose(bf);
+                if (n > 0) {
+                    bbuf[n] = 0;
+                    if (!settings.weather_lat[0]) {
+                        char * p = strstr(bbuf, "\"selectedLatitude\"");
+                        if (p) {
+                            p = strchr(p, ':');
+                            if (p) {
+                                p = strchr(p, '"');
+                                if (p) {
+                                    p++;
+                                    char * q = strchr(p, '"');
+                                    if (q) {
+                                        size_t len = q - p;
+                                        if (len >= sizeof(settings.weather_lat)) len = sizeof(settings.weather_lat) - 1;
+                                        memcpy(settings.weather_lat, p, len);
+                                        settings.weather_lat[len] = 0;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (!settings.weather_lon[0]) {
+                        char * p = strstr(bbuf, "\"selectedLongitude\"");
+                        if (p) {
+                            p = strchr(p, ':');
+                            if (p) {
+                                p = strchr(p, '"');
+                                if (p) {
+                                    p++;
+                                    char * q = strchr(p, '"');
+                                    if (q) {
+                                        size_t len = q - p;
+                                        if (len >= sizeof(settings.weather_lon)) len = sizeof(settings.weather_lon) - 1;
+                                        memcpy(settings.weather_lon, p, len);
+                                        settings.weather_lon[len] = 0;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (settings.weather_lat[0] && settings.weather_lon[0]) break;
+                }
+            }
+        }
+    }
+
     /* First boot: write the cfg now so users have an editable file even
      * before they ever open Settings. Especially important on Toon 1 —
      * if the resistive panel is mis-mapped, the GUI is unreachable and
@@ -634,6 +699,7 @@ static void sanitize_all_strings(void) {
         settings.waste_postcode, settings.waste_housenr, settings.waste_ics_url,
         settings.waste_plugin, settings.waste_icsid, settings.waste_street,
         settings.waste_city, settings.vnc_pass, settings.weather_location,
+        settings.weather_lat, settings.weather_lon,
         settings.ot_bridge_mode, settings.otgw_host, settings.otgw_user,
         settings.otgw_pass, settings.mqtt_host, settings.mqtt_user,
         settings.mqtt_pass, settings.domoticz_host, settings.master_host,
@@ -758,6 +824,8 @@ void settings_save(void) {
     fprintf(f, "vnc_enabled=%d\n",       settings.vnc_enabled);
     fprintf(f, "vnc_pass=%s\n",          settings.vnc_pass);
     fprintf(f, "weather_location=%s\n",    settings.weather_location);
+    fprintf(f, "weather_lat=%s\n",         settings.weather_lat);
+    fprintf(f, "weather_lon=%s\n",         settings.weather_lon);
     fprintf(f, "weather_location_id=%d\n", settings.weather_location_id);
     fprintf(f, "forecast_mode=%d\n",       settings.forecast_mode);
     fprintf(f, "weather_use_feel=%d\n",    settings.weather_use_feel);

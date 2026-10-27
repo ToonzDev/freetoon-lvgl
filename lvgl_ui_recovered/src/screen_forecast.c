@@ -16,6 +16,7 @@
 #include "settings.h"
 #include "theme.h"
 #include "lvgl/src/extra/libs/gif/lv_gif.h"
+#include "buienradar_rain.h"
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -34,6 +35,134 @@ static int radar_loaded = 0;
 static lv_timer_t * refresh_timer = NULL;
 
 static int radar_zoom = 200;
+
+static int fc_view_mode = 0; /* 0 = Radar, 1 = 3h, 2 = 24h */
+static lv_obj_t * btn_view_radar = NULL;
+static lv_obj_t * btn_view_3h = NULL;
+static lv_obj_t * btn_view_24h = NULL;
+static lv_obj_t * fc_rain_cont = NULL;
+static lv_obj_t * fc_rain_chart = NULL;
+static lv_chart_series_t * fc_rain_ser = NULL;
+static lv_obj_t * fc_rain_lbl_status = NULL;
+static lv_obj_t * fc_rain_lbl_empty = NULL;
+static lv_obj_t * fc_thresh_lbl[3] = {0};
+static lv_obj_t * fc_rain_lbl_times[5] = {0};
+
+static void update_forecast_view_mode(void) {
+    if (!scr_root) return;
+    int light = settings.home_light_mode;
+
+    /* Update button styles */
+    lv_obj_t * btns[3] = { btn_view_radar, btn_view_3h, btn_view_24h };
+    for (int i = 0; i < 3; i++) {
+        if (!btns[i]) continue;
+        int active = (fc_view_mode == i);
+        lv_obj_set_style_border_width(btns[i], active ? 2 : 0, 0);
+        lv_obj_set_style_border_color(btns[i], lv_color_hex(light ? 0x224488 : 0xffffff), 0);
+        lv_obj_set_style_bg_color(btns[i], lv_color_hex(active ? (light ? 0x90c0f0 : 0x3a6090) : (light ? 0xccddee : 0x243242)), 0);
+        lv_obj_t * l = lv_obj_get_child(btns[i], 0);
+        if (l) lv_obj_set_style_text_color(l, lv_color_hex(active ? (light ? 0x112233 : 0xffffff) : (light ? 0x445566 : 0x88aabb)), 0);
+    }
+
+    if (fc_view_mode == 0) {
+        if (radar_img) {
+            lv_obj_clear_flag(radar_img, LV_OBJ_FLAG_HIDDEN);
+            lv_gif_t * g = (lv_gif_t *)radar_img;
+            if (g->timer) lv_timer_resume(g->timer);
+        }
+        if (fc_rain_cont) lv_obj_add_flag(fc_rain_cont, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        if (radar_img) {
+            lv_obj_add_flag(radar_img, LV_OBJ_FLAG_HIDDEN);
+            lv_gif_t * g = (lv_gif_t *)radar_img;
+            if (g->timer) lv_timer_pause(g->timer);
+        }
+        if (fc_rain_cont) lv_obj_clear_flag(fc_rain_cont, LV_OBJ_FLAG_HIDDEN);
+
+        buienradar_rain_snapshot_t snap;
+        buienradar_rain_get_snapshot(&snap);
+
+        int has_rain = (fc_view_mode == 1) ? snap.has_rain_3h : snap.has_rain_24h;
+
+        if (fc_rain_lbl_empty) {
+            if (snap.is_valid && !has_rain) {
+                lv_label_set_text(fc_rain_lbl_empty, (fc_view_mode == 2) ?
+                                  tr("Geen neerslag verwacht (24u)", "No rain expected (24h)") :
+                                  tr("Geen neerslag verwacht", "No rain expected"));
+                lv_obj_clear_flag(fc_rain_lbl_empty, LV_OBJ_FLAG_HIDDEN);
+                if (fc_rain_lbl_status) lv_obj_add_flag(fc_rain_lbl_status, LV_OBJ_FLAG_HIDDEN);
+                if (fc_rain_chart) lv_obj_add_flag(fc_rain_chart, LV_OBJ_FLAG_HIDDEN);
+                for (int i = 0; i < 3; i++) {
+                    if (fc_thresh_lbl[i]) lv_obj_add_flag(fc_thresh_lbl[i], LV_OBJ_FLAG_HIDDEN);
+                }
+                for (int i = 0; i < 5; i++) {
+                    if (fc_rain_lbl_times[i]) lv_obj_add_flag(fc_rain_lbl_times[i], LV_OBJ_FLAG_HIDDEN);
+                }
+            } else {
+                lv_obj_add_flag(fc_rain_lbl_empty, LV_OBJ_FLAG_HIDDEN);
+                if (fc_rain_lbl_status) lv_obj_clear_flag(fc_rain_lbl_status, LV_OBJ_FLAG_HIDDEN);
+                if (fc_rain_chart) lv_obj_clear_flag(fc_rain_chart, LV_OBJ_FLAG_HIDDEN);
+                for (int i = 0; i < 3; i++) {
+                    if (fc_thresh_lbl[i]) lv_obj_clear_flag(fc_thresh_lbl[i], LV_OBJ_FLAG_HIDDEN);
+                }
+                for (int i = 0; i < 5; i++) {
+                    if (fc_rain_lbl_times[i]) lv_obj_clear_flag(fc_rain_lbl_times[i], LV_OBJ_FLAG_HIDDEN);
+                }
+            }
+        }
+
+        if (fc_view_mode == 1) {
+            /* 3h view */
+            if (fc_rain_lbl_status) {
+                lv_label_set_text(fc_rain_lbl_status, snap.summary_3h[0] ? snap.summary_3h : tr("Laden...", "Loading..."));
+            }
+            if (fc_rain_chart && fc_rain_ser) {
+                int n = snap.count_3h;
+                if (n <= 0) n = 38;
+                lv_chart_set_point_count(fc_rain_chart, n);
+                for (int i = 0; i < n; i++) {
+                    fc_rain_ser->y_points[i] = (i < snap.count_3h) ? snap.points_3h[i].value : 0;
+                }
+                lv_chart_refresh(fc_rain_chart);
+            }
+            if (snap.count_3h > 0) {
+                int n = snap.count_3h;
+                if (fc_rain_lbl_times[0]) lv_label_set_text(fc_rain_lbl_times[0], tr("Nu", "Now"));
+                if (fc_rain_lbl_times[1]) lv_label_set_text(fc_rain_lbl_times[1], snap.points_3h[n / 4].time_str);
+                if (fc_rain_lbl_times[2]) lv_label_set_text(fc_rain_lbl_times[2], snap.points_3h[n / 2].time_str);
+                if (fc_rain_lbl_times[3]) lv_label_set_text(fc_rain_lbl_times[3], snap.points_3h[3 * n / 4].time_str);
+                if (fc_rain_lbl_times[4]) lv_label_set_text(fc_rain_lbl_times[4], snap.points_3h[n - 1].time_str);
+            }
+        } else {
+            /* 24h view */
+            if (fc_rain_lbl_status) {
+                lv_label_set_text(fc_rain_lbl_status, snap.summary_24h[0] ? snap.summary_24h : tr("Laden...", "Loading..."));
+            }
+            if (fc_rain_chart && fc_rain_ser) {
+                int n = snap.count_24h;
+                if (n <= 0) n = 24;
+                lv_chart_set_point_count(fc_rain_chart, n);
+                for (int i = 0; i < n; i++) {
+                    fc_rain_ser->y_points[i] = (i < snap.count_24h) ? snap.points_24h[i].value : 0;
+                }
+                lv_chart_refresh(fc_rain_chart);
+            }
+            if (snap.count_24h > 0) {
+                if (fc_rain_lbl_times[0]) lv_label_set_text(fc_rain_lbl_times[0], "+0u");
+                if (fc_rain_lbl_times[1]) lv_label_set_text(fc_rain_lbl_times[1], "+6u");
+                if (fc_rain_lbl_times[2]) lv_label_set_text(fc_rain_lbl_times[2], "+12u");
+                if (fc_rain_lbl_times[3]) lv_label_set_text(fc_rain_lbl_times[3], "+18u");
+                if (fc_rain_lbl_times[4]) lv_label_set_text(fc_rain_lbl_times[4], "+24u");
+            }
+        }
+    }
+}
+
+static void on_view_btn_click(lv_event_t * e) {
+    int mode = (int)(intptr_t)lv_event_get_user_data(e);
+    fc_view_mode = mode;
+    update_forecast_view_mode();
+}
 
 static void on_back(lv_event_t * e) {
     (void)e;
@@ -54,9 +183,12 @@ static void refresh_cb(lv_timer_t * t) {
         }
         return;
     }
-    if (radar_img) {
+    if (radar_img && fc_view_mode == 0) {
         lv_gif_t * g = (lv_gif_t *)radar_img;
         if (g->timer) lv_timer_resume(g->timer);
+    }
+    if (fc_view_mode != 0) {
+        update_forecast_view_mode();
     }
     weather_state_t wx;
     weather_get_snapshot(&wx);
@@ -149,6 +281,16 @@ lv_obj_t * screen_forecast_create(void) {
         scr_root = NULL;
         radar_img = NULL;
         radar_loaded = 0;
+        btn_view_radar = NULL;
+        btn_view_3h = NULL;
+        btn_view_24h = NULL;
+        fc_rain_cont = NULL;
+        fc_rain_chart = NULL;
+        fc_rain_ser = NULL;
+        fc_rain_lbl_status = NULL;
+        fc_rain_lbl_empty = NULL;
+        for (int i = 0; i < 3; i++) fc_thresh_lbl[i] = NULL;
+        for (int i = 0; i < 5; i++) fc_rain_lbl_times[i] = NULL;
     }
     scr_light_mode = settings.home_light_mode;
 
@@ -202,6 +344,124 @@ lv_obj_t * screen_forecast_create(void) {
     radar_zoom = (DISP_VER < 600) ? 160 : 202;
     lv_img_set_zoom(radar_img, radar_zoom);
     lv_obj_center(radar_img);
+
+    /* Expanded Rain Forecast container (3h / 24h charts) inside radar_frame */
+    fc_rain_cont = lv_obj_create(radar_frame);
+    lv_obj_set_size(fc_rain_cont, rf_sz, rf_sz);
+    lv_obj_set_pos(fc_rain_cont, 0, 0);
+    lv_obj_set_style_bg_color(fc_rain_cont, lv_color_hex(THEME_CARD_BG), 0);
+    lv_obj_set_style_border_width(fc_rain_cont, 0, 0);
+    lv_obj_set_style_pad_all(fc_rain_cont, 8, 0);
+    lv_obj_clear_flag(fc_rain_cont, LV_OBJ_FLAG_SCROLLABLE);
+    if (fc_view_mode == 0) lv_obj_add_flag(fc_rain_cont, LV_OBJ_FLAG_HIDDEN);
+
+    fc_rain_lbl_status = lv_label_create(fc_rain_cont);
+    lv_obj_set_style_text_color(fc_rain_lbl_status, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(fc_rain_lbl_status, SF(15), 0);
+    lv_label_set_text(fc_rain_lbl_status, tr("Laden...", "Loading..."));
+    lv_obj_align(fc_rain_lbl_status, LV_ALIGN_TOP_LEFT, 6, 42);
+
+    fc_rain_chart = lv_chart_create(fc_rain_cont);
+    int label_w = 42;
+    int chart_w = rf_sz - 16 - label_w;
+    int chart_h = rf_sz - 100;
+    lv_obj_set_size(fc_rain_chart, chart_w, chart_h);
+    lv_obj_align(fc_rain_chart, LV_ALIGN_BOTTOM_RIGHT, -4, -26);
+    lv_obj_set_style_bg_color(fc_rain_chart, lv_color_hex(settings.home_light_mode ? 0xeef4fa : 0x141e2a), 0);
+    lv_obj_set_style_border_color(fc_rain_chart, lv_color_hex(settings.home_light_mode ? 0xccdae8 : 0x1e2c3e), 0);
+    lv_obj_set_style_border_width(fc_rain_chart, 1, 0);
+    lv_obj_set_style_radius(fc_rain_chart, 8, 0);
+    lv_obj_set_style_pad_all(fc_rain_chart, 2, 0);
+    lv_obj_clear_flag(fc_rain_chart, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+
+    lv_chart_set_type(fc_rain_chart, LV_CHART_TYPE_BAR);
+    lv_chart_set_range(fc_rain_chart, LV_CHART_AXIS_PRIMARY_Y, 0, 100);
+    lv_chart_set_div_line_count(fc_rain_chart, 4, 0);
+    lv_obj_set_style_line_color(fc_rain_chart, lv_color_hex(settings.home_light_mode ? 0xccddee : 0x223344), LV_PART_MAIN);
+    lv_obj_set_style_line_opa(fc_rain_chart, LV_OPA_50, LV_PART_MAIN);
+    lv_obj_set_style_pad_column(fc_rain_chart, 1, LV_PART_MAIN);
+    lv_obj_set_style_radius(fc_rain_chart, 2, LV_PART_ITEMS);
+
+    fc_rain_ser = lv_chart_add_series(fc_rain_chart, lv_color_hex(0x5a9bd3), LV_CHART_AXIS_PRIMARY_Y);
+
+    static const char * thresh_names[] = {"Zwaar", "Matig", "Licht"};
+    for (int i = 0; i < 3; i++) {
+        fc_thresh_lbl[i] = lv_label_create(fc_rain_cont);
+        lv_obj_set_style_text_color(fc_thresh_lbl[i], lv_color_hex(THEME_TEXT_DIM), 0);
+        lv_obj_set_style_text_font(fc_thresh_lbl[i], SF(11), 0);
+        lv_label_set_text(fc_thresh_lbl[i], thresh_names[i]);
+        int y_off = (chart_h * i) / 3 - 6;
+        lv_obj_align_to(fc_thresh_lbl[i], fc_rain_chart, LV_ALIGN_OUT_LEFT_TOP, -4, y_off);
+    }
+
+    for (int i = 0; i < 5; i++) {
+        fc_rain_lbl_times[i] = lv_label_create(fc_rain_cont);
+        lv_obj_set_style_text_color(fc_rain_lbl_times[i], lv_color_hex(THEME_TEXT_DIM), 0);
+        lv_obj_set_style_text_font(fc_rain_lbl_times[i], SF(12), 0);
+        lv_label_set_text(fc_rain_lbl_times[i], "");
+        if (i == 0) {
+            lv_obj_align_to(fc_rain_lbl_times[i], fc_rain_chart, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 4);
+        } else if (i == 4) {
+            lv_obj_align_to(fc_rain_lbl_times[i], fc_rain_chart, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, 4);
+        } else {
+            lv_obj_align_to(fc_rain_lbl_times[i], fc_rain_chart, LV_ALIGN_OUT_BOTTOM_LEFT, (chart_w * i) / 4 - 8, 4);
+        }
+    }
+
+    fc_rain_lbl_empty = lv_label_create(fc_rain_cont);
+    lv_obj_set_style_text_color(fc_rain_lbl_empty, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(fc_rain_lbl_empty, SF(18), 0);
+    lv_label_set_text(fc_rain_lbl_empty, tr("Geen neerslag verwacht", "No rain expected"));
+    lv_obj_align(fc_rain_lbl_empty, LV_ALIGN_CENTER, 0, 15);
+    lv_obj_add_flag(fc_rain_lbl_empty, LV_OBJ_FLAG_HIDDEN);
+
+    /* Floating selector pill bar at top of radar_frame */
+    lv_obj_t * pill_bar = lv_obj_create(radar_frame);
+    lv_obj_set_size(pill_bar, rf_sz - 16, 34);
+    lv_obj_align(pill_bar, LV_ALIGN_TOP_MID, 0, 6);
+    lv_obj_set_style_bg_color(pill_bar, lv_color_hex(0x101722), 0);
+    lv_obj_set_style_bg_opa(pill_bar, LV_OPA_80, 0);
+    lv_obj_set_style_border_color(pill_bar, lv_color_hex(0x223344), 0);
+    lv_obj_set_style_border_width(pill_bar, 1, 0);
+    lv_obj_set_style_radius(pill_bar, 10, 0);
+    lv_obj_set_style_pad_all(pill_bar, 3, 0);
+    lv_obj_clear_flag(pill_bar, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+
+    int btn_w = (rf_sz - 16 - 18) / 3;
+    btn_view_radar = lv_btn_create(pill_bar);
+    lv_obj_set_size(btn_view_radar, btn_w, 26);
+    lv_obj_align(btn_view_radar, LV_ALIGN_LEFT_MID, 2, 0);
+    lv_obj_set_style_radius(btn_view_radar, 6, 0);
+    lv_obj_set_ext_click_area(btn_view_radar, 6);
+    lv_obj_add_event_cb(btn_view_radar, on_view_btn_click, LV_EVENT_CLICKED, (void *)(intptr_t)0);
+    lv_obj_t * lr = lv_label_create(btn_view_radar);
+    lv_label_set_text(lr, tr("Radar", "Radar"));
+    lv_obj_set_style_text_font(lr, SF(13), 0);
+    lv_obj_center(lr);
+
+    btn_view_3h = lv_btn_create(pill_bar);
+    lv_obj_set_size(btn_view_3h, btn_w, 26);
+    lv_obj_align(btn_view_3h, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_radius(btn_view_3h, 6, 0);
+    lv_obj_set_ext_click_area(btn_view_3h, 6);
+    lv_obj_add_event_cb(btn_view_3h, on_view_btn_click, LV_EVENT_CLICKED, (void *)(intptr_t)1);
+    lv_obj_t * l3 = lv_label_create(btn_view_3h);
+    lv_label_set_text(l3, tr("3 uur", "3 hours"));
+    lv_obj_set_style_text_font(l3, SF(13), 0);
+    lv_obj_center(l3);
+
+    btn_view_24h = lv_btn_create(pill_bar);
+    lv_obj_set_size(btn_view_24h, btn_w, 26);
+    lv_obj_align(btn_view_24h, LV_ALIGN_RIGHT_MID, -2, 0);
+    lv_obj_set_style_radius(btn_view_24h, 6, 0);
+    lv_obj_set_ext_click_area(btn_view_24h, 6);
+    lv_obj_add_event_cb(btn_view_24h, on_view_btn_click, LV_EVENT_CLICKED, (void *)(intptr_t)2);
+    lv_obj_t * l24 = lv_label_create(btn_view_24h);
+    lv_label_set_text(l24, tr("24 uur", "24 hours"));
+    lv_obj_set_style_text_font(l24, SF(13), 0);
+    lv_obj_center(l24);
+
+    update_forecast_view_mode();
 
     /* Right side: title + body text */
     int right_x = rf_x + rf_sz + (DISP_VER < 600 ? 12 : 20);
