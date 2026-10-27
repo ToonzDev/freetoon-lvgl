@@ -68,3 +68,9 @@
     2. **Licht thema: grote waarde = binnentemp**: Hardcode to 1 (`settings.stock_big_indoor = 1`) and remove the row.
     3. **Maanstand op kloktegel**: Obsolete feature on modern clock tile; remove switch and associated row.
 
+### 9. Restore Program State & Setpoint Temperature on Dim Screen Thermostat Block
+- **Status**: Open / High Priority (First task for tomorrow).
+- **Description**:
+  - The program state (e.g. *Comfort*, *Thuis*, *Slapen*, *Weg*) and setpoint temperature (e.g. *"naar 20.0°C"*) on the thermostat tile in dim mode (`DB_THERMO` in `screen_dim_grid.c` / `screen_dim.c`) disappeared.
+  - Audit the commit history where this was previously implemented, identify where `lbl_program` and `lbl_setpoint` were created and aligned relative to `lbl_temp`, and restore them permanently so they do not get lost across layout/dim changes.
+
