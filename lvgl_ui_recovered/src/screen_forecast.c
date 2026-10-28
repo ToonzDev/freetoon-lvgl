@@ -131,7 +131,10 @@ static void update_forecast_view_mode(void) {
                 if (fc_rain_lbl_times[1]) lv_label_set_text(fc_rain_lbl_times[1], snap.points_3h[n / 4].time_str);
                 if (fc_rain_lbl_times[2]) lv_label_set_text(fc_rain_lbl_times[2], snap.points_3h[n / 2].time_str);
                 if (fc_rain_lbl_times[3]) lv_label_set_text(fc_rain_lbl_times[3], snap.points_3h[3 * n / 4].time_str);
-                if (fc_rain_lbl_times[4]) lv_label_set_text(fc_rain_lbl_times[4], snap.points_3h[n - 1].time_str);
+                if (fc_rain_lbl_times[4]) {
+                    lv_label_set_text(fc_rain_lbl_times[4], snap.points_3h[n - 1].time_str);
+                    if (fc_rain_chart) lv_obj_align_to(fc_rain_lbl_times[4], fc_rain_chart, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, 4);
+                }
             }
         } else {
             /* 24h view */
@@ -152,7 +155,10 @@ static void update_forecast_view_mode(void) {
                 if (fc_rain_lbl_times[1]) lv_label_set_text(fc_rain_lbl_times[1], "+6u");
                 if (fc_rain_lbl_times[2]) lv_label_set_text(fc_rain_lbl_times[2], "+12u");
                 if (fc_rain_lbl_times[3]) lv_label_set_text(fc_rain_lbl_times[3], "+18u");
-                if (fc_rain_lbl_times[4]) lv_label_set_text(fc_rain_lbl_times[4], "+24u");
+                if (fc_rain_lbl_times[4]) {
+                    lv_label_set_text(fc_rain_lbl_times[4], "+24u");
+                    if (fc_rain_chart) lv_obj_align_to(fc_rain_lbl_times[4], fc_rain_chart, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, 4);
+                }
             }
         }
     }
@@ -398,7 +404,7 @@ lv_obj_t * screen_forecast_create(void) {
         fc_rain_lbl_times[i] = lv_label_create(fc_rain_cont);
         lv_obj_set_style_text_color(fc_rain_lbl_times[i], lv_color_hex(THEME_TEXT_DIM), 0);
         lv_obj_set_style_text_font(fc_rain_lbl_times[i], SF(12), 0);
-        lv_label_set_text(fc_rain_lbl_times[i], "");
+        lv_label_set_text(fc_rain_lbl_times[i], (i == 4) ? "+24u" : (i == 0) ? "+0u" : "");
         if (i == 0) {
             lv_obj_align_to(fc_rain_lbl_times[i], fc_rain_chart, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 4);
         } else if (i == 4) {
