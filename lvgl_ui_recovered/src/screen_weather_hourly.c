@@ -125,8 +125,6 @@ static void render_active_day(void) {
     localtime_r(&now, &lt);
     int cur_hour = lt.tm_hour;
 
-    lv_obj_t * target_scroll_row = NULL;
-
     /* Column coordinate offsets */
     int col_time_x = SX(16);
     int col_icon_x = SX(120);
