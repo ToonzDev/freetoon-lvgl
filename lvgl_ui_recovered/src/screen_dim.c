@@ -118,7 +118,7 @@ static void dim_vent_apply_anim(int rpm) {
  * the envelope. Neither is CLICKABLE, so a tap on the bar falls through to wake. */
 static void dim_make_bar(int side, lv_obj_t ** env, lv_obj_t ** fill,
                          lv_obj_t ** cap) {
-    int bw = SX(DIM_BAR_W);
+    int bw = DIM_BAR_W;       /* unscaled so both Toon 1 and Toon 2 share full 58px thickness */
     lv_align_t al = (side < 0) ? LV_ALIGN_LEFT_MID : LV_ALIGN_RIGHT_MID;
     int xinset = (side < 0) ? SX(DIM_BAR_INSET) : -SX(DIM_BAR_INSET);
 
@@ -142,7 +142,7 @@ static void dim_make_bar(int side, lv_obj_t ** env, lv_obj_t ** fill,
 
     *cap = lv_label_create(scr_root);
     lv_obj_set_style_text_color(*cap, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(*cap, SF(22), 0);
+    lv_obj_set_style_text_font(*cap, &lv_font_montserrat_22, 0);
     lv_obj_set_style_text_align(*cap, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(*cap, "");
     lv_obj_align_to(*cap, *env,
@@ -165,7 +165,7 @@ static void dim_bar_set(lv_obj_t * env, lv_obj_t * fill, lv_obj_t * cap,
         if (cap) {
             lv_label_set_text(cap, txt);
             lv_obj_set_style_text_color(cap, lv_color_hex(0xffffff), 0);
-            lv_obj_set_style_text_font(cap, SF(22), 0);
+            lv_obj_set_style_text_font(cap, &lv_font_montserrat_22, 0);
             lv_obj_align_to(cap, env,
                 (side < 0) ? LV_ALIGN_OUT_RIGHT_MID : LV_ALIGN_OUT_LEFT_MID,
                 (side < 0) ? SX(6) : -SX(6), 0);
@@ -184,7 +184,7 @@ static void dim_bar_set(lv_obj_t * env, lv_obj_t * fill, lv_obj_t * cap,
     if (cap) {
         lv_label_set_text(cap, txt);
         lv_obj_set_style_text_color(cap, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(cap, SF(22), 0);
+        lv_obj_set_style_text_font(cap, &lv_font_montserrat_22, 0);
         lv_obj_align_to(cap, env,
             (side < 0) ? LV_ALIGN_OUT_BOTTOM_LEFT : LV_ALIGN_OUT_BOTTOM_RIGHT,
             0, SY(14));
@@ -609,7 +609,7 @@ static void refresh_cb(lv_timer_t * t) {
         }
     }
 
-    /* Usage bars: energy now (W, white) + gas trailing-hour (m³, amber), each
+    /* Usage bars: energy now (W, white) + gas daily (m³, white), each
      * on a fixed full-scale. Side honours dim_bars_swap; gated by show_dim_bars.
      * Gas needs the P1; energy follows settings.energy_source (Toon vs HWE). */
     if (bar_l_env) {
@@ -641,11 +641,11 @@ static void refresh_cb(lv_timer_t * t) {
         if (!g_conn) { gr = 0; snprintf(gtxt, sizeof gtxt, "-- m3"); }
         if (!e_conn) { er = 0; snprintf(etxt, sizeof etxt, "-- W"); }
         if (!settings.dim_bars_swap) {             /* default: gas LEFT, energy RIGHT */
-            dim_bar_set(bar_l_env, bar_l_fill, bar_l_cap, -1, show, 0, gr, 0xffaa33, gtxt);
+            dim_bar_set(bar_l_env, bar_l_fill, bar_l_cap, -1, show, 0, gr, 0xffffff, gtxt);
             dim_bar_set(bar_r_env, bar_r_fill, bar_r_cap, +1, show, 0, er, 0xffffff, etxt);
         } else {                                   /* swapped: energy LEFT, gas RIGHT */
             dim_bar_set(bar_l_env, bar_l_fill, bar_l_cap, -1, show, 0, er, 0xffffff, etxt);
-            dim_bar_set(bar_r_env, bar_r_fill, bar_r_cap, +1, show, 0, gr, 0xffaa33, gtxt);
+            dim_bar_set(bar_r_env, bar_r_fill, bar_r_cap, +1, show, 0, gr, 0xffffff, gtxt);
         }
     }
     /* NILM transient device label */

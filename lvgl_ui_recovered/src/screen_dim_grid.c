@@ -1016,7 +1016,7 @@ lv_obj_t * screen_dim_grid_create(void) {
 
     int gbw = 0; lv_obj_t * bx_g = dim_box(DB_GAS, &gbw, NULL);
     en_gas_w = gbw - 8;
-    en_make_bar(bx_g, en_gas_w, 6, 0xffaa33, &en_gas_track, &en_gas_fill, &en_gas_lbl);
+    en_make_bar(bx_g, en_gas_w, 6, 0xffffff, &en_gas_track, &en_gas_fill, &en_gas_lbl);
 
     /* ---- AGENDA: next calendar event(s) — 2-column, height-adaptive, all white text ---- */
     int abw = 0, abh = 0; lv_obj_t * bx_a = dim_box(DB_AGENDA, &abw, &abh);
