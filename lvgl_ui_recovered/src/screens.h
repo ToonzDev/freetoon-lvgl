@@ -89,6 +89,9 @@ void screen_settings_open_tile_slots_modal(void);
 /* Open single-slot assignment modal for a specific tile slot (0..7). */
 void screen_settings_open_tile_slot_single_modal(int slot);
 
+/* Open detail screen or app for an integration ID (or local: ID). Returns 1 if handled. */
+int open_integration_by_id(const char * b);
+
 /* Called once at boot. Loads home as root. */
 void ui_init(void);
 

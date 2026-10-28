@@ -520,7 +520,7 @@ static void on_tile_longpress(lv_event_t * e) {
 
 static void open_family_map(lv_event_t * e);
 
-static int open_integration_by_id(const char * b) {
+int open_integration_by_id(const char * b) {
     if (!b || !b[0]) return 0;
     const integration_meta_t * meta = tile_slots_integration_by_id(b);
     if (!strcmp(b, "local:agenda") || !strcmp(b, "agenda") ||
@@ -529,6 +529,10 @@ static int open_integration_by_id(const char * b) {
         return 1;
     }
     if (!strcmp(b, "local:energy")) {
+        ui_push(screen_stats_create());
+        return 1;
+    }
+    if (!strcmp(b, "local:water")) {
         ui_push(screen_stats_create());
         return 1;
     }
@@ -547,14 +551,16 @@ static int open_integration_by_id(const char * b) {
         return 1;
     }
     if (!strcmp(b, "local:family")) {
-        open_family_map(NULL);
+        life360_map_open();
         return 1;
     }
     if (!strcmp(b, "local:waste")) {
+        screen_waste_show();
         return 1;
     }
     if (!strcmp(b, "local:templogger") || !strcmp(b, "temperaturelogger")) {
-        ui_push(screen_chart_24h_create(tile_slots_integration_by_id("temperaturelogger")));
+        const integration_meta_t * tm = tile_slots_integration_by_id("temperaturelogger");
+        ui_push(screen_chart_24h_create(tm));
         return 1;
     }
     if (meta) {

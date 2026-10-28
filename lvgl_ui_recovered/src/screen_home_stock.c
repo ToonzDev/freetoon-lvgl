@@ -27,7 +27,11 @@
 #include "ventilation.h"
 #include "calendar.h"
 #include "domoticz.h"
+#include "tile_slots.h"
+#include "templogger.h"
+#include "wastecollection.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -62,8 +66,9 @@ enum { LINK_NONE = 0, LINK_STATS, LINK_FORECAST, LINK_HEATER, LINK_VENT, LINK_TR
 typedef enum {
     TT_EMPTY = 0, TT_CLOCK, TT_HUMID, TT_POWER, TT_WATERP, TT_INDOOR,
     TT_CO2, TT_TVOC, TT_WEATHER, TT_BOILIN, TT_BOILOUT, TT_GAS, TT_VENT,
-    TT_AGENDA, TT_TRACKERS, TT_EFAN, TT_SOLAR, TT_COUNT
+    TT_AGENDA, TT_TRACKERS, TT_EFAN, TT_SOLAR, TT_INTEGRATION, TT_COUNT
 } ttype_t;
+#define TT_BUILTIN_COUNT 17
 static const struct { const char * key; const char * nl; const char * en; int link; } TM[TT_COUNT] = {
     { "empty",   "Verwijderen",   "Remove",       LINK_NONE     },
     { "clock",   "Klok",          "Clock",        LINK_NONE     },
@@ -82,12 +87,14 @@ static const struct { const char * key; const char * nl; const char * en; int li
     { "trackers","Trackers",      "Trackers",     LINK_TRACKERS },
     { "efan",    "Ventilator",    "Fan + Lamp",   LINK_EFAN     },
     { "solar",   "Zonnepanelen",  "Solar",        LINK_STATS    },
+    { "integ",   "Integratie",    "Integration",  LINK_NONE     },
 };
 
 typedef struct {
     lv_obj_t * card, * title, * val, * sub, * icon, * banner;
     lv_obj_t * gauge[N_ESEG];
     int type, idx;
+    char key[48];
 } slot_t;
 
 /* ---- module state -------------------------------------------------------- */
@@ -240,8 +247,40 @@ static void render_slot(slot_t * s) {
         lv_obj_align(add, LV_ALIGN_CENTER, 0, SY(28));
         return;
     }
-    if (t != TT_CLOCK) s->title = tile_title(s->card, tr(TM[t].nl, TM[t].en));
+    if (t != TT_CLOCK && t != TT_INTEGRATION) s->title = tile_title(s->card, tr(TM[t].nl, TM[t].en));
     switch (t) {
+    case TT_INTEGRATION: {
+        const char * k = s->key;
+        const integration_meta_t * meta = tile_slots_integration_by_id(k);
+        const char * title_txt = NULL;
+        if (!strcmp(k, "local:templogger") || !strcmp(k, "temperaturelogger")) {
+            title_txt = tr("Temperatuur", "Temperature");
+        } else if (!strcmp(k, "local:waste")) {
+            title_txt = tr("Afval", "Waste");
+        } else if (!strcmp(k, "local:water")) {
+            title_txt = tr("Water (P1)", "Water (P1)");
+        } else if (meta && meta->tile_title[0]) {
+            title_txt = meta->tile_title;
+        } else if (meta && meta->name[0]) {
+            title_txt = meta->name;
+        } else {
+            title_txt = k;
+        }
+        s->title = tile_title(s->card, title_txt);
+
+        s->val = mklabel(s->card, "--", OSR(24), C_TITLE);
+        lv_label_set_long_mode(s->val, LV_LABEL_LONG_WRAP);
+        lv_obj_set_width(s->val, SX(G_COLW - 28));
+        lv_obj_set_style_text_align(s->val, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_align(s->val, LV_ALIGN_CENTER, 0, SY(4));
+
+        s->sub = mklabel(s->card, "", OSR(15), C_SECOND);
+        lv_label_set_long_mode(s->sub, LV_LABEL_LONG_WRAP);
+        lv_obj_set_width(s->sub, SX(G_COLW - 28));
+        lv_obj_set_style_text_align(s->sub, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_align(s->sub, LV_ALIGN_BOTTOM_MID, 0, SY(-14));
+        break;
+    }
     case TT_CLOCK:
         s->val = mklabel(s->card, "--:--", OSL(50), C_TITLE); lv_obj_align(s->val, LV_ALIGN_CENTER, 0, SY(-12));
         s->sub = mklabel(s->card, "", OSR(15), C_TITLE);      lv_obj_align(s->sub, LV_ALIGN_CENTER, 0, SY(34));
@@ -473,6 +512,129 @@ static void refresh_slot(slot_t * s) {
             lv_obj_set_style_img_recolor_opa(s->icon, LV_OPA_COVER, 0);
         }
         break; }
+    case TT_INTEGRATION: {
+        const char * k = s->key;
+        if (!strcmp(k, "local:templogger") || !strcmp(k, "temperaturelogger")) {
+            float r = 0, sp = 0, out = 0;
+            templogger_get_latest(&r, &sp, &out);
+            if (r > 0.0f) {
+                snprintf(b, sizeof b, "%.1f °C", r);
+                comma(b);
+                lv_label_set_text(s->val, b);
+                lv_obj_set_style_text_font(s->val, OSR(28), 0);
+            } else {
+                lv_label_set_text(s->val, "-- °C");
+                lv_obj_set_style_text_font(s->val, OSR(28), 0);
+            }
+            if (out > -50.0f && sp > 0.0f) {
+                snprintf(b, sizeof b, tr("buiten %.1f° | doel %.1f°", "out %.1f° | set %.1f°"), out, sp);
+                comma(b);
+                lv_label_set_text(s->sub, b);
+            } else if (out > -50.0f) {
+                snprintf(b, sizeof b, tr("buiten %.1f°", "out %.1f°"), out);
+                comma(b);
+                lv_label_set_text(s->sub, b);
+            } else {
+                lv_label_set_text(s->sub, "");
+            }
+            break;
+        }
+        if (!strcmp(k, "local:water")) {
+            if ((settings.enable_p1_water || settings.client_mode) && hw_state.connected_water) {
+                snprintf(b, sizeof b, "%.1f L/min", hw_state.water_lpm);
+                comma(b);
+                lv_label_set_text(s->val, b);
+                snprintf(b, sizeof b, "%.2f m3", hw_state.water_total_m3);
+                comma(b);
+                lv_label_set_text(s->sub, b);
+            } else {
+                lv_label_set_text(s->val, "-- L/min");
+                lv_label_set_text(s->sub, "");
+            }
+            break;
+        }
+        if (!strcmp(k, "local:waste")) {
+            waste_pickup_t p1 = {0}, p2 = {0};
+            int n = waste_state.connected ? waste_next_2_pickups(&p1, &p2) : 0;
+            if (n >= 1) {
+                int mo = atoi(p1.date + 5), d = atoi(p1.date + 8);
+                snprintf(b, sizeof b, "%d-%d %s", d, mo, p1.labels);
+                lv_label_set_text(s->val, b);
+                if (n >= 2) {
+                    int mo2 = atoi(p2.date + 5), d2 = atoi(p2.date + 8);
+                    snprintf(b, sizeof b, "%d-%d %s", d2, mo2, p2.labels);
+                    lv_label_set_text(s->sub, b);
+                } else {
+                    lv_label_set_text(s->sub, "");
+                }
+            } else {
+                lv_label_set_text(s->val, waste_state.connected ? tr("Geen afval", "No pickup") : "--");
+                lv_label_set_text(s->sub, "");
+            }
+            break;
+        }
+        const integration_meta_t * meta = tile_slots_integration_by_id(k);
+        if (meta) {
+            const char * v = (const char *)meta->latest_value;
+            const char * sub = (const char *)meta->latest_subtitle;
+            if (v && v[0]) {
+                if (meta->value_unit[0]) snprintf(b, sizeof b, "%s %s", v, meta->value_unit);
+                else                     snprintf(b, sizeof b, "%s", v);
+                lv_label_set_text(s->val, b);
+                size_t vlen = strlen(b);
+                if (vlen > 28)      lv_obj_set_style_text_font(s->val, OSR(15), 0);
+                else if (vlen > 14) lv_obj_set_style_text_font(s->val, OSR(20), 0);
+                else                lv_obj_set_style_text_font(s->val, OSR(26), 0);
+            } else {
+                snprintf(b, sizeof b, "%s...", meta->tile_title[0] ? meta->tile_title : meta->name);
+                lv_label_set_text(s->val, b);
+                lv_obj_set_style_text_font(s->val, OSR(20), 0);
+            }
+            if (sub && sub[0]) {
+                if (meta->subtitle_unit[0]) snprintf(b, sizeof b, "%s %s", sub, meta->subtitle_unit);
+                else                        snprintf(b, sizeof b, "%s", sub);
+                lv_label_set_text(s->sub, b);
+            } else {
+                lv_label_set_text(s->sub, "");
+            }
+        } else {
+            lv_label_set_text(s->val, "--");
+            lv_label_set_text(s->sub, tr("Niet geïnstalleerd", "Not installed"));
+        }
+        break;
+    }
+    }
+}
+
+/* ---- tile availability check --------------------------------------------- */
+static int tile_is_available(int t) {
+    switch (t) {
+        case TT_EMPTY:
+        case TT_CLOCK:
+        case TT_HUMID:
+        case TT_POWER:
+        case TT_WATERP:
+        case TT_INDOOR:
+        case TT_CO2:
+        case TT_TVOC:
+        case TT_WEATHER:
+        case TT_BOILIN:
+        case TT_BOILOUT:
+        case TT_GAS:
+            return 1;
+        case TT_VENT:
+            return settings.enable_vent || (settings.client_mode && vent_state.connected) || vent_state.connected;
+        case TT_AGENDA:
+            return settings.calendar_enabled;
+        case TT_TRACKERS:
+            return (settings.enable_ha || (settings.client_mode && ha_state.connected)) &&
+                   (settings.life360_a_entity[0] || settings.life360_b_entity[0] || settings.life360_c_entity[0] || ha_state.loc_a[0]);
+        case TT_EFAN:
+            return settings.efanlamp_host[0] || efanlamp.connected;
+        case TT_SOLAR:
+            return settings.enable_ha && (settings.ha_solar_entity[0] || ha_state.have_solar);
+        default:
+            return 1;
     }
 }
 
@@ -484,13 +646,17 @@ static void on_tile_press(lv_event_t * e) {
 static void open_picker(int slot);
 static void on_slot_click(lv_event_t * e) {
     int idx = (int)(intptr_t)lv_event_get_user_data(e);
-    int link = TM[slots[idx].type].link;
-    if (link == LINK_NONE && slots[idx].type != TT_EMPTY) return;
     lv_indev_t * in = lv_indev_get_act();      /* a flick that snapped pages is not a tap */
     if (in) { lv_point_t p; lv_indev_get_point(in, &p);
         long dx = p.x - g_press_pt.x, dy = p.y - g_press_pt.y, lim = SX(26);
         if (dx * dx + dy * dy > lim * lim) return; }
     if (slots[idx].type == TT_EMPTY) { open_picker(idx); return; }  /* empty → add a tile */
+    if (slots[idx].type == TT_INTEGRATION) {
+        open_integration_by_id(slots[idx].key);
+        return;
+    }
+    int link = TM[slots[idx].type].link;
+    if (link == LINK_NONE) return;
     switch (link) {
         case LINK_STATS:    ui_push(screen_stats_create());           break;
         case LINK_FORECAST: ui_push(screen_forecast_create());        break;
@@ -504,26 +670,43 @@ static void on_slot_click(lv_event_t * e) {
 
 /* ---- settings persistence ------------------------------------------------ */
 static int key_to_type(const char * k) {
-    for (int t = 0; t < TT_COUNT; t++) if (!strcmp(k, TM[t].key)) return t;
+    for (int t = 0; t < TT_BUILTIN_COUNT; t++) if (!strcmp(k, TM[t].key)) return t;
     return TT_EMPTY;
 }
-static void load_layout(int out[N_SLOTS]) {
+static void load_layout(void) {
     static const int def[N_SLOTS] = {
         TT_CLOCK, TT_HUMID, TT_POWER, TT_WATERP,
         TT_INDOOR, TT_BOILIN, TT_BOILOUT, TT_WATERP,
         TT_WEATHER, TT_CO2, TT_TVOC, TT_VENT,
         TT_EMPTY, TT_AGENDA, TT_EMPTY, TT_EMPTY };
-    for (int i = 0; i < N_SLOTS; i++) out[i] = def[i];
+    for (int i = 0; i < N_SLOTS; i++) {
+        int t = def[i];
+        if (!tile_is_available(t)) t = TT_EMPTY;
+        slots[i].type = t;
+        snprintf(slots[i].key, sizeof slots[i].key, "%s", TM[t].key);
+    }
     if (settings.stock_tiles[0]) {
         char buf[256]; snprintf(buf, sizeof buf, "%s", settings.stock_tiles);
         char * sv = NULL, * tok = strtok_r(buf, ",", &sv); int i = 0;
-        while (tok && i < N_SLOTS) { out[i++] = key_to_type(tok); tok = strtok_r(NULL, ",", &sv); }
+        while (tok && i < N_SLOTS) {
+            int bt = key_to_type(tok);
+            if (bt != TT_EMPTY || !strcmp(tok, "empty")) {
+                slots[i].type = bt;
+                snprintf(slots[i].key, sizeof slots[i].key, "%s", TM[bt].key);
+            } else {
+                slots[i].type = TT_INTEGRATION;
+                snprintf(slots[i].key, sizeof slots[i].key, "%s", tok);
+            }
+            i++;
+            tok = strtok_r(NULL, ",", &sv);
+        }
     }
 }
 static void save_layout(void) {
-    char buf[256] = "";
+    char buf[200] = "";
     for (int i = 0; i < N_SLOTS; i++) {
-        strncat(buf, TM[slots[i].type].key, sizeof buf - strlen(buf) - 1);
+        const char * k = slots[i].key[0] ? slots[i].key : "empty";
+        strncat(buf, k, sizeof buf - strlen(buf) - 1);
         if (i < N_SLOTS - 1) strncat(buf, ",", sizeof buf - strlen(buf) - 1);
     }
     snprintf(settings.stock_tiles, sizeof settings.stock_tiles, "%s", buf);
@@ -541,19 +724,35 @@ static void picker_close(void) {
     g_edit_slot = -1;
 }
 static void on_picker_bg(lv_event_t * e) { (void)e; picker_close(); }
-static void on_picker_pick(lv_event_t * e) {
+
+static void on_picker_pick_builtin(lv_event_t * e) {
     int type = (int)(intptr_t)lv_event_get_user_data(e);
     if (g_edit_slot >= 0 && g_edit_slot < N_SLOTS) {
         slots[g_edit_slot].type = type;
+        snprintf(slots[g_edit_slot].key, sizeof slots[g_edit_slot].key, "%s", TM[type].key);
         render_slot(&slots[g_edit_slot]);
         refresh_slot(&slots[g_edit_slot]);
         save_layout();
     }
     picker_close();
 }
+
+static void on_picker_pick_integ(lv_event_t * e) {
+    const char * id = (const char *)lv_event_get_user_data(e);
+    if (g_edit_slot >= 0 && g_edit_slot < N_SLOTS && id) {
+        slots[g_edit_slot].type = TT_INTEGRATION;
+        snprintf(slots[g_edit_slot].key, sizeof slots[g_edit_slot].key, "%s", id);
+        render_slot(&slots[g_edit_slot]);
+        refresh_slot(&slots[g_edit_slot]);
+        save_layout();
+    }
+    picker_close();
+}
+
 static void open_picker(int slot) {
     if (g_picker) picker_close();
     g_edit_slot = slot;
+    tile_slots_init();
     ui_mark_activity();   /* and keep it awake while open */
     g_picker_keepalive = lv_timer_create(picker_keepalive, 2000, NULL);
     g_picker = lv_obj_create(lv_layer_top());
@@ -566,7 +765,7 @@ static void open_picker(int slot) {
     lv_obj_add_event_cb(g_picker, on_picker_bg, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t * p = lv_obj_create(g_picker);
-    lv_obj_set_size(p, SX(620), SY(470));
+    lv_obj_set_size(p, SX(640), SY(490));
     lv_obj_center(p);
     lv_obj_set_style_bg_color(p, lv_color_hex(C_CARD), 0);
     lv_obj_set_style_radius(p, SX(8), 0);
@@ -575,20 +774,82 @@ static void open_picker(int slot) {
     lv_obj_add_flag(p, LV_OBJ_FLAG_CLICKABLE);   /* swallow bg clicks */
     lv_obj_set_flex_flow(p, LV_FLEX_FLOW_ROW_WRAP);
     lv_obj_set_flex_align(p, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_scroll_dir(p, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(p, LV_SCROLLBAR_MODE_AUTO);
 
     lv_obj_t * ttl = mklabel(p, tr("Kies tegel", "Choose tile"), OSR(20), C_TITLE);
     lv_obj_set_width(ttl, LV_PCT(100));
     lv_obj_set_style_text_align(ttl, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_pad_bottom(ttl, SY(8), 0);
 
-    for (int t = 0; t < TT_COUNT; t++) {
+    /* 1. Standard built-in tiles (filtered by availability) */
+    for (int t = 0; t < TT_BUILTIN_COUNT; t++) {
+        if (!tile_is_available(t)) continue;
         lv_obj_t * b = lv_btn_create(p);
         lv_obj_set_size(b, SX(180), SY(54));
         lv_obj_set_style_bg_color(b, lv_color_hex(C_HEADER), 0);
         lv_obj_set_style_shadow_width(b, 0, 0);
         lv_obj_set_style_radius(b, SX(4), 0);
-        lv_obj_add_event_cb(b, on_picker_pick, LV_EVENT_CLICKED, (void *)(intptr_t)t);
+        lv_obj_add_event_cb(b, on_picker_pick_builtin, LV_EVENT_CLICKED, (void *)(intptr_t)t);
         lv_obj_t * l = mklabel(b, tr(TM[t].nl, TM[t].en), OSR(16), C_TITLE);
+        lv_obj_center(l);
+    }
+
+    /* 2. Marketplace integrations */
+    int n_integ = tile_slots_integration_count();
+    int have_integ_header = 0;
+    for (int i = 0; i < n_integ; i++) {
+        const integration_meta_t * meta = tile_slots_integration_at(i);
+        if (!meta || !meta->id[0]) continue;
+        if (!strcmp(meta->id, "agenda") || !strcmp(meta->id, "ventilation")) continue;
+
+        if (!have_integ_header) {
+            have_integ_header = 1;
+            lv_obj_t * sep = mklabel(p, tr("Integraties", "Integrations"), OSR(18), C_TITLE);
+            lv_obj_set_width(sep, LV_PCT(100));
+            lv_obj_set_style_text_align(sep, LV_TEXT_ALIGN_CENTER, 0);
+            lv_obj_set_style_pad_top(sep, SY(12), 0);
+            lv_obj_set_style_pad_bottom(sep, SY(6), 0);
+        }
+
+        lv_obj_t * b = lv_btn_create(p);
+        lv_obj_set_size(b, SX(180), SY(54));
+        lv_obj_set_style_bg_color(b, lv_color_hex(C_HEADER), 0);
+        lv_obj_set_style_shadow_width(b, 0, 0);
+        lv_obj_set_style_radius(b, SX(4), 0);
+        lv_obj_add_event_cb(b, on_picker_pick_integ, LV_EVENT_CLICKED, (void *)meta->id);
+        const char * lbl_txt = meta->tile_title[0] ? meta->tile_title : meta->name;
+        lv_obj_t * l = mklabel(b, lbl_txt, OSR(16), C_TITLE);
+        lv_obj_center(l);
+    }
+
+    /* 3. Extra local integrations */
+    int n_locals = tile_slots_local_count();
+    for (int i = 0; i < n_locals; i++) {
+        const char * lid = tile_slots_local_id(i);
+        if (!tile_slots_local_enabled(i)) continue;
+        if (!strcmp(lid, "local:energy") || !strcmp(lid, "local:vent") ||
+            !strcmp(lid, "local:family") || !strcmp(lid, "local:air") ||
+            !strcmp(lid, "local:agenda")) continue;
+        if (!strcmp(lid, "local:templogger") && tile_slots_integration_by_id("temperaturelogger"))
+            continue;
+
+        if (!have_integ_header) {
+            have_integ_header = 1;
+            lv_obj_t * sep = mklabel(p, tr("Integraties", "Integrations"), OSR(18), C_TITLE);
+            lv_obj_set_width(sep, LV_PCT(100));
+            lv_obj_set_style_text_align(sep, LV_TEXT_ALIGN_CENTER, 0);
+            lv_obj_set_style_pad_top(sep, SY(12), 0);
+            lv_obj_set_style_pad_bottom(sep, SY(6), 0);
+        }
+
+        lv_obj_t * b = lv_btn_create(p);
+        lv_obj_set_size(b, SX(180), SY(54));
+        lv_obj_set_style_bg_color(b, lv_color_hex(C_HEADER), 0);
+        lv_obj_set_style_shadow_width(b, 0, 0);
+        lv_obj_set_style_radius(b, SX(4), 0);
+        lv_obj_add_event_cb(b, on_picker_pick_integ, LV_EVENT_CLICKED, (void *)lid);
+        lv_obj_t * l = mklabel(b, tile_slots_local_label(i), OSR(16), C_TITLE);
         lv_obj_center(l);
     }
 }
@@ -681,7 +942,7 @@ lv_obj_t * screen_home_stock_create(void) {
     lv_obj_set_scrollbar_mode(tv, LV_SCROLLBAR_MODE_OFF);
     lv_obj_add_event_cb(tv, on_tv_change, LV_EVENT_VALUE_CHANGED, NULL);
 
-    int types[N_SLOTS]; load_layout(types);
+    load_layout();
     for (int p = 0; p < N_PAGES; p++) {
         lv_obj_t * page = lv_tileview_add_tile(tv, p, 0, LV_DIR_HOR);
         lv_obj_set_style_pad_all(page, 0, 0);
@@ -690,7 +951,7 @@ lv_obj_t * screen_home_stock_create(void) {
         for (int q = 0; q < 4; q++) {
             int i = p * 4 + q;
             slot_t * s = &slots[i];
-            s->idx = i; s->type = types[i];
+            s->idx = i;
             s->card = lcard(page, q % 2, q / 2);
             lv_obj_add_flag(s->card, LV_OBJ_FLAG_CLICKABLE);
             lv_obj_add_event_cb(s->card, on_tile_press, LV_EVENT_PRESSED, NULL);
