@@ -276,23 +276,27 @@ static void refresh_cb(lv_timer_t * t) {
     else
         lv_label_set_text(lbl_temp, "...");
     lv_obj_update_layout(lbl_temp);
-    if (dim_img_flame) lv_obj_align_to(dim_img_flame, lbl_temp, LV_ALIGN_OUT_BOTTOM_MID, 0, 4);
-    if (dim_img_faucet) lv_obj_align_to(dim_img_faucet, lbl_temp, LV_ALIGN_OUT_BOTTOM_MID, -10, 4);
-    if (dim_img_drop) lv_obj_align_to(dim_img_drop, dim_img_faucet, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
 
-    /* Setpoint / program / sensor metrics are dropped in dim mode (CR1) */
+    /* Setpoint & program state under room temp */
     if (lbl_setpoint) {
+        const char * prog = program_label();
         if (toon_state.setpoint > 0) {
             if (toon_state.burner_on)
-                lv_label_set_text_fmt(lbl_setpoint, tr("naar %.1f°C", "to %.1f°C"), toon_state.setpoint);
+                lv_label_set_text_fmt(lbl_setpoint, "%s - naar %.1f°C", prog, toon_state.setpoint);
             else
-                lv_label_set_text_fmt(lbl_setpoint, "%.1f°C", toon_state.setpoint);
+                lv_label_set_text_fmt(lbl_setpoint, "%s - %.1f°C", prog, toon_state.setpoint);
         } else {
-            lv_label_set_text(lbl_setpoint, "");
+            lv_label_set_text(lbl_setpoint, prog ? prog : "");
         }
+        lv_obj_update_layout(lbl_setpoint);
+        if (dim_img_flame) lv_obj_align_to(dim_img_flame, lbl_setpoint, LV_ALIGN_OUT_BOTTOM_MID, 0, 4);
+        if (dim_img_faucet) lv_obj_align_to(dim_img_faucet, lbl_setpoint, LV_ALIGN_OUT_BOTTOM_MID, -10, 4);
+        if (dim_img_drop) lv_obj_align_to(dim_img_drop, dim_img_faucet, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
+    } else {
+        if (dim_img_flame) lv_obj_align_to(dim_img_flame, lbl_temp, LV_ALIGN_OUT_BOTTOM_MID, 0, 4);
+        if (dim_img_faucet) lv_obj_align_to(dim_img_faucet, lbl_temp, LV_ALIGN_OUT_BOTTOM_MID, -10, 4);
+        if (dim_img_drop) lv_obj_align_to(dim_img_drop, dim_img_faucet, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
     }
-
-    if (lbl_program) lv_label_set_text(lbl_program, program_label());
 
     if (lbl_metrics) {
         if (!settings.show_dim_metrics) {
@@ -693,6 +697,7 @@ static void refresh_cb(lv_timer_t * t) {
         int has_rain = rsnap.has_rain_3h;
         if (rsnap.is_valid && !has_rain) {
             if (dim_rain_lbl_empty) lv_obj_clear_flag(dim_rain_lbl_empty, LV_OBJ_FLAG_HIDDEN);
+            if (dim_rain_lbl_title) lv_obj_add_flag(dim_rain_lbl_title, LV_OBJ_FLAG_HIDDEN);
             if (dim_rain_lbl_status) lv_obj_add_flag(dim_rain_lbl_status, LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(dim_rain_chart, LV_OBJ_FLAG_HIDDEN);
             for (int i = 0; i < 3; i++) {
@@ -703,6 +708,7 @@ static void refresh_cb(lv_timer_t * t) {
             }
         } else {
             if (dim_rain_lbl_empty) lv_obj_add_flag(dim_rain_lbl_empty, LV_OBJ_FLAG_HIDDEN);
+            if (dim_rain_lbl_title) lv_obj_clear_flag(dim_rain_lbl_title, LV_OBJ_FLAG_HIDDEN);
             if (dim_rain_lbl_status) lv_obj_clear_flag(dim_rain_lbl_status, LV_OBJ_FLAG_HIDDEN);
             lv_obj_clear_flag(dim_rain_chart, LV_OBJ_FLAG_HIDDEN);
             for (int i = 0; i < 3; i++) {
@@ -860,15 +866,21 @@ lv_obj_t * screen_dim_grid_create(void) {
     lv_label_set_long_mode(lbl_waste, LV_LABEL_LONG_WRAP);
     lv_obj_align(lbl_waste, LV_ALIGN_TOP_MID, 0, (DISP_VER < 600) ? 90 : 92);
 
-    /* ---- THERMO: indoor temp (enlarged to 96pt clock font; setpoint/program/metrics dropped per CR1) ---- */
+    /* ---- THERMO: indoor temp + setpoint/program state below ---- */
     int tbw = 0, tbh = 0; lv_obj_t * bx_t = dim_box(DB_THERMO, &tbw, &tbh); (void)tbh;
     lbl_temp = lv_label_create(bx_t);
     lv_obj_set_style_text_color(lbl_temp, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(lbl_temp, SF(96), 0);
     lv_label_set_text(lbl_temp, "--.-°C");
-    lv_obj_align(lbl_temp, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_align(lbl_temp, LV_ALIGN_CENTER, 0, -14);
 
-    lbl_setpoint = NULL;
+    lbl_setpoint = lv_label_create(bx_t);
+    lv_obj_set_style_text_color(lbl_setpoint, lv_color_hex(0xdddddd), 0);
+    lv_obj_set_style_text_font(lbl_setpoint, SF(20), 0);
+    lv_obj_set_style_text_align(lbl_setpoint, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(lbl_setpoint, "");
+    lv_obj_align_to(lbl_setpoint, lbl_temp, LV_ALIGN_OUT_BOTTOM_MID, 0, 4);
+
     lbl_program  = NULL;
     lbl_metrics  = NULL;
     lbl_burner   = NULL;
@@ -1126,7 +1138,7 @@ lv_obj_t * screen_dim_grid_create(void) {
         lv_obj_set_style_text_color(dim_rain_lbl_empty, lv_color_hex(0xffffff), 0);
         lv_obj_set_style_text_font(dim_rain_lbl_empty, SF(16), 0);
         lv_label_set_text(dim_rain_lbl_empty, tr("Geen neerslag verwacht", "No rain expected"));
-        lv_obj_align(dim_rain_lbl_empty, LV_ALIGN_CENTER, 0, 10);
+        lv_obj_align(dim_rain_lbl_empty, LV_ALIGN_CENTER, 0, 0);
         lv_obj_add_flag(dim_rain_lbl_empty, LV_OBJ_FLAG_HIDDEN);
     }
 
