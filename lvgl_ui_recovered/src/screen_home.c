@@ -924,7 +924,10 @@ static void update_rain_tile_ui(void) {
             if (rain_lbl_times[0]) lv_label_set_text(rain_lbl_times[0], tr("Nu", "Now"));
             if (rain_lbl_times[1]) lv_label_set_text(rain_lbl_times[1], snap.points_3h[n / 3].time_str);
             if (rain_lbl_times[2]) lv_label_set_text(rain_lbl_times[2], snap.points_3h[2 * n / 3].time_str);
-            if (rain_lbl_times[3]) lv_label_set_text(rain_lbl_times[3], snap.points_3h[n - 1].time_str);
+            if (rain_lbl_times[3]) {
+                lv_label_set_text(rain_lbl_times[3], snap.points_3h[n - 1].time_str);
+                if (rain_chart) lv_obj_align_to(rain_lbl_times[3], rain_chart, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, 2);
+            }
         }
     } else {
         if (rain_lbl_summary) {
@@ -944,7 +947,10 @@ static void update_rain_tile_ui(void) {
             if (rain_lbl_times[0]) lv_label_set_text(rain_lbl_times[0], "+6u");
             if (rain_lbl_times[1]) lv_label_set_text(rain_lbl_times[1], "+12u");
             if (rain_lbl_times[2]) lv_label_set_text(rain_lbl_times[2], "+18u");
-            if (rain_lbl_times[3]) lv_label_set_text(rain_lbl_times[3], "+24u");
+            if (rain_lbl_times[3]) {
+                lv_label_set_text(rain_lbl_times[3], "+24u");
+                if (rain_chart) lv_obj_align_to(rain_lbl_times[3], rain_chart, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, 2);
+            }
         }
     }
 }
@@ -5029,7 +5035,7 @@ lv_obj_t * screen_home_create(void) {
 
     /* Header row: Droplet icon + "Neerslag" title + 3u/24u buttons */
     lv_obj_t * r_hdr = lv_obj_create(tile_rain);
-    lv_obj_set_size(r_hdr, LV_PCT(100), 30);
+    lv_obj_set_size(r_hdr, LV_PCT(100), 28);
     lv_obj_align(r_hdr, LV_ALIGN_TOP_MID, 0, 0);
     lv_obj_set_style_bg_opa(r_hdr, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(r_hdr, 0, 0);
@@ -5051,7 +5057,7 @@ lv_obj_t * screen_home_create(void) {
 
     /* Toggle buttons: 3u and 24u */
     rain_btn_24h = lv_btn_create(r_hdr);
-    lv_obj_set_size(rain_btn_24h, 44, 24);
+    lv_obj_set_size(rain_btn_24h, 42, 22);
     lv_obj_align(rain_btn_24h, LV_ALIGN_RIGHT_MID, -2, 0);
     lv_obj_set_style_radius(rain_btn_24h, 6, 0);
     lv_obj_set_ext_click_area(rain_btn_24h, 6);
@@ -5062,7 +5068,7 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_center(l24);
 
     rain_btn_3h = lv_btn_create(r_hdr);
-    lv_obj_set_size(rain_btn_3h, 44, 24);
+    lv_obj_set_size(rain_btn_3h, 42, 22);
     lv_obj_align_to(rain_btn_3h, rain_btn_24h, LV_ALIGN_OUT_LEFT_MID, -6, 0);
     lv_obj_set_style_radius(rain_btn_3h, 6, 0);
     lv_obj_set_ext_click_area(rain_btn_3h, 6);
@@ -5086,9 +5092,17 @@ lv_obj_t * screen_home_create(void) {
 
     /* Chart */
     rain_chart = lv_chart_create(tile_rain);
-    int label_w = (rtw > 180) ? 38 : 0;
+    int label_w = (rtw > 180) ? 44 : 0;
     int chart_w = rtw - 16 - label_w;
-    int chart_h = s_rain_compact ? (rth - 54) : (rth - 76);
+    int chart_h;
+    if (s_rain_compact) {
+        chart_h = rth - 84;
+        if (chart_h > 60) chart_h = 60;
+        if (chart_h < 40) chart_h = 40;
+    } else {
+        chart_h = rth - 92;
+        if (chart_h < 50) chart_h = 50;
+    }
     lv_obj_set_size(rain_chart, chart_w, chart_h);
     lv_obj_align(rain_chart, LV_ALIGN_BOTTOM_RIGHT, -4, -20);
     lv_obj_set_style_bg_color(rain_chart, lv_color_hex(settings.home_light_mode ? 0xeef4fa : 0x141e2a), 0);
@@ -5127,7 +5141,7 @@ lv_obj_t * screen_home_create(void) {
         rain_lbl_times[i] = lv_label_create(tile_rain);
         lv_obj_set_style_text_color(rain_lbl_times[i], lv_color_hex(COL_TEXT_DIM), 0);
         lv_obj_set_style_text_font(rain_lbl_times[i], SF(12), 0);
-        lv_label_set_text(rain_lbl_times[i], "");
+        lv_label_set_text(rain_lbl_times[i], (i == 3) ? "+24u" : (i == 0) ? "+0u" : "");
         if (i == 0) {
             lv_obj_align_to(rain_lbl_times[i], rain_chart, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 2);
         } else if (i == 3) {
