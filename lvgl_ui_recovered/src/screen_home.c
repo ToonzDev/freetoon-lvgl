@@ -5043,6 +5043,9 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_text_font(rain_lbl_title, SF(16), 0);
     lv_label_set_text(rain_lbl_title, tr("Neerslag", "Rain"));
     lv_obj_align_to(rain_lbl_title, r_icon, LV_ALIGN_OUT_RIGHT_MID, 6, 0);
+    if (rtw < 280) {
+        lv_obj_add_flag(rain_lbl_title, LV_OBJ_FLAG_HIDDEN);
+    }
 
     /* Toggle buttons: 3u and 24u */
     rain_btn_24h = lv_btn_create(r_hdr);
@@ -5071,6 +5074,8 @@ lv_obj_t * screen_home_create(void) {
     rain_lbl_summary = lv_label_create(tile_rain);
     lv_obj_set_style_text_color(rain_lbl_summary, lv_color_hex(COL_TEXT_DIM), 0);
     lv_obj_set_style_text_font(rain_lbl_summary, SF(14), 0);
+    lv_obj_set_width(rain_lbl_summary, rtw - 16);
+    lv_label_set_long_mode(rain_lbl_summary, LV_LABEL_LONG_DOT);
     lv_label_set_text(rain_lbl_summary, tr("Laden...", "Loading..."));
     lv_obj_align(rain_lbl_summary, LV_ALIGN_TOP_LEFT, 6, 32);
 
