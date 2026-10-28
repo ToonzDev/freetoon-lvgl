@@ -56,8 +56,9 @@ typedef struct {
     lv_obj_t * btn_update_lbl;
     lv_obj_t * btn_action;
     lv_obj_t * btn_action_lbl;
-    volatile int action_status; /* 0=idle, 1=installing, 2=uninstalling, 3=err_install, 4=err_uninstall */
+    volatile int action_status; /* 0=idle, 1=installing, 2=uninstalling, 3=err_install, 4=err_uninstall, 5=restarting */
     int is_installed;
+    int is_updating;
 } integration_t;
 
 #define MAX_INTEGRATIONS 16
@@ -268,6 +269,7 @@ extern void wasm_push_event(const char * topic, const char * payload);
 
 static void * install_thread(void * arg) {
     integration_t * e = (integration_t *)arg;
+    int is_upd = e->is_updating;
 #ifdef WASM_BUILD
     char payload[96];
     snprintf(payload, sizeof payload, "{\"id\":\"%s\"}", e->id);
@@ -279,7 +281,18 @@ static void * install_thread(void * arg) {
     snprintf(cmd, sizeof cmd, "%s %s", INSTALL_HELPER, e->id);
     int rc = system(cmd);
     tile_slots_init();
-    e->action_status = (rc == 0) ? 0 : 3;
+    if (rc == 0) {
+        if (is_upd) {
+            e->action_status = 5;
+            fprintf(stderr, "[marketplace] plugin '%s' updated — restarting UI\n", e->id);
+            usleep(700000); /* 700 ms to display "Herstarten..." badge */
+            ui_request_restart();
+            return NULL;
+        }
+        e->action_status = 0;
+    } else {
+        e->action_status = 3;
+    }
     return NULL;
 #endif
 }
@@ -330,6 +343,7 @@ static void on_action_clicked(lv_event_t * e) {
     integration_t * ent = (integration_t *)lv_event_get_user_data(e);
     if (!ent) return;
     if (ent->action_status != 0) return; /* busy */
+    ent->is_updating = 0;
 
     int is_inst = (tile_slots_integration_by_id(ent->id) != NULL);
     if (is_inst) {
@@ -406,6 +420,7 @@ static void on_update_clicked(lv_event_t * e) {
         return;
     }
 #endif
+    ent->is_updating = 1;
     ent->action_status = 1;
     if (ent->btn_action_lbl) lv_label_set_text(ent->btn_action_lbl, tr("Updaten...", "Updating..."));
     if (ent->btn_action) lv_obj_set_style_bg_color(ent->btn_action, lv_color_hex(COL_BUSY), 0);
@@ -427,6 +442,13 @@ static void on_update_clicked(lv_event_t * e) {
 static void update_row_state(integration_t * ent) {
     if (!ent || !ent->row) return;
 
+    if (ent->action_status == 5) {
+        if (ent->btn_update) lv_obj_add_flag(ent->btn_update, LV_OBJ_FLAG_HIDDEN);
+        if (ent->badge_lbl) lv_label_set_text(ent->badge_lbl, "");
+        if (ent->btn_action_lbl) lv_label_set_text(ent->btn_action_lbl, tr("Herstarten...", "Restarting..."));
+        if (ent->btn_action) lv_obj_set_style_bg_color(ent->btn_action, lv_color_hex(COL_BUSY), 0);
+        return;
+    }
     if (ent->action_status == 1) {
         if (ent->btn_update) lv_obj_add_flag(ent->btn_update, LV_OBJ_FLAG_HIDDEN);
         if (ent->badge_lbl) lv_label_set_text(ent->badge_lbl, "");
