@@ -255,6 +255,7 @@ static lv_obj_t * rain_chart        = NULL;
 static lv_chart_series_t * rain_ser = NULL;
 static lv_obj_t * rain_lbl_times[4] = {0};
 static int rain_mode_24h            = 0;
+static int s_rain_compact           = 0;
 static lv_obj_t * lights_handle     = NULL;
 static lv_obj_t * lights_handle_lbl = NULL;
 static lv_obj_t * lights_handle_img = NULL;   /* backend logo (HA / Domoticz) */
@@ -890,7 +891,10 @@ static void update_rain_tile_ui(void) {
             }
         } else {
             lv_obj_add_flag(rain_lbl_empty, LV_OBJ_FLAG_HIDDEN);
-            if (rain_lbl_summary) lv_obj_clear_flag(rain_lbl_summary, LV_OBJ_FLAG_HIDDEN);
+            if (rain_lbl_summary) {
+                if (s_rain_compact) lv_obj_add_flag(rain_lbl_summary, LV_OBJ_FLAG_HIDDEN);
+                else lv_obj_clear_flag(rain_lbl_summary, LV_OBJ_FLAG_HIDDEN);
+            }
             if (rain_chart) lv_obj_clear_flag(rain_chart, LV_OBJ_FLAG_HIDDEN);
             for (int i = 0; i < 3; i++) {
                 if (rain_thresh_lbl[i]) lv_obj_clear_flag(rain_thresh_lbl[i], LV_OBJ_FLAG_HIDDEN);
@@ -5011,6 +5015,7 @@ lv_obj_t * screen_home_create(void) {
         rt_show = 1;
     }
     tile_rain = lv_obj_create(rain_parent);
+    s_rain_compact = (rth < 160);
     lv_obj_set_size(tile_rain, rtw, rth);
     lv_obj_set_pos(tile_rain, rtx, rty);
     lv_obj_set_style_bg_color(tile_rain, lv_color_hex(COL_TILE_BG), 0);
@@ -5043,9 +5048,6 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_text_font(rain_lbl_title, SF(16), 0);
     lv_label_set_text(rain_lbl_title, tr("Neerslag", "Rain"));
     lv_obj_align_to(rain_lbl_title, r_icon, LV_ALIGN_OUT_RIGHT_MID, 6, 0);
-    if (rtw < 280) {
-        lv_obj_add_flag(rain_lbl_title, LV_OBJ_FLAG_HIDDEN);
-    }
 
     /* Toggle buttons: 3u and 24u */
     rain_btn_24h = lv_btn_create(r_hdr);
@@ -5070,7 +5072,7 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_text_font(l3, SF(13), 0);
     lv_obj_center(l3);
 
-    /* Subtitle (summary text) */
+    /* Subtitle (summary text) - hidden on compact tiles (e.g. 3x2) */
     rain_lbl_summary = lv_label_create(tile_rain);
     lv_obj_set_style_text_color(rain_lbl_summary, lv_color_hex(COL_TEXT_DIM), 0);
     lv_obj_set_style_text_font(rain_lbl_summary, SF(14), 0);
@@ -5078,12 +5080,15 @@ lv_obj_t * screen_home_create(void) {
     lv_label_set_long_mode(rain_lbl_summary, LV_LABEL_LONG_DOT);
     lv_label_set_text(rain_lbl_summary, tr("Laden...", "Loading..."));
     lv_obj_align(rain_lbl_summary, LV_ALIGN_TOP_LEFT, 6, 32);
+    if (s_rain_compact) {
+        lv_obj_add_flag(rain_lbl_summary, LV_OBJ_FLAG_HIDDEN);
+    }
 
     /* Chart */
     rain_chart = lv_chart_create(tile_rain);
     int label_w = (rtw > 180) ? 38 : 0;
     int chart_w = rtw - 16 - label_w;
-    int chart_h = rth - 76;
+    int chart_h = s_rain_compact ? (rth - 54) : (rth - 76);
     lv_obj_set_size(rain_chart, chart_w, chart_h);
     lv_obj_align(rain_chart, LV_ALIGN_BOTTOM_RIGHT, -4, -20);
     lv_obj_set_style_bg_color(rain_chart, lv_color_hex(settings.home_light_mode ? 0xeef4fa : 0x141e2a), 0);
@@ -5277,6 +5282,7 @@ void screen_home_destroy(void) {
         rain_lbl_empty = NULL;
         for (int i = 0; i < 3; i++) rain_thresh_lbl[i] = NULL;
         for (int i = 0; i < 4; i++) rain_lbl_times[i] = NULL;
+        s_rain_compact = 0;
         lv_obj_del(s);
     }
 }
