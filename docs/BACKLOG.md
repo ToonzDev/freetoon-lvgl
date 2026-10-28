@@ -47,11 +47,34 @@
   - Implemented clean centered *"Geen neerslag verwacht"* display when dry, hiding chart and redundant top messages.
   - Added GPS coordinate configuration in Settings → Weer with automatic seeding from `buienradar.userSettings.json` or fallback.
 
+### 7. Hourly Weather Forecast Screen, Clock Hour Labels & Layout Polish (Implemented)
+- **Status**: Completed in Release 0.9.78.
+- **Implemented Features & Fixes**:
+  - **Detailed 24-Hour Weather Forecast Screen (`screen_weather_hourly.c`)**:
+    - Clickable 5-day forecast cards on the weather screen (`screen_forecast.c`) opening an hourly breakdown for any selected day.
+    - Full 24-hour vertical scrollable list with auto-scroll to the current hour on today's view.
+    - Shows hourly time, weather icon, temperature, feel temperature, rain probability & rainfall (mm), Beaufort wind force, and rotated wind direction arrow.
+    - Integrated day switcher buttons (`<` and `>`) sized identically to the close button (`X`) and placed snug around the title block.
+    - High-contrast warm amber temperature text in light mode for excellent legibility.
+  - **24-Hour Rain Chart Clock Labels**:
+    - Replaced relative time labels (`+6u`, `+12u`, etc.) with actual forecast hour numbers (`10`, `16`, `22`, etc.) on both the homescreen rain tile and the big forecast screen.
+  - **Homescreen Rain Tile Proportions & Margins**:
+    - Kept header *"Neerslag"* title next to `[3u]` and `[24u]` toggle buttons.
+    - Dropped summary subtitle line on compact tiles (e.g. 3x2).
+    - Capped graph height to 60px on compact tiles to avoid overlapping the header row.
+    - Increased threshold label margin (44px) so *Zwaar*, *Matig*, and *Licht* sit cleanly inside tile padding without clipping.
+  - **Dim Screen Program State & Setpoint Alignment**:
+    - Horizontally centered the program state and target temperature row on the dim thermostat block (`DB_THERMO`).
+    - Anchored flame/faucet icons below the centered label.
+    - Automatically hide the *"Neerslag"* tile title when no rain is expected, leaving *"Geen neerslag verwacht"* centered.
+  - **Forecast Screen Layout**:
+    - Increased clearance above the rain chart to ensure no collision with the subtitle text.
+
 ---
 
 ## Open / Backlog
 
-### 7. Doorbell Live Snapshot/Feed Investigation ('feed unavailable')
+### 8. Doorbell Live Snapshot/Feed Investigation ('feed unavailable')
 - **Status**: Open / Investigation needed.
 - **Description**:
   - After pressing the physical doorbell, the Toon correctly opens the doorbell popup via WebSocket trigger, but displays *"Doorbell: snapshot unavailable"*.
@@ -60,19 +83,11 @@
   - **HTTP Response Verification**: Check what `/usr/bin/curl` actually downloads from `http://<ha>:8123/api/camera_proxy/camera.doorbell` to `/tmp/doorbell.jpg` (HTTP status code, 401/404/500 JSON vs valid JPEG header `FF D8 FF`).
   - **Stream/Snapshot Wake-up Latency**: Determine if a short delay or wake-up call (or MJPEG stream via go2rtc/RTSP) is needed for battery-powered cameras.
 
-### 8. Settings Cleanup: Remove Redundant Options from 'Scherm'
+### 9. Settings Cleanup: Remove Redundant Options from 'Scherm'
 - **Status**: Open / Cleanup.
 - **Description**:
   - Clean up and streamline `Instellingen -> Scherm` (`screen_settings.c`) by removing obsolete/redundant configuration rows:
     1. **Taal (Language selection)**: Remove toggle; streamline default UI language.
     2. **Licht thema: grote waarde = binnentemp**: Hardcode to 1 (`settings.stock_big_indoor = 1`) and remove the row.
     3. **Maanstand op kloktegel**: Obsolete feature on modern clock tile; remove switch and associated row.
-
-### 9. Restore Program State & Setpoint Temperature on Dim Screen Thermostat Block (Implemented)
-- **Status**: Completed in current build.
-- **Implemented Fixes**:
-  - Restored `lbl_setpoint` inside `DB_THERMO` in `screen_dim_grid.c`, positioned underneath the room temperature (`lbl_temp`).
-  - Displays the active program state (e.g. *Comfort*, *Thuis*, *Slapen*, *Weg*) and setpoint (with *"naar"* prefix when burner actively heating).
-  - Adjusted heating flame / DHW faucet icons to anchor neatly under `lbl_setpoint`.
-  - Added hiding of the block title *"Neerslag"* on the dim screen rain tile when no rain is expected, centering the *"Geen neerslag verwacht"* label in the box.
 
