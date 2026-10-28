@@ -91,14 +91,15 @@
     2. **Licht thema: grote waarde = binnentemp**: Hardcode to 1 (`settings.stock_big_indoor = 1`) and remove the row.
     3. **Maanstand op kloktegel**: Obsolete feature on modern clock tile; remove switch and associated row.
 
-### 10. Sonos Big Screen: Playback Controls (Next/Pause/Prev) & Volume Keys Not Responding
-- **Status**: Open / Investigation & Fix.
-- **Description**:
-  - Op het grote Sonos scherm (`screen_sonos.c`) werken de bedieningstoetsen voor **volgend nummer**, **play/pause**, **vorig nummer** en de **volumetoetsen** niet meer.
-  - Het selecteren en afspelen van een nummer of stream uit een playlist werkt daarentegen nog wel naar behoren.
-- **Investigation Points**:
-  - Controleer de event callbacks en Home Assistant service calls (`media_player/media_play_pause`, `media_player/media_next_track`, `media_player/media_previous_track`, `media_player/volume_set`) in `screen_sonos.c` / `ha.c`.
-  - Controleer of de juiste `entity_id` wordt meegegeven en of de HA WebSocket / REST API response een fout retourneert.
-  - Verifieer de click event flags en touch targets van de betreffende knoppen in de UI structuur.
+### 10. Sonos Big Screen: Playback Controls (Next/Pause/Prev) & Volume Keys (Fixed in v1.0.6)
+- **Status**: Fixed in `freetoon-integrations` (v1.0.6).
+- **Root Cause Identified**:
+  1. **Binary ABI Struct Drift (`settings_t`)**: In commit `4796144` (Buienradar GPS settings), `weather_lat[16]` and `weather_lon[16]` were inserted into `settings_t` in `settings.h`. This shifted all subsequent members by 32 bytes. Because `sonos_ui.toon2.so` was compiled on Oct 25 before this commit, its read of `settings.sonos_enabled` was evaluating an unaligned offset which was `0`.
+  2. **Legacy Guard in Integration**: `send_upnp_cmd()` and `sonos_enqueue_and_play()` guarded all calls with `if (!settings.sonos_enabled || !g_active_ip[0]) return;`. Because `sonos_enabled` evaluated to `0`, all transport (play/pause/next/prev) and volume commands silently aborted, while playlist track enqueueing succeeded because `sonos_play_playlist_track()` only checked `!g_active_ip[0]`.
+- **Implemented Fixes**:
+  - Removed `!settings.sonos_enabled` check from `send_upnp_cmd()` and `sonos_enqueue_and_play()` so the standalone Sonos integration relies solely on active speaker connection (`g_active_ip[0]`).
+  - Added click and command diagnostic logging to `screen_sonos.c` and `sonos.c`.
+  - Recompiled all integration packages against the updated `settings.h` ABI.
+  - Bumped Sonos version to `1.0.6` in `manifest.json` and `catalog/index.json`.
 
 
