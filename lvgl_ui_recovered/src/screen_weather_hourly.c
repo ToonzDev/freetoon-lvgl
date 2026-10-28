@@ -14,15 +14,21 @@
 #include <string.h>
 #include <time.h>
 
+#undef THEME_BG
+#undef THEME_CARD_BG
+#undef THEME_TEXT_HI
+#undef THEME_TEXT_DIM
+#undef THEME_BTN_BG
+
 #define THEME_BG          (settings.home_light_mode ? 0xeef4fa : 0x0f1722)
 #define THEME_CARD_BG     (settings.home_light_mode ? 0xffffff : 0x141f2d)
 #define THEME_CARD_ALT    (settings.home_light_mode ? 0xf2f7fc : 0x192738)
 #define THEME_TEXT_HI     (settings.home_light_mode ? 0x112233 : 0xffffff)
 #define THEME_TEXT_MID    (settings.home_light_mode ? 0x334455 : 0xc0d0e0)
-#define THEME_TEXT_DIM    (settings.home_light_mode ? 0x778899 : 0x7a8c9e)
+#define THEME_TEXT_DIM    (settings.home_light_mode ? 0x667788 : 0x7a8c9e)
 #define THEME_BTN_BG      (settings.home_light_mode ? 0xd0d8e2 : 0x223344)
-#define THEME_ORANGE      0xffa333
-#define THEME_BLUE        0x5a9bd3
+#define THEME_ORANGE      (settings.home_light_mode ? 0xa84200 : 0xffa333)
+#define THEME_BLUE        (settings.home_light_mode ? 0x1d4ed8 : 0x5a9bd3)
 
 static lv_obj_t * scr_root = NULL;
 static lv_obj_t * lbl_day_title = NULL;
@@ -275,40 +281,41 @@ void screen_weather_hourly_show(int day_idx) {
     lv_obj_set_style_text_font(close_lbl, (DISP_VER < 600 ? SF(16) : SF(20)), 0);
     lv_obj_center(close_lbl);
 
-    /* Header navigation bar */
+    /* Header navigation bar — centered with arrow buttons snug around title block */
+    int tw = (DISP_HOR < 1000) ? 380 : 460;
+    int nav_w = tw + 2 * cb_w + SX(24);
     lv_obj_t * nav_bar = lv_obj_create(scr_root);
-    int nav_w = DISP_HOR - cb_w - SX(40);
     lv_obj_set_size(nav_bar, nav_w, SY(54));
-    lv_obj_align(nav_bar, LV_ALIGN_TOP_LEFT, SX(16), SY(4));
+    lv_obj_align(nav_bar, LV_ALIGN_TOP_MID, 0, SY(4));
     lv_obj_set_style_bg_opa(nav_bar, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(nav_bar, 0, 0);
     lv_obj_set_style_pad_all(nav_bar, 0, 0);
     lv_obj_clear_flag(nav_bar, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* Prev Day [<] Button */
+    /* Prev Day [<] Button — same size & style as "X" button */
     btn_prev_day = lv_btn_create(nav_bar);
-    lv_obj_set_size(btn_prev_day, SX(40), SY(34));
-    lv_obj_align(btn_prev_day, LV_ALIGN_LEFT_MID, SX(10), 0);
+    lv_obj_set_size(btn_prev_day, cb_w, cb_h);
+    lv_obj_align(btn_prev_day, LV_ALIGN_LEFT_MID, 0, 0);
     lv_obj_set_style_bg_color(btn_prev_day, lv_color_hex(THEME_BTN_BG), 0);
-    lv_obj_set_style_radius(btn_prev_day, 8, 0);
+    lv_obj_set_style_radius(btn_prev_day, 10, 0);
     lv_obj_add_event_cb(btn_prev_day, on_prev_day, LV_EVENT_CLICKED, NULL);
     lv_obj_t * lp = lv_label_create(btn_prev_day);
     lv_label_set_text(lp, "<");
     lv_obj_set_style_text_color(lp, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(lp, SF(16), 0);
+    lv_obj_set_style_text_font(lp, (DISP_VER < 600 ? SF(16) : SF(20)), 0);
     lv_obj_center(lp);
 
-    /* Next Day [>] Button */
+    /* Next Day [>] Button — same size & style as "X" button */
     btn_next_day = lv_btn_create(nav_bar);
-    lv_obj_set_size(btn_next_day, SX(40), SY(34));
-    lv_obj_align(btn_next_day, LV_ALIGN_RIGHT_MID, SX(-10), 0);
+    lv_obj_set_size(btn_next_day, cb_w, cb_h);
+    lv_obj_align(btn_next_day, LV_ALIGN_RIGHT_MID, 0, 0);
     lv_obj_set_style_bg_color(btn_next_day, lv_color_hex(THEME_BTN_BG), 0);
-    lv_obj_set_style_radius(btn_next_day, 8, 0);
+    lv_obj_set_style_radius(btn_next_day, 10, 0);
     lv_obj_add_event_cb(btn_next_day, on_next_day, LV_EVENT_CLICKED, NULL);
     lv_obj_t * ln = lv_label_create(btn_next_day);
     lv_label_set_text(ln, ">");
     lv_obj_set_style_text_color(ln, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(ln, SF(16), 0);
+    lv_obj_set_style_text_font(ln, (DISP_VER < 600 ? SF(16) : SF(20)), 0);
     lv_obj_center(ln);
 
     /* Day Title & Summary */
