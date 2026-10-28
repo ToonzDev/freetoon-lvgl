@@ -124,6 +124,9 @@ int main(int argc, char** argv) {
     fprintf(stderr, "[main] starting toonui%s\n",
             headless ? " (headless WASM-host)" : "");
 
+    /* Hygiene: clean up stale update directories and PID-stamped cookie files from tmpfs */
+    system("rm -rf /tmp/freetoon.* /var/volatile/tmp/freetoon.* /var/volatile/tmp/.dz_cookies_* 2>/dev/null");
+
     if (!headless)
         init_display_and_input();
 

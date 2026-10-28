@@ -93,8 +93,10 @@ static char g_jar[96];      /* curl cookie-jar file path (per-process) */
 static char g_dmzsid[96];   /* current DMZSID value, "" if none */
 
 static void session_jar_path(void) {
-    if (!g_jar[0])
-        snprintf(g_jar, sizeof g_jar, "/var/volatile/tmp/.dz_cookies_%d", (int)getpid());
+    if (!g_jar[0]) {
+        snprintf(g_jar, sizeof g_jar, "/var/volatile/tmp/.dz_cookies");
+        system("rm -f /var/volatile/tmp/.dz_cookies_* 2>/dev/null");
+    }
 }
 
 /* Percent-encode the base64 reserved chars so the username survives the query

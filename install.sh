@@ -28,6 +28,12 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 DL_DIR="/tmp/freetoon.$$"
 FORCE_DOWNLOAD="${FORCE_DOWNLOAD:-0}"
 
+cleanup() {
+    rm -rf "$DL_DIR" /tmp/freetoon.* /var/volatile/tmp/freetoon.* 2>/dev/null || true
+    rm -rf /tmp/freetoon.* /var/volatile/tmp/freetoon.* 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
 # Detect if running ON the Toon directly (BusyBox, root, /etc/inittab, /mnt/data)
 IS_LOCAL=0
 if [ -f /etc/inittab ] && [ -d /mnt/data ] && { [ -f /etc/opkg/arch.conf ] || [ -d /qmf ]; }; then
@@ -470,7 +476,7 @@ CFG
     remote "killall -9 toonui 2>/dev/null || true; pkill -9 -x toonui 2>/dev/null || true; for _p in \$(pidof toonui 2>/dev/null); do kill -9 \"\$_p\" 2>/dev/null || true; done; pkill -9 -x x11vnc 2>/dev/null; pkill -9 -x qt-gui 2>/dev/null; pkill -9 -f /qmf/sbin/qt-gui 2>/dev/null; pkill -9 -x startqt 2>/dev/null; true"
     remote "kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true"
 
-    rm -rf "$DL_DIR" 2>/dev/null || true
+    rm -rf "$DL_DIR" /tmp/freetoon.* /var/volatile/tmp/freetoon.* 2>/dev/null || true
 
     echo
     echo "Installed successfully! Toon is now running FreeToon."

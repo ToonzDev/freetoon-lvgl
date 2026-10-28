@@ -26,6 +26,10 @@ LOG=/var/volatile/tmp/ui_launcher.log
 RESTART_MARK=/var/volatile/tmp/toonui_restart
 TOONCFG=/mnt/data/toonui.cfg
 
+# Clean up stale update bundles and legacy cookie jars from tmpfs
+rm -rf /tmp/freetoon.* /var/volatile/tmp/freetoon.* 2>/dev/null || true
+rm -f /var/volatile/tmp/.dz_cookies_* /tmp/.dz_cookies_* 2>/dev/null || true
+
 log() { echo "$(date '+%F %T') $*" >> "$LOG"; }
 
 # Read a key from toonui.cfg (key=value, one per line). Echoes the trimmed
