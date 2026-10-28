@@ -688,12 +688,26 @@ static void on_stock_big_indoor_change(lv_event_t * e) {
     settings_save();
 }
 static lv_obj_t * lbl_theme_val = NULL;
+static lv_obj_t * lbl_light_mode_val = NULL;
+static lv_obj_t * sw_light_mode = NULL;
+static void settings_apply_theme(void);
+
 static void on_home_theme_change(lv_event_t * e) {
     int on = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
     settings.home_theme = on ? 1 : 0;
     if (lbl_theme_val)
         lv_label_set_text(lbl_theme_val, on ? tr("Stock", "Stock")
                                             : tr("freetoon", "freetoon"));
+    if (on) {
+        settings.home_light_mode = 1;
+        if (lbl_light_mode_val)
+            lv_label_set_text(lbl_light_mode_val, tr("Aan", "On"));
+        if (sw_light_mode)
+            lv_obj_add_state(sw_light_mode, LV_STATE_CHECKED);
+        settings_apply_theme();
+        ui_refresh_theme();
+        scr_light_mode = -1;
+    }
     settings_save();
     ui_apply_home_theme();   /* live swap — visible next time home is shown */
 }
@@ -780,7 +794,6 @@ static void settings_apply_theme(void) {
     }
 }
 
-static lv_obj_t * lbl_light_mode_val = NULL;
 static void on_home_light_mode_change(lv_event_t * e) {
     int on = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
     settings.home_light_mode = on ? 1 : 0;
@@ -878,7 +891,7 @@ static void open_display_modal(lv_event_t * e) {
                            "Light theme (all screens)"), &lbl_light_mode_val);
     lv_label_set_text(lbl_light_mode_val, settings.home_light_mode == 1
                       ? tr("Aan", "On") : tr("Uit", "Off"));
-    row_switch(r, settings.home_light_mode == 1, on_home_light_mode_change);
+    sw_light_mode = row_switch(r, settings.home_light_mode == 1, on_home_light_mode_change);
     y += 82;
 
     /* VNC remote control (x11vnc server on port 5900) */

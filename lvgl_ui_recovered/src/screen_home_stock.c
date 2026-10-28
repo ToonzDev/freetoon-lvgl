@@ -868,8 +868,10 @@ static void update_dots(void) {
 }
 static void on_tv_change(lv_event_t * e) { (void)e; update_dots(); }
 static void on_arrow(lv_event_t * e) {
-    int idx = active_page() + (int)(intptr_t)lv_event_get_user_data(e);
-    if (idx < 0) idx = 0; if (idx >= N_PAGES) idx = N_PAGES - 1;
+    int delta = (int)(intptr_t)lv_event_get_user_data(e);
+    int idx = active_page() + delta;
+    if (idx < 0) idx = N_PAGES - 1;
+    else if (idx >= N_PAGES) idx = 0;
     lv_obj_set_tile(tv, pages[idx], LV_ANIM_ON);
     update_dots();
 }
