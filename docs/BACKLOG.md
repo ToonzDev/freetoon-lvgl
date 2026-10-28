@@ -91,3 +91,14 @@
     2. **Licht thema: grote waarde = binnentemp**: Hardcode to 1 (`settings.stock_big_indoor = 1`) and remove the row.
     3. **Maanstand op kloktegel**: Obsolete feature on modern clock tile; remove switch and associated row.
 
+### 10. Sonos Big Screen: Playback Controls (Next/Pause/Prev) & Volume Keys Not Responding
+- **Status**: Open / Investigation & Fix.
+- **Description**:
+  - Op het grote Sonos scherm (`screen_sonos.c`) werken de bedieningstoetsen voor **volgend nummer**, **play/pause**, **vorig nummer** en de **volumetoetsen** niet meer.
+  - Het selecteren en afspelen van een nummer of stream uit een playlist werkt daarentegen nog wel naar behoren.
+- **Investigation Points**:
+  - Controleer de event callbacks en Home Assistant service calls (`media_player/media_play_pause`, `media_player/media_next_track`, `media_player/media_previous_track`, `media_player/volume_set`) in `screen_sonos.c` / `ha.c`.
+  - Controleer of de juiste `entity_id` wordt meegegeven en of de HA WebSocket / REST API response een fout retourneert.
+  - Verifieer de click event flags en touch targets van de betreffende knoppen in de UI structuur.
+
+
