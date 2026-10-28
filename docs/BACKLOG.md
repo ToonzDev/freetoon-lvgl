@@ -70,11 +70,32 @@
   - **Forecast Screen Layout**:
     - Increased clearance above the rain chart to ensure no collision with the subtitle text.
 
+### 8. Release 0.9.79: Classic Look Integrations, Dynamic Filtering & Auto Light Theme (Implemented)
+- **Status**: Completed in Release 0.9.79.
+- **Implemented Features**:
+  - **Dynamic Integrations in Classic/Stock Theme (`screen_home_stock.c`)**:
+    - Tile picker modal (`open_picker`) now lists all installed marketplace integrations (Sonos, Temperature Logger, NOS Teletekst, Domoticz, etc.) and enabled extra local tiles (Afval, Water P1).
+    - Integrations render in native stock card style with matching Open Sans typography, dynamic title, live value, and subtitle.
+    - Live values and subtitles update automatically every second from BoxTalk/REST state cache (and directly from `templogger` / `wastecollection`).
+    - Tapping an integration tile opens its full native detail screen (`open_integration_by_id`).
+    - Dynamic layout persistence in `settings.stock_tiles` preserves integration IDs seamlessly.
+  - **Dynamic Tile Filtering**:
+    - `tile_is_available()` dynamically filters the picker so disabled services (Ventilation, Calendar, Trackers, Solar, Fan+Lamp) are hidden.
+    - Default layout slots are sanitized so disabled hardware does not appear as dead tiles.
+  - **Auto Light Theme for Classic Look**:
+    - Switching to Classic Toon look in *Instellingen → Scherm* automatically enables the Light Theme (`settings.home_light_mode = 1`) and live updates the UI and switches.
+  - **Carousel Arrow Wrap-Around**:
+    - Pressing right arrow on page 4 wraps to page 1; pressing left arrow on page 1 wraps to page 4.
+  - **Marketplace Auto-Restart**:
+    - Successfully updating a plugin in the Marketplace automatically triggers `ui_request_restart()` to reload fresh `.so` libraries.
+  - **Tmpfs Hygiene & Cleanup**:
+    - Auto-purge of stale `/tmp/freetoon.*` update folders and consolidated Domoticz cookie jar (`/var/volatile/tmp/.dz_cookies`).
+
 ---
 
 ## Open / Backlog
 
-### 8. Doorbell Live Snapshot/Feed Investigation ('feed unavailable')
+### 9. Doorbell Live Snapshot/Feed Investigation ('feed unavailable')
 - **Status**: Open / Investigation needed.
 - **Description**:
   - After pressing the physical doorbell, the Toon correctly opens the doorbell popup via WebSocket trigger, but displays *"Doorbell: snapshot unavailable"*.
@@ -83,28 +104,12 @@
   - **HTTP Response Verification**: Check what `/usr/bin/curl` actually downloads from `http://<ha>:8123/api/camera_proxy/camera.doorbell` to `/tmp/doorbell.jpg` (HTTP status code, 401/404/500 JSON vs valid JPEG header `FF D8 FF`).
   - **Stream/Snapshot Wake-up Latency**: Determine if a short delay or wake-up call (or MJPEG stream via go2rtc/RTSP) is needed for battery-powered cameras.
 
-### 9. Settings Cleanup: Remove Redundant Options from 'Scherm'
+### 10. Settings Cleanup: Remove Redundant Options from 'Scherm'
 - **Status**: Open / Cleanup.
 - **Description**:
   - Clean up and streamline `Instellingen -> Scherm` (`screen_settings.c`) by removing obsolete/redundant configuration rows:
     1. **Taal (Language selection)**: Remove toggle; streamline default UI language.
     2. **Licht thema: grote waarde = binnentemp**: Hardcode to 1 (`settings.stock_big_indoor = 1`) and remove the row.
     3. **Maanstand op kloktegel**: Obsolete feature on modern clock tile; remove switch and associated row.
-
-### 10. Sonos Big Screen: Playback Controls (Next/Pause/Prev) & Volume Keys (Fixed in v1.0.6)
-- **Status**: Fixed in `freetoon-integrations` (v1.0.6).
-- **Root Cause Identified**:
-  1. **Binary ABI Struct Drift (`settings_t`)**: In commit `4796144` (Buienradar GPS settings), `weather_lat[16]` and `weather_lon[16]` were inserted into `settings_t` in `settings.h`. This shifted all subsequent members by 32 bytes. Because `sonos_ui.toon2.so` was compiled on Oct 25 before this commit, its read of `settings.sonos_enabled` was evaluating an unaligned offset which was `0`.
-  2. **Legacy Guard in Integration**: `send_upnp_cmd()` and `sonos_enqueue_and_play()` guarded all calls with `if (!settings.sonos_enabled || !g_active_ip[0]) return;`. Because `sonos_enabled` evaluated to `0`, all transport (play/pause/next/prev) and volume commands silently aborted, while playlist track enqueueing succeeded because `sonos_play_playlist_track()` only checked `!g_active_ip[0]`.
-- **Implemented Fixes**:
-  - Removed `!settings.sonos_enabled` check from `send_upnp_cmd()` and `sonos_enqueue_and_play()` so the standalone Sonos integration relies solely on active speaker connection (`g_active_ip[0]`).
-  - Added click and command diagnostic logging to `screen_sonos.c` and `sonos.c`.
-  - Recompiled all integration packages against the updated `settings.h` ABI.
-  - Bumped Sonos version to `1.0.6` in `manifest.json` and `catalog/index.json`.
-  - **Marketplace Auto-Restart**: When updating a plugin in Marketplace, `toonui` now automatically restarts via `ui_request_restart()` so new `.so` libraries in RAM are immediately loaded from flash.
-  - **Tmpfs Hygiene & Cleanup**:
-    - Purged stale `freetoon.<pid>` update folders and added exit traps to `install.sh`.
-    - Consolidated Domoticz cookie jar to a single persistent file `/var/volatile/tmp/.dz_cookies` instead of per-process `.dz_cookies_<pid>`.
-    - Auto-cleanup of stale update bundles and legacy cookies on `toonui` and `ui_launcher.sh` boot.
 
 
