@@ -877,9 +877,10 @@ lv_obj_t * screen_dim_grid_create(void) {
     lbl_setpoint = lv_label_create(bx_t);
     lv_obj_set_style_text_color(lbl_setpoint, lv_color_hex(0xdddddd), 0);
     lv_obj_set_style_text_font(lbl_setpoint, SF(20), 0);
+    lv_obj_set_width(lbl_setpoint, (tbw > 0) ? tbw : LV_PCT(100));
     lv_obj_set_style_text_align(lbl_setpoint, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(lbl_setpoint, "");
-    lv_obj_align_to(lbl_setpoint, lbl_temp, LV_ALIGN_OUT_BOTTOM_MID, 0, 4);
+    lv_obj_align(lbl_setpoint, LV_ALIGN_CENTER, 0, (DISP_VER < 600 ? 28 : 34));
 
     lbl_program  = NULL;
     lbl_metrics  = NULL;

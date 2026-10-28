@@ -364,7 +364,7 @@ lv_obj_t * screen_forecast_create(void) {
     fc_rain_chart = lv_chart_create(fc_rain_cont);
     int label_w = 42;
     int chart_w = rf_sz - 16 - label_w;
-    int chart_h = rf_sz - 100;
+    int chart_h = rf_sz - 116;
     lv_obj_set_size(fc_rain_chart, chart_w, chart_h);
     lv_obj_align(fc_rain_chart, LV_ALIGN_BOTTOM_RIGHT, -4, -26);
     lv_obj_set_style_bg_color(fc_rain_chart, lv_color_hex(settings.home_light_mode ? 0xeef4fa : 0x141e2a), 0);
