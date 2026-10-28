@@ -6,17 +6,33 @@
  * slot 0 (which feeds the "Medemblik - 14.7 C now" header above). */
 #define WEATHER_FORECAST_HOURS 6    /* number of 3-hour slots we surface */
 
-/* One day in the 5-day forecast — fields parsed from buienradar JSON's
-   `forecast.fivedayforecast[]`. */
+/* Hourly slot in a day's 24-hour forecast */
+typedef struct {
+    char  label[8];          /* "15:00" */
+    float temperature;       /* °C */
+    float feel_temp;         /* °C */
+    int   rain_chance;       /* % (0..100) */
+    float rain_mm;           /* mm */
+    int   wind_bft;          /* Beaufort */
+    char  wind_dir[6];       /* "ZW" */
+    int   wind_deg;          /* degrees 0..360 */
+    char  icon[8];           /* single-letter icon code */
+} weather_hourly_slot_t;
+
+/* One day in the 5-day forecast */
 typedef struct {
     char  day[16];           /* "ma 13-5" — Dutch short-day + dd-m */
+    char  date_iso[16];      /* "2026-10-28" */
     float min_temp;          /* °C */
     float max_temp;
     int   rain_chance;       /* % */
     int   wind_bft;          /* wind force in Beaufort */
     char  wind_dir[6];       /* "ZW", "NW", "ZZW", etc. */
+    int   wind_deg;          /* dominant direction in degrees */
     char  icon[8];           /* single-letter icon code, e.g. "a", "f" */
     char  desc[64];          /* short Dutch weatherdescription */
+    weather_hourly_slot_t hours[24];
+    int   hour_count;
 } weather_day_t;
 
 /* One slot in the 3-hourly forecast — fields parsed from

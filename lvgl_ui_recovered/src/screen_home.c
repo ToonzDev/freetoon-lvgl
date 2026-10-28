@@ -944,12 +944,24 @@ static void update_rain_tile_ui(void) {
             lv_chart_refresh(rain_chart);
         }
         if (snap.count_24h > 0) {
-            if (rain_lbl_times[0]) lv_label_set_text(rain_lbl_times[0], "+6u");
-            if (rain_lbl_times[1]) lv_label_set_text(rain_lbl_times[1], "+12u");
-            if (rain_lbl_times[2]) lv_label_set_text(rain_lbl_times[2], "+18u");
-            if (rain_lbl_times[3]) {
-                lv_label_set_text(rain_lbl_times[3], "+24u");
-                if (rain_chart) lv_obj_align_to(rain_lbl_times[3], rain_chart, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, 2);
+            int n = snap.count_24h;
+            int idxs[4] = { 0, n / 3, (2 * n) / 3, n - 1 };
+            for (int i = 0; i < 4; i++) {
+                if (!rain_lbl_times[i]) continue;
+                int idx = idxs[i];
+                if (idx < 0) idx = 0;
+                if (idx >= n) idx = n - 1;
+                char hbuf[8] = "";
+                const char * ts = snap.points_24h[idx].time_str;
+                if (ts[0]) {
+                    snprintf(hbuf, sizeof(hbuf), "%.2s", ts);
+                } else {
+                    snprintf(hbuf, sizeof(hbuf), "%02d", (i * 24) / 3);
+                }
+                lv_label_set_text(rain_lbl_times[i], hbuf);
+            }
+            if (rain_chart && rain_lbl_times[3]) {
+                lv_obj_align_to(rain_lbl_times[3], rain_chart, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, 2);
             }
         }
     }
@@ -5141,7 +5153,7 @@ lv_obj_t * screen_home_create(void) {
         rain_lbl_times[i] = lv_label_create(tile_rain);
         lv_obj_set_style_text_color(rain_lbl_times[i], lv_color_hex(COL_TEXT_DIM), 0);
         lv_obj_set_style_text_font(rain_lbl_times[i], SF(12), 0);
-        lv_label_set_text(rain_lbl_times[i], (i == 3) ? "+24u" : (i == 0) ? "+0u" : "");
+        lv_label_set_text(rain_lbl_times[i], (i == 3) ? "24" : (i == 0) ? "00" : "");
         if (i == 0) {
             lv_obj_align_to(rain_lbl_times[i], rain_chart, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 2);
         } else if (i == 3) {

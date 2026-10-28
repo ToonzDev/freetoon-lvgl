@@ -250,11 +250,13 @@ static int parse_openmeteo(const char * body) {
         weather_day_t * D = &weather_state.days[dc];
         memset(D, 0, sizeof *D);
         format_day_label(iso, D->day, sizeof D->day);
+        strncpy(D->date_iso, iso, sizeof(D->date_iso) - 1);
         D->min_temp    = (float)js_arr_num(dy, "temperature_2m_min", i, 0);
         D->max_temp    = (float)js_arr_num(dy, "temperature_2m_max", i, 0);
         D->rain_chance = (int)js_arr_num(dy, "precipitation_probability_max", i, 0);
         D->wind_bft    = kmh_to_bft(js_arr_num(dy, "wind_speed_10m_max", i, 0));
-        deg_to_nl(js_arr_num(dy, "wind_direction_10m_dominant", i, 0), D->wind_dir, sizeof D->wind_dir);
+        D->wind_deg    = (int)js_arr_num(dy, "wind_direction_10m_dominant", i, 0);
+        deg_to_nl(D->wind_deg, D->wind_dir, sizeof D->wind_dir);
         int code = (int)js_arr_num(dy, "weather_code", i, 3);
         wmo_icon(code, 1, D->icon);
         snprintf(D->desc, sizeof D->desc, "%s", wmo_desc(code));
@@ -262,11 +264,37 @@ static int parse_openmeteo(const char * body) {
     }
     weather_state.day_count = dc;
 
-    /* hourly: 6 slots, 3-hour steps from the current local hour. Open-Meteo's
-       hourly[] starts at 00:00 today (timezone set), 1-hour steps → index=hour. */
+    /* hourly: Open-Meteo's hourly[] starts at 00:00 today (timezone set), 1-hour steps.
+       Populate 24 hours per day for each day in weather_state.days[]. */
     const char * hr = strstr(body, "\"hourly\":");
-    int hc = 0;
     if (hr) {
+        for (int d = 0; d < dc && d < WEATHER_FORECAST_DAYS; d++) {
+            weather_day_t * D = &weather_state.days[d];
+            D->hour_count = 0;
+            for (int h = 0; h < 24; h++) {
+                int idx = d * 24 + h;
+                char iso[24];
+                if (!js_arr_str(hr, "time", idx, iso, sizeof iso)) break;
+                weather_hourly_slot_t * H = &D->hours[h];
+                memset(H, 0, sizeof *H);
+                if (strlen(iso) >= 16) snprintf(H->label, sizeof H->label, "%.5s", iso + 11);
+                else snprintf(H->label, sizeof H->label, "%02d:00", h);
+                H->temperature = (float)js_arr_num(hr, "temperature_2m", idx, 0);
+                H->feel_temp   = (float)js_arr_num(hr, "apparent_temperature", idx, H->temperature);
+                H->rain_chance = (int)js_arr_num(hr, "precipitation_probability", idx, 0);
+                H->rain_mm     = (float)js_arr_num(hr, "precipitation", idx, 0);
+                H->wind_bft    = kmh_to_bft(js_arr_num(hr, "wind_speed_10m", idx, 0));
+                H->wind_deg    = (int)js_arr_num(hr, "wind_direction_10m", idx, 0);
+                deg_to_nl(H->wind_deg, H->wind_dir, sizeof H->wind_dir);
+                int code       = (int)js_arr_num(hr, "weather_code", idx, 3);
+                int is_day     = (h >= 7 && h <= 21);
+                wmo_icon(code, is_day, H->icon);
+                D->hour_count++;
+            }
+        }
+
+        /* Legacy/Home strip: 6 slots, 3-hour steps from the current local hour */
+        int hc = 0;
         time_t now = time(NULL); struct tm lt; localtime_r(&now, &lt);
         for (int s = 0; s < WEATHER_FORECAST_HOURS; s++) {
             int idx = lt.tm_hour + s * 3;
@@ -283,8 +311,8 @@ static int parse_openmeteo(const char * body) {
             wmo_icon((int)js_arr_num(hr, "weather_code", idx, 3), 1, H->icon);
             hc++;
         }
+        weather_state.hour_count = hc;
     }
-    weather_state.hour_count = hc;
     return 0;
 }
 
@@ -297,7 +325,7 @@ static int fetch_openmeteo(void) {
         "&current=temperature_2m,apparent_temperature,weather_code,is_day"
         "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,"
         "wind_speed_10m_max,wind_direction_10m_dominant"
-        "&hourly=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m",
+        "&hourly=temperature_2m,apparent_temperature,precipitation_probability,precipitation,weather_code,wind_speed_10m,wind_direction_10m",
         g_cfg_lat, g_cfg_lon);
     static char body[56 * 1024];
     for (int attempt = 0; attempt < 2; attempt++) {

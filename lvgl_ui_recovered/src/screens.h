@@ -37,6 +37,7 @@ lv_obj_t * screen_settings_create(void);
 lv_obj_t * screen_schedule_create(void);
 lv_obj_t * screen_stats_create(void);
 lv_obj_t * screen_forecast_create(void);
+void screen_weather_hourly_show(int day_idx);
 
 /* Inbox modal popup — opened from the envelope button on home. */
 void screen_inbox_show(void);
