@@ -101,5 +101,10 @@
   - Added click and command diagnostic logging to `screen_sonos.c` and `sonos.c`.
   - Recompiled all integration packages against the updated `settings.h` ABI.
   - Bumped Sonos version to `1.0.6` in `manifest.json` and `catalog/index.json`.
+  - **Marketplace Auto-Restart**: When updating a plugin in Marketplace, `toonui` now automatically restarts via `ui_request_restart()` so new `.so` libraries in RAM are immediately loaded from flash.
+  - **Tmpfs Hygiene & Cleanup**:
+    - Purged stale `freetoon.<pid>` update folders and added exit traps to `install.sh`.
+    - Consolidated Domoticz cookie jar to a single persistent file `/var/volatile/tmp/.dz_cookies` instead of per-process `.dz_cookies_<pid>`.
+    - Auto-cleanup of stale update bundles and legacy cookies on `toonui` and `ui_launcher.sh` boot.
 
 
