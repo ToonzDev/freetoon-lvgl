@@ -91,11 +91,29 @@
   - **Tmpfs Hygiene & Cleanup**:
     - Auto-purge of stale `/tmp/freetoon.*` update folders and consolidated Domoticz cookie jar (`/var/volatile/tmp/.dz_cookies`).
 
+### 9. Release 0.9.80: Vertical Usage Bars, Preset Black Screen & UI Polish (Implemented)
+- **Status**: Completed in Release 0.9.80.
+- **Implemented Features**:
+  - **Vertical Segmented Usage Bars (`dim_bars_vertical`)**:
+    - New toggle switch in *Instellingen → Scherm*: *"Balken: verticaal (klassieke Toon-stijl)"*.
+    - Replaces continuous/horizontal energy and gas bars with 12-segment vertical bars inspired by the classic Toon look (bottom 7 green, top 5 amber/yellow, unlit dark grey).
+    - Fully supported in both standard standby screen (`screen_dim.c`) and custom dim grid (`screen_dim_grid.c`).
+  - **Black Standby Screen on Slapen & Weg Presets**:
+    - Optional setting (*"Zwart scherm bij Slapen/Weg"*) that blanks the dim screen completely when the heating program is in *Slapen* or *Weg* preset, matching stock Eneco GUI behavior.
+    - Automatically wakes up on screen touch or whenever the program state changes.
+  - **Classic Look Home Screen Alignment**:
+    - Shifted carousel `G_X0` to 64 and refined the collapsible Devices/HA handle in `screen_home_stock.c` to prevent any overlap with the left tiles on both Toon 1 and Toon 2.
+  - **Auto-Rotate Modal Layout Fix**:
+    - Resolved collision in *Tegel automatisch wisselen* where the *Toepassen* button overlapped the marketplace notice and checkbox list.
+    - Checkbox list now dynamically sizes and clips neatly within view.
+  - **Z-Wave Rename Keyboard Fix**:
+    - Decoupled the virtual keyboard from the rename card in `screen_zwave.c`, placing the card at the top and the full keyboard at the bottom so the device name input field is never obstructed during typing.
+
 ---
 
 ## Open / Backlog
 
-### 9. Doorbell Live Snapshot/Feed Investigation ('feed unavailable')
+### 10. Doorbell Live Snapshot/Feed Investigation ('feed unavailable')
 - **Status**: Open / Investigation needed.
 - **Description**:
   - After pressing the physical doorbell, the Toon correctly opens the doorbell popup via WebSocket trigger, but displays *"Doorbell: snapshot unavailable"*.
@@ -104,7 +122,7 @@
   - **HTTP Response Verification**: Check what `/usr/bin/curl` actually downloads from `http://<ha>:8123/api/camera_proxy/camera.doorbell` to `/tmp/doorbell.jpg` (HTTP status code, 401/404/500 JSON vs valid JPEG header `FF D8 FF`).
   - **Stream/Snapshot Wake-up Latency**: Determine if a short delay or wake-up call (or MJPEG stream via go2rtc/RTSP) is needed for battery-powered cameras.
 
-### 10. Settings Cleanup: Remove Redundant Options from 'Scherm'
+### 11. Settings Cleanup: Remove Redundant Options from 'Scherm'
 - **Status**: Open / Cleanup.
 - **Description**:
   - Clean up and streamline `Instellingen -> Scherm` (`screen_settings.c`) by removing obsolete/redundant configuration rows:
