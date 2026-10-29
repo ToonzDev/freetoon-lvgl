@@ -165,6 +165,16 @@ static void on_rename_save(lv_event_t * e) {
     g_poll_ticks = 0;
     rename_close();
 }
+
+static void on_rename_kb_event(lv_event_t * e) {
+    lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_READY) {
+        on_rename_save(NULL);
+    } else if (code == LV_EVENT_CANCEL) {
+        rename_close();
+    }
+}
+
 static void on_row_rename(lv_event_t * e) {
     zw_dev_t * d = (zw_dev_t *)lv_event_get_user_data(e);
     snprintf(g_rename_uuid, sizeof g_rename_uuid, "%s", d->uuid);
@@ -176,14 +186,17 @@ static void on_row_rename(lv_event_t * e) {
     lv_obj_set_style_bg_opa(g_rename_modal, LV_OPA_70, 0);
     lv_obj_set_style_border_width(g_rename_modal, 0, 0);
     lv_obj_clear_flag(g_rename_modal, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(g_rename_modal, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(g_rename_modal, on_rename_cancel, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t * card = lv_obj_create(g_rename_modal);
-    lv_obj_set_size(card, SX(640), SY(340));
-    lv_obj_center(card);
+    lv_obj_set_size(card, SX(640), SY(170));
+    lv_obj_align(card, LV_ALIGN_TOP_MID, 0, SY(24));
     lv_obj_set_style_bg_color(card, lv_color_hex(COL_CARD), 0);
     lv_obj_set_style_border_width(card, 0, 0);
     lv_obj_set_style_radius(card, 14, 0);
     lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(card, LV_OBJ_FLAG_CLICKABLE);
 
     lv_obj_t * t = lv_label_create(card);
     lv_obj_set_style_text_color(t, lv_color_hex(COL_TEXT_HI), 0);
@@ -194,29 +207,31 @@ static void on_row_rename(lv_event_t * e) {
     g_rename_ta = lv_textarea_create(card);
     lv_textarea_set_one_line(g_rename_ta, true);
     lv_textarea_set_text(g_rename_ta, d->name);
-    lv_obj_set_width(g_rename_ta, SX(600));
-    lv_obj_align(g_rename_ta, LV_ALIGN_TOP_MID, 0, SY(44));
+    lv_obj_set_size(g_rename_ta, SX(600), SY(46));
+    lv_obj_align(g_rename_ta, LV_ALIGN_TOP_MID, 0, SY(40));
+    lv_obj_set_style_text_font(g_rename_ta, SF(20), 0);
 
-    lv_obj_t * kb = lv_keyboard_create(card);
-    lv_obj_set_size(kb, SX(620), SY(190));
-    lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, SY(-50));
-    lv_keyboard_set_textarea(kb, g_rename_ta);
+    lv_obj_t * cancel = lv_btn_create(card);
+    lv_obj_set_size(cancel, SX(130), SY(42));
+    lv_obj_align(cancel, LV_ALIGN_BOTTOM_LEFT, SX(8), SY(-8));
+    lv_obj_set_style_bg_color(cancel, lv_color_hex(COL_OFF), 0);
+    lv_obj_add_event_cb(cancel, on_rename_cancel, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * cl = lv_label_create(cancel); lv_label_set_text(cl, tr("Annuleer", "Cancel"));
+    lv_obj_center(cl);
 
     lv_obj_t * save = lv_btn_create(card);
     lv_obj_set_size(save, SX(130), SY(42));
-    lv_obj_align(save, LV_ALIGN_BOTTOM_RIGHT, SX(-8), SY(-4));
+    lv_obj_align(save, LV_ALIGN_BOTTOM_RIGHT, SX(-8), SY(-8));
     lv_obj_set_style_bg_color(save, lv_color_hex(COL_OK), 0);
     lv_obj_add_event_cb(save, on_rename_save, LV_EVENT_CLICKED, NULL);
     lv_obj_t * sl = lv_label_create(save); lv_label_set_text(sl, tr("Opslaan", "Save"));
     lv_obj_center(sl);
 
-    lv_obj_t * cancel = lv_btn_create(card);
-    lv_obj_set_size(cancel, SX(130), SY(42));
-    lv_obj_align(cancel, LV_ALIGN_BOTTOM_LEFT, SX(8), SY(-4));
-    lv_obj_set_style_bg_color(cancel, lv_color_hex(COL_OFF), 0);
-    lv_obj_add_event_cb(cancel, on_rename_cancel, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * cl = lv_label_create(cancel); lv_label_set_text(cl, tr("Annuleer", "Cancel"));
-    lv_obj_center(cl);
+    lv_obj_t * kb = lv_keyboard_create(g_rename_modal);
+    lv_obj_set_size(kb, LV_HOR_RES, (DISP_VER < 600) ? 220 : 260);
+    lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_keyboard_set_textarea(kb, g_rename_ta);
+    lv_obj_add_event_cb(kb, on_rename_kb_event, LV_EVENT_ALL, NULL);
 }
 
 static void on_include(lv_event_t * e) {

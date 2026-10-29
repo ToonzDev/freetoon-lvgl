@@ -1797,7 +1797,7 @@ static void rotate_add_cb(lv_obj_t * sc, const char * id, const char * label, in
     rotate_cb[rotate_cb_count] = cb;
     snprintf(rotate_cb_id[rotate_cb_count], 48, "%s", id);
     rotate_cb_count++;
-    *cy += 48;
+    *cy += (DISP_VER < 600) ? 44 : 50;
 }
 
 static void open_rotate_modal(lv_event_t * e) {
@@ -1832,11 +1832,21 @@ static void open_rotate_modal(lv_event_t * e) {
     lv_obj_align(pick, LV_ALIGN_TOP_LEFT, SX(4), y);
     y += (DISP_VER < 600) ? 28 : 34;
 
+    int ph = (DISP_VER < 600) ? (480 - SUNI(20)) : (600 - SUNI(20));
+    int sc_bottom = ph - ((DISP_VER < 600) ? 104 : 118);
+    int sc_h = sc_bottom - y;
+    if (sc_h < 80) sc_h = 80;
+
     lv_obj_t * sc = lv_obj_create(p);
-    lv_obj_set_size(sc, SX(820), (DISP_VER < 600) ? 112 : SY(180));
-    lv_obj_align(sc, LV_ALIGN_TOP_LEFT, 0, y);
+    lv_obj_set_size(sc, SX(820), sc_h);
+    lv_obj_align(sc, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_obj_set_style_bg_opa(sc, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(sc, 0, 0);
+    lv_obj_set_style_clip_corner(sc, true, 0);
+    lv_obj_set_style_pad_all(sc, 0, 0);
+    lv_obj_set_style_pad_left(sc, SX(4), 0);
+    lv_obj_set_style_pad_top(sc, 4, 0);
+    lv_obj_set_style_pad_bottom(sc, 4, 0);
     lv_obj_set_scroll_dir(sc, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(sc, LV_SCROLLBAR_MODE_AUTO);
     int cy = 0;
@@ -1862,20 +1872,19 @@ static void open_rotate_modal(lv_event_t * e) {
         lv_label_set_long_mode(m, LV_LABEL_LONG_WRAP);
         lv_label_set_text(m, tr("Geen integraties aan. Zet ze aan bij Integraties, of installeer er een uit de Marketplace.", "No integrations on. Enable them under Integrations, or install one from the Marketplace."));
     }
-    y += (DISP_VER < 600) ? 118 : 190;
 
-    /* Remark pointing at the marketplace for more. */
+    /* Remark pointing at the marketplace for more, placed above bottom buttons */
     lv_obj_t * note = lv_label_create(p);
     lv_obj_set_style_text_color(note, lv_color_hex(0x88aabb), 0);
     lv_obj_set_style_text_font(note, SF(18), 0);
-    lv_obj_set_width(note, SX(540));
+    lv_obj_set_width(note, SX(800));
     lv_label_set_long_mode(note, LV_LABEL_LONG_WRAP);
     lv_label_set_text(note, tr("Meer integraties vind je in de Marketplace.", "Find more integrations in the Marketplace."));
-    lv_obj_align(note, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_align(note, LV_ALIGN_BOTTOM_LEFT, SX(16), (DISP_VER < 600) ? -68 : -78);
 
     lv_obj_t * btn = lv_btn_create(p);
-    lv_obj_set_size(btn, SX(160), SY(50));
-    lv_obj_align(btn, LV_ALIGN_BOTTOM_LEFT, SX(4), SY(-8));
+    lv_obj_set_size(btn, SX(160), SY(48));
+    lv_obj_align(btn, LV_ALIGN_BOTTOM_LEFT, SX(16), SY(-10));
     lv_obj_set_style_bg_color(btn, lv_color_hex(0x3a6090), 0);
     lv_obj_add_event_cb(btn, on_rotate_apply, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(btn); lv_label_set_text(bl, tr("Toepassen", "Apply"));
