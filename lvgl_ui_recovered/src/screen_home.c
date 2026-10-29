@@ -307,6 +307,7 @@ static lv_obj_t * lbl_nilm_event = NULL;
 static lv_obj_t * lbl_boiler_state;
 static lv_obj_t * lbl_boiler_pressure;
 static lv_obj_t * vent_fan_img = NULL;
+static lv_obj_t * lbl_vent_offline = NULL;
 static int        vent_anim_period_ms = -1;
 
 static lv_timer_t * refresh_timer = NULL;
@@ -997,7 +998,7 @@ static void apply_offline_tile_visibility(void) {
     int hide = settings.hide_offline_tiles;
     int energy_live = energy_connected();
     int water_live  = (settings.enable_p1_water || settings.client_mode) && hw_state.connected_water;
-    int vent_live   = (settings.enable_vent     || settings.client_mode) && vent_state.connected;
+    int vent_live   = (settings.enable_vent     || settings.client_mode) && vent_state.connected && (vent_state.itho_online != 0);
     int family_live = settings.enable_ha || (settings.client_mode && (ha_state.connected || ha_state.loc_a[0]));
     struct { lv_obj_t * tile; int live; int ltype; } v[] = {
         { tile_energy,   energy_live, LT_ENERGY },
@@ -1531,11 +1532,6 @@ static int render_tile_slot(int slot, lv_obj_t * lbl_main, lv_obj_t * lbl_sub) {
     const integration_meta_t * m = tile_slots_meta_for(slot);
     if (!m) {
         if (slot == TILE_SLOT_VENT) {
-            if (vent_fan_img) lv_obj_clear_flag(vent_fan_img, LV_OBJ_FLAG_HIDDEN);
-            if (vent_btn_low) lv_obj_clear_flag(vent_btn_low, LV_OBJ_FLAG_HIDDEN);
-            if (vent_btn_high) lv_obj_clear_flag(vent_btn_high, LV_OBJ_FLAG_HIDDEN);
-            if (vent_btn_auto) lv_obj_clear_flag(vent_btn_auto, LV_OBJ_FLAG_HIDDEN);
-            if (vent_btn_timer) lv_obj_clear_flag(vent_btn_timer, LV_OBJ_FLAG_HIDDEN);
             if (lbl_boiler_state) lv_obj_align(lbl_boiler_state, LV_ALIGN_TOP_RIGHT, -4, 14);
             if (lbl_boiler_pressure) lv_obj_align(lbl_boiler_pressure, LV_ALIGN_BOTTOM_MID, 0, -38);
         } else if (slot == TILE_SLOT_ENERGY) {
@@ -1553,6 +1549,7 @@ static int render_tile_slot(int slot, lv_obj_t * lbl_main, lv_obj_t * lbl_sub) {
         if (vent_btn_high) lv_obj_add_flag(vent_btn_high, LV_OBJ_FLAG_HIDDEN);
         if (vent_btn_auto) lv_obj_add_flag(vent_btn_auto, LV_OBJ_FLAG_HIDDEN);
         if (vent_btn_timer) lv_obj_add_flag(vent_btn_timer, LV_OBJ_FLAG_HIDDEN);
+        if (lbl_vent_offline) lv_obj_add_flag(lbl_vent_offline, LV_OBJ_FLAG_HIDDEN);
         if (lbl_boiler_state) lv_obj_align(lbl_boiler_state, LV_ALIGN_CENTER, 0, -10);
         if (lbl_boiler_pressure) lv_obj_align(lbl_boiler_pressure, LV_ALIGN_BOTTOM_MID, 0, -10);
     } else if (slot == TILE_SLOT_ENERGY) {
@@ -2505,36 +2502,48 @@ static void refresh_cb(lv_timer_t * t) {
        label widgets so the tile stays uncluttered. Skip the whole block
        when a marketplace integration has taken over the slot — the labels
        were already rewritten by render_tile_slot. */
-    if (!slot_active[TILE_SLOT_VENT] && lbl_boiler_state) {
-        if (!settings.enable_vent && (!settings.client_mode || !vent_state.connected)) {
-            /* Integration turned off in Settings → keep the tile visible
-             * (unless hide_offline_tiles is on, in which case the whole
-             * tile is already hidden by apply_offline_tile_visibility) but
-             * make it obvious why no data is flowing. */
-            const char * itho_off = tr("Itho offline", "Itho offline");
-            lv_label_set_text(lbl_boiler_state, itho_off);
-            if (tile_vent)
-                fit_font(lbl_boiler_state, itho_off,
-                         lv_obj_get_content_width(tile_vent) - SX(64), 18);
-            if (vent_btn_low)   lv_obj_set_style_border_width(vent_btn_low,   0, 0);
-            if (vent_btn_high)  lv_obj_set_style_border_width(vent_btn_high,  0, 0);
-            if (vent_btn_auto)  lv_obj_set_style_border_width(vent_btn_auto,  0, 0);
-            if (vent_btn_timer) lv_obj_set_style_border_width(vent_btn_timer, 0, 0);
-        } else if (vent_state.connected && vent_state.itho_online == 0) {
-            /* Itho bridge reported itself OFFLINE via its MQTT LWT
-             * (topic itho/lwt). The broker link is up but the add-on/unit
-             * is gone — surface it here on the home/main tile. The dim
-             * screen deliberately shows only the mode, not online/offline. */
-            const char * itho_off = tr("Itho offline", "Itho offline");
-            lv_label_set_text(lbl_boiler_state, itho_off);
-            if (tile_vent)
-                fit_font(lbl_boiler_state, itho_off,
-                         lv_obj_get_content_width(tile_vent) - SX(64), 18);
-            if (vent_btn_low)   lv_obj_set_style_border_width(vent_btn_low,   0, 0);
-            if (vent_btn_high)  lv_obj_set_style_border_width(vent_btn_high,  0, 0);
-            if (vent_btn_auto)  lv_obj_set_style_border_width(vent_btn_auto,  0, 0);
-            if (vent_btn_timer) lv_obj_set_style_border_width(vent_btn_timer, 0, 0);
-        } else if (vent_state.connected) {
+    if (!slot_active[TILE_SLOT_VENT]) {
+        int vent_online = (settings.enable_vent || settings.client_mode) &&
+                          vent_state.connected && (vent_state.itho_online != 0);
+
+        if (!vent_online) {
+            if (vent_fan_img) {
+                lv_obj_add_flag(vent_fan_img, LV_OBJ_FLAG_HIDDEN);
+                lv_anim_del(vent_fan_img, NULL);
+                vent_anim_period_ms = -1;
+            }
+            if (vent_btn_low)   lv_obj_add_flag(vent_btn_low,   LV_OBJ_FLAG_HIDDEN);
+            if (vent_btn_high)  lv_obj_add_flag(vent_btn_high,  LV_OBJ_FLAG_HIDDEN);
+            if (vent_btn_auto)  lv_obj_add_flag(vent_btn_auto,  LV_OBJ_FLAG_HIDDEN);
+            if (vent_btn_timer) lv_obj_add_flag(vent_btn_timer, LV_OBJ_FLAG_HIDDEN);
+            if (lbl_boiler_state) {
+                lv_label_set_text(lbl_boiler_state, "");
+                lv_obj_add_flag(lbl_boiler_state, LV_OBJ_FLAG_HIDDEN);
+            }
+            if (lbl_boiler_pressure) {
+                lv_label_set_text(lbl_boiler_pressure, "");
+                lv_obj_add_flag(lbl_boiler_pressure, LV_OBJ_FLAG_HIDDEN);
+            }
+            if (lbl_vent_offline) {
+                const char * off_txt = (!settings.enable_vent && !settings.client_mode)
+                    ? tr("Geen instellingen", "No settings")
+                    : tr("Offline", "Offline");
+                lv_label_set_text(lbl_vent_offline, off_txt);
+                if (tile_vent)
+                    fit_font(lbl_vent_offline, off_txt,
+                             lv_obj_get_content_width(tile_vent) - SX(16), 22);
+                lv_obj_clear_flag(lbl_vent_offline, LV_OBJ_FLAG_HIDDEN);
+            }
+        } else {
+            if (lbl_vent_offline) lv_obj_add_flag(lbl_vent_offline, LV_OBJ_FLAG_HIDDEN);
+            if (vent_fan_img)     lv_obj_clear_flag(vent_fan_img,     LV_OBJ_FLAG_HIDDEN);
+            if (vent_btn_low)     lv_obj_clear_flag(vent_btn_low,     LV_OBJ_FLAG_HIDDEN);
+            if (vent_btn_high)    lv_obj_clear_flag(vent_btn_high,    LV_OBJ_FLAG_HIDDEN);
+            if (vent_btn_auto)    lv_obj_clear_flag(vent_btn_auto,    LV_OBJ_FLAG_HIDDEN);
+            if (vent_btn_timer)   lv_obj_clear_flag(vent_btn_timer,   LV_OBJ_FLAG_HIDDEN);
+            if (lbl_boiler_state) lv_obj_clear_flag(lbl_boiler_state, LV_OBJ_FLAG_HIDDEN);
+            if (lbl_boiler_pressure) lv_obj_clear_flag(lbl_boiler_pressure, LV_OBJ_FLAG_HIDDEN);
+
             /* Same snapshot trick as last_source — fan_info is a non-
              * volatile char[] written by another thread; memcpy a local
              * copy each refresh to dodge stale-cache reads. */
@@ -2562,12 +2571,14 @@ static void refresh_cb(lv_timer_t * t) {
                          preset_pretty, vent_state.remaining_min);
             else
                 snprintf(vshown, sizeof vshown, "%s", preset_pretty);
-            lv_label_set_text(lbl_boiler_state, vshown);
-            /* Shrink the font (no truncation) so the mode label never collides
-             * with the "Vent" title in a narrow custom tile. */
-            if (tile_vent)
-                fit_font(lbl_boiler_state, vshown,
-                         lv_obj_get_content_width(tile_vent) - SX(64), 18);
+            if (lbl_boiler_state) {
+                lv_label_set_text(lbl_boiler_state, vshown);
+                /* Shrink the font (no truncation) so the mode label never collides
+                 * with the "Vent" title in a narrow custom tile. */
+                if (tile_vent)
+                    fit_font(lbl_boiler_state, vshown,
+                             lv_obj_get_content_width(tile_vent) - SX(64), 18);
+            }
 
             /* Highlight whichever preset button matches the current fan_info
              * (Timer wins when a countdown is running). White border = active,
@@ -2587,60 +2598,40 @@ static void refresh_cb(lv_timer_t * t) {
                 lv_obj_set_style_border_width(vent_btn_auto,  act_auto  ? 2 : 0, 0);
             if (vent_btn_timer)
                 lv_obj_set_style_border_width(vent_btn_timer, act_timer ? 2 : 0, 0);
-        } else {
-            lv_label_set_text(lbl_boiler_state, tr("uit", "off"));
-            if (vent_btn_low)   lv_obj_set_style_border_width(vent_btn_low,   0, 0);
-            if (vent_btn_high)  lv_obj_set_style_border_width(vent_btn_high,  0, 0);
-            if (vent_btn_auto)  lv_obj_set_style_border_width(vent_btn_auto,  0, 0);
-            if (vent_btn_timer) lv_obj_set_style_border_width(vent_btn_timer, 0, 0);
-        }
-    }
-    if (!slot_active[TILE_SLOT_VENT] && lbl_boiler_pressure) {
-        if (vent_state.connected && vent_state.itho_online != 0) {
-            /* Classify source into a 3-char tag so the line stays compact:
-               API = HTML/vremote (toonui or HA), RF  = physical radio remote,
-               BTN = Itho front-panel button, ???  = anything unrecognised. */
-            /* Snapshot vent_state.last_source into a local before strstr —
-             * the buffer is written by vent_thread without a memory
-             * barrier, so the compiler/CPU can hand refresh_cb a stale
-             * (all-zero) view of the chars. memcpy forces a fresh read. */
-            char src_local[64];
-            memcpy(src_local, (const char *)vent_state.last_source,
-                   sizeof(src_local));
-            src_local[sizeof(src_local) - 1] = 0;
-            const char * src_tag = "?";
-            const char * s = src_local;
-            int api_src = (strstr(s, "vremote") || strstr(s, "HTML")) ? 1 : 0;
-            if      (api_src)                                   src_tag = "API";
-            else if (strstr(s, "RFT")     || strstr(s, "RF"))   src_tag = "RF";
-            else if (strstr(s, "button")  || strstr(s, "Itho")) src_tag = "BTN";
-            else if (s[0])                                      src_tag = s;
-            /* If the source looks like a vremote/HTML call AND we issued one
-             * locally within the last 90 s, attribute it to TOON. Itho can't
-             * distinguish callers — this is our only signal. */
-            if (api_src && vent_local_press_ms != 0 &&
-                (lv_tick_get() - vent_local_press_ms) < 90000) {
-                src_tag = "TOON";
+
+            if (lbl_boiler_pressure) {
+                /* Classify source into a 3-char tag so the line stays compact:
+                   API = HTML/vremote (toonui or HA), RF  = physical radio remote,
+                   BTN = Itho front-panel button, ???  = anything unrecognised. */
+                char src_local[64];
+                memcpy(src_local, (const char *)vent_state.last_source,
+                       sizeof(src_local));
+                src_local[sizeof(src_local) - 1] = 0;
+                const char * src_tag = "?";
+                const char * s = src_local;
+                int api_src = (strstr(s, "vremote") || strstr(s, "HTML")) ? 1 : 0;
+                if      (api_src)                                   src_tag = "API";
+                else if (strstr(s, "RFT")     || strstr(s, "RF"))   src_tag = "RF";
+                else if (strstr(s, "button")  || strstr(s, "Itho")) src_tag = "BTN";
+                else if (s[0])                                      src_tag = s;
+                /* If the source looks like a vremote/HTML call AND we issued one
+                 * locally within the last 90 s, attribute it to TOON. Itho can't
+                 * distinguish callers — this is our only signal. */
+                if (api_src && vent_local_press_ms != 0 &&
+                    (lv_tick_get() - vent_local_press_ms) < 90000) {
+                    src_tag = "TOON";
+                }
+                lv_label_set_text_fmt(lbl_boiler_pressure,
+                                      tr("%d%%  %drpm\nvia %s", "%d%%  %drpm\nvia %s"),
+                                      vent_state.speed_pct,
+                                      vent_state.fan_rpm,
+                                      src_tag);
             }
-            /* Show the HONEST actual airflow: vent_state.speed_pct is derived
-             * from the real fan rpm (ExhFanSpeed is broken/0, and the wire
-             * setpoint lies — it reads 100% for the wire-"high" command which
-             * on this unit is the LOW-airflow direction). */
-            lv_label_set_text_fmt(lbl_boiler_pressure,
-                                  tr("%d%%  %drpm\nvia %s", "%d%%  %drpm\nvia %s"),
-                                  vent_state.speed_pct,
-                                  vent_state.fan_rpm,
-                                  src_tag);
-        } else {
-            lv_label_set_text(lbl_boiler_pressure,
-                              vent_state.itho_online == 0 ? tr("offline", "offline") : "-- %");
+
+            /* Spin tracks the real fan rpm. */
+            vent_apply_fan_anim(vent_state.fan_rpm);
         }
     }
-    /* Spin tracks the real fan rpm. With the wire swap, user-Low maps to the
-       low-airflow direction (~700 rpm → slow) and user-High to high (~2500 rpm
-       → fast), so the icon spins intuitively without faking it. */
-    if (vent_state.connected)
-        vent_apply_fan_anim(vent_state.fan_rpm);
 
     /* Pinned device quick-tiles — live state from ha_devices[]. */
     for (int p = 0; p < home_pin_count; p++) {
@@ -4350,6 +4341,15 @@ lv_obj_t * screen_home_create(void) {
     lv_label_set_text(lbl_boiler_pressure, "--\n--");
     lv_obj_align(lbl_boiler_pressure, LV_ALIGN_BOTTOM_MID, 0, -38);
 
+    lbl_vent_offline = lv_label_create(vent.tile);
+    lv_obj_set_style_text_color(lbl_vent_offline, lv_color_hex(COL_TEXT_DIM), 0);
+    lv_obj_set_style_text_font(lbl_vent_offline, SF(20), 0);
+    lv_obj_set_style_text_align(lbl_vent_offline, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(lbl_vent_offline, "");
+    lv_obj_align(lbl_vent_offline, LV_ALIGN_CENTER, 0, 6);
+    lv_obj_add_flag(lbl_vent_offline, LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_add_flag(lbl_vent_offline, LV_OBJ_FLAG_HIDDEN);
+
     /* Family tile — Life360 locations for the two tracked people. Sits
      * between the shrunken Energy and Water tiles in the right column. */
     tile_t family_t;
@@ -5286,6 +5286,16 @@ void screen_home_destroy(void) {
         tile_waste = NULL;
         tile_energy = NULL;
         tile_vent = NULL;
+        vent_fan_img = NULL;
+        lbl_vent_offline = NULL;
+        vent_btn_low = NULL;
+        vent_btn_high = NULL;
+        vent_btn_auto = NULL;
+        vent_btn_timer = NULL;
+        vent_timer_lbl = NULL;
+        lbl_boiler_state = NULL;
+        lbl_boiler_pressure = NULL;
+        vent_anim_period_ms = -1;
         tile_family = NULL;
         tile_water = NULL;
         for (int i = 0; i < 4; i++) {
