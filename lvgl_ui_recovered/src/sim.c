@@ -173,6 +173,7 @@ static void x11_indev_read(lv_indev_drv_t * drv, lv_indev_data_t * data) {
     data->point.x = g_mouse_x;
     data->point.y = g_mouse_y;
     data->state = g_mouse_down ? LV_INDEV_STATE_PR : LV_INDEV_STATE_REL;
+    if (data->state == LV_INDEV_STATE_PR) ui_mark_activity();
 }
 
 static void x11_gui_close(void) {
@@ -475,6 +476,7 @@ int main(int argc, char ** argv) {
 
             struct timespec last_t, now_t;
             clock_gettime(CLOCK_MONOTONIC, &last_t);
+            uint32_t last_idle_check = lv_tick_get();
             while (g_x11_running) {
                 x11_handle_events();
                 lv_timer_handler();
@@ -484,6 +486,11 @@ int main(int argc, char ** argv) {
                 if (elapsed_ms > 0) {
                     lv_tick_inc(elapsed_ms);
                     last_t = now_t;
+                }
+                uint32_t now = lv_tick_get();
+                if (now - last_idle_check > 200) {
+                    ui_idle_tick();
+                    last_idle_check = now;
                 }
                 usleep(5000);
             }
