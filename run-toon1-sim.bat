@@ -20,7 +20,7 @@ rem Check for WSL
 where wsl.exe >nul 2>nul
 if errorlevel 1 (
     echo [ERROR] WSL is required to run the FreeToon simulator.
-    echo Please ensure WSL (Ubuntu / WSLg) is installed.
+    echo Please ensure WSL Ubuntu and WSLg are installed.
     pause
     exit /b 1
 )
@@ -67,7 +67,7 @@ set "SIM_BIN=%FREETOON_DIR%\lvgl_ui_recovered\build-sim1\toonui-sim1"
 if not exist "%SIM_BIN%" set DO_BUILD=1
 
 if "!DO_BUILD!"=="1" (
-    echo [sim1] Building FreeToon Toon 1 simulator (800x480)...
+    echo [sim1] Building FreeToon Toon 1 simulator [800x480]...
     wsl bash -c "cd '%WSL_DIR%/lvgl_ui_recovered/src' && make TARGET=sim1 -j4"
     if errorlevel 1 (
         echo [ERROR] Build failed.
@@ -80,7 +80,7 @@ rem Cleanup any stale sim process and ensure /mnt/data exists
 wsl bash -c "killall -9 toonui-sim1 toonui-sim 2>/dev/null || true; mkdir -p /mnt/data 2>/dev/null || true" >nul 2>nul
 
 :sim_loop
-echo [sim1] Launching FreeToon Toon 1 simulator (800x480)...
+echo [sim1] Launching FreeToon Toon 1 simulator [800x480]...
 wsl bash -c "DISPLAY=${DISPLAY:-:0} cd '%WSL_DIR%/lvgl_ui_recovered/build-sim1' && ./toonui-sim1!ARGS!"
 set EXIT_CODE=%ERRORLEVEL%
 
@@ -92,6 +92,7 @@ if "%EXIT_CODE%"=="42" (
 
 if not "%EXIT_CODE%"=="0" (
     echo [sim1] Process exited with code %EXIT_CODE%
+    pause
 )
 exit /b %EXIT_CODE%
 
