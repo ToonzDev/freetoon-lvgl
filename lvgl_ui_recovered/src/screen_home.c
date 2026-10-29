@@ -5205,6 +5205,8 @@ lv_obj_t * screen_home_create(void) {
 
 void screen_home_destroy(void) {
     if (scr_root) {
+        if (refresh_timer) { lv_timer_del(refresh_timer); refresh_timer = NULL; }
+        if (map_timer) { lv_timer_del(map_timer); map_timer = NULL; }
         lv_obj_t * s = scr_root;
         scr_root = NULL;
         lbl_t_clock_h = NULL;
@@ -5315,6 +5317,12 @@ void screen_home_destroy(void) {
         for (int i = 0; i < 3; i++) rain_thresh_lbl[i] = NULL;
         for (int i = 0; i < 4; i++) rain_lbl_times[i] = NULL;
         s_rain_compact = 0;
-        lv_obj_del(s);
+        if (s == lv_scr_act()) {
+            lv_obj_t * blank = lv_obj_create(NULL);
+            lv_scr_load(blank);
+            lv_obj_del(s);
+        } else {
+            lv_obj_del(s);
+        }
     }
 }

@@ -28,26 +28,41 @@ static int sp = 0;
  * Save/preset/restart round-trips). Then flush + exit; init respawns the
  * launcher, which re-launches toonui with the freshly saved cfg/layout. */
 #define UI_RESTART_MARKER "/var/volatile/tmp/toonui_restart"
-void ui_request_restart(void) {
 #ifdef SIM
-    fprintf(stderr, "[sim] UI restart requested — refreshing home screen live\n");
+static void sim_restart_async(void * unused) {
+    (void)unused;
+    fprintf(stderr, "[sim] performing scheduled live UI restart\n");
+    fprintf(stderr, "[sim] step 1: close layout editor\n");
     screen_layout_editor_close();
+    fprintf(stderr, "[sim] step 2: close dim layout editor\n");
     screen_dim_layout_editor_close();
+    fprintf(stderr, "[sim] step 3: settings load\n");
     settings_load();
+    fprintf(stderr, "[sim] step 4: layout load\n");
     layout_load_named(settings.active_layout);
+    fprintf(stderr, "[sim] step 5: refresh home\n");
     ui_refresh_home();
+    fprintf(stderr, "[sim] step 6: pop stack (sp=%d)\n", sp);
     while (sp > 1) {
         ui_pop();
     }
+    fprintf(stderr, "[sim] step 7: load home screen\n");
     if (sp >= 1) lv_scr_load(stack[0]);
-    return;
+    fprintf(stderr, "[sim] step 8: restart complete!\n");
+}
+
+void ui_request_restart(void) {
+    fprintf(stderr, "[sim] UI restart requested — scheduling live refresh\n");
+    lv_async_call(sim_restart_async, NULL);
+}
 #else
+void ui_request_restart(void) {
     FILE * f = fopen(UI_RESTART_MARKER, "w");
     if (f) fclose(f);
     fflush(NULL);
     _exit(0);
-#endif
 }
+#endif
 
 /* Switch the home screen between the freetoon dark dashboard and the stock
  * light theme live, no restart. Both screens cache themselves (singleton
