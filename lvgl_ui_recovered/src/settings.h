@@ -27,6 +27,7 @@ typedef struct {
     int dim_custom_enabled;   /* 0 = original dim layout (default); 1 = custom grid (dim editor) */
     int language;             /* 0=NL, 1=EN */
     int dim_bars_swap;        /* 0 = energy LEFT + gas RIGHT (default); 1 = swapped */
+    int dim_bars_vertical;    /* 0 = horizontal (default); 1 = vertical segmented (classic Toon style) */
     int dim_waste_lead_days;  /* 0..7 — only show if pickup is within this many days
                                  (0 disables; 1 = only on pickup day; 2 = day before + day of) */
     char waste_postcode[12];  /* e.g. "1671AD" — overrides the TSC waste config when set */

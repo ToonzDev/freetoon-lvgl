@@ -88,6 +88,10 @@ static void on_dim_bars_change(lv_event_t * e) {
 static void on_dim_bars_swap_change(lv_event_t * e) {
     settings.dim_bars_swap = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
 }
+static void on_dim_bars_vertical_change(lv_event_t * e) {
+    settings.dim_bars_vertical = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    settings_save();
+}
 static void on_dim_sleep_away_black_change(lv_event_t * e) {
     settings.dim_sleep_away_black = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
     settings_save();
@@ -884,6 +888,11 @@ static void open_display_modal(lv_event_t * e) {
 
     r = panel_row(p, y, tr("Balken: wisselen (energie links / gas rechts)", "Bars: swap (energy left / gas right)"), NULL);
     sw_dim_bars_swap = row_switch(r, settings.dim_bars_swap, on_dim_bars_swap_change);
+    y += 82;
+
+    /* Bars orientation: horizontal vs vertical segmented (classic Toon style) */
+    r = panel_row(p, y, tr("Balken: verticaal (klassieke Toon-stijl)", "Bars: vertical (classic Toon style)"), NULL);
+    row_switch(r, settings.dim_bars_vertical, on_dim_bars_vertical_change);
     y += 82;
 
     /* Home theme — classic Toon (stock) light tile-carousel vs freetoon dark

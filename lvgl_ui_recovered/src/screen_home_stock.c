@@ -46,7 +46,7 @@
 #define C_SECOND   0x8C8C8C
 #define C_PRESSED  0xA8A8A8
 
-#define G_X0       60
+#define G_X0       64
 #define G_COLW     293
 #define G_GAPX     14
 #define G_Y0       97
@@ -216,13 +216,13 @@ static void open_lights_backend(void) {
 }
 static void s_lights_handle_set(bool open) {
     if (!s_lights_handle) return;
-    lv_obj_set_size(s_lights_handle, open ? SX(160) : SX(56), open ? SY(56) : SY(80));
-    lv_obj_align(s_lights_handle, LV_ALIGN_LEFT_MID, open ? SX(4) : -SX(4), 0);
+    lv_obj_set_size(s_lights_handle, open ? SX(160) : 46, open ? SY(56) : 72);
+    lv_obj_align(s_lights_handle, LV_ALIGN_LEFT_MID, open ? SX(4) : -6, 0);
     lv_obj_set_style_radius(s_lights_handle, open ? SX(16) : LV_RADIUS_CIRCLE, 0);
     if (s_lights_handle_lbl) {
         lv_label_set_text(s_lights_handle_lbl,
                           open ? tr("Apparaten", "Devices") : LV_SYMBOL_CHARGE);
-        lv_obj_set_style_text_font(s_lights_handle_lbl, open ? SF(22) : SF(28), 0);
+        lv_obj_set_style_text_font(s_lights_handle_lbl, open ? SF(22) : SF(24), 0);
     }
 }
 static void on_lights_handle(lv_event_t * e) {
@@ -1077,17 +1077,17 @@ lv_obj_t * screen_home_stock_create(void) {
      * home screen. Idles as a slim pill peeking from the left edge; press
      * expands to "Apparaten" / "Devices"; release + click opens the backend. */
     s_lights_handle = lv_btn_create(scr_root);
-    lv_obj_set_size(s_lights_handle, SX(56), SY(80));
-    lv_obj_align(s_lights_handle, LV_ALIGN_LEFT_MID, -SX(4), 0);
+    lv_obj_set_size(s_lights_handle, 46, 72);
+    lv_obj_align(s_lights_handle, LV_ALIGN_LEFT_MID, -6, 0);
     lv_obj_set_style_bg_color(s_lights_handle, lv_color_hex(C_ACCENT), 0);
     lv_obj_set_style_radius(s_lights_handle, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_border_width(s_lights_handle, 0, 0);
-    lv_obj_set_style_shadow_width(s_lights_handle, SX(8), 0);
+    lv_obj_set_style_shadow_width(s_lights_handle, SX(6), 0);
     lv_obj_set_style_shadow_opa(s_lights_handle, LV_OPA_30, 0);
     lv_obj_add_event_cb(s_lights_handle, on_lights_handle, LV_EVENT_ALL, NULL);
     s_lights_handle_lbl = lv_label_create(s_lights_handle);
     lv_label_set_text(s_lights_handle_lbl, LV_SYMBOL_CHARGE);
-    lv_obj_set_style_text_font(s_lights_handle_lbl, SF(28), 0);
+    lv_obj_set_style_text_font(s_lights_handle_lbl, SF(24), 0);
     lv_obj_set_style_text_color(s_lights_handle_lbl, lv_color_hex(0xffffff), 0);
     lv_obj_center(s_lights_handle_lbl);
 

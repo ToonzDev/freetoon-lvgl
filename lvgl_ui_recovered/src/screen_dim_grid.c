@@ -102,10 +102,16 @@ static lv_obj_t * dim_box(int id, int * ow, int * oh) {
  * Replaces the old screen-edge VERTICAL bars, which were not part of the grid
  * and so overlapped whatever blocks landed at the edges (vent on the left, the
  * forecast strip at the bottom). Now it's a normal dim block (DB_ENERGY) with
- * two labelled horizontal mini-bars; gated by the existing show_dim_bars toggle. */
+ * two labelled horizontal mini-bars; gated by the existing show_dim_bars toggle.
+ * When settings.dim_bars_vertical is on, renders classic Toon segmented vertical bars. */
 static lv_obj_t * en_pwr_track, * en_pwr_fill, * en_pwr_lbl;
 static lv_obj_t * en_gas_track, * en_gas_fill, * en_gas_lbl;
 static int   en_pwr_w = 0, en_gas_w = 0;   /* mini-bar track widths (px, set at create) */
+#define DIM_GRID_NSEG 12
+static lv_obj_t * en_pwr_segs[DIM_GRID_NSEG];
+static lv_obj_t * en_pwr_vlbl;
+static lv_obj_t * en_gas_segs[DIM_GRID_NSEG];
+static lv_obj_t * en_gas_vlbl;
 #define DIM_E_FULL_W    5000.0f     /* power at a full bar (fixed scale) */
 #define DIM_G_FULL_M3H  2.0f        /* gas (m³/h) at a full bar (fixed scale) */
 
@@ -180,6 +186,51 @@ static void en_set_bar(lv_obj_t * fill, lv_obj_t * lbl,
     if (ratio > 0 && w < 3) w = 3;
     lv_obj_set_width(fill, w);
     lv_label_set_text(lbl, txt);
+}
+
+/* One vertical segmented bar (classic Toon style) inside the energy/gas block:
+ * 12 stacked segment rectangles lighting up bottom->top (green -> yellow),
+ * with a value label positioned beside it. */
+static void en_make_vbar(lv_obj_t * parent, int bh, lv_obj_t * segs[DIM_GRID_NSEG], lv_obj_t ** lbl) {
+    int sw = (DISP_HOR < 1000) ? 22 : 28;
+    int sh = (DISP_VER < 600) ? 3 : 4;
+    int gp = (DISP_VER < 600) ? 1 : 2;
+    int th = DIM_GRID_NSEG * sh + (DIM_GRID_NSEG - 1) * gp;
+    int y0 = (bh > th) ? (bh - th) / 2 : 2;
+
+    for (int i = 0; i < DIM_GRID_NSEG; i++) {
+        segs[i] = lv_obj_create(parent);
+        lv_obj_remove_style_all(segs[i]);
+        lv_obj_set_size(segs[i], sw, sh);
+        lv_obj_set_pos(segs[i], 6, y0 + i * (sh + gp));
+        lv_obj_set_style_radius(segs[i], 1, 0);
+        lv_obj_set_style_border_width(segs[i], 0, 0);
+        lv_obj_set_style_bg_color(segs[i], lv_color_hex(0x2A3540), 0);
+        lv_obj_set_style_bg_opa(segs[i], LV_OPA_COVER, 0);
+        lv_obj_clear_flag(segs[i], LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    }
+
+    *lbl = lv_label_create(parent);
+    lv_obj_set_style_text_color(*lbl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(*lbl, (DISP_VER < 600) ? &lv_font_montserrat_18 : &lv_font_montserrat_22, 0);
+    lv_label_set_text(*lbl, "");
+    lv_obj_align(*lbl, LV_ALIGN_LEFT_MID, sw + 14, 0);
+}
+
+static void en_set_vbar(lv_obj_t * segs[DIM_GRID_NSEG], lv_obj_t * lbl,
+                        float ratio, const char * txt) {
+    if (ratio < 0) ratio = 0;
+    if (ratio > 1) ratio = 1;
+    int lit = (int)(ratio * DIM_GRID_NSEG + 0.5f);
+    if (lit > DIM_GRID_NSEG) lit = DIM_GRID_NSEG;
+
+    for (int i = 0; i < DIM_GRID_NSEG; i++) {
+        if (!segs[i]) continue;
+        int fb = DIM_GRID_NSEG - 1 - i;   /* 0 = bottom, 11 = top */
+        uint32_t c = (fb < lit) ? (fb < 7 ? 0x689F38 : 0xCCCC33) : 0x2A3540;
+        lv_obj_set_style_bg_color(segs[i], lv_color_hex(c), 0);
+    }
+    if (lbl) lv_label_set_text(lbl, txt);
 }
 
 static void on_wake_tap(lv_event_t * e) {
@@ -646,21 +697,46 @@ static void refresh_cb(lv_timer_t * t) {
             snprintf(gtxt, sizeof gtxt, "%.2f m3/h", g);
         }
 
-        en_set_bar(en_pwr_fill, en_pwr_lbl, en_pwr_w, e / DIM_E_FULL_W,
-                   e_conn ? etxt : tr("-- W", "-- W"));
-        en_set_bar(en_gas_fill, en_gas_lbl, en_gas_w,
-                   (g_today >= 0) ? (g / 5.0f) : (g / DIM_G_FULL_M3H),
-                   g_conn ? gtxt : tr("-- m3", "-- m3"));
+        float er = e / DIM_E_FULL_W;
+        float gr = (g_today >= 0) ? (g / 5.0f) : (g / DIM_G_FULL_M3H);
+        const char * edisp = e_conn ? etxt : tr("-- W", "-- W");
+        const char * gdisp = g_conn ? gtxt : tr("-- m3", "-- m3");
 
-        /* show_dim_bars off → hide both blocks' contents (per-block visibility in
-         * the dim layout is handled separately by hiding the whole box at create). */
+        en_set_bar(en_pwr_fill, en_pwr_lbl, en_pwr_w, er, edisp);
+        en_set_bar(en_gas_fill, en_gas_lbl, en_gas_w, gr, gdisp);
+
+        en_set_vbar(en_pwr_segs, en_pwr_vlbl, er, edisp);
+        en_set_vbar(en_gas_segs, en_gas_vlbl, gr, gdisp);
+
+        /* show_dim_bars off → hide both blocks' contents.
+         * dim_bars_vertical chooses horizontal mini-bars vs classic vertical segmented bars. */
         int show = settings.show_dim_bars;
+        int vert = settings.dim_bars_vertical;
+
         lv_obj_t * en_parts[] = { en_pwr_track, en_gas_track, en_pwr_lbl, en_gas_lbl };
         for (unsigned i = 0; i < sizeof en_parts / sizeof en_parts[0]; i++)
             if (en_parts[i]) {
-                if (show) lv_obj_clear_flag(en_parts[i], LV_OBJ_FLAG_HIDDEN);
-                else      lv_obj_add_flag(en_parts[i], LV_OBJ_FLAG_HIDDEN);
+                if (show && !vert) lv_obj_clear_flag(en_parts[i], LV_OBJ_FLAG_HIDDEN);
+                else               lv_obj_add_flag(en_parts[i], LV_OBJ_FLAG_HIDDEN);
             }
+        for (int i = 0; i < DIM_GRID_NSEG; i++) {
+            if (en_pwr_segs[i]) {
+                if (show && vert) lv_obj_clear_flag(en_pwr_segs[i], LV_OBJ_FLAG_HIDDEN);
+                else              lv_obj_add_flag(en_pwr_segs[i], LV_OBJ_FLAG_HIDDEN);
+            }
+            if (en_gas_segs[i]) {
+                if (show && vert) lv_obj_clear_flag(en_gas_segs[i], LV_OBJ_FLAG_HIDDEN);
+                else              lv_obj_add_flag(en_gas_segs[i], LV_OBJ_FLAG_HIDDEN);
+            }
+        }
+        if (en_pwr_vlbl) {
+            if (show && vert) lv_obj_clear_flag(en_pwr_vlbl, LV_OBJ_FLAG_HIDDEN);
+            else              lv_obj_add_flag(en_pwr_vlbl, LV_OBJ_FLAG_HIDDEN);
+        }
+        if (en_gas_vlbl) {
+            if (show && vert) lv_obj_clear_flag(en_gas_vlbl, LV_OBJ_FLAG_HIDDEN);
+            else              lv_obj_add_flag(en_gas_vlbl, LV_OBJ_FLAG_HIDDEN);
+        }
     }
 
     /* Agenda / Calendar block — 2-column (dd/mm hh:mm + title), height-adaptive, white text */
@@ -1010,13 +1086,15 @@ lv_obj_t * screen_dim_grid_create(void) {
 
     /* ---- STROOM (power) + GAS: separate single-metric blocks, each a value +
      * mini-bar. Independent so they can be placed/sized on their own. ---- */
-    int ebw = 0; lv_obj_t * bx_e = dim_box(DB_ENERGY, &ebw, NULL);
+    int ebw = 0, ebh = 0; lv_obj_t * bx_e = dim_box(DB_ENERGY, &ebw, &ebh);
     en_pwr_w = ebw - 8;
     en_make_bar(bx_e, en_pwr_w, 6, 0xffffff, &en_pwr_track, &en_pwr_fill, &en_pwr_lbl);
+    en_make_vbar(bx_e, ebh, en_pwr_segs, &en_pwr_vlbl);
 
-    int gbw = 0; lv_obj_t * bx_g = dim_box(DB_GAS, &gbw, NULL);
+    int gbw = 0, gbh = 0; lv_obj_t * bx_g = dim_box(DB_GAS, &gbw, &gbh);
     en_gas_w = gbw - 8;
     en_make_bar(bx_g, en_gas_w, 6, 0xffffff, &en_gas_track, &en_gas_fill, &en_gas_lbl);
+    en_make_vbar(bx_g, gbh, en_gas_segs, &en_gas_vlbl);
 
     /* ---- AGENDA: next calendar event(s) — 2-column, height-adaptive, all white text ---- */
     int abw = 0, abh = 0; lv_obj_t * bx_a = dim_box(DB_AGENDA, &abw, &abh);

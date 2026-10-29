@@ -73,6 +73,9 @@ static lv_timer_t * refresh_timer = NULL;
 #define DIM_CLOCK_H   96      /* clock font px; envelope = 2x this */
 static lv_obj_t * bar_l_env, * bar_l_fill, * bar_l_cap;
 static lv_obj_t * bar_r_env, * bar_r_fill, * bar_r_cap;
+#define DIM_NSEG 12
+static lv_obj_t * bar_l_segs[DIM_NSEG];
+static lv_obj_t * bar_r_segs[DIM_NSEG];
 static int   dim_bar_h = 0;        /* envelope height (px, computed at create) */
 #define DIM_E_FULL_W    5000.0f     /* power at full bar height (fixed scale) */
 #define DIM_G_FULL_M3H  2.0f        /* gas (m³/h) at full bar height (fixed scale) */
@@ -117,7 +120,7 @@ static void dim_vent_apply_anim(int rpm) {
  * is a child anchored to the bottom that grows upward. Caption is align_to'd to
  * the envelope. Neither is CLICKABLE, so a tap on the bar falls through to wake. */
 static void dim_make_bar(int side, lv_obj_t ** env, lv_obj_t ** fill,
-                         lv_obj_t ** cap) {
+                         lv_obj_t ** cap, lv_obj_t * segs[DIM_NSEG]) {
     int bw = DIM_BAR_W;       /* unscaled so both Toon 1 and Toon 2 share full 58px thickness */
     lv_align_t al = (side < 0) ? LV_ALIGN_LEFT_MID : LV_ALIGN_RIGHT_MID;
     int xinset = (side < 0) ? SX(DIM_BAR_INSET) : -SX(DIM_BAR_INSET);
@@ -140,6 +143,25 @@ static void dim_make_bar(int side, lv_obj_t ** env, lv_obj_t ** fill,
     lv_obj_clear_flag(*fill, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_align(*fill, LV_ALIGN_BOTTOM_MID, 0, 0);
 
+    /* Vertical segmented elements (classic Toon style) */
+    int seg_gap = 4;
+    int seg_h = (dim_bar_h - (DIM_NSEG - 1) * seg_gap) / DIM_NSEG;
+    int seg_w = bw - 8;
+    int th = DIM_NSEG * seg_h + (DIM_NSEG - 1) * seg_gap;
+    int y0 = (dim_bar_h - th) / 2;
+
+    for (int i = 0; i < DIM_NSEG; i++) {
+        segs[i] = lv_obj_create(*env);
+        lv_obj_remove_style_all(segs[i]);
+        lv_obj_set_size(segs[i], seg_w, seg_h);
+        lv_obj_set_pos(segs[i], 4, y0 + i * (seg_h + seg_gap));
+        lv_obj_set_style_radius(segs[i], 2, 0);
+        lv_obj_set_style_border_width(segs[i], 0, 0);
+        lv_obj_set_style_bg_color(segs[i], lv_color_hex(0x2A3540), 0);
+        lv_obj_set_style_bg_opa(segs[i], LV_OPA_COVER, 0);
+        lv_obj_clear_flag(segs[i], LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    }
+
     *cap = lv_label_create(scr_root);
     lv_obj_set_style_text_color(*cap, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(*cap, &lv_font_montserrat_22, 0);
@@ -152,6 +174,7 @@ static void dim_make_bar(int side, lv_obj_t ** env, lv_obj_t ** fill,
 
 /* Apply a value to a bar slot. ratio 0..1 of the envelope. Hidden when !show. */
 static void dim_bar_set(lv_obj_t * env, lv_obj_t * fill, lv_obj_t * cap,
+                        lv_obj_t * segs[DIM_NSEG],
                         int side, int show, int text_only,
                         float ratio, uint32_t color, const char * txt) {
     if (!env) return;
@@ -175,11 +198,31 @@ static void dim_bar_set(lv_obj_t * env, lv_obj_t * fill, lv_obj_t * cap,
     }
     if (ratio < 0) ratio = 0;
     if (ratio > 1) ratio = 1;
-    int h = (int)(ratio * dim_bar_h + 0.5f);
-    if (ratio > 0 && h < 3) h = 3;            /* show a sliver when nonzero */
-    lv_obj_set_height(fill, h);
-    lv_obj_align(fill, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_obj_set_style_bg_color(fill, lv_color_hex(color), 0);
+
+    int vert = settings.dim_bars_vertical;
+    if (vert) {
+        lv_obj_add_flag(fill, LV_OBJ_FLAG_HIDDEN);
+        int lit = (int)(ratio * DIM_NSEG + 0.5f);
+        if (lit > DIM_NSEG) lit = DIM_NSEG;
+        for (int i = 0; i < DIM_NSEG; i++) {
+            if (!segs[i]) continue;
+            lv_obj_clear_flag(segs[i], LV_OBJ_FLAG_HIDDEN);
+            int fb = DIM_NSEG - 1 - i;   /* 0 = bottom, 11 = top */
+            uint32_t c = (fb < lit) ? (fb < 7 ? 0x689F38 : 0xCCCC33) : 0x2A3540;
+            lv_obj_set_style_bg_color(segs[i], lv_color_hex(c), 0);
+        }
+    } else {
+        for (int i = 0; i < DIM_NSEG; i++) {
+            if (segs[i]) lv_obj_add_flag(segs[i], LV_OBJ_FLAG_HIDDEN);
+        }
+        int h = (int)(ratio * dim_bar_h + 0.5f);
+        if (ratio > 0 && h < 3) h = 3;            /* show a sliver when nonzero */
+        lv_obj_set_height(fill, h);
+        lv_obj_align(fill, LV_ALIGN_BOTTOM_MID, 0, 0);
+        lv_obj_set_style_bg_color(fill, lv_color_hex(color), 0);
+        lv_obj_clear_flag(fill, LV_OBJ_FLAG_HIDDEN);
+    }
+
     lv_obj_clear_flag(env, LV_OBJ_FLAG_HIDDEN);
     if (cap) {
         lv_label_set_text(cap, txt);
@@ -641,11 +684,11 @@ static void refresh_cb(lv_timer_t * t) {
         if (!g_conn) { gr = 0; snprintf(gtxt, sizeof gtxt, "-- m3"); }
         if (!e_conn) { er = 0; snprintf(etxt, sizeof etxt, "-- W"); }
         if (!settings.dim_bars_swap) {             /* default: gas LEFT, energy RIGHT */
-            dim_bar_set(bar_l_env, bar_l_fill, bar_l_cap, -1, show, 0, gr, 0xffffff, gtxt);
-            dim_bar_set(bar_r_env, bar_r_fill, bar_r_cap, +1, show, 0, er, 0xffffff, etxt);
+            dim_bar_set(bar_l_env, bar_l_fill, bar_l_cap, bar_l_segs, -1, show, 0, gr, 0xffffff, gtxt);
+            dim_bar_set(bar_r_env, bar_r_fill, bar_r_cap, bar_r_segs, +1, show, 0, er, 0xffffff, etxt);
         } else {                                   /* swapped: energy LEFT, gas RIGHT */
-            dim_bar_set(bar_l_env, bar_l_fill, bar_l_cap, -1, show, 0, er, 0xffffff, etxt);
-            dim_bar_set(bar_r_env, bar_r_fill, bar_r_cap, +1, show, 0, gr, 0xffffff, gtxt);
+            dim_bar_set(bar_l_env, bar_l_fill, bar_l_cap, bar_l_segs, -1, show, 0, er, 0xffffff, etxt);
+            dim_bar_set(bar_r_env, bar_r_fill, bar_r_cap, bar_r_segs, +1, show, 0, gr, 0xffffff, gtxt);
         }
     }
     /* NILM transient device label */
@@ -960,8 +1003,8 @@ lv_obj_t * screen_dim_create(void) {
     /* Usage bars at the outer edges, centred on the indoor-temp row (restored;
      * gated/positioned per show_dim_bars + dim_bars_swap in refresh_cb). */
     dim_bar_h = SY(2 * DIM_CLOCK_H);
-    dim_make_bar(-1, &bar_l_env, &bar_l_fill, &bar_l_cap);
-    dim_make_bar(+1, &bar_r_env, &bar_r_fill, &bar_r_cap);
+    dim_make_bar(-1, &bar_l_env, &bar_l_fill, &bar_l_cap, bar_l_segs);
+    dim_make_bar(+1, &bar_r_env, &bar_r_fill, &bar_r_cap, bar_r_segs);
 
     if (!refresh_timer) refresh_timer = lv_timer_create(refresh_cb, 1000, NULL);
     return scr_root;
