@@ -50,9 +50,11 @@ void screen_waste_close(void);
 void screen_home_dismiss_modals(void);
 /* Home-tile layout editor ("Indeling"). */
 void screen_layout_editor_show(void);
+void screen_layout_editor_close(void);
 lv_obj_t * screen_layout_editor_create(void);
 /* Dim-screen block layout editor ("Dim indeling"). */
 void screen_dim_layout_editor_show(void);
+void screen_dim_layout_editor_close(void);
 lv_obj_t * screen_dim_layout_editor_create(void);
 /* Boot picker layout (headless-sim render only; device path is bootpick_run). */
 lv_obj_t * screen_bootpick_create(void);

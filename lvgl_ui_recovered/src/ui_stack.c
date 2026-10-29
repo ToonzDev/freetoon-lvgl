@@ -14,6 +14,9 @@
 #include "boxtalk.h"
 #include <stdio.h>
 #include <unistd.h>
+#ifdef SIM
+#include "layout.h"
+#endif
 
 #define STACK_MAX 8
 static lv_obj_t * stack[STACK_MAX];
@@ -26,10 +29,24 @@ static int sp = 0;
  * launcher, which re-launches toonui with the freshly saved cfg/layout. */
 #define UI_RESTART_MARKER "/var/volatile/tmp/toonui_restart"
 void ui_request_restart(void) {
+#ifdef SIM
+    fprintf(stderr, "[sim] UI restart requested — refreshing home screen live\n");
+    screen_layout_editor_close();
+    screen_dim_layout_editor_close();
+    settings_load();
+    layout_load_named(settings.active_layout);
+    ui_refresh_home();
+    while (sp > 1) {
+        ui_pop();
+    }
+    if (sp >= 1) lv_scr_load(stack[0]);
+    return;
+#else
     FILE * f = fopen(UI_RESTART_MARKER, "w");
     if (f) fclose(f);
     fflush(NULL);
     _exit(0);
+#endif
 }
 
 /* Switch the home screen between the freetoon dark dashboard and the stock

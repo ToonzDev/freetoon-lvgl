@@ -939,6 +939,9 @@ static void on_cancel(lv_event_t * e) {
     vis_btn = NULL;
     theme_btn = NULL;
 }
+void screen_layout_editor_close(void) {
+    on_cancel(NULL);
+}
 static void on_save(lv_event_t * e) {
     (void)e;
     g_layout = edit;

@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
+#include <unistd.h>
 
 #ifdef TOON1
 #  define SCREEN_W 800
@@ -23,7 +24,9 @@
  * headless sim (and tests) can read/write layouts outside /mnt/data. */
 static const char * layout_dir(void) {
     const char * d = getenv("TOONUI_DATA_DIR");
-    return (d && *d) ? d : "/mnt/data";
+    if (d && *d) return d;
+    if (access("/mnt/data", W_OK) == 0) return "/mnt/data";
+    return ".";
 }
 
 #define LAYOUT_PREFIX "toonui_layout"   /* default: toonui_layout.cfg; named: …_<name>.cfg */

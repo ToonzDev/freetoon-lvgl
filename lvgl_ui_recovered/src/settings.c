@@ -10,6 +10,19 @@
 
 #define CFG_PATH "/mnt/data/toonui.cfg"
 
+static const char * cfg_path(void) {
+    static char buf[256];
+    const char * d = getenv("TOONUI_DATA_DIR");
+    if (d && *d) {
+        snprintf(buf, sizeof buf, "%s/toonui.cfg", d);
+        return buf;
+    }
+    if (access("/mnt/data", W_OK) == 0 || access("/mnt/data/toonui.cfg", R_OK) == 0) {
+        return "/mnt/data/toonui.cfg";
+    }
+    return "toonui.cfg";
+}
+
 settings_t settings = {
     .auto_dim_enabled  = 1,
     .auto_dim_seconds  = 10,
@@ -184,7 +197,9 @@ void settings_load(void) {
     int seen_domoticz = 0, seen_sonos = 0;
     int cfg_existed = 0;
 
-    FILE * f = fopen(CFG_PATH, "r");
+    FILE * f = fopen(cfg_path(), "r");
+    if (!f) f = fopen(CFG_PATH, "r");
+    if (!f) f = fopen("toonui.cfg", "r");
     if (!f) goto autodetect;
     cfg_existed = 1;
     char line[1200];
@@ -792,7 +807,8 @@ void settings_save(void) {
     wasm_post_settings_blob(json);
     return;     /* don't try to fopen(CFG_PATH, "w") — no /mnt/data in WASM */
 #endif
-    FILE * f = fopen(CFG_PATH, "w");
+    FILE * f = fopen(cfg_path(), "w");
+    if (!f) f = fopen("toonui.cfg", "w");
     if (!f) return;
     fprintf(f, "auto_dim_enabled=%d\n",  settings.auto_dim_enabled);
     fprintf(f, "auto_dim_seconds=%d\n",  settings.auto_dim_seconds);

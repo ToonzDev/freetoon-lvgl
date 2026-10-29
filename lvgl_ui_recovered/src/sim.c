@@ -79,7 +79,17 @@ static int x11_gui_init(int width, int height, const char * title) {
     g_x_image = XCreateImage(g_x_display, visual, 24, ZPixmap, 0,
                              (char *)g_x_pixels, width, height, 32, 0);
 
-    XMapWindow(g_x_display, g_x_window);
+    XWMHints * wm_hints = XAllocWMHints();
+    if (wm_hints) {
+        wm_hints->flags = InputHint | StateHint;
+        wm_hints->input = True;
+        wm_hints->initial_state = NormalState;
+        XSetWMHints(g_x_display, g_x_window, wm_hints);
+        XFree(wm_hints);
+    }
+
+    XMapRaised(g_x_display, g_x_window);
+    XRaiseWindow(g_x_display, g_x_window);
     XFlush(g_x_display);
     return 1;
 }
@@ -90,6 +100,13 @@ static void x11_handle_events(void) {
         XEvent ev;
         XNextEvent(g_x_display, &ev);
         switch (ev.type) {
+            case Expose:
+                if (g_x_display && g_x_window && g_x_image) {
+                    XPutImage(g_x_display, g_x_window, g_x_gc, g_x_image,
+                              0, 0, 0, 0, DISP_HOR, DISP_VER);
+                    XFlush(g_x_display);
+                }
+                break;
             case ButtonPress:
                 if (ev.xbutton.button == Button1) {
                     g_mouse_down = 1;
@@ -146,6 +163,7 @@ static void x11_flush(lv_disp_drv_t * drv, const lv_area_t * a, lv_color_t * px)
         int h = a->y2 - a->y1 + 1;
         XPutImage(g_x_display, g_x_window, g_x_gc, g_x_image,
                   a->x1, a->y1, a->x1, a->y1, w, h);
+        XFlush(g_x_display);
     }
     lv_disp_flush_ready(drv);
 }
@@ -451,6 +469,8 @@ int main(int argc, char ** argv) {
             dd.flush_cb = x11_flush;
             id.read_cb  = x11_indev_read;
             ui_init();
+            lv_refr_now(NULL);
+            XFlush(g_x_display);
             fprintf(stderr, "[sim] Interactive GUI active in window (%dx%d)... Click with mouse; press ESC or close window to exit.\n", DISP_HOR, DISP_VER);
 
             struct timespec last_t, now_t;
@@ -470,6 +490,11 @@ int main(int argc, char ** argv) {
             x11_gui_close();
             fprintf(stderr, "[sim] GUI closed cleanly.\n");
             return 0;
+        } else {
+            fprintf(stderr, "[sim] ERROR: Failed to open graphical window (DISPLAY=%s).\n"
+                            "[sim] On Windows, WSLg or an X-server (VcXsrv/Xming) is required for the desktop window.\n",
+                            getenv("DISPLAY") ? getenv("DISPLAY") : "<unset>");
+            return 1;
         }
     }
 

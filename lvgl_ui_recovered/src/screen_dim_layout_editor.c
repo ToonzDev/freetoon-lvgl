@@ -629,6 +629,10 @@ static void on_cancel(lv_event_t * e) {
     sel = -1;
 }
 
+void screen_dim_layout_editor_close(void) {
+    on_cancel(NULL);
+}
+
 static void on_save(lv_event_t * e) {
     (void)e;
     for (int i = 0; i < DB_COUNT; i++) g_dim_blocks[i] = edit_dim[i];
