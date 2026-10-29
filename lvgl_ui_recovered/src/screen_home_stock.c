@@ -46,7 +46,7 @@
 #define C_SECOND   0x8C8C8C
 #define C_PRESSED  0xA8A8A8
 
-#define G_X0       41
+#define G_X0       60
 #define G_COLW     293
 #define G_GAPX     14
 #define G_Y0       97
@@ -1035,12 +1035,12 @@ lv_obj_t * screen_home_stock_create(void) {
 
     /* arrows + dots */
     lv_obj_t * la = mklabel(scr_root, LV_SYMBOL_LEFT, SF(28), C_TITLE);
-    lv_obj_set_pos(la, SX(56), SY(540));
+    lv_obj_set_pos(la, SX(G_X0 + 15), SY(540));
     lv_obj_add_flag(la, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_ext_click_area(la, SX(24));
     lv_obj_add_event_cb(la, on_arrow, LV_EVENT_CLICKED, (void*)(intptr_t)-1);
     lv_obj_t * ra = mklabel(scr_root, LV_SYMBOL_RIGHT, SF(28), C_TITLE);
-    lv_obj_set_pos(ra, SX(596), SY(540));
+    lv_obj_set_pos(ra, SX(G_X0 + (2 * G_COLW + G_GAPX) - 45), SY(540));
     lv_obj_add_flag(ra, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_ext_click_area(ra, SX(24));
     lv_obj_add_event_cb(ra, on_arrow, LV_EVENT_CLICKED, (void*)(intptr_t)1);
