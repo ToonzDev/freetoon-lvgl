@@ -74,6 +74,29 @@ void ui_refresh_theme(void) {
 
 static uint32_t last_activity_ms = 0;
 static int      is_dimmed = 0;
+static int      is_black_screen = 0;
+
+static lv_obj_t * scr_black = NULL;
+
+static void on_black_wake_tap(lv_event_t * e) {
+    (void)e;
+    ui_wake_now();
+}
+
+lv_obj_t * screen_black_create(void) {
+    if (scr_black) return scr_black;
+    scr_black = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(scr_black, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(scr_black, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(scr_black, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(scr_black, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(scr_black, on_black_wake_tap, LV_EVENT_CLICKED, NULL);
+    return scr_black;
+}
+
+static inline int is_sleep_or_away(void) {
+    return (toon_state.active_state == 2 || toon_state.active_state == 3);
+}
 
 void ui_push(lv_obj_t * scr) {
     if (sp >= STACK_MAX || !scr) return;
@@ -127,6 +150,7 @@ void ui_idle_tick(void) {
         boxtalk_request_indoor_refresh();
         ui_pop();
         is_dimmed = 0;
+        is_black_screen = 0;
         apply_active_brightness();
         last_activity_ms = lv_tick_get();
         wake_pending = 0;
@@ -146,6 +170,55 @@ void ui_idle_tick(void) {
         static uint32_t last_als_ms = 0;
         uint32_t nt = lv_tick_get();
         if (nt - last_als_ms > 3000) { apply_active_brightness(); last_als_ms = nt; }
+    }
+
+    /* Track thermostat comfort preset changes (active_state) for auto-black / auto-wake */
+    static int last_active_state = -999;
+    if (last_active_state == -999) {
+        last_active_state = toon_state.active_state;
+    }
+    if (toon_state.active_state != last_active_state) {
+        int prev_as = last_active_state;
+        last_active_state = toon_state.active_state;
+
+        if (is_dimmed) {
+            if (is_black_screen) {
+                /* Screen is black because state was Slapen (2) or Weg (3).
+                 * If state changed to something else (e.g. Thuis (1), Comfort (0), Manual (-1)),
+                 * wake up automatically. */
+                if (!is_sleep_or_away()) {
+                    fprintf(stderr, "[ui] active_state changed from %d to %d -> waking from black screen\n",
+                            prev_as, toon_state.active_state);
+                    ui_wake_now();
+                    return;
+                }
+            } else {
+                /* Screen is dimmed on normal dim screen.
+                 * If state changed to Slapen (2) or Weg (3), switch to black screen. */
+                if (settings.dim_sleep_away_black && is_sleep_or_away()) {
+                    fprintf(stderr, "[ui] active_state changed from %d to %d while dimmed -> switching to black screen\n",
+                            prev_as, toon_state.active_state);
+                    backlight_set(0);
+                    if (sp > 1) {
+                        stack[sp - 1] = screen_black_create();
+                        lv_scr_load(stack[sp - 1]);
+                    } else {
+                        ui_push(screen_black_create());
+                    }
+                    is_black_screen = 1;
+                }
+            }
+        }
+    }
+
+    /* Live settings change: if user disabled dim_sleep_away_black while dimmed black, switch back to normal dim */
+    if (is_dimmed && is_black_screen && !settings.dim_sleep_away_black) {
+        backlight_set(settings.dim_brightness);
+        if (sp > 1) {
+            stack[sp - 1] = screen_dim_create();
+            lv_scr_load(stack[sp - 1]);
+        }
+        is_black_screen = 0;
     }
 
     uint32_t now = lv_tick_get();
@@ -188,8 +261,15 @@ void ui_idle_tick(void) {
         screen_calendar_close();
         screen_waste_close();
         screen_home_dismiss_modals();
-        backlight_set(settings.dim_brightness);
-        ui_push(screen_dim_create());
+        if (settings.dim_sleep_away_black && is_sleep_or_away()) {
+            backlight_set(0);
+            ui_push(screen_black_create());
+            is_black_screen = 1;
+        } else {
+            backlight_set(settings.dim_brightness);
+            ui_push(screen_dim_create());
+            is_black_screen = 0;
+        }
         is_dimmed = 1;
     }
 }

@@ -8,6 +8,7 @@ typedef struct {
     int auto_home_seconds;    /* 5..600 — idle timeout before auto-returning home */
     int active_brightness;    /* 0..1000 backlight when active */
     int dim_brightness;       /* 0..1000 backlight while dimmed */
+    int dim_sleep_away_black; /* 0/1 — completely black screen when Slapen or Weg */
     int auto_brightness;      /* 0/1 — follow the LTR-303 ambient sensor (Toon 2) */
 
     /* Toon 1 TSC2007 touch panel alignment. Resistive panels are mounted any-

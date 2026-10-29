@@ -33,6 +33,7 @@ void screen_home_open_news(void);
 lv_obj_t * screen_thermostat_create(void);
 lv_obj_t * screen_dim_create(void);
 lv_obj_t * screen_dim_grid_create(void);   /* custom grid dim (opt-in); used by screen_dim_create */
+lv_obj_t * screen_black_create(void);      /* pure black standby screen when Slapen or Weg */
 lv_obj_t * screen_settings_create(void);
 lv_obj_t * screen_schedule_create(void);
 lv_obj_t * screen_stats_create(void);
