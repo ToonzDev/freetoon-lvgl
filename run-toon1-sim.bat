@@ -79,9 +79,16 @@ if "!DO_BUILD!"=="1" (
 rem Cleanup any stale sim process and ensure /mnt/data exists
 wsl bash -c "killall -9 toonui-sim1 toonui-sim 2>/dev/null || true; mkdir -p /mnt/data 2>/dev/null || true" >nul 2>nul
 
+:sim_loop
 echo [sim1] Launching FreeToon Toon 1 simulator (800x480)...
 wsl bash -c "DISPLAY=${DISPLAY:-:0} cd '%WSL_DIR%/lvgl_ui_recovered/build-sim1' && ./toonui-sim1!ARGS!"
 set EXIT_CODE=%ERRORLEVEL%
+
+if "%EXIT_CODE%"=="42" (
+    echo.
+    echo [sim1] UI restart requested — restarting simulator...
+    goto sim_loop
+)
 
 if not "%EXIT_CODE%"=="0" (
     echo [sim1] Process exited with code %EXIT_CODE%

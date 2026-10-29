@@ -433,6 +433,7 @@ int main(int argc, char ** argv) {
 
     settings_load();   /* defaults when /mnt/data/toonui.cfg is absent */
     mock_state();
+    layout_load_named(settings.active_layout);  /* home-tile layout: active preset */
     dim_layout_load();  /* dim block layout (seeds defaults if no file) */
     /* Sim-only: exercise a custom layout. $TOONUI_SIM_CUSTOM_LAYOUT turns it on
      * and loads $TOONUI_DATA_DIR/toonui_layout.cfg so screens render from it. */

@@ -29,31 +29,10 @@ static int sp = 0;
  * launcher, which re-launches toonui with the freshly saved cfg/layout. */
 #define UI_RESTART_MARKER "/var/volatile/tmp/toonui_restart"
 #ifdef SIM
-static void sim_restart_async(void * unused) {
-    (void)unused;
-    fprintf(stderr, "[sim] performing scheduled live UI restart\n");
-    fprintf(stderr, "[sim] step 1: close layout editor\n");
-    screen_layout_editor_close();
-    fprintf(stderr, "[sim] step 2: close dim layout editor\n");
-    screen_dim_layout_editor_close();
-    fprintf(stderr, "[sim] step 3: settings load\n");
-    settings_load();
-    fprintf(stderr, "[sim] step 4: layout load\n");
-    layout_load_named(settings.active_layout);
-    fprintf(stderr, "[sim] step 5: refresh home\n");
-    ui_refresh_home();
-    fprintf(stderr, "[sim] step 6: pop stack (sp=%d)\n", sp);
-    while (sp > 1) {
-        ui_pop();
-    }
-    fprintf(stderr, "[sim] step 7: load home screen\n");
-    if (sp >= 1) lv_scr_load(stack[0]);
-    fprintf(stderr, "[sim] step 8: restart complete!\n");
-}
-
 void ui_request_restart(void) {
-    fprintf(stderr, "[sim] UI restart requested — scheduling live refresh\n");
-    lv_async_call(sim_restart_async, NULL);
+    fprintf(stderr, "[sim] UI restart requested — exiting with code 42 to respawn\n");
+    fflush(stderr);
+    _exit(42);
 }
 #else
 void ui_request_restart(void) {
