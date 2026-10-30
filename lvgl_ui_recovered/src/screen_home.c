@@ -2210,15 +2210,24 @@ static void refresh_cb(lv_timer_t * t) {
     }
 
     /* Preset row: selected preset in full colour with white border,
-     * unselected presets in dark background. All 4 buttons remain visible (CR3). */
+     * unselected presets in dark background. All 4 buttons remain visible (CR3).
+     * Mirror the stock UI + screen_thermostat: highlight active preset even in
+     * Manual mode, and fall back to temp_override_origin if active_state < 0. */
     {
         static const uint32_t preset_cols[4] = {0xcc7733, 0x3377cc, 0x553388, 0x557788};
-        int hi = (toon_state.active_state >= 0 && toon_state.active_state <= 3)
-                     ? toon_state.active_state : -1;
+        int temp_origin = boxtalk_temp_override_origin();
+        int hi;
+        if (toon_state.active_state >= 0 && toon_state.active_state <= 3) {
+            hi = toon_state.active_state;
+        } else if (temp_origin >= 0 && temp_origin <= 3) {
+            hi = temp_origin;
+        } else {
+            hi = -1;
+        }
         for (int i = 0; i < 4; i++) {
             if (!tile_btn_preset[i]) continue;
             lv_obj_clear_flag(tile_btn_preset[i], LV_OBJ_FLAG_HIDDEN);
-            int sel = (on_program && i == hi);
+            int sel = (i == hi);
             lv_obj_set_style_border_width(tile_btn_preset[i], sel ? 2 : 0, 0);
             lv_obj_set_style_bg_color(tile_btn_preset[i],
                                       lv_color_hex(sel ? preset_cols[i] : (settings.home_light_mode ? 0xccddee : 0x243242)), 0);
