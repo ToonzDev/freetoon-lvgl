@@ -1200,10 +1200,21 @@ static void* http_poll_thread(void* arg) {
     return NULL;
 }
 
+#ifdef SIM
+static int sim_preset_temps[4] = { 2050, 1950, 1500, 1700 };
+#endif
+
 int boxtalk_set_setpoint(float temp) {
     int centi = (int)(temp * 100.0f + 0.5f);
     if (centi < 500)  centi = 500;   /* 5°C floor */
     if (centi > 3000) centi = 3000;  /* 30°C cap  */
+#ifdef SIM
+    toon_state.setpoint = centi / 100.0f;
+    toon_state.msg_count++;
+    extern void canonical_state_notify(uint32_t);
+    canonical_state_notify(CSTATE_EVT_THERMOSTAT);
+    return 0;
+#endif
 #ifdef WASM_BUILD
     /* WASM client: same /api/setpoint endpoint the slave bridge already
      * has, just routed through the JS fetch shim (wasm_push_event) instead
@@ -1237,6 +1248,9 @@ int boxtalk_set_setpoint(float temp) {
  * (1850 = 18.50 °C) or -1 on error / unknown response. */
 int boxtalk_get_state_value(int state) {
     if (state < 0 || state > 3) return -1;
+#ifdef SIM
+    return sim_preset_temps[state];
+#endif
     char body[256];
     char q[64];
     snprintf(q, sizeof(q), "action=getStateValue&stateId=%d", state);
@@ -1260,6 +1274,10 @@ int boxtalk_set_state_value(int state, int centi) {
     if (state < 0 || state > 3) return -1;
     if (centi < 500)  centi = 500;
     if (centi > 3000) centi = 3000;
+#ifdef SIM
+    sim_preset_temps[state] = centi;
+    return 0;
+#endif
     char q[80];
     snprintf(q, sizeof(q),
              "action=updateStateValue&stateId=%d&newValue=%d", state, centi);
@@ -1293,6 +1311,20 @@ int boxtalk_set_state_value(int state, int centi) {
 
 int boxtalk_set_program(int preset) {
     if (preset < 0 || preset > 3) return -1;   /* preset = comfort level 0..3 */
+    int mode;
+#ifdef SIM
+    if      (toon_state.program_state == PROG_LOCKEDBASE) mode = PROG_TEMPOVERRIDE;
+    else if (toon_state.program_state == PROG_MANUAL)     mode = PROG_MANUAL;
+    else if (toon_state.active_state  == preset)          mode = PROG_LOCKEDBASE;
+    else                                                  mode = PROG_TEMPOVERRIDE;
+    toon_state.active_state  = preset;
+    toon_state.program_state = mode;
+    toon_state.setpoint      = sim_preset_temps[preset] / 100.0f;
+    toon_state.msg_count++;
+    extern void canonical_state_notify(uint32_t);
+    canonical_state_notify(CSTATE_EVT_THERMOSTAT | CSTATE_EVT_BOILER);
+    return 0;
+#endif
 #ifdef WASM_BUILD
     /* WASM client: POST the preset to the master, which runs the mode logic. */
     extern void wasm_push_event(const char *, const char *);
@@ -1314,7 +1346,6 @@ int boxtalk_set_program(int preset) {
      *                                     temperatureState/setpoint changes)
      *   elif activeState  == preset    -> LOCKEDBASE     (2nd tap of same = lock)
      *   else                           -> TEMPOVERRIDE   (override until next switch) */
-    int mode;
     if      (toon_state.program_state == PROG_LOCKEDBASE) mode = PROG_TEMPOVERRIDE;
     else if (toon_state.program_state == PROG_MANUAL)     mode = PROG_MANUAL;
     else if (toon_state.active_state  == preset)          mode = PROG_LOCKEDBASE;
@@ -1336,6 +1367,15 @@ int boxtalk_set_program(int preset) {
 }
 
 int boxtalk_set_manual(void) {
+#ifdef SIM
+    temp_override_active = 0;
+    toon_state.program_state = PROG_MANUAL;
+    toon_state.active_state  = -1;
+    toon_state.msg_count++;
+    extern void canonical_state_notify(uint32_t);
+    canonical_state_notify(CSTATE_EVT_THERMOSTAT);
+    return 0;
+#endif
     if (settings.client_mode) {
         int rc = client_link_program(-1);
         if (rc == 0) {
@@ -1366,6 +1406,16 @@ int boxtalk_set_manual(void) {
 }
 
 int boxtalk_resume_schedule(void) {
+#ifdef SIM
+    temp_override_active = 0;
+    toon_state.program_state = PROG_BASE;
+    toon_state.active_state  = 1;     /* Home */
+    toon_state.setpoint      = sim_preset_temps[1] / 100.0f;
+    toon_state.msg_count++;
+    extern void canonical_state_notify(uint32_t);
+    canonical_state_notify(CSTATE_EVT_THERMOSTAT | CSTATE_EVT_BOILER);
+    return 0;
+#endif
     if (settings.client_mode) {
         temp_override_active = 0;
         extern int client_link_resume_schedule(void);

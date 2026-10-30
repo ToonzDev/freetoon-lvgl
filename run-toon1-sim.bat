@@ -68,7 +68,7 @@ if not exist "%SIM_BIN%" set DO_BUILD=1
 
 if "!DO_BUILD!"=="1" (
     echo [sim1] Building FreeToon Toon 1 simulator [800x480]...
-    wsl bash -c "cd '%WSL_DIR%/lvgl_ui_recovered/src' && make TARGET=sim1 -j4"
+    wsl -d Ubuntu bash -c "cd '%WSL_DIR%/lvgl_ui_recovered/src' && make TARGET=sim1 -j4"
     if errorlevel 1 (
         echo [ERROR] Build failed.
         pause
@@ -76,12 +76,12 @@ if "!DO_BUILD!"=="1" (
     )
 )
 
-rem Cleanup any stale sim process and ensure /mnt/data exists
-wsl bash -c "killall -9 toonui-sim1 toonui-sim 2>/dev/null || true; mkdir -p /mnt/data 2>/dev/null || true" >nul 2>nul
+rem Cleanup any stale sim process, socket locks, and ensure /mnt/data exists
+wsl -d Ubuntu bash -c "killall -9 toonui-sim1 toonui-sim 2>/dev/null || true; rm -f /tmp/.X0-lock 2>/dev/null || true; [ -L /tmp/.X11-unix ] || (rm -rf /tmp/.X11-unix && ln -s /mnt/wslg/.X11-unix /tmp/.X11-unix 2>/dev/null || true); mkdir -p /mnt/data 2>/dev/null || true" >nul 2>nul
 
 :sim_loop
 echo [sim1] Launching FreeToon Toon 1 simulator [800x480]...
-wsl bash -c "DISPLAY=${DISPLAY:-:0} cd '%WSL_DIR%/lvgl_ui_recovered/build-sim1' && ./toonui-sim1!ARGS!"
+wsl -d Ubuntu bash -c "DISPLAY=${DISPLAY:-:0} cd '%WSL_DIR%/lvgl_ui_recovered/build-sim1' && ./toonui-sim1!ARGS!"
 set EXIT_CODE=%ERRORLEVEL%
 
 if "%EXIT_CODE%"=="42" (

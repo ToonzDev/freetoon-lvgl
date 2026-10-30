@@ -29,9 +29,23 @@
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
+#include <signal.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
+
+int g_x11_running = 1;
+
+static void sim_signal_handler(int sig) {
+    (void)sig;
+    g_x11_running = 0;
+}
+
+static int sim_xio_error_handler(Display * d) {
+    (void)d;
+    g_x11_running = 0;
+    return 0;
+}
 
 static Display * g_x_display = NULL;
 static Window    g_x_window  = 0;
@@ -39,7 +53,6 @@ static GC        g_x_gc      = 0;
 static XImage  * g_x_image   = NULL;
 static uint32_t* g_x_pixels  = NULL;
 static Atom      g_wm_delete = 0;
-static int       g_x11_running = 1;
 static int       g_mouse_x = 0, g_mouse_y = 0, g_mouse_down = 0;
 
 static lv_color_t fb[DISP_HOR * DISP_VER];
@@ -88,6 +101,7 @@ static int x11_gui_init(int width, int height, const char * title) {
         XFree(wm_hints);
     }
 
+    XSetIOErrorHandler(sim_xio_error_handler);
     XMapRaised(g_x_display, g_x_window);
     XRaiseWindow(g_x_display, g_x_window);
     XFlush(g_x_display);
@@ -129,6 +143,10 @@ static void x11_handle_events(void) {
                 if ((Atom)ev.xclient.data.l[0] == g_wm_delete) {
                     g_x11_running = 0;
                 }
+                break;
+            case DestroyNotify:
+            case UnmapNotify:
+                g_x11_running = 0;
                 break;
             case KeyPress: {
                 KeySym sym = XLookupKeysym(&ev.xkey, 0);
@@ -231,19 +249,81 @@ static void sim_tap(int x, int y) {
     tap_pressed = 0;                          pump(25);
 }
 
+/* Simulate realistic OpenTherm boiler behaviour based on thermostat setpoint vs indoor temp */
+static void sim_boiler_tick(void) {
+    if (!toon_state.connected) return;
+
+    float diff = toon_state.setpoint - toon_state.indoor_temp;
+    if (diff > 0.05f) {
+        /* Heat demand */
+        toon_state.burner_on = 1;
+        float mod = diff * 35.0f;
+        if (mod > 100.0f) mod = 100.0f;
+        if (mod < 20.0f) mod = 20.0f;
+        toon_state.modulation_level = mod;
+
+        float target_flow = 45.0f + diff * 15.0f;
+        if (target_flow > 75.0f) target_flow = 75.0f;
+        toon_state.ch_setpoint = target_flow;
+
+        /* Aanvoer climbs towards target_flow */
+        if (toon_state.boiler_out_temp < target_flow) {
+            toon_state.boiler_out_temp += 0.8f;
+            if (toon_state.boiler_out_temp > target_flow) toon_state.boiler_out_temp = target_flow;
+        } else if (toon_state.boiler_out_temp > target_flow) {
+            toon_state.boiler_out_temp -= 0.3f;
+        }
+
+        /* Retour climbs towards flow - 12°C */
+        float target_ret = toon_state.boiler_out_temp - 12.0f;
+        if (target_ret < 25.0f) target_ret = 25.0f;
+        if (toon_state.boiler_in_temp < target_ret) {
+            toon_state.boiler_in_temp += 0.6f;
+            if (toon_state.boiler_in_temp > target_ret) toon_state.boiler_in_temp = target_ret;
+        } else if (toon_state.boiler_in_temp > target_ret) {
+            toon_state.boiler_in_temp -= 0.3f;
+        }
+
+        /* Indoor temp slowly warms up */
+        toon_state.indoor_temp += 0.02f;
+        if (toon_state.indoor_temp > toon_state.setpoint)
+            toon_state.indoor_temp = toon_state.setpoint;
+    } else {
+        /* Boiler idle */
+        toon_state.burner_on = 0;
+        toon_state.modulation_level = 0.0f;
+
+        /* Cool down towards ambient */
+        if (toon_state.boiler_out_temp > 28.0f) {
+            toon_state.boiler_out_temp -= 0.4f;
+        }
+        if (toon_state.boiler_in_temp > 24.0f) {
+            toon_state.boiler_in_temp -= 0.4f;
+        }
+
+        /* Slow cooling down if indoor temp is higher than setpoint */
+        if (diff < -0.2f && toon_state.indoor_temp > 17.0f) {
+            toon_state.indoor_temp -= 0.008f;
+        }
+    }
+}
+
 /* Representative data so the screens render like a live Toon. */
 static void mock_state(void) {
-    toon_state.indoor_temp   = 20.1f;
-    toon_state.setpoint      = 18.5f;
-    toon_state.ch_setpoint   = 60.0f;
+    toon_state.connected     = 1;
+    toon_state.msg_count     = 1;
+    toon_state.boiler_type   = 1;   /* OpenTherm */
+    toon_state.water_pressure= 1.8f;/* 1.8 bar */
+    toon_state.indoor_temp   = 20.0f;
+    toon_state.setpoint      = 19.5f;
+    toon_state.ch_setpoint   = 55.0f;
     toon_state.humidity      = 53.0f;
-    toon_state.boiler_in_temp  = 58.0f;
-    toon_state.boiler_out_temp = 47.0f;
-    toon_state.modulation_level = 42.0f;
-    toon_state.boiler_type   = 0;
-    toon_state.burner_on     = 1;
+    toon_state.boiler_in_temp  = 35.0f;
+    toon_state.boiler_out_temp = 42.0f;
+    toon_state.modulation_level = 0.0f;
+    toon_state.burner_on     = 0;
     toon_state.dhw_on        = 0;
-    toon_state.program_state = 2;   /* scheme mode = TEMPOVERRIDE */
+    toon_state.program_state = 1;   /* scheme mode = PROG_BASE (weekly schedule) */
     toon_state.active_state  = 1;   /* live comfort preset = Home */
     /* Sim-only: SIM_MANUAL=1 emulates manual hold — happ reports programState=0
      * (PROG_MANUAL) yet activeState still names the value-matching preset, so we
@@ -413,6 +493,10 @@ static void render_one(create_fn fn, const char * out) {
 }
 
 int main(int argc, char ** argv) {
+    signal(SIGINT, sim_signal_handler);
+    signal(SIGTERM, sim_signal_handler);
+    signal(SIGHUP, sim_signal_handler);
+
     lv_init();
     static lv_disp_draw_buf_t db;
     static lv_color_t line_buf[DISP_HOR * 60];
@@ -478,6 +562,7 @@ int main(int argc, char ** argv) {
             struct timespec last_t, now_t;
             clock_gettime(CLOCK_MONOTONIC, &last_t);
             uint32_t last_idle_check = lv_tick_get();
+            uint32_t last_boiler_tick = lv_tick_get();
             while (g_x11_running) {
                 x11_handle_events();
                 lv_timer_handler();
@@ -493,11 +578,15 @@ int main(int argc, char ** argv) {
                     ui_idle_tick();
                     last_idle_check = now;
                 }
+                if (now - last_boiler_tick >= 1000) {
+                    sim_boiler_tick();
+                    last_boiler_tick = now;
+                }
                 usleep(5000);
             }
             x11_gui_close();
             fprintf(stderr, "[sim] GUI closed cleanly.\n");
-            return 0;
+            exit(0);
         } else {
             fprintf(stderr, "[sim] ERROR: Failed to open graphical window (DISPLAY=%s).\n"
                             "[sim] On Windows, WSLg or an X-server (VcXsrv/Xming) is required for the desktop window.\n",
