@@ -130,4 +130,51 @@
     2. **Licht thema: grote waarde = binnentemp**: Hardcode to 1 (`settings.stock_big_indoor = 1`) and remove the row.
     3. **Maanstand op kloktegel**: Obsolete feature on modern clock tile; remove switch and associated row.
 
+### 12. Waste Tile on Dim Screen: Category Name Abbreviations
+- **Status**: Open / Backlog.
+- **Description**:
+  - On the standby/dim screen waste tile (`DB_WASTE` in `screen_dim.c` / `screen_dim_grid.c` / `wastecollection.c`), shorten long category names for better fit and legibility:
+    - *"GFT"* instead of *"Groente/Fruit/Tuinafval"*.
+    - *"PMD"* instead of *"Plastic/Metaal/Drankpakken"*.
+
+### 13. Dim Screen Transition Over Detail / Modal Screens
+- **Status**: Open / Backlog.
+- **Description**:
+  - When a detailed screen is active (e.g., full Settings subscreen, big News, or Weather screens), the dim screen transitions in the background underneath, but the foreground detailed screen remains visible on top instead of being covered or closed.
+  - Review UI stack transition and screen push/pop or dim layering (`ui_stack.c` / `screen_dim.c`) so dim mode cleanly obscures or handles open detail screens.
+
+### 14. Dim Screen Waste Tile: Dynamic Category Icon
+- **Status**: Open / Backlog.
+- **Description**:
+  - On the Dim screen, the next upcoming waste collection date is always shown with a generic wastebin icon.
+  - Update the dim tile to display the category-specific waste icon (e.g. paper, GFT, PMD, residual) matching the next pickup type.
+
+### 15. Thermostat Home Tile: Preset Buttons Should Resume Program Mode from Manual
+- **Status**: Open / Backlog.
+- **Description**:
+  - When the thermostat is in Manual mode and the user taps one of the preset buttons (Comfort, Thuis, Slapen, Weg) on the homescreen tile, the thermostat should activate Program mode (`PROG_TEMPOVERRIDE` or `PROG_BASE`) with that preset, rather than staying in Manual mode.
+
+### 16. Vertical Meter Bars on Dim Screen: Value Text Below Bar
+- **Status**: Open / Backlog.
+- **Description**:
+  - When vertical segmented usage bars (`dim_bars_vertical`) are selected on the dim screen, position the reading / unit text underneath the bar rather than beside it to optimize horizontal space.
+
+### 17. Calendar Tile Layout & Background Consistency Across Tile Slots
+- **Status**: Open / Backlog.
+- **Description**:
+  - If the Agenda/Calendar function is assigned to a different slot (such as the ventilation tile), the background color and layout differ from the dedicated Agenda tile. Standardize them so all calendar representations use the preferred native Agenda tile style.
+
+### 18. Temporary Setpoint Override Alignment Across Dim, Tile, and Full Thermostat Screen
+- **Status**: Open / Backlog.
+- **Description**:
+  - When the thermostat is in Program mode and the user adjusts the setpoint temperature on the homescreen tile (+/-), the dim screen switches its label to "Handmatig" while the homescreen tile and big thermostat screen stay in Program mode.
+  - Align behavior so that a setpoint change is treated as a temporary override in Program mode (holding the new setpoint until the next scheduled program switch), consistently reflected across all screens.
+
+### 19. Big Thermostat Screen: BoxTalk Debug Banner Cleanup
+- **Status**: Open / Backlog.
+- **Description**:
+  - The big thermostat screen currently displays `"BoxTalk OK msg=xxx"`.
+  - Hide this debug status during normal operation, only surfacing an alert if communication fails (or routing connectivity warnings to the Inbox).
+
+
 
