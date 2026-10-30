@@ -2192,7 +2192,8 @@ static void refresh_cb(lv_timer_t * t) {
      *      BASE/TEMPOVERRIDE/PROGOVERRIDE/LOCKEDBASE (1/2/3/8), "manual" for
      *      MANUAL/HOLIDAY (0/4/5). */
     int ps = toon_state.program_state;
-    int on_program = (ps == 1 || ps == 2 || ps == 3 || ps == 8);
+    int temp_origin = boxtalk_temp_override_origin();
+    int on_program = (ps == 1 || ps == 2 || ps == 3 || ps == 8) || (temp_origin >= 0);
 
     if (tile_btn_mode_manual) {
         lv_obj_set_style_border_width(tile_btn_mode_manual, on_program ? 0 : 2, 0);
@@ -2227,7 +2228,7 @@ static void refresh_cb(lv_timer_t * t) {
         for (int i = 0; i < 4; i++) {
             if (!tile_btn_preset[i]) continue;
             lv_obj_clear_flag(tile_btn_preset[i], LV_OBJ_FLAG_HIDDEN);
-            int sel = (i == hi);
+            int sel = (on_program && i == hi);
             lv_obj_set_style_border_width(tile_btn_preset[i], sel ? 2 : 0, 0);
             lv_obj_set_style_bg_color(tile_btn_preset[i],
                                       lv_color_hex(sel ? preset_cols[i] : (settings.home_light_mode ? 0xccddee : 0x243242)), 0);
