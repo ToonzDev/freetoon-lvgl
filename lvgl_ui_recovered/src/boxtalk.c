@@ -1399,7 +1399,7 @@ int boxtalk_set_manual(void) {
     fprintf(stderr, "[bxt] set_manual changeSchemeState state=0 ts=%d rc=%d\n", ts, rc);
     if (rc == 0) {
         toon_state.program_state = PROG_MANUAL;   /* 0, optimistic */
-        toon_state.active_state  = -1;            /* not on a preset */
+        toon_state.active_state  = ts;            /* keep current preset active */
     }
     return rc;
 }

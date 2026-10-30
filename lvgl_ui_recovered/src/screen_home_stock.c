@@ -889,7 +889,7 @@ static void refresh_cb(lv_timer_t * t) {
     float lo_v  = settings.stock_big_indoor ? toon_state.setpoint     : toon_state.indoor_temp;
     snprintf(big, sizeof big, "%.1f°", big_v); comma(big); lv_label_set_text(lbl_setpoint, big);
     snprintf(lo,  sizeof lo,  "%.1f°", lo_v);  comma(lo);  lv_label_set_text(lbl_setpoint_lo, lo);
-    int manual = (toon_state.active_state < 0);
+    int manual = (toon_state.program_state == 0);
     lv_label_set_text(lbl_prog, manual ? tr("Programma uit", "Program off") : tr("Programma aan", "Program on"));
     for (int i = 0; i < 4; i++) {
         int active = (!manual && toon_state.active_state == scene_state[i]);

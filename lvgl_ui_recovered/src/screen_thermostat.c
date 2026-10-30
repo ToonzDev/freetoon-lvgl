@@ -93,14 +93,14 @@ static void refresh_cb(lv_timer_t * t) {
         lv_label_set_text_fmt(lbl_temp, "%.1f°C", display_indoor_temp(toon_state.indoor_temp));
 
     /* Highlight logic: the mode button (Scheduled[0] or Off[1]) gets a white
-     * border based on whether we're on the schedule; the preset button
-     * (Comfort[2] / Home[3] / Sleep[4] / Away[5]) gets one based on the LIVE
-     * comfort preset, which is active_state (happ's "activeState"), NOT
-     * program_state (that's the scheme mode). A +/- temporary override counts
-     * as "still on the schedule" so the Scheduled mode + origin preset stay
-     * highlighted while it's in flight. */
+     * border based on whether we're on the schedule (program_state 1, 2, 3, 8);
+     * the preset button (Comfort[2] / Home[3] / Sleep[4] / Away[5]) gets one
+     * based on the LIVE comfort preset, which is active_state (happ's "activeState").
+     * A +/- temporary override counts as "still on the schedule" so the Scheduled
+     * mode + origin preset stay highlighted while it's in flight. */
     int temp_origin = boxtalk_temp_override_origin();   /* -1 if none */
-    int on_schedule = (toon_state.active_state >= 0) || (temp_origin >= 0);
+    int ps = toon_state.program_state;
+    int on_schedule = (ps == 1 || ps == 2 || ps == 3 || ps == 8) || (temp_origin >= 0);
     int mode_idx    = on_schedule ? 0 : 1;
     int preset;
     if (toon_state.active_state >= 0 && toon_state.active_state <= 3) {
