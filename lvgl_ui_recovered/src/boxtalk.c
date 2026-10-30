@@ -318,20 +318,19 @@ static void handle_notify(const char* xml) {
     if (strcmp(tail, "TemperatureSensor") == 0) {
         float v;
         if (elem_text_float(xml, "CurrentTemperature", &v) || elem_text_float(xml, "currentTemp", &v)) {
-            /* happ_thermstat publishes the calibrated room temperature here.
-             * The hardware-sensor UUID_AMBIENT is a separate (uncalibrated)
-             * source — ignored for indoor_temp because it reads ~3°C high. */
-            if (strcmp(src_uuid, UUID_AMBIENT) != 0 && strcmp(src_uuid, UUID_BOILER) != 0) {
-                toon_state.indoor_temp = (v > 80.0f) ? v / 100.0f : v;
-                toon_state.msg_count++;
-            } else if (strcmp(src_uuid, UUID_BOILER) == 0) {
+            /* Note: TemperatureSensor carries raw uncalibrated hardware sensor readings
+             * (e.g. ambient display sensor running warm from internal SoC/screen heat).
+             * Calibrated room temperature is published exclusively by happ_thermstat
+             * via ThermostatInfo and the thermostatInfo dataset. Do NOT assign indoor_temp here. */
+            if (strcmp(src_uuid, UUID_BOILER) == 0 || strstr(src_uuid, "boiler")) {
                 toon_state.boiler_temp = v;
+                toon_state.msg_count++;
             }
         }
     } else if (strcmp(tail, "HumiditySensor") == 0) {
         float v;
         if (elem_text_float(xml, "CurrentHumidity", &v)) {
-            if (strcmp(src_uuid, UUID_AMBIENT) == 0) {
+            if (v > 0.0f && v <= 100.0f) {
                 toon_state.humidity = v;
                 toon_state.msg_count++;
             }
