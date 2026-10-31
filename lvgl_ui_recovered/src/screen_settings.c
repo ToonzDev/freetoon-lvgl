@@ -200,6 +200,7 @@ static void on_dim_change(lv_event_t * e) {
     settings.dim_brightness = v;
     lv_label_set_text_fmt(lbl_dim_val, "%d", v);
 }
+#ifndef TOON1
 static void on_auto_brightness_change(lv_event_t * e) {
     int on = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
     settings.auto_brightness = on;
@@ -210,6 +211,7 @@ static void on_auto_brightness_change(lv_event_t * e) {
         backlight_set(settings.active_brightness);
     }
 }
+#endif
 static void on_offset_change(lv_event_t * e) {
     int v = lv_slider_get_value(lv_event_get_target(e));
     settings.temp_offset_centi = v;
@@ -874,11 +876,13 @@ static void open_display_modal(lv_event_t * e) {
     row_switch(r, settings.dim_sleep_away_black, on_dim_sleep_away_black_change);
     y += 82;
 
+#ifndef TOON1
     /* Auto-brightness — follow the LTR-303 ambient sensor (Toon 2). When on, the
        active backlight tracks the room between the dim and active values above. */
     r = panel_row(p, y, tr("Auto-helderheid (lichtsensor)", "Auto-brightness (light sensor)"), NULL);
     row_switch(r, settings.auto_brightness, on_auto_brightness_change);
     y += 82;
+#endif
 
     /* Usage bars flanking the dim clock: energy now (W) + gas hourly (m³),
        auto-scaled. The swap toggle flips which metric is on which side. */
