@@ -1570,6 +1570,7 @@ static int render_tile_slot(int slot, lv_obj_t * lbl_main, lv_obj_t * lbl_sub) {
 
     if (lbl_main) {
         lv_obj_clear_flag(lbl_main, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_style_text_color(lbl_main, lv_color_hex(COL_TEXT_HI), 0);
         const char * v = (const char *)m->latest_value;
         size_t vlen = v ? strlen(v) : 0;
         lv_obj_t * pt = lv_obj_get_parent(lbl_main);
@@ -1666,6 +1667,14 @@ static void render_meta_into(const integration_meta_t * m,
 static void render_local_into(const char * id, lv_obj_t * title,
                               lv_obj_t * main, lv_obj_t * sub) {
     if (sub) lv_label_set_text(sub, "");
+    if (main) {
+        lv_obj_t * pt = lv_obj_get_parent(main);
+        lv_coord_t th = pt ? lv_obj_get_height(pt) : 0;
+        const lv_font_t * vf = (th >= 230) ? SF(48) : (th >= 130 ? SF(28) : SF(22));
+        lv_obj_set_style_text_font(main, vf, 0);
+        lv_obj_set_style_text_color(main, lv_color_hex(COL_TEXT_HI), 0);
+        lv_obj_align(main, LV_ALIGN_CENTER, 0, th >= 130 ? -8 : 0);
+    }
     if (!strcmp(id, "local:energy")) {
         if (title) lv_label_set_text(title, tr("Energie", "Energy"));
         if (main)  lv_label_set_text_fmt(main, "%.0f W", energy_power_w());
@@ -2004,7 +2013,12 @@ static void refresh_cb(lv_timer_t * t) {
             render_tile_slot(TILE_SLOT_P1_0 + i, p1_main[i], p1_sub[i]);
         } else {
             if (p1_title[i]) lv_label_set_text(p1_title[i], "");
-            if (p1_main[i])  lv_label_set_text(p1_main[i], tr(LV_SYMBOL_PLUS "  Tik om te koppelen", LV_SYMBOL_PLUS "  Tap to assign"));
+            if (p1_main[i]) {
+                lv_obj_set_style_text_font(p1_main[i], SF(14), 0);
+                lv_obj_set_style_text_color(p1_main[i], lv_color_hex(COL_TEXT_DIM), 0);
+                lv_label_set_text(p1_main[i], tr(LV_SYMBOL_PLUS "  Tik om te koppelen", LV_SYMBOL_PLUS "  Tap to assign"));
+                lv_obj_align(p1_main[i], LV_ALIGN_CENTER, 0, 0);
+            }
             if (p1_sub[i])   lv_label_set_text(p1_sub[i], "");
         }
     }
@@ -4657,19 +4671,15 @@ lv_obj_t * screen_home_create(void) {
              * the curtains strip); taller block → stacked with a value font that
              * scales to the height (and room for the subtitle below). */
             int horiz = sh[i] < 110;
-            const lv_font_t * vf = horiz       ? SF(22)
-                                 : sh[i] >= 230 ? SF(48)
-                                 : sh[i] >= 130 ? SF(28)
-                                                : SF(22);
             p1_main[i] = lv_label_create(s.tile);
-            lv_obj_set_style_text_color(p1_main[i], lv_color_hex(COL_TEXT_HI), 0);
-            lv_obj_set_style_text_font(p1_main[i], vf, 0);
+            lv_obj_set_style_text_color(p1_main[i], lv_color_hex(COL_TEXT_DIM), 0);
+            lv_obj_set_style_text_font(p1_main[i], SF(14), 0);
             lv_label_set_text(p1_main[i], tr(LV_SYMBOL_PLUS "  Tik om te koppelen", LV_SYMBOL_PLUS "  Tap to assign"));
             if (horiz) {
                 lv_obj_align(p1_title[i], LV_ALIGN_LEFT_MID, 0, 0);   /* title left-of-centre */
                 lv_obj_align(p1_main[i],  LV_ALIGN_RIGHT_MID, -4, 0); /* value right, same line */
             } else {
-                lv_obj_align(p1_main[i], LV_ALIGN_CENTER, 0, sh[i] >= 130 ? -8 : 0);
+                lv_obj_align(p1_main[i], LV_ALIGN_CENTER, 0, 0);
             }
             p1_sub[i] = lv_label_create(s.tile);
             lv_obj_set_style_text_color(p1_sub[i], lv_color_hex(COL_TEXT_DIM), 0);
