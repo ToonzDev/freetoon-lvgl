@@ -50,37 +50,38 @@ const char * schedule_day_short(int day) {
     return settings.language == LANG_EN ? names_en[day] : names_nl[day];
 }
 
-/* Which Comfort/Home/Sleep/Away program does the weekly schedule say is
- * "active right now" — i.e. the one with the most-recent start time that
- * is at or before this moment, wrapping around the week if every entry
- * is in the future. Returns -1 if there are no entries at all.
- *
- * schedule_entries uses the UI convention (0=Mon..6=Sun).
- * tm_wday is 0=Sun..6=Sat, so (tm_wday + 6) % 7 maps to 0=Mon..6=Sun. */
-int schedule_program_now(void) {
+/* Returns the index (0..schedule_count-1) of the entry active right now
+ * (the one with the most-recent start time <= now, wrapping around the week).
+ * Returns -1 if there are no entries at all. */
+int schedule_current_entry_index(void) {
     if (schedule_count <= 0) return -1;
     time_t t = time(NULL);
     struct tm tm; localtime_r(&t, &tm);
     int toon_day = (tm.tm_wday + 6) % 7;
     int now_mow  = toon_day * 1440 + tm.tm_hour * 60 + tm.tm_min;
 
-    int best_state    = -1;
-    int best_mow      = -1;     /* most-recent <= now */
-    int latest_state  = -1;
-    int latest_mow    = -1;     /* fallback: largest in week (wraps) */
+    int best_idx = -1, best_mow = -1;
+    int latest_idx = -1, latest_mow = -1;
     for (int i = 0; i < schedule_count; i++) {
         const schedule_entry_t * e = &schedule_entries[i];
         int mow = e->start_day * 1440 + e->start_hour * 60 + e->start_min;
         if (mow <= now_mow && mow > best_mow) {
-            best_mow   = mow;
-            best_state = e->target_state;
+            best_mow = mow;
+            best_idx = i;
         }
         if (mow > latest_mow) {
-            latest_mow   = mow;
-            latest_state = e->target_state;
+            latest_mow = mow;
+            latest_idx = i;
         }
     }
-    return (best_state >= 0) ? best_state : latest_state;
+    return (best_idx >= 0) ? best_idx : latest_idx;
+}
+
+/* Which Comfort/Home/Sleep/Away program does the weekly schedule say is
+ * "active right now". Returns -1 if there are no entries at all. */
+int schedule_program_now(void) {
+    int idx = schedule_current_entry_index();
+    return (idx >= 0) ? schedule_entries[idx].target_state : -1;
 }
 
 static int compare_entries(const void * a, const void * b) {

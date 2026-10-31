@@ -81,6 +81,7 @@ static void on_program_tap(lv_event_t * e) {
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
     if (!scr_root || lv_scr_act() != scr_root) return;
+    boxtalk_tick();
     time_t now = time(NULL);
     struct tm tm;
     localtime_r(&now, &tm);
