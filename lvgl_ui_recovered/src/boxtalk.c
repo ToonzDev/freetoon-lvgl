@@ -813,6 +813,7 @@ int boxtalk_get_object_config(const char * internal_address) {
         "<action class=\"invoke\" uuid=\"%s\" destuuid=\"%s\" "
         "serviceid=\"urn:hcb-hae-com:serviceId:ConfigProvider\" requestid=\"%d-goc\">"
         "<u:GetObjectConfig xmlns:u=\"urn:hcb-hae-com:service:ConfigProvider:1\">"
+        "<package>happ_thermstat</package>"
         "<internalAddress>%s</internalAddress>"
         "</u:GetObjectConfig></action>",
         OUR_UUID, CONFIG_UUID, getpid(), internal_address);

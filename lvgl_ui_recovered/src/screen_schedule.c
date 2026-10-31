@@ -42,10 +42,10 @@ static lv_timer_t * refresh_timer = NULL;
 #define TL_HOUR_PX    ((DISP_VER < 550) ? 7 : 10)
 #define TL_H          (24 * TL_HOUR_PX)
 #define TL_W          (7 * TL_COL_W)
-#define TL_PAD_TOP    6
-#define TL_PAD_BOTTOM 6
-#define TL_PAD_LEFT   4
-#define TL_PAD_RIGHT  4
+#define TL_PAD_TOP    0
+#define TL_PAD_BOTTOM 0
+#define TL_PAD_LEFT   0
+#define TL_PAD_RIGHT  0
 
 /* Forward decls */
 static void rebuild_day_list(void);
@@ -392,9 +392,9 @@ static void show_edit_modal(int idx) {
     lv_obj_set_style_pad_all(edit_modal, 0, 0);
     lv_obj_clear_flag(edit_modal, LV_OBJ_FLAG_SCROLLABLE);
 
-    int pw = is_small ? 720 : 820;
-    int ph = is_small ? 410 : 470;
-    int pad = is_small ? 16 : 24;
+    int pw = is_small ? 660 : 820;
+    int ph = is_small ? 360 : 470;
+    int pad = is_small ? 14 : 24;
 
     lv_obj_t * panel = lv_obj_create(edit_modal);
     lv_obj_set_size(panel, pw, ph);
@@ -408,7 +408,7 @@ static void show_edit_modal(int idx) {
 
     lv_obj_t * title = lv_label_create(panel);
     lv_obj_set_style_text_color(title, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(title, is_small ? SF(22) : SF(26), 0);
+    lv_obj_set_style_text_font(title, is_small ? SF(20) : SF(26), 0);
     lv_label_set_text_fmt(title, tr("%s - schakelpunt", "%s - switch point"),
                           schedule_day_short(selected_day));
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 0, 0);
@@ -416,17 +416,17 @@ static void show_edit_modal(int idx) {
     /* Time editor: big time label on top, buttons below in their own row. */
     edit_time_lbl = lv_label_create(panel);
     lv_obj_set_style_text_color(edit_time_lbl, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(edit_time_lbl, is_small ? SF(38) : SF(46), 0);
+    lv_obj_set_style_text_font(edit_time_lbl, is_small ? SF(32) : SF(46), 0);
     edit_update_time();
-    lv_obj_align(edit_time_lbl, LV_ALIGN_TOP_MID, 0, is_small ? 26 : 38);
+    lv_obj_align(edit_time_lbl, LV_ALIGN_TOP_MID, 0, is_small ? 16 : 38);
 
     /* Buttons row (u-, u+, m-, m+) */
     lv_obj_t * b;
-    int row_y = is_small ? 82 : 115;
-    int tb_w = is_small ? 62 : 72;
-    int tb_h = is_small ? 44 : 52;
-    int off_far = is_small ? 160 : 190;
-    int off_near = is_small ? 60 : 75;
+    int row_y = is_small ? 62 : 115;
+    int tb_w = is_small ? 56 : 72;
+    int tb_h = is_small ? 38 : 52;
+    int off_far = is_small ? 135 : 190;
+    int off_near = is_small ? 46 : 75;
 
     b = lv_btn_create(panel);
     lv_obj_set_size(b, tb_w, tb_h); lv_obj_align(b, LV_ALIGN_TOP_MID, -off_far, row_y);
@@ -434,7 +434,7 @@ static void show_edit_modal(int idx) {
     lv_obj_add_event_cb(b, on_hour_dec, LV_EVENT_CLICKED, NULL);
     lv_obj_t * l = lv_label_create(b); lv_label_set_text(l, tr("u-", "h-"));
     lv_obj_set_style_text_color(l, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(l, is_small ? SF(18) : SF(22), 0); lv_obj_center(l);
+    lv_obj_set_style_text_font(l, is_small ? SF(16) : SF(22), 0); lv_obj_center(l);
 
     b = lv_btn_create(panel);
     lv_obj_set_size(b, tb_w, tb_h); lv_obj_align(b, LV_ALIGN_TOP_MID, -off_near, row_y);
@@ -442,7 +442,7 @@ static void show_edit_modal(int idx) {
     lv_obj_add_event_cb(b, on_hour_inc, LV_EVENT_CLICKED, NULL);
     l = lv_label_create(b); lv_label_set_text(l, tr("u+", "h+"));
     lv_obj_set_style_text_color(l, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(l, is_small ? SF(18) : SF(22), 0); lv_obj_center(l);
+    lv_obj_set_style_text_font(l, is_small ? SF(16) : SF(22), 0); lv_obj_center(l);
 
     b = lv_btn_create(panel);
     lv_obj_set_size(b, tb_w, tb_h); lv_obj_align(b, LV_ALIGN_TOP_MID, off_near, row_y);
@@ -450,7 +450,7 @@ static void show_edit_modal(int idx) {
     lv_obj_add_event_cb(b, on_min_dec, LV_EVENT_CLICKED, NULL);
     l = lv_label_create(b); lv_label_set_text(l, tr("m-", "m-"));
     lv_obj_set_style_text_color(l, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(l, is_small ? SF(18) : SF(22), 0); lv_obj_center(l);
+    lv_obj_set_style_text_font(l, is_small ? SF(16) : SF(22), 0); lv_obj_center(l);
 
     b = lv_btn_create(panel);
     lv_obj_set_size(b, tb_w, tb_h); lv_obj_align(b, LV_ALIGN_TOP_MID, off_far, row_y);
@@ -458,16 +458,16 @@ static void show_edit_modal(int idx) {
     lv_obj_add_event_cb(b, on_min_inc, LV_EVENT_CLICKED, NULL);
     l = lv_label_create(b); lv_label_set_text(l, tr("m+", "m+"));
     lv_obj_set_style_text_color(l, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(l, is_small ? SF(18) : SF(22), 0); lv_obj_center(l);
+    lv_obj_set_style_text_font(l, is_small ? SF(16) : SF(22), 0); lv_obj_center(l);
 
     /* State picker row (4 buttons) */
     const char * names[] = {tr("Comfort", "Comfort"), tr("Thuis", "Home"),
                             tr("Slapen", "Sleep"), tr("Weg", "Away")};
     int inner_w = pw - 2 * pad;
-    int gap = is_small ? 10 : 14;
+    int gap = is_small ? 8 : 14;
     int sb_w = (inner_w - 3 * gap) / 4;
-    int sb_h = is_small ? 54 : 68;
-    int sb_y = is_small ? 150 : 205;
+    int sb_h = is_small ? 44 : 68;
+    int sb_y = is_small ? 116 : 205;
 
     for (int i = 0; i < 4; i++) {
         lv_obj_t * sb = lv_btn_create(panel);
@@ -478,15 +478,15 @@ static void show_edit_modal(int idx) {
         lv_obj_t * lbl = lv_label_create(sb);
         lv_label_set_text(lbl, names[i]);
         lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(lbl, is_small ? SF(18) : SF(22), 0);
+        lv_obj_set_style_text_font(lbl, is_small ? SF(16) : SF(22), 0);
         lv_obj_center(lbl);
         edit_state_lbls[i] = lbl;
     }
     edit_update_state_buttons();
 
     /* Bottom buttons */
-    int bb_h = is_small ? 46 : 56;
-    int bb_w = is_small ? 160 : 190;
+    int bb_h = is_small ? 40 : 56;
+    int bb_w = is_small ? 145 : 190;
 
     lv_obj_t * save = lv_btn_create(panel);
     lv_obj_set_size(save, bb_w, bb_h);

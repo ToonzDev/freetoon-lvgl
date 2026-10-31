@@ -93,6 +93,16 @@ static int compare_entries(const void * a, const void * b) {
 
 int schedule_add(const schedule_entry_t * e) {
     if (schedule_count >= SCHEDULE_MAX) return -1;
+    /* If an entry already exists at the exact same day, hour, min, overwrite it */
+    for (int i = 0; i < schedule_count; i++) {
+        if (schedule_entries[i].start_day == e->start_day &&
+            schedule_entries[i].start_hour == e->start_hour &&
+            schedule_entries[i].start_min == e->start_min) {
+            schedule_entries[i] = *e;
+            qsort(schedule_entries, schedule_count, sizeof(schedule_entry_t), compare_entries);
+            return 0;
+        }
+    }
     schedule_entries[schedule_count++] = *e;
     qsort(schedule_entries, schedule_count, sizeof(schedule_entry_t), compare_entries);
     return 0;
@@ -177,8 +187,12 @@ static int parse_schedule_buffer(const char * buf) {
         }
 
         schedule_entry_t * e = &tmp[tmp_count++];
-        e->start_day    = get_field_int(entry_start, entry_end, "startDayOfWeek", 0);
-        e->end_day      = get_field_int(entry_start, entry_end, "endDayOfWeek",   0);
+        int hcb_sday    = get_field_int(entry_start, entry_end, "startDayOfWeek", 0);
+        int hcb_eday    = get_field_int(entry_start, entry_end, "endDayOfWeek",   0);
+
+        /* Map hcb_config day (0=Sun..6=Sat) to UI (0=Mon..6=Sun) */
+        e->start_day    = (hcb_sday + 6) % 7;
+        e->end_day      = (hcb_eday + 6) % 7;
         e->start_min    = get_field_int(entry_start, entry_end, "startMin",    0);
         e->start_hour   = get_field_int(entry_start, entry_end, "startHour",   0);
         e->end_min      = get_field_int(entry_start, entry_end, "endMin",      0);
@@ -296,7 +310,15 @@ static int read_file_config(void) {
 }
 
 int schedule_load(void) {
-    /* 1. Try HTTP getObjectConfig from hcb_config (port 10080) */
+    /* 1. Try BoxTalk response buffer if ready */
+    if (config_response_ready && config_response_buf[0]) {
+        if (parse_schedule_buffer(config_response_buf) == 0) {
+            fprintf(stderr, "[sched] loaded %d entries via BoxTalk buffer\n", schedule_count);
+            return 0;
+        }
+    }
+
+    /* 2. Try HTTP getObjectConfig from hcb_config (port 10080) */
     static char body[32 * 1024];
     if (http_get_body("hcb_config",
         "action=getObjectConfig&package=happ_thermstat&internalAddress=thermostatProgram",
@@ -307,15 +329,15 @@ int schedule_load(void) {
         }
     }
 
-    /* 2. Fallback to local config file */
+    /* 3. Fallback to local config file */
     if (read_file_config() == 0) return 0;
 
-    /* 3. If no config loaded but entries already exist in memory, preserve them */
+    /* 4. If no config loaded but entries already exist in memory, preserve them */
     if (schedule_count > 0) {
         return 0;
     }
 
-    /* 4. First boot with no config found: seed clean defaults */
+    /* 5. First boot with no config found: seed clean defaults */
     seed_default_schedule();
     return 0;
 }
@@ -328,6 +350,8 @@ static size_t build_json(char * out, size_t outsz) {
     off += (size_t)n;
     for (int i = 0; i < schedule_count; i++) {
         const schedule_entry_t * e = &schedule_entries[i];
+        int hcb_sday = (e->start_day + 1) % 7;
+        int hcb_eday = (e->end_day + 1) % 7;
         n = snprintf(out + off, outsz - off,
             "%s{\"entry\":["
             "{\"type\":\"weekly_recurring\"},"
@@ -336,9 +360,9 @@ static size_t build_json(char * out, size_t outsz) {
             "{\"endMin\":\"%d\"},{\"endHour\":\"%d\"},{\"endDayOfWeek\":\"%d\"}"
             "]}",
             i ? "," : "",
-            e->start_min, e->start_hour, e->start_day,
+            e->start_min, e->start_hour, hcb_sday,
             e->target_state,
-            e->end_min, e->end_hour, e->end_day);
+            e->end_min, e->end_hour, hcb_eday);
         if (n < 0) return 0;
         off += (size_t)n;
         if (off >= outsz - 64) break;
@@ -380,6 +404,8 @@ static size_t build_schedule_xml(char * out, size_t outsz) {
 
     for (int i = 0; i < schedule_count; i++) {
         const schedule_entry_t * e = &schedule_entries[i];
+        int hcb_sday = (e->start_day + 1) % 7;
+        int hcb_eday = (e->end_day + 1) % 7;
         n = snprintf(out + off, outsz - off,
             "<entry type=\"weekly_recurring\">"
             "<type>weekly_recurring</type>"
@@ -391,9 +417,9 @@ static size_t build_schedule_xml(char * out, size_t outsz) {
             "<endHour>%d</endHour>"
             "<endDayOfWeek>%d</endDayOfWeek>"
             "</entry>",
-            e->start_min, e->start_hour, e->start_day,
+            e->start_min, e->start_hour, hcb_sday,
             e->target_state,
-            e->end_min, e->end_hour, e->end_day);
+            e->end_min, e->end_hour, hcb_eday);
         if (n < 0) return 0;
         off += (size_t)n;
         if (off >= outsz - 128) break;
@@ -480,27 +506,30 @@ int schedule_save(void) {
         schedule_entries[i].end_min  = schedule_entries[nxt].start_min;
     }
 
-    /* 1. Send via HTTP to hcb_config on port 10080 */
-    static char json[16 * 1024];
-    size_t jn = build_json(json, sizeof(json));
-    if (jn > 0) {
-        static char encoded[48 * 1024];
-        url_encode(json, jn, encoded);
-
-        static char qs[52 * 1024];
-        snprintf(qs, sizeof(qs),
-            "action=setObjectConfig&package=happ_thermstat&internalAddress=thermostatProgram&config=%s",
-            encoded);
-
-        static char body[1024];
-        int rc = http_get_body("hcb_config", qs, body, sizeof(body));
-        fprintf(stderr, "[sched] http setObjectConfig rc=%d\n", rc);
-    }
-
-    /* 2. Also update config file on disk for immediate persistence */
+    /* Build XML payload */
     static char xml[32 * 1024];
     size_t xn = build_schedule_xml(xml, sizeof(xml));
     if (xn > 0) {
+        /* 1. Send via BoxTalk to hcb_config (ConfigProvider:SetObjectConfig) - Primary Toon QML method */
+        boxtalk_set_object_config(xml);
+
+        /* 2. Send via HTTP to hcb_config on port 10080 */
+        static char json[16 * 1024];
+        size_t jn = build_json(json, sizeof(json));
+        if (jn > 0) {
+            static char encoded[48 * 1024];
+            url_encode(json, jn, encoded);
+
+            static char qs[52 * 1024];
+            snprintf(qs, sizeof(qs),
+                "action=setObjectConfig&package=happ_thermstat&internalAddress=thermostatProgram&config=%s",
+                encoded);
+
+            static char body[1024];
+            http_get_body("hcb_config", qs, body, sizeof(body));
+        }
+
+        /* 3. Also update config file on disk for fallback persistence */
         update_file_config(xml);
     }
 
