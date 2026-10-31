@@ -203,7 +203,16 @@ static void on_prog_toggle(lv_event_t * e) {
     else                                        boxtalk_set_manual();
 }
 static const int scene_state[4] = { 3, 1, 2, 0 };   /* Weg Thuis / Slapen Comfort */
-static void on_scene(lv_event_t * e) { boxtalk_set_program(scene_state[(int)(intptr_t)lv_event_get_user_data(e)]); }
+static void on_scene(lv_event_t * e) {
+    int s = scene_state[(int)(intptr_t)lv_event_get_user_data(e)];
+    int ps = toon_state.program_state;
+    int on_program = (ps == 1 || ps == 2 || ps == 3 || ps == 8) || (boxtalk_temp_override_origin() >= 0);
+    if (!on_program || ps == 0) {
+        boxtalk_resume_schedule();
+    } else {
+        boxtalk_set_program(s);
+    }
+}
 static void on_apps_grid(lv_event_t * e) { (void)e; ui_push(screen_settings_create()); }
 
 /* ---- collapsible lights handle (mirrors LVGL home screen) ---------------- */

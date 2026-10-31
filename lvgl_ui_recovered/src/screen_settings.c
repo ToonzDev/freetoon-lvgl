@@ -1518,6 +1518,12 @@ static void open_templogger(lv_event_t * e) {
     ui_push(screen_chart_24h_create(tile_slots_integration_by_id("temperaturelogger")));
 }
 
+/* Programma tile-tap: push the weekly thermostat schedule screen directly. */
+static void open_program_screen(lv_event_t * e) {
+    (void)e;
+    ui_push(screen_schedule_create());
+}
+
 /* Z-Wave tile-tap: push the built-in Z-Wave controller management screen. */
 static void open_zwave(lv_event_t * e) {
     (void)e;
@@ -4641,6 +4647,8 @@ lv_obj_t * screen_settings_create(void) {
               tr("uit / proxy / draadloos", "off / proxy / wireless"), open_otbridge_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_OK, tr("Pincode", "PIN code"),
               tr("wijzigingen vergrendelen", "lock changes"), open_pin_settings_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, tr("Programma", "Schedule"),
+              tr("weekschema thermostaat", "weekly thermostat schedule"), open_program_screen); n++;
     make_tile(GX(n), GY(n), &icon_wx_sun, NULL, tr("Scherm", "Display"),
               tr("scherminstellingen", "display settings"), open_display_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_EYE_CLOSE, tr("Schoonmaken", "Clean"),

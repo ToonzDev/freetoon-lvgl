@@ -451,7 +451,16 @@ static void on_mode_program(lv_event_t * e) { (void)e; pin_gate(mode_program_app
 /* Direct preset tap on one of the four pill-side buttons. */
 static void preset_apply(void * ctx) __attribute__((unused));
 static void preset_apply(void * ctx) {
-    boxtalk_set_program((int)(intptr_t)ctx);
+    int s = (int)(intptr_t)ctx;
+    int ps = toon_state.program_state;
+    int on_program = (ps == 1 || ps == 2 || ps == 3 || ps == 8) || (boxtalk_temp_override_origin() >= 0);
+    if (!on_program || ps == 0) {
+        /* If the thermostat is on manual, pressing any state button switches
+         * back to program mode and applies the correct scheduled program state */
+        boxtalk_resume_schedule();
+    } else {
+        boxtalk_set_program(s);
+    }
 }
 static void on_tile_preset(lv_event_t * e) __attribute__((unused));
 static void on_tile_preset(lv_event_t * e) {

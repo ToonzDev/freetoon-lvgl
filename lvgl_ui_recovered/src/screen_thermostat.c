@@ -60,7 +60,17 @@ static void program_tap_apply(void * ctx) {
     int s = (int)(intptr_t)ctx;
     if      (s == -2) boxtalk_resume_schedule();
     else if (s == -1) boxtalk_set_manual();
-    else              boxtalk_set_program(s);
+    else {
+        int ps = toon_state.program_state;
+        int on_program = (ps == 1 || ps == 2 || ps == 3 || ps == 8) || (boxtalk_temp_override_origin() >= 0);
+        if (!on_program || ps == 0) {
+            /* If thermostat is in manual mode, tapping any state button switches
+             * back to program mode and applies the scheduled program state */
+            boxtalk_resume_schedule();
+        } else {
+            boxtalk_set_program(s);
+        }
+    }
 }
 static void on_program_tap(lv_event_t * e) {
     int idx = (int)(intptr_t)lv_event_get_user_data(e);
@@ -362,51 +372,54 @@ lv_obj_t * screen_thermostat_create(void) {
                  SY(-190) - (DISP_VER < 600 ? 8 : 0));
     lv_label_set_text(lbl_water, tr("Water -- m3", "Water -- m3"));
 
-    /* Setpoint row with +/- buttons. Made compact so it never overlaps
-       the "Geavanceerd" button on either Toon 1 or Toon 2 per CR4. */
+    /* Setpoint row with +/- buttons. On Toon 1, keep the original 560x130
+       layout. On Toon 2, scale modestly so - and + buttons are well-proportioned
+       instead of oversized boxes. */
+    int is_t1 = (DISP_VER < 600);
+    int sp_w  = is_t1 ? 560 : 580;
+    int sp_h  = is_t1 ? 130 : 92;
+    int btn_w = is_t1 ? 110 : 84;
+    int btn_h = is_t1 ? 100 : 70;
+    const lv_font_t * btn_f = is_t1 ? SF(28) : SF(30);
+    const lv_font_t * sp_f  = is_t1 ? SF(20) : SF(24);
+
     lv_obj_t * sp_row = lv_obj_create(scr_root);
-    lv_obj_set_size(sp_row, SX(560), SY(130));
+    lv_obj_set_size(sp_row, sp_w, sp_h);
     /* Lift a little extra on Toon 1 so its bottom clears the Advanced btn. */
     lv_obj_align(sp_row, LV_ALIGN_BOTTOM_MID, 0,
-                 SY(-40) - (DISP_VER < 600 ? 8 : 0));
+                 is_t1 ? (SY(-40) - 8) : SY(-40));
     lv_obj_set_style_bg_color(sp_row, lv_color_hex(THEME_CARD_BG), 0);
     lv_obj_set_style_border_width(sp_row, 0, 0);
     lv_obj_set_style_radius(sp_row, 14, 0);
     lv_obj_clear_flag(sp_row, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t * btn_dn = lv_btn_create(sp_row);
-    lv_obj_set_size(btn_dn, SX(110), SY(100));
-    lv_obj_align(btn_dn, LV_ALIGN_LEFT_MID, 5, 0);
+    lv_obj_set_size(btn_dn, btn_w, btn_h);
+    lv_obj_align(btn_dn, LV_ALIGN_LEFT_MID, is_t1 ? 5 : 10, 0);
     lv_obj_set_style_bg_color(btn_dn, lv_color_hex(THEME_BTN_ACCENT), 0);
     lv_obj_add_event_cb(btn_dn, on_setpoint_down, LV_EVENT_CLICKED, NULL);
     lv_obj_t * btn_dn_lbl = lv_label_create(btn_dn);
     lv_label_set_text(btn_dn_lbl, "-");
     lv_obj_set_style_text_color(btn_dn_lbl, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(btn_dn_lbl,
-                               (DISP_VER < 600 ? SF(28)
-                                               : SF(48)), 0);
+    lv_obj_set_style_text_font(btn_dn_lbl, btn_f, 0);
     lv_obj_center(btn_dn_lbl);
 
     lbl_setpoint = lv_label_create(sp_row);
     lv_obj_set_style_text_color(lbl_setpoint, lv_color_hex(THEME_TEXT_HI), 0);
     /* Smaller font gives plenty of breathing room between the - and + buttons */
-    lv_obj_set_style_text_font(lbl_setpoint,
-                               (DISP_VER < 600 ? SF(20)
-                                               : SF(28)), 0);
+    lv_obj_set_style_text_font(lbl_setpoint, sp_f, 0);
     lv_obj_align(lbl_setpoint, LV_ALIGN_CENTER, 0, 0);
     lv_label_set_text(lbl_setpoint, tr("Streefwaarde: --", "Setpoint: --"));
 
     lv_obj_t * btn_up = lv_btn_create(sp_row);
-    lv_obj_set_size(btn_up, SX(110), SY(100));
-    lv_obj_align(btn_up, LV_ALIGN_RIGHT_MID, -5, 0);
+    lv_obj_set_size(btn_up, btn_w, btn_h);
+    lv_obj_align(btn_up, LV_ALIGN_RIGHT_MID, is_t1 ? -5 : -10, 0);
     lv_obj_set_style_bg_color(btn_up, lv_color_hex(THEME_BTN_ACCENT), 0);
     lv_obj_add_event_cb(btn_up, on_setpoint_up, LV_EVENT_CLICKED, NULL);
     lv_obj_t * btn_up_lbl = lv_label_create(btn_up);
     lv_label_set_text(btn_up_lbl, "+");
     lv_obj_set_style_text_color(btn_up_lbl, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(btn_up_lbl,
-                               (DISP_VER < 600 ? SF(28)
-                                               : SF(48)), 0);
+    lv_obj_set_style_text_font(btn_up_lbl, btn_f, 0);
     lv_obj_center(btn_up_lbl);
 
     /* Boiler state — icons + text. Icons live at left; text label sits
