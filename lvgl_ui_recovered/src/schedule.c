@@ -1,15 +1,11 @@
 /*
  * Schedule parser + writer for happ_thermstat's thermostatProgram config.
- * Communicates via BoxTalk (port 1337) with hcb_config, with direct file fallback
- * to /qmf/config/config_happ_thermstat.xml.
+ * Communicates via HTTP (port 10080) with hcb_config, with direct file fallback
+ * to /qmf/config/config_happ_thermstat.xml (or /mnt/data/qmf/config/).
  *
  * NOTE on Day of Week:
- *   - hcb_config convention: 0 = Sun, 1 = Mon, 2 = Tue, 3 = Wed, 4 = Thu, 5 = Fri, 6 = Sat
- *   - UI convention:         0 = Mon, 1 = Tue, 2 = Wed, 3 = Thu, 4 = Fri, 5 = Sat, 6 = Sun
- *
- * Conversions:
- *   ui_day  = (hcb_day + 6) % 7
- *   hcb_day = (ui_day + 1) % 7
+ *   Both hcb_config and this UI use the same convention:
+ *   0 = Mon, 1 = Tue, 2 = Wed, 3 = Thu, 4 = Fri, 5 = Sat, 6 = Sun
  */
 #include "schedule.h"
 #include "boxtalk.h"
@@ -20,6 +16,9 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 schedule_entry_t schedule_entries[SCHEDULE_MAX];
 int              schedule_count = 0;
@@ -138,11 +137,12 @@ static int get_field_int(const char * s, const char * e, const char * key, int d
     return dflt;
 }
 
-/* Parse entries from XML or JSON text. */
+/* Parse entries from XML or JSON text.
+ * NOTE: Parses into a temporary array first. Never wipes in-memory entries if
+ * no entries were found in the buffer. */
 static int parse_schedule_buffer(const char * buf) {
     if (!buf || !buf[0]) return -1;
 
-    /* Find the schedule section */
     const char * sched_start = strstr(buf, "<schedule>");
     const char * sched_end   = sched_start ? strstr(sched_start, "</schedule>") : NULL;
     int is_xml = (sched_start && sched_end);
@@ -153,14 +153,15 @@ static int parse_schedule_buffer(const char * buf) {
         sched_end = buf + strlen(buf);
     }
 
-    schedule_count = 0;
+    schedule_entry_t tmp[SCHEDULE_MAX];
+    int tmp_count = 0;
     const char * p = sched_start;
-    while (p < sched_end && schedule_count < SCHEDULE_MAX) {
+    while (p < sched_end && tmp_count < SCHEDULE_MAX) {
         const char * entry_start = NULL;
         const char * entry_end   = NULL;
 
         if (is_xml) {
-            entry_start = strstr(p, "<entry>");
+            entry_start = strstr(p, "<entry");
             if (!entry_start || entry_start >= sched_end) break;
             entry_end = strstr(entry_start, "</entry>");
             if (!entry_end || entry_end > sched_end) break;
@@ -175,13 +176,9 @@ static int parse_schedule_buffer(const char * buf) {
             p = entry_end + 1;
         }
 
-        schedule_entry_t * e = &schedule_entries[schedule_count++];
-        int hcb_sday = get_field_int(entry_start, entry_end, "startDayOfWeek", 0);
-        int hcb_eday = get_field_int(entry_start, entry_end, "endDayOfWeek",   0);
-
-        /* Map hcb_config day (0=Sun..6=Sat) to UI (0=Mon..6=Sun) */
-        e->start_day    = (hcb_sday + 6) % 7;
-        e->end_day      = (hcb_eday + 6) % 7;
+        schedule_entry_t * e = &tmp[tmp_count++];
+        e->start_day    = get_field_int(entry_start, entry_end, "startDayOfWeek", 0);
+        e->end_day      = get_field_int(entry_start, entry_end, "endDayOfWeek",   0);
         e->start_min    = get_field_int(entry_start, entry_end, "startMin",    0);
         e->start_hour   = get_field_int(entry_start, entry_end, "startHour",   0);
         e->end_min      = get_field_int(entry_start, entry_end, "endMin",      0);
@@ -189,9 +186,55 @@ static int parse_schedule_buffer(const char * buf) {
         e->target_state = get_field_int(entry_start, entry_end, "targetState", 0);
     }
 
-    qsort(schedule_entries, schedule_count, sizeof(schedule_entry_t), compare_entries);
-    fprintf(stderr, "[sched] parsed %d entries\n", schedule_count);
-    return schedule_count > 0 ? 0 : -1;
+    if (tmp_count > 0) {
+        memcpy(schedule_entries, tmp, tmp_count * sizeof(schedule_entry_t));
+        schedule_count = tmp_count;
+        qsort(schedule_entries, schedule_count, sizeof(schedule_entry_t), compare_entries);
+        fprintf(stderr, "[sched] parsed %d entries\n", schedule_count);
+        return 0;
+    }
+    return -1;
+}
+
+/* Low-level HTTP for hcb_config on port 10080 with 300ms socket timeout */
+static int http_get_body(const char* host_path, const char* qs, char* out, size_t outsz) {
+    int s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s < 0) return -1;
+    struct timeval tv = { .tv_sec = 0, .tv_usec = 300000 }; /* 300ms timeout */
+    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    struct sockaddr_in a = {0};
+    a.sin_family = AF_INET;
+    a.sin_port = htons(10080);
+    a.sin_addr.s_addr = htonl(0x7f000001);
+    if (connect(s, (struct sockaddr*)&a, sizeof(a)) != 0) {
+        close(s);
+        return -1;
+    }
+    char req[1024];
+    int n = snprintf(req, sizeof(req),
+        "GET /%s?%s HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        host_path, qs);
+    if (send(s, req, n, 0) != n) {
+        close(s);
+        return -1;
+    }
+    char accum[32768];
+    size_t acclen = 0;
+    while (acclen < sizeof(accum) - 1) {
+        ssize_t k = recv(s, accum + acclen, sizeof(accum) - 1 - acclen, 0);
+        if (k <= 0) break;
+        acclen += (size_t)k;
+    }
+    accum[acclen] = 0;
+    close(s);
+    const char* body = strstr(accum, "\r\n\r\n");
+    if (body) body += 4; else body = accum;
+    size_t blen = strlen(body);
+    if (blen >= outsz) blen = outsz - 1;
+    memcpy(out, body, blen);
+    out[blen] = 0;
+    return 0;
 }
 
 static void seed_default_schedule(void) {
@@ -223,8 +266,8 @@ static void seed_default_schedule(void) {
 static int read_file_config(void) {
     const char * paths[] = {
         "/qmf/config/config_happ_thermstat.xml",
-        "/HCBv2/config/config_happ_thermstat.xml",
         "/mnt/data/qmf/config/config_happ_thermstat.xml",
+        "/HCBv2/config/config_happ_thermstat.xml",
         "/mnt/data/qmf/config/toonsim_hcb_config.xml",
         NULL
     };
@@ -237,9 +280,15 @@ static int read_file_config(void) {
         if (n > 0) {
             file_buf[n] = '\0';
             const char * tp = strstr(file_buf, "thermostatProgram");
-            if (tp && parse_schedule_buffer(tp - 50 > file_buf ? tp - 50 : file_buf) == 0) {
-                fprintf(stderr, "[sched] loaded %d entries from %s\n", schedule_count, paths[i]);
-                return 0;
+            if (tp) {
+                const char * dev_start = tp;
+                while (dev_start > file_buf && strncmp(dev_start, "<device", 7) != 0) dev_start--;
+                if (strncmp(dev_start, "<device", 7) == 0) {
+                    if (parse_schedule_buffer(dev_start) == 0) {
+                        fprintf(stderr, "[sched] loaded %d entries from %s\n", schedule_count, paths[i]);
+                        return 0;
+                    }
+                }
             }
         }
     }
@@ -247,32 +296,76 @@ static int read_file_config(void) {
 }
 
 int schedule_load(void) {
-    /* Try BoxTalk (port 1337) first */
-    if (boxtalk_get_object_config("thermostatProgram") == 0) {
-        for (int i = 0; i < 100; i++) {
-            if (config_response_ready) break;
-            usleep(10000);  /* 10ms * 100 = 1s max */
-        }
-        if (config_response_ready && strstr(config_response_buf, "schedule")) {
-            if (parse_schedule_buffer(config_response_buf) == 0) {
-                fprintf(stderr, "[sched] loaded %d entries via BoxTalk\n", schedule_count);
-                return 0;
-            }
+    /* 1. Try HTTP getObjectConfig from hcb_config (port 10080) */
+    static char body[32 * 1024];
+    if (http_get_body("hcb_config",
+        "action=getObjectConfig&package=happ_thermstat&internalAddress=thermostatProgram",
+        body, sizeof(body)) == 0) {
+        if (parse_schedule_buffer(body) == 0) {
+            fprintf(stderr, "[sched] loaded %d entries via HTTP hcb_config\n", schedule_count);
+            return 0;
         }
     }
 
-    /* Fallback to local config file */
+    /* 2. Fallback to local config file */
     if (read_file_config() == 0) return 0;
 
-    /* If no config loaded, seed defaults so UI displays a clean initial schedule */
-    if (schedule_count == 0) {
-        seed_default_schedule();
+    /* 3. If no config loaded but entries already exist in memory, preserve them */
+    if (schedule_count > 0) {
         return 0;
     }
+
+    /* 4. First boot with no config found: seed clean defaults */
+    seed_default_schedule();
     return 0;
 }
 
-/* Build XML payload for SetObjectConfig */
+/* Build the JSON payload for hcb_config setObjectConfig endpoint */
+static size_t build_json(char * out, size_t outsz) {
+    size_t off = 0;
+    int n = snprintf(out + off, outsz - off, "{\"device\":[{\"schedule\":[");
+    if (n < 0) return 0;
+    off += (size_t)n;
+    for (int i = 0; i < schedule_count; i++) {
+        const schedule_entry_t * e = &schedule_entries[i];
+        n = snprintf(out + off, outsz - off,
+            "%s{\"entry\":["
+            "{\"type\":\"weekly_recurring\"},"
+            "{\"startMin\":\"%d\"},{\"startHour\":\"%d\"},{\"startDayOfWeek\":\"%d\"},"
+            "{\"targetState\":\"%d\"},"
+            "{\"endMin\":\"%d\"},{\"endHour\":\"%d\"},{\"endDayOfWeek\":\"%d\"}"
+            "]}",
+            i ? "," : "",
+            e->start_min, e->start_hour, e->start_day,
+            e->target_state,
+            e->end_min, e->end_hour, e->end_day);
+        if (n < 0) return 0;
+        off += (size_t)n;
+        if (off >= outsz - 64) break;
+    }
+    n = snprintf(out + off, outsz - off, "]}]}");
+    if (n < 0) return 0;
+    off += (size_t)n;
+    return off;
+}
+
+/* URL-encode a buffer into another. Out must be at least 3*in_len+1. */
+static void url_encode(const char * in, size_t in_len, char * out) {
+    static const char hex[] = "0123456789ABCDEF";
+    size_t j = 0;
+    for (size_t i = 0; i < in_len; i++) {
+        unsigned char c = (unsigned char)in[i];
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~') {
+            out[j++] = (char)c;
+        } else {
+            out[j++] = '%'; out[j++] = hex[c >> 4]; out[j++] = hex[c & 0xf];
+        }
+    }
+    out[j] = 0;
+}
+
+/* Build XML payload for file persistence */
 static size_t build_schedule_xml(char * out, size_t outsz) {
     size_t off = 0;
     int n = snprintf(out + off, outsz - off,
@@ -287,12 +380,8 @@ static size_t build_schedule_xml(char * out, size_t outsz) {
 
     for (int i = 0; i < schedule_count; i++) {
         const schedule_entry_t * e = &schedule_entries[i];
-        /* Convert UI day (0=Mon..6=Sun) to hcb_config day (0=Sun..6=Sat) */
-        int hcb_sday = (e->start_day + 1) % 7;
-        int hcb_eday = (e->end_day + 1) % 7;
-
         n = snprintf(out + off, outsz - off,
-            "<entry>"
+            "<entry type=\"weekly_recurring\">"
             "<type>weekly_recurring</type>"
             "<startMin>%d</startMin>"
             "<startHour>%d</startHour>"
@@ -302,9 +391,9 @@ static size_t build_schedule_xml(char * out, size_t outsz) {
             "<endHour>%d</endHour>"
             "<endDayOfWeek>%d</endDayOfWeek>"
             "</entry>",
-            e->start_min, e->start_hour, hcb_sday,
+            e->start_min, e->start_hour, e->start_day,
             e->target_state,
-            e->end_min, e->end_hour, hcb_eday);
+            e->end_min, e->end_hour, e->end_day);
         if (n < 0) return 0;
         off += (size_t)n;
         if (off >= outsz - 128) break;
@@ -320,8 +409,8 @@ static size_t build_schedule_xml(char * out, size_t outsz) {
 static void update_file_config(const char * new_dev_xml) {
     const char * paths[] = {
         "/qmf/config/config_happ_thermstat.xml",
-        "/HCBv2/config/config_happ_thermstat.xml",
         "/mnt/data/qmf/config/config_happ_thermstat.xml",
+        "/HCBv2/config/config_happ_thermstat.xml",
         "/mnt/data/qmf/config/toonsim_hcb_config.xml",
         NULL
     };
@@ -348,10 +437,19 @@ static void update_file_config(const char * new_dev_xml) {
     if (!dev_end) return;
     dev_end += 9; /* include </device> */
 
-    char tmp_path[64];
+    char tmp_path[128];
     snprintf(tmp_path, sizeof tmp_path, "%s.tmp", path);
     FILE * out = fopen(tmp_path, "w");
-    if (!out) return;
+    if (!out) {
+        out = fopen(path, "w");
+        if (!out) return;
+        fwrite(fbuf, 1, (size_t)(dev_start - fbuf), out);
+        fputs(new_dev_xml, out);
+        fputs(dev_end, out);
+        fclose(out);
+        fprintf(stderr, "[sched] updated %s directly\n", path);
+        return;
+    }
 
     /* Write up to dev_start */
     fwrite(fbuf, 1, (size_t)(dev_start - fbuf), out);
@@ -361,8 +459,11 @@ static void update_file_config(const char * new_dev_xml) {
     fputs(dev_end, out);
     fclose(out);
 
-    rename(tmp_path, path);
-    fprintf(stderr, "[sched] updated %s directly\n", path);
+    if (rename(tmp_path, path) != 0) {
+        unlink(tmp_path);
+    } else {
+        fprintf(stderr, "[sched] updated %s via rename\n", path);
+    }
 }
 
 int schedule_save(void) {
@@ -379,16 +480,29 @@ int schedule_save(void) {
         schedule_entries[i].end_min  = schedule_entries[nxt].start_min;
     }
 
-    static char xml[32 * 1024];
-    size_t xn = build_schedule_xml(xml, sizeof(xml));
-    if (!xn) return -1;
+    /* 1. Send via HTTP to hcb_config on port 10080 */
+    static char json[16 * 1024];
+    size_t jn = build_json(json, sizeof(json));
+    if (jn > 0) {
+        static char encoded[48 * 1024];
+        url_encode(json, jn, encoded);
 
-    /* 1. Send via BoxTalk to hcb_config */
-    int rc = boxtalk_set_object_config(xml);
-    fprintf(stderr, "[sched] boxtalk_set_object_config sent (rc=%d)\n", rc);
+        static char qs[52 * 1024];
+        snprintf(qs, sizeof(qs),
+            "action=setObjectConfig&package=happ_thermstat&internalAddress=thermostatProgram&config=%s",
+            encoded);
+
+        static char body[1024];
+        int rc = http_get_body("hcb_config", qs, body, sizeof(body));
+        fprintf(stderr, "[sched] http setObjectConfig rc=%d\n", rc);
+    }
 
     /* 2. Also update config file on disk for immediate persistence */
-    update_file_config(xml);
+    static char xml[32 * 1024];
+    size_t xn = build_schedule_xml(xml, sizeof(xml));
+    if (xn > 0) {
+        update_file_config(xml);
+    }
 
     return 0;
 }
