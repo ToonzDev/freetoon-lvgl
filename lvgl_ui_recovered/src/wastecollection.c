@@ -257,6 +257,67 @@ long waste_days_until(const char * date) {
     return (long)((pickup - mktime(&nt)) / 86400);
 }
 
+static void shorten_single_stream(const char * in, char * out, size_t outsz) {
+    if (!in || !out || outsz == 0) return;
+    out[0] = 0;
+
+    while (*in == ' ') in++;
+    if (!strncasecmp(in, "Afval ", 6)) in += 6;
+    while (*in == ' ') in++;
+
+    char lower[80];
+    size_t len = 0;
+    while (in[len] && len < sizeof(lower) - 1) {
+        lower[len] = (char)tolower((unsigned char)in[len]);
+        len++;
+    }
+    lower[len] = 0;
+    while (len > 0 && lower[len - 1] == ' ') {
+        lower[--len] = 0;
+    }
+
+    if (strstr(lower, "groente") || strstr(lower, "gft") || strstr(lower, "tuin")) {
+        snprintf(out, outsz, "GFT");
+    } else if (strstr(lower, "pmd") || strstr(lower, "pbd") ||
+               strstr(lower, "drank") || strstr(lower, "blik") ||
+               strstr(lower, "metaal") || strstr(lower, "verpakk") ||
+               !strcmp(lower, "plastic/metaal/drankpakken") ||
+               !strcmp(lower, "plastic")) {
+        snprintf(out, outsz, "PMD");
+    } else if (strstr(lower, "papier") || strstr(lower, "karton")) {
+        snprintf(out, outsz, "Papier");
+    } else if (strstr(lower, "rest")) {
+        snprintf(out, outsz, "Restafval");
+    } else if (strstr(lower, "textiel")) {
+        snprintf(out, outsz, "Textiel");
+    } else if (strstr(lower, "kerst")) {
+        snprintf(out, outsz, "Kerstbomen");
+    } else {
+        snprintf(out, outsz, "%s", in);
+        size_t n = strlen(out);
+        while (n > 0 && out[n - 1] == ' ') out[--n] = 0;
+    }
+}
+
+void waste_shorten_label(const char * in, char * out, size_t outsz) {
+    if (!in || !out || outsz == 0) return;
+    out[0] = 0;
+
+    char copy[128];
+    snprintf(copy, sizeof copy, "%s", in);
+
+    char * plus = strchr(copy, '+');
+    if (plus) {
+        *plus = 0;
+        char part1[40] = "", part2[40] = "";
+        shorten_single_stream(copy, part1, sizeof part1);
+        shorten_single_stream(plus + 1, part2, sizeof part2);
+        snprintf(out, outsz, "%s + %s", part1, part2);
+    } else {
+        shorten_single_stream(copy, out, outsz);
+    }
+}
+
 /* Up to max_n soonest UPCOMING pickup dates within `lead_days`, grouping the
  * still-upcoming types collected on each date (a type drops off once its
  * per-type cutoff time passes on the pickup day). The single source of truth

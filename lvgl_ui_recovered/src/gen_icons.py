@@ -275,6 +275,51 @@ gen("icon_milk",  W_MILK, H_MILK, milk_alpha,  "icon_milk.h")
 gen("icon_leaf",  W_LEAF, H_LEAF, leaf_alpha,  "icon_leaf.h")
 print("Wrote icon_news.h, icon_milk.h, icon_leaf.h")
 
+# 80x80 versions for dim screen
+def leaf_alpha_lg(x, y):
+    cx, cy = 40.0, 40.0
+    dx, dy = x - cx, y - cy
+    a = math.radians(-45)
+    u =  dx * math.cos(a) + dy * math.sin(a)
+    v = -dx * math.sin(a) + dy * math.cos(a)
+    half = 17.0 * math.sqrt(max(0.0, 1.0 - (u / 32.0) ** 2)) if abs(u) <= 32.0 else -1.0
+    on_body = abs(v) <= half and abs(u) <= 32.0
+    on_rib  = abs(v) <= 1.6 and abs(u) <= 32.0
+    if on_body or on_rib:
+        d = abs(v) - half
+        if d > -1.0: return int(max(0.0, min(1.0, (1.0 - d) * 0.5)) * 255)
+        return 255
+    return 0
+
+def milk_alpha_lg(x, y):
+    on_body = ((16 <= x <= 19 or 61 <= x <= 64) and 30 <= y <= 72) or (70 <= y <= 72 and 16 <= x <= 64)
+    gl_y = 30.0 - (x - 16.0) * 0.75
+    on_gable_l = (16 <= x <= 40 and abs(y - gl_y) <= 1.5)
+    gr_y = 12.0 + (x - 40.0) * 0.75
+    on_gable_r = (40 <= x <= 64 and abs(y - gr_y) <= 1.5)
+    on_cap = (36 <= x <= 44 and 8 <= y <= 12)
+    if on_body or on_gable_l or on_gable_r or on_cap:
+        return 255
+    return 0
+
+def news_alpha_lg(x, y):
+    on_outline = (((16 <= x <= 19 or 61 <= x <= 64) and 10 <= y <= 72) or ((10 <= y <= 13 or 69 <= y <= 72) and 16 <= x <= 64))
+    in_masthead = (20 <= x <= 60 and 14 <= y <= 22)
+    in_headline = (20 <= x <= 60 and 26 <= y <= 30)
+    in_photo    = (20 <= x <= 36 and 36 <= y <= 52)
+    on_r_text   = ((38 <= y <= 40 or 44 <= y <= 46 or 50 <= y <= 52) and 40 <= x <= 60)
+    on_l_text   = ((58 <= y <= 60 or 64 <= y <= 66) and 20 <= x <= 60)
+    if on_outline or in_masthead or in_headline or in_photo:
+        return 255
+    if on_r_text or on_l_text:
+        return 180
+    return 0
+
+gen("icon_leaf_lg", 80, 80, leaf_alpha_lg, "icon_leaf_lg.h")
+gen("icon_milk_lg", 80, 80, milk_alpha_lg, "icon_milk_lg.h")
+gen("icon_news_lg", 80, 80, news_alpha_lg, "icon_news_lg.h")
+print("Wrote icon_leaf_lg.h, icon_milk_lg.h, icon_news_lg.h")
+
 # Wind arrow — short broad triangle (tip up) with a short shaft below it.
 # Emitted as BGRA so lv_img_set_angle can rotate it cleanly per direction.
 W_ARR, H_ARR = 32, 32

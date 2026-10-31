@@ -1,6 +1,8 @@
 #ifndef TOON_WASTECOLLECTION_H
 #define TOON_WASTECOLLECTION_H
 
+#include <stddef.h>
+
 /* HVC Groep inzamelkalender REST API.
  * Two-step: 1) postcode+huisnummer → BAG ID; 2) BAG → afvalstromen.
  * IDs we care about (see cyberjunky/home-assistant-hvcgroep):
@@ -52,5 +54,12 @@ int waste_next_n_windowed(int lead_days, waste_pickup_t * out, int max_n);
 
 /* Whole days from today to an ISO "YYYY-MM-DD" date (negative if past). */
 long waste_days_until(const char * date);
+
+/* Shorten waste category label for compact display (e.g. dim screen).
+ * "Groente/Fruit/Tuinafval" -> "GFT"
+ * "Plastic/Metaal/Drankpakken" -> "PMD"
+ * "Papier en karton" -> "Papier"
+ * Handles composite labels with "+" (e.g. "GFT + PMD"). */
+void waste_shorten_label(const char * in, char * out, size_t outsz);
 
 #endif

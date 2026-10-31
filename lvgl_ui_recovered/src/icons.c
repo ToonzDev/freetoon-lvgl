@@ -49,6 +49,9 @@
 #include "icon_news.h"
 #include "icon_milk.h"
 #include "icon_leaf.h"
+#include "icon_news_lg.h"
+#include "icon_milk_lg.h"
+#include "icon_leaf_lg.h"
 #include "icon_wind_arrow.h"
 #include <string.h>
 #include <time.h>
@@ -82,8 +85,17 @@ const lv_img_dsc_t * waste_icon_for_label(const char * label) {
     if (!strncasecmp(label, "Pap",  3)) return &icon_news;   /* Papier */
     if (!strncasecmp(label, "PMD",  3)) return &icon_milk;
     if (!strncasecmp(label, "Plas", 4)) return &icon_milk;
-    if (!strncasecmp(label, "GFT",  3)) return &icon_leaf;
+    if (!strncasecmp(label, "GFT",  3) || !strncasecmp(label, "Groen", 5)) return &icon_leaf;
     return &icon_trash;
+}
+
+const lv_img_dsc_t * waste_icon_for_label_lg(const char * label) {
+    if (!label) return &icon_trash_lg;
+    if (!strncasecmp(label, "Pap",  3)) return &icon_news_lg;   /* Papier */
+    if (!strncasecmp(label, "PMD",  3)) return &icon_milk_lg;   /* PMD */
+    if (!strncasecmp(label, "Plas", 4)) return &icon_milk_lg;
+    if (!strncasecmp(label, "GFT",  3) || !strncasecmp(label, "Groen", 5)) return &icon_leaf_lg;
+    return &icon_trash_lg;
 }
 
 #include "settings.h"
@@ -93,7 +105,7 @@ unsigned int waste_accent_for_label(const char * label) {
     if (!strncasecmp(label, "Pap",  3)) return settings.home_light_mode ? 0x1d4ed8 : 0x44aaff;     /* blue */
     if (!strncasecmp(label, "PMD",  3)) return settings.home_light_mode ? 0xc25e00 : 0xffaa44;     /* orange */
     if (!strncasecmp(label, "Plas", 4)) return settings.home_light_mode ? 0xc25e00 : 0xffaa44;
-    if (!strncasecmp(label, "GFT",  3)) return settings.home_light_mode ? 0x15803d : 0x88dd66;     /* green */
+    if (!strncasecmp(label, "GFT",  3) || !strncasecmp(label, "Groen", 5)) return settings.home_light_mode ? 0x15803d : 0x88dd66;     /* green */
     return settings.home_light_mode ? 0x4b5563 : 0x888888;                                          /* Restafval */
 }
 

@@ -69,9 +69,13 @@ extern const lv_img_dsc_t icon_trash;
 extern const lv_img_dsc_t icon_news;
 extern const lv_img_dsc_t icon_milk;
 extern const lv_img_dsc_t icon_leaf;
+extern const lv_img_dsc_t icon_news_lg;
+extern const lv_img_dsc_t icon_milk_lg;
+extern const lv_img_dsc_t icon_leaf_lg;
 extern const lv_img_dsc_t icon_wind_arrow;
 
 const lv_img_dsc_t * waste_icon_for_label(const char * label);
+const lv_img_dsc_t * waste_icon_for_label_lg(const char * label);
 unsigned int         waste_accent_for_label(const char * label);
 
 /* Compass-angle (0.1° units, 0..3599) for the buienradar wind-direction

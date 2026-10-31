@@ -131,7 +131,7 @@
     3. **Maanstand op kloktegel**: Obsolete feature on modern clock tile; remove switch and associated row.
 
 ### 12. Waste Tile on Dim Screen: Category Name Abbreviations
-- **Status**: Open / Backlog.
+- **Status**: Implemented (Dim Screen).
 - **Description**:
   - On the standby/dim screen waste tile (`DB_WASTE` in `screen_dim.c` / `screen_dim_grid.c` / `wastecollection.c`), shorten long category names for better fit and legibility:
     - *"GFT"* instead of *"Groente/Fruit/Tuinafval"*.
@@ -144,10 +144,9 @@
   - Review UI stack transition and screen push/pop or dim layering (`ui_stack.c` / `screen_dim.c`) so dim mode cleanly obscures or handles open detail screens.
 
 ### 14. Dim Screen Waste Tile: Dynamic Category Icon
-- **Status**: Open / Backlog.
+- **Status**: Implemented (Dim Screen).
 - **Description**:
-  - On the Dim screen, the next upcoming waste collection date is always shown with a generic wastebin icon.
-  - Update the dim tile to display the category-specific waste icon (e.g. paper, GFT, PMD, residual) matching the next pickup type.
+  - On the Dim screen, the next upcoming waste collection date now displays the category-specific waste icon (e.g. leaf for GFT, milk carton for PMD, newspaper for paper, bin for residual) rendered in crisp 80x80 white.
 
 ### 15. Thermostat Home Tile: Preset Buttons Should Resume Program Mode from Manual
 - **Status**: Open / Backlog.

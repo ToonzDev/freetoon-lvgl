@@ -596,11 +596,12 @@ static void refresh_cb(lv_timer_t * t) {
             int within  = have_wp && (settings.dim_waste_lead_days <= 0
                           || waste_days_until(wp.date) <= settings.dim_waste_lead_days);
             if (within) {
-                const char * l_clean = wp.labels;
-                if (strncmp(l_clean, "Afval ", 6) == 0) l_clean += 6;
-                /* Same day, two types ("Papier+Plastic") → one colour-coded
-                   bin per type. Split on the first '+'. */
-                char t1[40], t2[40] = "";
+                char l_short[48];
+                waste_shorten_label(wp.labels, l_short, sizeof l_short);
+                const char * l_clean = l_short;
+                /* Same day, two types ("Papier+Plastic") → one icon per type.
+                   Split on the first '+'. */
+                char t1[48], t2[48] = "";
                 snprintf(t1, sizeof t1, "%s", l_clean);
                 char * plus = strchr(t1, '+');
                 if (plus) {
@@ -609,14 +610,13 @@ static void refresh_cb(lv_timer_t * t) {
                     snprintf(t2, sizeof t2, "%s", p2);
                     size_t n = strlen(t1); while (n && t1[n-1] == ' ') t1[--n] = 0;
                 }
-                lv_img_set_src(waste_icon, &icon_trash_lg);
-                lv_obj_set_style_img_recolor(waste_icon,
-                    lv_color_hex(waste_accent_for_label(t1)), 0);
+                lv_img_set_src(waste_icon, waste_icon_for_label_lg(t1));
+                lv_obj_set_style_img_recolor(waste_icon, lv_color_hex(0xffffff), 0);
                 lv_obj_set_style_img_recolor_opa(waste_icon, 255, 0);
                 if (waste_icon_2) {
                     if (t2[0]) {
-                        lv_obj_set_style_img_recolor(waste_icon_2,
-                            lv_color_hex(waste_accent_for_label(t2)), 0);
+                        lv_img_set_src(waste_icon_2, waste_icon_for_label_lg(t2));
+                        lv_obj_set_style_img_recolor(waste_icon_2, lv_color_hex(0xffffff), 0);
                         lv_obj_set_style_img_recolor_opa(waste_icon_2, 255, 0);
                         lv_obj_clear_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
                     } else lv_obj_add_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
@@ -634,6 +634,7 @@ static void refresh_cb(lv_timer_t * t) {
             } else if (settings.dim_waste_lead_days <= 0) {
                 /* Filter off and genuinely no upcoming pickup → dimmed placeholder. */
                 lv_img_set_src(waste_icon, &icon_trash_lg);
+                lv_obj_set_style_img_recolor(waste_icon, lv_color_hex(0xffffff), 0);
                 lv_obj_set_style_img_recolor_opa(waste_icon, 100, 0); /* dimmed */
                 lv_label_set_text(lbl_waste, tr("Geen", "None"));
                 if (waste_icon_2) lv_obj_add_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
