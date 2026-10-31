@@ -121,16 +121,11 @@ int boxtalk_send_raw_xml(const char * xml);
 int boxtalk_get_boiler_type(void);
 int boxtalk_set_boiler_type(int type);
 
-/* Low-level send wrapper for callers that need to issue ad-hoc BoxTalk
-   action XML (e.g. inbox.c's DeleteNotification). */
-int boxtalk_send_raw_xml(const char * xml);
-
-/* Request an RRD archive from hcb_rrd. Response arrives asynchronously
-   and is stored in rrd_response_buf (NUL-terminated XML). Caller polls
-   rrd_response_ready (0/1). After consuming, clear ready by writing 0. */
-extern volatile int rrd_response_ready;
-extern char         rrd_response_buf[16384];
-int boxtalk_get_rra_data(const char * uuid, const char * rra_name);
+/* ---- hcb_config (ConfigProvider) plumbing ---- */
+extern volatile int config_response_ready;
+extern char         config_response_buf[65536];
+int boxtalk_get_object_config(const char * internal_address);
+int boxtalk_set_object_config(const char * config_xml);
 
 /* Program/scheme switching. state in 0..3 (Comfort/Home/Sleep/Away).
    Pass -1 (or call boxtalk_set_manual) to force manual override. */

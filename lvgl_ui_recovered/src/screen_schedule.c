@@ -29,21 +29,23 @@ static int selected_day = 0;      /* 0=Mon..6=Sun */
 static lv_obj_t * day_chips[7];
 static lv_obj_t * timeline_box;   /* parent of all schedule rectangles */
 static lv_obj_t * timeline_now_line;
+static lv_obj_t * hour_labels[5] = {NULL};
 static lv_obj_t * day_list;       /* parent of switch-point rows */
 static lv_timer_t * refresh_timer = NULL;
 
 /* Layout constants — VERTICAL orientation: one column per weekday, time
  * runs top→bottom (00:00 at top, 24:00 at bottom). Reads like a planner.
- * Compressed so the timeline + day chips + per-day switch list fit a
- * 600-px-tall screen without overlapping. */
-/* All wrapped in SX()/SY() so the planner compresses onto Toon 1's
- * 800x480 panel (identity on Toon 2's 1024x600). */
-#define TL_X        SX(80)
-#define TL_Y        SY(130)
-#define TL_COL_W    SX(120)            /* width of each weekday column   */
-#define TL_HOUR_PX  SY(12)             /* vertical pixels per hour        */
-#define TL_H        (24 * TL_HOUR_PX)  /* total height                    */
-#define TL_W        (7  * TL_COL_W)    /* total width                     */
+ * Adapts to Toon 1 (800x480) and Toon 2 (1024x600). */
+#define TL_BOX_X      ((DISP_HOR < 900) ? 46 : 60)
+#define TL_BOX_Y      ((DISP_VER < 550) ? 98 : 118)
+#define TL_COL_W      ((DISP_HOR < 900) ? 102 : 126)
+#define TL_HOUR_PX    ((DISP_VER < 550) ? 7 : 10)
+#define TL_H          (24 * TL_HOUR_PX)
+#define TL_W          (7 * TL_COL_W)
+#define TL_PAD_TOP    6
+#define TL_PAD_BOTTOM 6
+#define TL_PAD_LEFT   4
+#define TL_PAD_RIGHT  4
 
 /* Forward decls */
 static void rebuild_day_list(void);
@@ -78,11 +80,20 @@ static void rebuild_timeline(void) {
     lv_obj_clean(timeline_box);
     timeline_now_line = NULL;
 
-    /* (Day-of-week column headers come from the chips row above the
-     * timeline — no need to duplicate them inside the box.) */
+    /* Subtle vertical day-column divider lines connecting columns with day chips */
+    for (int d = 1; d < 7; d++) {
+        lv_obj_t * div = lv_obj_create(timeline_box);
+        lv_obj_set_size(div, 1, TL_H);
+        lv_obj_set_pos(div, d * TL_COL_W, 0);
+        lv_obj_set_style_bg_color(div, lv_color_hex(THEME_BORDER), 0);
+        lv_obj_set_style_bg_opa(div, LV_OPA_40, 0);
+        lv_obj_set_style_border_width(div, 0, 0);
+        lv_obj_set_style_radius(div, 0, 0);
+        lv_obj_clear_flag(div, LV_OBJ_FLAG_SCROLLABLE);
+    }
 
     /* Horizontal hour gridlines every 6 hours, spanning all 7 day columns. */
-    for (int hr = 0; hr <= 24; hr += 6) {
+    for (int idx = 0, hr = 0; hr <= 24; hr += 6, idx++) {
         int y = hr * TL_HOUR_PX;
         lv_obj_t * tick = lv_obj_create(timeline_box);
         lv_obj_set_size(tick, TL_W, 1);
@@ -91,18 +102,14 @@ static void rebuild_timeline(void) {
         lv_obj_set_style_border_width(tick, 0, 0);
         lv_obj_set_style_radius(tick, 0, 0);
         lv_obj_clear_flag(tick, LV_OBJ_FLAG_SCROLLABLE);
-        /* Hour label on the LEFT outside the column area. Anchored to
-         * scr_root with absolute coords because timeline_box sits flush
-         * against the left edge (x=20) and there's no negative-x room
-         * for labels positioned relative to the box. */
-        lv_obj_t * hl = lv_label_create(scr_root);
-        lv_label_set_text_fmt(hl, "%02d", hr);
-        lv_obj_set_style_text_color(hl, lv_color_hex(THEME_TEXT_DIM), 0);
-        lv_obj_set_style_text_font(hl, SF(14), 0);
-        /* timeline_box at (TL_X-20=60, TL_Y); pad_all=8 internally → the
-         * y=0 row inside the box is at screen y = TL_Y+8. Labels sit
-         * just left of the box. */
-        lv_obj_set_pos(hl, TL_X - 20 - 28, TL_Y + 8 + y - 7);
+
+        if (!hour_labels[idx]) {
+            hour_labels[idx] = lv_label_create(scr_root);
+            lv_label_set_text_fmt(hour_labels[idx], "%02d", hr);
+            lv_obj_set_style_text_color(hour_labels[idx], lv_color_hex(THEME_TEXT_DIM), 0);
+            lv_obj_set_style_text_font(hour_labels[idx], SF(14), 0);
+        }
+        lv_obj_set_pos(hour_labels[idx], TL_BOX_X - 26, TL_BOX_Y + TL_PAD_TOP + 1 + y - 7);
     }
 
     /* Schedule blocks. Each is a vertical rectangle inside its day's
@@ -115,8 +122,8 @@ static void rebuild_timeline(void) {
         int e_min = e->end_hour   * 60 + e->end_min;
         int day = e->start_day;
         uint32_t col = schedule_state_color(e->target_state);
-        int col_x = day * TL_COL_W + 4;
-        int col_w = TL_COL_W - 8;
+        int col_x = day * TL_COL_W + 3;
+        int col_w = TL_COL_W - 6;
         if (e->end_day == e->start_day && e_min > s_min) {
             int y1 = (s_min * TL_HOUR_PX) / 60;
             int y2 = (e_min * TL_HOUR_PX) / 60;
@@ -141,7 +148,7 @@ static void rebuild_timeline(void) {
 
             int y2 = (e_min * TL_HOUR_PX) / 60;
             int d2 = e->end_day;
-            int col_x2 = d2 * TL_COL_W + 4;
+            int col_x2 = d2 * TL_COL_W + 3;
             lv_obj_t * b2 = lv_obj_create(timeline_box);
             lv_obj_set_size(b2, col_w, y2);
             lv_obj_set_pos(b2, col_x2, 0);
@@ -160,11 +167,11 @@ static void rebuild_timeline(void) {
     int toon_day = (wd + 6) % 7;    /* convert to 0=Mon */
     int y_now = ((tm.tm_hour * 60 + tm.tm_min) * TL_HOUR_PX) / 60;
     timeline_now_line = lv_obj_create(timeline_box);
-    lv_obj_set_size(timeline_now_line, TL_COL_W, 2);
-    lv_obj_set_pos(timeline_now_line, toon_day * TL_COL_W, y_now - 1);
+    lv_obj_set_size(timeline_now_line, TL_COL_W - 2, 3);
+    lv_obj_set_pos(timeline_now_line, toon_day * TL_COL_W + 1, y_now - 1);
     lv_obj_set_style_bg_color(timeline_now_line, lv_color_hex(settings.home_light_mode ? 0xd97706 : 0xffffff), 0);
     lv_obj_set_style_border_width(timeline_now_line, 0, 0);
-    lv_obj_set_style_radius(timeline_now_line, 0, 0);
+    lv_obj_set_style_radius(timeline_now_line, 1, 0);
     lv_obj_clear_flag(timeline_now_line, LV_OBJ_FLAG_SCROLLABLE);
 }
 
@@ -373,8 +380,10 @@ static void show_edit_modal(int idx) {
         edit_state.hour = 12; edit_state.minute = 0; edit_state.target_state = 0;
     }
 
+    int is_small = (DISP_VER < 550);
+
     edit_modal = lv_obj_create(lv_scr_act());
-    lv_obj_set_size(edit_modal, 1024, 600);
+    lv_obj_set_size(edit_modal, DISP_HOR, DISP_VER);
     lv_obj_set_pos(edit_modal, 0, 0);
     lv_obj_set_style_bg_color(edit_modal, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_opa(edit_modal, 220, 0);
@@ -383,19 +392,23 @@ static void show_edit_modal(int idx) {
     lv_obj_set_style_pad_all(edit_modal, 0, 0);
     lv_obj_clear_flag(edit_modal, LV_OBJ_FLAG_SCROLLABLE);
 
+    int pw = is_small ? 720 : 820;
+    int ph = is_small ? 410 : 470;
+    int pad = is_small ? 16 : 24;
+
     lv_obj_t * panel = lv_obj_create(edit_modal);
-    lv_obj_set_size(panel, 800, 460);
+    lv_obj_set_size(panel, pw, ph);
     lv_obj_align(panel, LV_ALIGN_CENTER, 0, 0);
     lv_obj_set_style_bg_color(panel, lv_color_hex(THEME_CARD_BG), 0);
     lv_obj_set_style_radius(panel, 16, 0);
     lv_obj_set_style_border_color(panel, lv_color_hex(THEME_BORDER), 0);
     lv_obj_set_style_border_width(panel, 1, 0);
-    lv_obj_set_style_pad_all(panel, 24, 0);
+    lv_obj_set_style_pad_all(panel, pad, 0);
     lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t * title = lv_label_create(panel);
     lv_obj_set_style_text_color(title, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(title, SF(28), 0);
+    lv_obj_set_style_text_font(title, is_small ? SF(22) : SF(26), 0);
     lv_label_set_text_fmt(title, tr("%s - schakelpunt", "%s - switch point"),
                           schedule_day_short(selected_day));
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 0, 0);
@@ -403,94 +416,108 @@ static void show_edit_modal(int idx) {
     /* Time editor: big time label on top, buttons below in their own row. */
     edit_time_lbl = lv_label_create(panel);
     lv_obj_set_style_text_color(edit_time_lbl, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(edit_time_lbl, SF(48), 0);
+    lv_obj_set_style_text_font(edit_time_lbl, is_small ? SF(38) : SF(46), 0);
     edit_update_time();
-    lv_obj_align(edit_time_lbl, LV_ALIGN_TOP_MID, 0, 50);
+    lv_obj_align(edit_time_lbl, LV_ALIGN_TOP_MID, 0, is_small ? 26 : 38);
 
-    /* Buttons row well below the time label. */
+    /* Buttons row (u-, u+, m-, m+) */
     lv_obj_t * b;
-    int row_y = 130;
+    int row_y = is_small ? 82 : 115;
+    int tb_w = is_small ? 62 : 72;
+    int tb_h = is_small ? 44 : 52;
+    int off_far = is_small ? 160 : 190;
+    int off_near = is_small ? 60 : 75;
+
     b = lv_btn_create(panel);
-    lv_obj_set_size(b, 70, 60); lv_obj_align(b, LV_ALIGN_TOP_MID, -190, row_y);
+    lv_obj_set_size(b, tb_w, tb_h); lv_obj_align(b, LV_ALIGN_TOP_MID, -off_far, row_y);
     lv_obj_set_style_bg_color(b, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_add_event_cb(b, on_hour_dec, LV_EVENT_CLICKED, NULL);
     lv_obj_t * l = lv_label_create(b); lv_label_set_text(l, tr("u-", "h-"));
     lv_obj_set_style_text_color(l, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(l, SF(22), 0); lv_obj_center(l);
+    lv_obj_set_style_text_font(l, is_small ? SF(18) : SF(22), 0); lv_obj_center(l);
 
     b = lv_btn_create(panel);
-    lv_obj_set_size(b, 70, 60); lv_obj_align(b, LV_ALIGN_TOP_MID, -100, row_y);
+    lv_obj_set_size(b, tb_w, tb_h); lv_obj_align(b, LV_ALIGN_TOP_MID, -off_near, row_y);
     lv_obj_set_style_bg_color(b, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_add_event_cb(b, on_hour_inc, LV_EVENT_CLICKED, NULL);
     l = lv_label_create(b); lv_label_set_text(l, tr("u+", "h+"));
     lv_obj_set_style_text_color(l, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(l, SF(22), 0); lv_obj_center(l);
+    lv_obj_set_style_text_font(l, is_small ? SF(18) : SF(22), 0); lv_obj_center(l);
 
     b = lv_btn_create(panel);
-    lv_obj_set_size(b, 70, 60); lv_obj_align(b, LV_ALIGN_TOP_MID, 100, row_y);
+    lv_obj_set_size(b, tb_w, tb_h); lv_obj_align(b, LV_ALIGN_TOP_MID, off_near, row_y);
     lv_obj_set_style_bg_color(b, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_add_event_cb(b, on_min_dec, LV_EVENT_CLICKED, NULL);
     l = lv_label_create(b); lv_label_set_text(l, tr("m-", "m-"));
     lv_obj_set_style_text_color(l, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(l, SF(22), 0); lv_obj_center(l);
+    lv_obj_set_style_text_font(l, is_small ? SF(18) : SF(22), 0); lv_obj_center(l);
 
     b = lv_btn_create(panel);
-    lv_obj_set_size(b, 70, 60); lv_obj_align(b, LV_ALIGN_TOP_MID, 190, row_y);
+    lv_obj_set_size(b, tb_w, tb_h); lv_obj_align(b, LV_ALIGN_TOP_MID, off_far, row_y);
     lv_obj_set_style_bg_color(b, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_add_event_cb(b, on_min_inc, LV_EVENT_CLICKED, NULL);
     l = lv_label_create(b); lv_label_set_text(l, tr("m+", "m+"));
     lv_obj_set_style_text_color(l, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(l, SF(22), 0); lv_obj_center(l);
+    lv_obj_set_style_text_font(l, is_small ? SF(18) : SF(22), 0); lv_obj_center(l);
 
     /* State picker row (4 buttons) */
     const char * names[] = {tr("Comfort", "Comfort"), tr("Thuis", "Home"),
                             tr("Slapen", "Sleep"), tr("Weg", "Away")};
+    int inner_w = pw - 2 * pad;
+    int gap = is_small ? 10 : 14;
+    int sb_w = (inner_w - 3 * gap) / 4;
+    int sb_h = is_small ? 54 : 68;
+    int sb_y = is_small ? 150 : 205;
+
     for (int i = 0; i < 4; i++) {
         lv_obj_t * sb = lv_btn_create(panel);
-        lv_obj_set_size(sb, 170, 80);
-        lv_obj_set_pos(sb, 10 + i * 184, 230);
+        lv_obj_set_size(sb, sb_w, sb_h);
+        lv_obj_set_pos(sb, i * (sb_w + gap), sb_y);
         lv_obj_set_style_radius(sb, 12, 0);
         lv_obj_add_event_cb(sb, on_state_btn, LV_EVENT_CLICKED, (void *)(long)i);
         lv_obj_t * lbl = lv_label_create(sb);
         lv_label_set_text(lbl, names[i]);
         lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(lbl, SF(22), 0);
+        lv_obj_set_style_text_font(lbl, is_small ? SF(18) : SF(22), 0);
         lv_obj_center(lbl);
         edit_state_lbls[i] = lbl;
     }
     edit_update_state_buttons();
 
     /* Bottom buttons */
+    int bb_h = is_small ? 46 : 56;
+    int bb_w = is_small ? 160 : 190;
+
     lv_obj_t * save = lv_btn_create(panel);
-    lv_obj_set_size(save, 200, 60);
+    lv_obj_set_size(save, bb_w, bb_h);
     lv_obj_align(save, LV_ALIGN_BOTTOM_LEFT, 0, 0);
     lv_obj_set_style_bg_color(save, lv_color_hex(settings.home_light_mode ? 0x2563eb : 0x3388aa), 0);
     lv_obj_add_event_cb(save, on_save, LV_EVENT_CLICKED, NULL);
     l = lv_label_create(save); lv_label_set_text(l, tr("Opslaan", "Save"));
     lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(l, SF(22), 0);
+    lv_obj_set_style_text_font(l, is_small ? SF(18) : SF(22), 0);
     lv_obj_center(l);
 
     if (idx >= 0) {
         lv_obj_t * del = lv_btn_create(panel);
-        lv_obj_set_size(del, 200, 60);
+        lv_obj_set_size(del, bb_w, bb_h);
         lv_obj_align(del, LV_ALIGN_BOTTOM_MID, 0, 0);
         lv_obj_set_style_bg_color(del, lv_color_hex(0xaa3344), 0);
         lv_obj_add_event_cb(del, on_delete, LV_EVENT_CLICKED, NULL);
         l = lv_label_create(del); lv_label_set_text(l, tr("Verwijderen", "Delete"));
         lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(l, SF(22), 0);
+        lv_obj_set_style_text_font(l, is_small ? SF(18) : SF(22), 0);
         lv_obj_center(l);
     }
 
     lv_obj_t * cancel = lv_btn_create(panel);
-    lv_obj_set_size(cancel, 200, 60);
+    lv_obj_set_size(cancel, bb_w, bb_h);
     lv_obj_align(cancel, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     lv_obj_set_style_bg_color(cancel, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_add_event_cb(cancel, on_cancel, LV_EVENT_CLICKED, NULL);
     l = lv_label_create(cancel); lv_label_set_text(l, tr("Annuleren", "Cancel"));
     lv_obj_set_style_text_color(l, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(l, SF(22), 0);
+    lv_obj_set_style_text_font(l, is_small ? SF(18) : SF(22), 0);
     lv_obj_center(l);
 }
 
@@ -506,13 +533,13 @@ static void refresh_cb(lv_timer_t * t) {
     int y_now = ((tm.tm_hour * 60 + tm.tm_min) * TL_HOUR_PX) / 60;
     if (!timeline_now_line) {
         timeline_now_line = lv_obj_create(timeline_box);
-        lv_obj_set_size(timeline_now_line, TL_COL_W, 2);
-        lv_obj_set_style_bg_color(timeline_now_line, lv_color_hex(0xffffff), 0);
+        lv_obj_set_size(timeline_now_line, TL_COL_W - 2, 3);
+        lv_obj_set_style_bg_color(timeline_now_line, lv_color_hex(settings.home_light_mode ? 0xd97706 : 0xffffff), 0);
         lv_obj_set_style_border_width(timeline_now_line, 0, 0);
-        lv_obj_set_style_radius(timeline_now_line, 0, 0);
+        lv_obj_set_style_radius(timeline_now_line, 1, 0);
         lv_obj_clear_flag(timeline_now_line, LV_OBJ_FLAG_SCROLLABLE);
     }
-    lv_obj_set_pos(timeline_now_line, toon_day * TL_COL_W, y_now - 1);
+    lv_obj_set_pos(timeline_now_line, toon_day * TL_COL_W + 1, y_now - 1);
 }
 
 static int scr_light_mode = -1;
@@ -527,6 +554,8 @@ lv_obj_t * screen_schedule_create(void) {
     }
     if (scr_root) { lv_obj_del(scr_root); scr_root = NULL; }
     scr_light_mode = settings.home_light_mode;
+    memset(hour_labels, 0, sizeof(hour_labels));
+    timeline_now_line = NULL;
 
     schedule_load();
 
@@ -557,16 +586,21 @@ lv_obj_t * screen_schedule_create(void) {
 
     lv_obj_t * title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(title, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(title, SF(28), 0);
+    lv_obj_set_style_text_font(title, (DISP_VER < 550) ? SF(24) : SF(28), 0);
     lv_label_set_text(title, tr("Programma", "Schedule"));
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, SX(30), SY(18));
+    lv_obj_align(title, LV_ALIGN_TOP_LEFT, SX(30), (DISP_VER < 550) ? 14 : SY(18));
 
-    /* Day chips */
+    /* Day chips — precisely aligned over their corresponding timeline column */
     for (int i = 0; i < 7; i++) {
         lv_obj_t * c = lv_obj_create(scr_root);
-        lv_obj_set_size(c, SX(130), SY(48));
-        lv_obj_set_pos(c, SX(30 + i * 140), SY(70));
-        lv_obj_set_style_radius(c, 12, 0);
+        int chip_w = TL_COL_W - 4;
+        int chip_h = (DISP_VER < 550) ? 32 : 40;
+        int chip_x = TL_BOX_X + TL_PAD_LEFT + 1 + i * TL_COL_W + 2;
+        int chip_y = (DISP_VER < 550) ? 56 : 68;
+
+        lv_obj_set_size(c, chip_w, chip_h);
+        lv_obj_set_pos(c, chip_x, chip_y);
+        lv_obj_set_style_radius(c, 8, 0);
         lv_obj_set_style_pad_all(c, 0, 0);
         lv_obj_clear_flag(c, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_add_flag(c, LV_OBJ_FLAG_CLICKABLE);
@@ -574,38 +608,39 @@ lv_obj_t * screen_schedule_create(void) {
 
         lv_obj_t * lbl = lv_label_create(c);
         lv_label_set_text(lbl, schedule_day_short(i));
-        lv_obj_set_style_text_font(lbl, SF(22), 0);
+        lv_obj_set_style_text_font(lbl, (DISP_VER < 550) ? SF(16) : SF(20), 0);
         lv_obj_center(lbl);
 
         style_chip(c, i == selected_day);
         day_chips[i] = c;
     }
 
-    /* Timeline container */
+    /* Timeline container — sized with balanced vertical & horizontal padding */
+    int box_w = TL_W + TL_PAD_LEFT + TL_PAD_RIGHT + 2;
+    int box_h = TL_H + TL_PAD_TOP + TL_PAD_BOTTOM + 2;
     timeline_box = lv_obj_create(scr_root);
-    lv_obj_set_size(timeline_box, TL_W, TL_H);
-    /* Origin offset by 40 px on the left so the hour-axis labels fit. */
-    lv_obj_set_pos(timeline_box, TL_X - 20, TL_Y);
+    lv_obj_set_size(timeline_box, box_w, box_h);
+    lv_obj_set_pos(timeline_box, TL_BOX_X, TL_BOX_Y);
     lv_obj_set_style_bg_color(timeline_box, lv_color_hex(THEME_CARD_BG), 0);
     lv_obj_set_style_radius(timeline_box, 10, 0);
     lv_obj_set_style_border_color(timeline_box, lv_color_hex(THEME_BORDER), 0);
     lv_obj_set_style_border_width(timeline_box, 1, 0);
-    lv_obj_set_style_pad_all(timeline_box, 8, 0);
+    lv_obj_set_style_pad_top(timeline_box, TL_PAD_TOP, 0);
+    lv_obj_set_style_pad_bottom(timeline_box, TL_PAD_BOTTOM, 0);
+    lv_obj_set_style_pad_left(timeline_box, TL_PAD_LEFT, 0);
+    lv_obj_set_style_pad_right(timeline_box, TL_PAD_RIGHT, 0);
     lv_obj_clear_flag(timeline_box, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* Day-list container below the timeline. Stretched to the bottom edge
-     * (height 168) and made vertically scrollable so all switch-points fit
-     * even when a day has 5+ entries plus the "Add" button. The scrollbar
-     * stays visible so it's obvious there's more below the fold. */
+    /* Day-list container below the timeline */
+    int list_y = TL_BOX_Y + box_h + ((DISP_VER < 550) ? 8 : 14);
+    int list_h = DISP_VER - list_y - ((DISP_VER < 550) ? 6 : 10);
     day_list = lv_obj_create(scr_root);
-    /* Width tracks the panel; top sits just under the timeline and the box
-     * runs to the bottom edge (it scrolls vertically for long day lists). */
-    lv_obj_set_size(day_list, DISP_HOR - 60, DISP_VER - SY(432));
-    lv_obj_set_pos(day_list, 30, SY(432));
+    lv_obj_set_size(day_list, box_w, list_h);
+    lv_obj_set_pos(day_list, TL_BOX_X, list_y);
     lv_obj_set_style_bg_opa(day_list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(day_list, 0, 0);
     lv_obj_set_style_pad_all(day_list, 0, 0);
-    lv_obj_set_style_pad_right(day_list, 18, 0);
+    lv_obj_set_style_pad_right(day_list, 14, 0);
     lv_obj_add_flag(day_list, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(day_list, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(day_list, LV_SCROLLBAR_MODE_ON);
@@ -613,6 +648,7 @@ lv_obj_t * screen_schedule_create(void) {
                               LV_PART_SCROLLBAR);
     lv_obj_set_style_bg_opa(day_list, LV_OPA_70, LV_PART_SCROLLBAR);
     lv_obj_set_style_width(day_list, 6, LV_PART_SCROLLBAR);
+    lv_obj_set_style_radius(day_list, 3, LV_PART_SCROLLBAR);
     lv_obj_set_style_radius(day_list, 3, LV_PART_SCROLLBAR);
 
     rebuild_timeline();

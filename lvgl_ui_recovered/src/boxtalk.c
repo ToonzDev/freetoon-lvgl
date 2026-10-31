@@ -105,16 +105,16 @@ unsigned int air_quality_color(int eco2, int tvoc) {
 }
 
 const char* program_label(void) {
-    /* activeState == -1 → manual override. Anything else → schedule is in
-     * the driver's seat and program_state holds the currently-active preset.
-     * UI surfaces it as "Scheduled: Home" so the *mode* (manual vs. on the
-     * schedule) is one tap away from being obvious. Returns a pointer into
-     * a static buffer; safe because LVGL copies labels on set_text. */
     /* Dim/ambient label = the active preset name (stock getStateName(activeState)),
      * which the stock UI surfaces regardless of mode; "Manual" only when there is
-     * no active preset (activeState == -1). The mode itself (Manual vs Program) is
-     * the home tile's toggle, not this label. */
-    switch (toon_state.active_state) {
+     * no active preset (activeState == -1). If a temporary override is active,
+     * reflect the active preset until the scheduled switch point rather than
+     * displaying "Manual". */
+    int st = toon_state.active_state;
+    if (st < 0 && temp_override_active && temp_override_origin >= 0) {
+        st = temp_override_origin;
+    }
+    switch (st) {
         case 0: return tr("Comfort", "Comfort");
         case 1: return tr("Thuis", "Home");
         case 2: return tr("Slapen", "Sleep");
@@ -139,6 +139,7 @@ static char NETCON_UUID[96]   = "qb-000000000000-0000000000:hcb_netcon";
 static char USERMSG_UUID[96]  = "qb-000000000000-0000000000:happ_usermsg";
 static char RRD_UUID[96]      = "qb-000000000000-0000000000:hcb_rrd";
 static char THERMD_UUID[96]   = "qb-000000000000-0000000000:happ_thermstat";
+static char CONFIG_UUID[96]   = "qb-000000000000-0000000000:hcb_config";
 static char s_therm_settings_uuid[96] = {0};
 
 static void bt_seed_thermostat_settings_uuid(void) {
@@ -180,6 +181,7 @@ static void bt_init_dev_uuids(void) {
     snprintf(USERMSG_UUID, sizeof USERMSG_UUID, "%s:happ_usermsg",dev_base);
     snprintf(RRD_UUID,     sizeof RRD_UUID,     "%s:hcb_rrd",     dev_base);
     snprintf(THERMD_UUID,  sizeof THERMD_UUID,  "%s:happ_thermstat", dev_base);
+    snprintf(CONFIG_UUID,  sizeof CONFIG_UUID,  "%s:hcb_config",     dev_base);
 }
 
 /* Runtime device UUIDs for other modules (inbox/notify) — avoids hardcoding
@@ -658,6 +660,17 @@ static void handle_msg(const char* xml) {
             netcon_response_buf[n] = 0;
             netcon_response_ready = 1;
         }
+        /* ConfigProvider response — capture for schedule / config parser */
+        if ((strstr(xml, "GetObjectConfig") || strstr(xml, "GetPackageConfig") ||
+             strstr(xml, "SetObjectConfig") || strstr(xml, "ConfigProvider")) &&
+            strstr(xml, "class=\"response\"")) {
+            size_t n = strlen(xml);
+            if (n >= sizeof(config_response_buf)) n = sizeof(config_response_buf) - 1;
+            memcpy(config_response_buf, xml, n);
+            config_response_buf[n] = 0;
+            config_response_ready = 1;
+            fprintf(stderr, "[bxt] ConfigProvider response %zu bytes\n", n);
+        }
     }
     boxtalk_unlock();
 }
@@ -785,6 +798,44 @@ int boxtalk_subscribe_service(const char * service_id) {
         OUR_UUID, service_id);
     fprintf(stderr, "[bxt] subscribing to %s\n", service_id);
     return send_msg(buf);
+}
+
+/* ---- hcb_config (ConfigProvider) plumbing ---- */
+volatile int config_response_ready = 0;
+char         config_response_buf[65536];
+
+int boxtalk_get_object_config(const char * internal_address) {
+    if (!internal_address || !internal_address[0] || sock_fd < 0) return -1;
+    config_response_ready = 0;
+    config_response_buf[0] = 0;
+    char req[512];
+    snprintf(req, sizeof req,
+        "<action class=\"invoke\" uuid=\"%s\" destuuid=\"%s\" "
+        "serviceid=\"urn:hcb-hae-com:serviceId:ConfigProvider\" requestid=\"%d-goc\">"
+        "<u:GetObjectConfig xmlns:u=\"urn:hcb-hae-com:service:ConfigProvider:1\">"
+        "<internalAddress>%s</internalAddress>"
+        "</u:GetObjectConfig></action>",
+        OUR_UUID, CONFIG_UUID, getpid(), internal_address);
+    return send_msg(req);
+}
+
+int boxtalk_set_object_config(const char * config_xml) {
+    if (!config_xml || !config_xml[0] || sock_fd < 0) return -1;
+    config_response_ready = 0;
+    config_response_buf[0] = 0;
+    size_t len = strlen(config_xml) + 512;
+    char * req = malloc(len);
+    if (!req) return -1;
+    snprintf(req, len,
+        "<action class=\"invoke\" uuid=\"%s\" destuuid=\"%s\" "
+        "serviceid=\"urn:hcb-hae-com:serviceId:ConfigProvider\" requestid=\"%d-soc\">"
+        "<u:SetObjectConfig xmlns:u=\"urn:hcb-hae-com:service:ConfigProvider:1\">"
+        "<Config>%s</Config>"
+        "</u:SetObjectConfig></action>",
+        OUR_UUID, CONFIG_UUID, getpid(), config_xml);
+    int rc = send_msg(req);
+    free(req);
+    return rc;
 }
 
 /* ---- Boiler control type (OpenTherm vs On/Off) ----
@@ -1313,7 +1364,7 @@ int boxtalk_set_program(int preset) {
     int mode;
 #ifdef SIM
     if      (toon_state.program_state == PROG_LOCKEDBASE) mode = PROG_TEMPOVERRIDE;
-    else if (toon_state.program_state == PROG_MANUAL)     mode = PROG_MANUAL;
+    else if (toon_state.program_state == PROG_MANUAL)     mode = PROG_TEMPOVERRIDE;
     else if (toon_state.active_state  == preset)          mode = PROG_LOCKEDBASE;
     else                                                  mode = PROG_TEMPOVERRIDE;
     toon_state.active_state  = preset;
@@ -1338,15 +1389,13 @@ int boxtalk_set_program(int preset) {
         if (rc == 0) toon_state.active_state = preset;
         return rc;
     }
-    /* Mirror the stock UI's setProgramState() VERBATIM (Toon mobile.js, the HCB
-     * web app — the authoritative reference):
+    /* Tapping a preset from MANUAL resumes Program mode (TEMPOVERRIDE):
      *   if  programState == LOCKEDBASE -> TEMPOVERRIDE   (a new choice unlocks)
-     *   elif programState == MANUAL    -> MANUAL         (stay manual; only the
-     *                                     temperatureState/setpoint changes)
+     *   elif programState == MANUAL    -> TEMPOVERRIDE   (activate schedule override)
      *   elif activeState  == preset    -> LOCKEDBASE     (2nd tap of same = lock)
      *   else                           -> TEMPOVERRIDE   (override until next switch) */
     if      (toon_state.program_state == PROG_LOCKEDBASE) mode = PROG_TEMPOVERRIDE;
-    else if (toon_state.program_state == PROG_MANUAL)     mode = PROG_MANUAL;
+    else if (toon_state.program_state == PROG_MANUAL)     mode = PROG_TEMPOVERRIDE;
     else if (toon_state.active_state  == preset)          mode = PROG_LOCKEDBASE;
     else                                                  mode = PROG_TEMPOVERRIDE;
 
