@@ -1813,11 +1813,15 @@ static void rotate_add_cb(lv_obj_t * sc, const char * id, const char * label, in
 static void open_rotate_modal(lv_event_t * e) {
     (void)e;
     lv_obj_t * p = modal_open(tr("Tegel automatisch wisselen", "Auto-rotate tile"), 540);
-    int y = (DISP_VER < 600) ? 60 : 70;
+    lv_obj_clear_flag(p, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_pad_bottom(p, 0, 0);
+
+    int is_t1 = (DISP_VER < 600);
+    int y = is_t1 ? 60 : 70;
 
     lv_obj_t * r = panel_row(p, y, tr("Inhoud pagina-2 slot 1 wisselen", "Rotate page-2 slot 1 content"), NULL);
     sw_rotate = row_switch(r, settings.tile_rotate_enabled, NULL);
-    y += (DISP_VER < 600) ? 70 : 86;
+    y += is_t1 ? 70 : 86;
 
     lv_obj_t * lbl = lv_label_create(p);
     lv_obj_set_style_text_color(lbl, lv_color_hex(THEME_TEXT_HI), 0);
@@ -1825,13 +1829,14 @@ static void open_rotate_modal(lv_event_t * e) {
     lv_label_set_text(lbl, tr("Interval (s):", "Interval (s):"));
     lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, SX(4), y);
     ta_rotate_secs = lv_textarea_create(p);
+    ta_make_numeric(ta_rotate_secs);
     lv_obj_set_size(ta_rotate_secs, SX(160), SY(44));
     lv_obj_align(ta_rotate_secs, LV_ALIGN_TOP_LEFT, SX(200), y - 4);
     lv_textarea_set_one_line(ta_rotate_secs, true);
     lv_textarea_set_accepted_chars(ta_rotate_secs, "0123456789");
     char sbuf[8]; snprintf(sbuf, sizeof sbuf, "%d", settings.tile_rotate_seconds);
     lv_textarea_set_text(ta_rotate_secs, sbuf);
-    y += (DISP_VER < 600) ? 48 : 58;
+    y += is_t1 ? 48 : 58;
 
     rotate_cb_count = 0;
 
@@ -1840,12 +1845,12 @@ static void open_rotate_modal(lv_event_t * e) {
     lv_obj_set_style_text_font(pick, SF(18), 0);
     lv_label_set_text(pick, tr("Wissel tussen:", "Cycle through:"));
     lv_obj_align(pick, LV_ALIGN_TOP_LEFT, SX(4), y);
-    y += (DISP_VER < 600) ? 28 : 34;
+    y += is_t1 ? 28 : 34;
 
-    int ph = (DISP_VER < 600) ? (480 - SUNI(20)) : (600 - SUNI(20));
-    int sc_bottom = ph - ((DISP_VER < 600) ? 104 : 118);
+    int h = SY(540);
+    int sc_bottom = h - (is_t1 ? 78 : 98);
     int sc_h = sc_bottom - y;
-    if (sc_h < 80) sc_h = 80;
+    if (sc_h < 60) sc_h = 60;
 
     lv_obj_t * sc = lv_obj_create(p);
     lv_obj_set_size(sc, SX(820), sc_h);
@@ -1890,11 +1895,11 @@ static void open_rotate_modal(lv_event_t * e) {
     lv_obj_set_width(note, SX(800));
     lv_label_set_long_mode(note, LV_LABEL_LONG_WRAP);
     lv_label_set_text(note, tr("Meer integraties vind je in de Marketplace.", "Find more integrations in the Marketplace."));
-    lv_obj_align(note, LV_ALIGN_BOTTOM_LEFT, SX(16), (DISP_VER < 600) ? -68 : -78);
+    lv_obj_align(note, LV_ALIGN_BOTTOM_LEFT, SX(16), SY(-66));
 
     lv_obj_t * btn = lv_btn_create(p);
-    lv_obj_set_size(btn, SX(160), SY(48));
-    lv_obj_align(btn, LV_ALIGN_BOTTOM_LEFT, SX(16), SY(-10));
+    lv_obj_set_size(btn, SX(160), SY(50));
+    lv_obj_align(btn, LV_ALIGN_BOTTOM_LEFT, SX(16), SY(-8));
     lv_obj_set_style_bg_color(btn, lv_color_hex(0x3a6090), 0);
     lv_obj_add_event_cb(btn, on_rotate_apply, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(btn); lv_label_set_text(bl, tr("Toepassen", "Apply"));
