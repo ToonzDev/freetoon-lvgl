@@ -138,10 +138,9 @@
     - *"PMD"* instead of *"Plastic/Metaal/Drankpakken"*.
 
 ### 13. Dim Screen Transition Over Detail / Modal Screens
-- **Status**: Open / Backlog.
+- **Status**: Implemented.
 - **Description**:
-  - When a detailed screen is active (e.g., full Settings subscreen, big News, or Weather screens), the dim screen transitions in the background underneath, but the foreground detailed screen remains visible on top instead of being covered or closed.
-  - Review UI stack transition and screen push/pop or dim layering (`ui_stack.c` / `screen_dim.c`) so dim mode cleanly obscures or handles open detail screens.
+  - When detail/settings modals (`lv_layer_top()`) are open, the dim screen now cleanly covers them by hiding the top layer while dimmed, and restoring it on wake (or closing it when auto-home expires). Doorbell alerts remain on `lv_layer_sys()` so they always appear over the dim screen with full brightness.
 
 ### 14. Dim Screen Waste Tile: Dynamic Category Icon
 - **Status**: Implemented (Dim Screen).

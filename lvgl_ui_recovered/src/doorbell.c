@@ -18,6 +18,8 @@
 #include "doorbell.h"
 #include "homeassistant.h"
 #include "settings.h"
+#include "backlight.h"
+#include "screens.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -80,6 +82,9 @@ static void close_overlay(void) {
     if (dismiss_timer) { lv_timer_del(dismiss_timer); dismiss_timer = NULL; }
     if (overlay)       { lv_obj_del(overlay); overlay = NULL; canvas = NULL; }
     if (cur_px)        { lv_mem_free(cur_px); cur_px = NULL; }
+    if (ui_is_dimmed()) {
+        backlight_set(settings.dim_brightness);
+    }
 }
 
 static void on_tap(lv_event_t * e)     { (void)e; close_overlay(); }
@@ -100,8 +105,11 @@ static void update_frame(void) {
 
 static void show_overlay(void) {
     close_overlay();
+    if (ui_is_dimmed()) {
+        backlight_set(settings.active_brightness);
+    }
 
-    overlay = lv_obj_create(lv_layer_top());
+    overlay = lv_obj_create(lv_layer_sys());
     lv_obj_remove_style_all(overlay);
     lv_obj_set_size(overlay, lv_disp_get_hor_res(NULL), lv_disp_get_ver_res(NULL));
     lv_obj_set_pos(overlay, 0, 0);

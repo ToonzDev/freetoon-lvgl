@@ -398,6 +398,12 @@ static void modal_close(lv_event_t * e) {
     settings_save();                  /* persist whatever the modal changed */
 }
 
+void screen_settings_close_modals(void) {
+    while (cur_modal) {
+        modal_close(NULL);
+    }
+}
+
 /* Build a dimmed full-screen backdrop + centred panel. Returns the panel;
    caller positions its content below y≈64 (title + close button live there). */
 static lv_obj_t * modal_open(const char * title, int panel_h) {

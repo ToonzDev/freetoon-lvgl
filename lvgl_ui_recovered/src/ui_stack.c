@@ -151,6 +151,7 @@ void ui_idle_tick(void) {
         ui_pop();
         is_dimmed = 0;
         is_black_screen = 0;
+        lv_obj_clear_flag(lv_layer_top(), LV_OBJ_FLAG_HIDDEN);
         apply_active_brightness();
         last_activity_ms = lv_tick_get();
         wake_pending = 0;
@@ -250,6 +251,8 @@ void ui_idle_tick(void) {
              * return home's swipe page to main page (CR2). */
             screen_calendar_close();
             screen_waste_close();
+            screen_home_dismiss_modals();
+            screen_settings_close_modals();
             screen_home_reset_to_main();
         }
     }
@@ -271,10 +274,12 @@ void ui_idle_tick(void) {
             is_black_screen = 0;
         }
         is_dimmed = 1;
+        lv_obj_add_flag(lv_layer_top(), LV_OBJ_FLAG_HIDDEN);
     }
 }
 
 void ui_init(void) {
+    lv_obj_clear_flag(lv_layer_top(), LV_OBJ_FLAG_HIDDEN);
     lv_obj_t * home = settings.home_theme == 1 ? screen_home_stock_create()
                                                : screen_home_create();
     ui_push(home);

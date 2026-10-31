@@ -9,6 +9,7 @@
 
 void ui_push(lv_obj_t * scr);
 void ui_pop(void);
+int  ui_is_dimmed(void);
 /* Apply settings.home_theme live (swap dark<->stock home, no restart). */
 void ui_apply_home_theme(void);
 void ui_refresh_home(void);
@@ -49,6 +50,7 @@ void screen_calendar_close(void);
 void screen_waste_show(void);
 void screen_waste_close(void);
 void screen_home_dismiss_modals(void);
+void screen_settings_close_modals(void);
 /* Home-tile layout editor ("Indeling"). */
 void screen_layout_editor_show(void);
 void screen_layout_editor_close(void);
