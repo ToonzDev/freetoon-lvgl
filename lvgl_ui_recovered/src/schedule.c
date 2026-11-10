@@ -21,6 +21,7 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <errno.h>
+#include <sys/stat.h>
 
 schedule_entry_t schedule_entries[SCHEDULE_MAX];
 int              schedule_count = 0;
@@ -613,10 +614,26 @@ static void update_file_config(const char * new_dev_xml) {
         if (f) { path = paths[i]; break; }
     }
     if (!f || !path) return;
+    /* This file is happ_thermstat's WHOLE config (boiler type, presets,
+     * program), not just the schedule, so this must never damage it:
+     * refuse a file that doesn't fit the buffer (it would be cut off),
+     * never write it in place, check every write, and fsync the new copy
+     * before renaming it over the old one (UBIFS does not order data before
+     * a rename; a power cut could otherwise leave an empty config). Any
+     * failure leaves the original file as it was. */
     static char fbuf[128 * 1024];
     size_t n = fread(fbuf, 1, sizeof(fbuf) - 1, f);
+    int read_err = ferror(f);
+    int more = (n == sizeof(fbuf) - 1) && fgetc(f) != EOF;
+    struct stat st;
+    int have_st = fstat(fileno(f), &st) == 0;
     fclose(f);
-    if (n == 0) return;
+    if (n == 0 || read_err) return;
+    if (more) {
+        fprintf(stderr, "[sched] %s larger than %u bytes; not rewriting it\n",
+                path, (unsigned)sizeof(fbuf));
+        return;
+    }
     fbuf[n] = '\0';
 
     /* Locate thermostatProgram device block */
@@ -629,30 +646,34 @@ static void update_file_config(const char * new_dev_xml) {
     if (!dev_end) return;
     dev_end += 9; /* include </device> */
 
-    char tmp_path[128];
+    /* Nothing to do if the block on disk is already identical (saves a
+     * flash write and the race with hcb_config, which owns this file). */
+    size_t old_len = (size_t)(dev_end - dev_start);
+    if (strlen(new_dev_xml) == old_len && memcmp(dev_start, new_dev_xml, old_len) == 0)
+        return;
+
+    char tmp_path[160];
     snprintf(tmp_path, sizeof tmp_path, "%s.tmp", path);
     FILE * out = fopen(tmp_path, "w");
     if (!out) {
-        out = fopen(path, "w");
-        if (!out) return;
-        fwrite(fbuf, 1, (size_t)(dev_start - fbuf), out);
-        fputs(new_dev_xml, out);
-        fputs(dev_end, out);
-        fclose(out);
-        fprintf(stderr, "[sched] updated %s directly\n", path);
+        fprintf(stderr, "[sched] cannot create %s (%s); %s left unchanged\n",
+                tmp_path, strerror(errno), path);
         return;
     }
+    /* Keep the original's mode (stock is 0600 root), not fopen's 0644. */
+    if (have_st) fchmod(fileno(out), st.st_mode & 07777);
 
-    /* Write up to dev_start */
-    fwrite(fbuf, 1, (size_t)(dev_start - fbuf), out);
-    /* Write new device XML */
-    fputs(new_dev_xml, out);
-    /* Write remainder of file */
-    fputs(dev_end, out);
-    fclose(out);
+    size_t head = (size_t)(dev_start - fbuf);
+    int ok = fwrite(fbuf, 1, head, out) == head        /* up to the device block */
+          && fputs(new_dev_xml, out) >= 0              /* new thermostatProgram block */
+          && fputs(dev_end, out) >= 0                  /* rest of the file */
+          && fflush(out) == 0
+          && fsync(fileno(out)) == 0;
+    if (fclose(out) != 0) ok = 0;
 
-    if (rename(tmp_path, path) != 0) {
+    if (!ok || rename(tmp_path, path) != 0) {
         unlink(tmp_path);
+        fprintf(stderr, "[sched] writing %s failed; original left unchanged\n", path);
     } else {
         fprintf(stderr, "[sched] updated %s via rename\n", path);
     }

@@ -1,6 +1,7 @@
 __ctype_b_loc@GLIBC_2.4
 __ctype_tolower_loc@GLIBC_2.4
 __errno_location@GLIBC_2.4
+__fxstat@GLIBC_2.4
 __isoc99_fscanf@GLIBC_2.7
 __isoc99_sscanf@GLIBC_2.7
 __libc_start_main@GLIBC_2.4
@@ -27,11 +28,14 @@ dlclose@GLIBC_2.4
 dlerror@GLIBC_2.4
 dlopen@GLIBC_2.4
 dlsym@GLIBC_2.4
+fchmod@GLIBC_2.4
 fclose@GLIBC_2.4
 fcntl@GLIBC_2.4
+ferror@GLIBC_2.4
 fflush@GLIBC_2.4
 fgetc@GLIBC_2.4
 fgets@GLIBC_2.4
+fileno@GLIBC_2.4
 floor@GLIBC_2.4
 fmod@GLIBC_2.4
 fopen@GLIBC_2.4
@@ -41,6 +45,7 @@ fread@GLIBC_2.4
 free@GLIBC_2.4
 freeaddrinfo@GLIBC_2.4
 fseek@GLIBC_2.4
+fsync@GLIBC_2.4
 ftell@GLIBC_2.4
 fwrite@GLIBC_2.4
 getaddrinfo@GLIBC_2.4

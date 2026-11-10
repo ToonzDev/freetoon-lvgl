@@ -51,6 +51,37 @@ fi
 
 say() { echo "[freetoon] $*"; }
 
+# fetch <url> <dest> [min-bytes] [elf|sh] [max-time]
+# Downloads into <dest>.part and only renames it to <dest> after curl
+# succeeded and the checks passed (size, ELF header, `sh -n`). A failed or
+# rejected download never leaves a file at <dest>, so resolve_artefacts can
+# never pick up a truncated binary or a half script (half a ui_launcher.sh
+# = no UI). Errors are handled explicitly: callers use it in if/||, where
+# `set -e` does not apply.
+fetch() {
+    _f_url="$1"; _f_out="$2"; _f_min="${3:-1}"; _f_kind="${4:-}"; _f_tmo="${5:-60}"
+    rm -f "$_f_out.part"
+    if ! curl -fSL -4 --connect-timeout 8 --max-time "$_f_tmo" -o "$_f_out.part" "$_f_url" 2>/dev/null; then
+        rm -f "$_f_out.part"; return 1
+    fi
+    _f_sz=$(wc -c < "$_f_out.part" 2>/dev/null || echo 0)
+    if [ "$_f_sz" -lt "$_f_min" ]; then
+        say "Rejected $(basename "$_f_out"): only $_f_sz bytes"
+        rm -f "$_f_out.part"; return 1
+    fi
+    case "$_f_kind" in
+        elf) if [ "$(dd if="$_f_out.part" bs=1 skip=1 count=3 2>/dev/null)" != "ELF" ]; then
+                 say "Rejected $(basename "$_f_out"): not an ELF binary"
+                 rm -f "$_f_out.part"; return 1
+             fi ;;
+        sh)  if ! sh -n "$_f_out.part" 2>/dev/null; then
+                 say "Rejected $(basename "$_f_out"): shell syntax check failed"
+                 rm -f "$_f_out.part"; return 1
+             fi ;;
+    esac
+    mv -f "$_f_out.part" "$_f_out"
+}
+
 # Resolve each artefact — checks override var, then candidate paths
 pick() {
     _val="$1"; shift
@@ -141,22 +172,18 @@ download_artefacts() {
         return 1
     fi
 
-    if curl -fSL -4 --connect-timeout 8 --max-time 120 -o "$DL_DIR/toonui" "$BASE/$BIN_ASSET" 2>/dev/null; then
-        chmod +x "$DL_DIR/toonui"
-        TOONUI_BIN="$DL_DIR/toonui"
-    else
-        echo "@@FAIL Downloaden van $BIN_ASSET mislukt"
-        say "FATAL: could not download $BIN_ASSET from release $TAG on $REPO"
+    # fetch() verifies size + ELF header before the file appears at
+    # $DL_DIR/toonui; on failure nothing is there for resolve_artefacts.
+    if ! fetch "$BASE/$BIN_ASSET" "$DL_DIR/toonui" 500000 elf 120; then
+        echo "@@FAIL Downloaden van $BIN_ASSET mislukt of beschadigd"
+        say "FATAL: could not download a valid $BIN_ASSET from release $TAG on $REPO"
         return 1
     fi
+    chmod +x "$DL_DIR/toonui"
+    TOONUI_BIN="$DL_DIR/toonui"
 
     echo "@@STEP 3/6: Download controleren"
     _sz=$(wc -c < "$DL_DIR/toonui" 2>/dev/null || echo 0)
-    if [ "$_sz" -lt 500000 ]; then
-        echo "@@FAIL Binary te klein of beschadigd (${_sz} B)"
-        say "FATAL: downloaded $BIN_ASSET is corrupted or too small (${_sz} bytes)"
-        return 1
-    fi
     say "Binary verified ($BIN_ASSET, ${_sz} bytes)"
 
     echo "@@STEP 4/6: Helpers + assets"
@@ -165,9 +192,12 @@ download_artefacts() {
     for s in inittab_edit.sh ui_launcher.sh companion_gate.sh ot_mode_switch.sh toonvnc.sh integrations-install.sh; do
         if [ "$FORCE_DOWNLOAD" = 1 ] || { [ ! -f "$HERE/scripts/$s" ] && [ ! -f "$HERE/$s" ] && [ ! -f "/mnt/data/$s" ]; }; then
             say "Fetching $s from $REPO..."
-            curl -fSL -4 --connect-timeout 8 --max-time 30 -o "$DL_DIR/$s" "$RAW_BASE/scripts/$s" 2>/dev/null \
-                || curl -fSL -4 --connect-timeout 8 --max-time 30 -o "$DL_DIR/$s" "$RAW_BASE/$s" 2>/dev/null || true
-            [ -s "$DL_DIR/$s" ] && chmod +x "$DL_DIR/$s"
+            if fetch "$RAW_BASE/scripts/$s" "$DL_DIR/$s" 64 sh 30 \
+                    || fetch "$RAW_BASE/$s" "$DL_DIR/$s" 64 sh 30; then
+                chmod +x "$DL_DIR/$s"
+            else
+                say "Warning: could not fetch a valid $s (keeping the installed copy, if any)"
+            fi
         fi
     done
 
@@ -176,8 +206,8 @@ download_artefacts() {
     if [ "$IS_TOON1" = 1 ]; then WF_ASSET="wastefetch-toon1"; fi
     if has_asset "$WF_ASSET"; then
         say "Fetching $WF_ASSET..."
-        if curl -fSL -4 --connect-timeout 8 --max-time 60 -o "$DL_DIR/wastefetch" "$BASE/$WF_ASSET" 2>/dev/null; then
-            [ -s "$DL_DIR/wastefetch" ] && chmod +x "$DL_DIR/wastefetch" && WASTEFETCH_BIN="$DL_DIR/wastefetch"
+        if fetch "$BASE/$WF_ASSET" "$DL_DIR/wastefetch" 10000 elf 60; then
+            chmod +x "$DL_DIR/wastefetch" && WASTEFETCH_BIN="$DL_DIR/wastefetch"
         fi
     fi
 
@@ -185,8 +215,8 @@ download_artefacts() {
     if [ "$IS_TOON1" = 1 ]; then QB_ASSET="quby_bridge-toon1"; fi
     if has_asset "$QB_ASSET"; then
         say "Fetching $QB_ASSET..."
-        if curl -fSL -4 --connect-timeout 8 --max-time 60 -o "$DL_DIR/quby_bridge" "$BASE/$QB_ASSET" 2>/dev/null; then
-            [ -s "$DL_DIR/quby_bridge" ] && chmod +x "$DL_DIR/quby_bridge" && QUBY_BRIDGE_BIN="$DL_DIR/quby_bridge"
+        if fetch "$BASE/$QB_ASSET" "$DL_DIR/quby_bridge" 10000 elf 60; then
+            chmod +x "$DL_DIR/quby_bridge" && QUBY_BRIDGE_BIN="$DL_DIR/quby_bridge"
         fi
     fi
 
@@ -194,15 +224,15 @@ download_artefacts() {
     if [ "$IS_TOON1" = 1 ]; then P1_ASSET="p1bridge-toon1"; fi
     if has_asset "$P1_ASSET"; then
         say "Fetching $P1_ASSET..."
-        if curl -fSL -4 --connect-timeout 8 --max-time 60 -o "$DL_DIR/p1bridge" "$BASE/$P1_ASSET" 2>/dev/null; then
-            [ -s "$DL_DIR/p1bridge" ] && chmod +x "$DL_DIR/p1bridge" && P1_BRIDGE_BIN="$DL_DIR/p1bridge"
+        if fetch "$BASE/$P1_ASSET" "$DL_DIR/p1bridge" 10000 elf 60; then
+            chmod +x "$DL_DIR/p1bridge" && P1_BRIDGE_BIN="$DL_DIR/p1bridge"
         fi
     fi
 
     if has_asset "fbvnc_input"; then
         say "Fetching fbvnc_input..."
-        if curl -fSL -4 --connect-timeout 8 --max-time 60 -o "$DL_DIR/fbvnc_input" "$BASE/fbvnc_input" 2>/dev/null; then
-            [ -s "$DL_DIR/fbvnc_input" ] && chmod +x "$DL_DIR/fbvnc_input" && FBVNC_INPUT="$DL_DIR/fbvnc_input"
+        if fetch "$BASE/fbvnc_input" "$DL_DIR/fbvnc_input" 1000 elf 60; then
+            chmod +x "$DL_DIR/fbvnc_input" && FBVNC_INPUT="$DL_DIR/fbvnc_input"
         fi
     fi
 
@@ -210,17 +240,25 @@ download_artefacts() {
     if has_asset "index.wasm"; then
         say "Fetching WASM bundle..."
         mkdir -p "$DL_DIR/pwa/ui"
+        # All three or none: a new index.js with an old/partial index.wasm
+        # breaks the phone UI.
+        _pwa_ok=1
         for f in index.html index.wasm index.js; do
-            curl -fSL -4 --connect-timeout 8 --max-time 60 -o "$DL_DIR/pwa/ui/$f" "$BASE/$f" 2>/dev/null || true
+            fetch "$BASE/$f" "$DL_DIR/pwa/ui/$f" 1 "" 60 || _pwa_ok=0
         done
-        [ -s "$DL_DIR/pwa/ui/index.wasm" ] && PWA_DIR="$DL_DIR/pwa/ui"
+        if [ "$_pwa_ok" = 1 ]; then
+            PWA_DIR="$DL_DIR/pwa/ui"
+        else
+            say "Warning: WASM bundle incomplete - keeping the installed phone UI"
+            rm -rf "$DL_DIR/pwa"
+        fi
     fi
 
     # Bundled x11vnc if needed
     if [ ! -x /usr/bin/x11vnc ] && ! which x11vnc >/dev/null 2>&1 && [ ! -x /mnt/data/x11vnc-bundle/bin/x11vnc ]; then
         if has_asset "x11vnc-bundle.tgz"; then
             say "Fetching x11vnc bundle..."
-            if curl -fSL -4 --connect-timeout 8 --max-time 120 -o "$DL_DIR/x11vnc-bundle.tgz" "$BASE/x11vnc-bundle.tgz" 2>/dev/null; then
+            if fetch "$BASE/x11vnc-bundle.tgz" "$DL_DIR/x11vnc-bundle.tgz" 1000 "" 120; then
                 mkdir -p /mnt/data/x11vnc-bundle
                 tar xzf "$DL_DIR/x11vnc-bundle.tgz" -C /mnt/data/x11vnc-bundle 2>/dev/null || true
                 chmod +x /mnt/data/x11vnc-bundle/bin/x11vnc 2>/dev/null || true
@@ -251,9 +289,21 @@ if [ "$IS_LOCAL" = 1 ]; then
             return 1
         fi
         echo "  → $_dest"
-        cp -f "$_src" "${_dest}.new"
+        # Copy to .new, verify the full size arrived (disk full on /mnt/data
+        # makes cp leave a short file), sync, then rename over the old one,
+        # and sync again so the rename is on flash before init runs it.
+        _want=$(wc -c < "$_src")
+        rm -f "${_dest}.new"
+        if ! cp -f "$_src" "${_dest}.new" \
+           || [ "$(wc -c < "${_dest}.new" 2>/dev/null || echo -1)" -ne "$_want" ]; then
+            rm -f "${_dest}.new"
+            say "ERROR: could not write ${_dest} (disk full?) - old version kept"
+            return 1
+        fi
+        chmod +x "${_dest}.new"
+        sync
         mv -f "${_dest}.new" "$_dest"
-        chmod +x "$_dest"
+        sync
     }
 else
     SSH="sshpass -p $TOON_PASS ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR $TOON_USER@$TOON_HOST"
@@ -268,10 +318,31 @@ else
             return 0
         fi
         echo "  → $_dest"
-        $SCP "$_src" "$TOON_USER@$TOON_HOST:${_dest}.new"
-        remote "mv -f ${_dest}.new ${_dest} && chmod +x ${_dest}"
+        _want=$(wc -c < "$_src" | tr -d ' ')
+        if ! $SCP "$_src" "$TOON_USER@$TOON_HOST:${_dest}.new"; then
+            remote "rm -f ${_dest}.new" || true
+            say "ERROR: copying $_src to the Toon failed - old ${_dest} kept"
+            return 1
+        fi
+        if ! remote "[ \"\$(wc -c < ${_dest}.new)\" -eq $_want ] && chmod +x ${_dest}.new && sync && mv -f ${_dest}.new ${_dest} && sync"; then
+            remote "rm -f ${_dest}.new" || true
+            say "ERROR: ${_dest}.new incomplete on the Toon (disk full?) - old version kept"
+            return 1
+        fi
     }
 fi
+
+# install_file <src-or-empty> <dest>: the source is optional (absent = skip),
+# but a copy that FAILS aborts the install. push() used to be called from
+# `[ … ] && push …` lists, where `set -e` is off, so a failed copy went
+# unnoticed and the install carried on with a half-updated Toon.
+install_file() {
+    [ -n "$1" ] && [ -e "$1" ] || return 0
+    push "$1" "$2" && return 0
+    echo "@@FAIL Kon $2 niet installeren"
+    say "FATAL: could not install $2 - aborting; files not yet replaced keep their old version"
+    exit 4
+}
 
 TOON_ROW="toon:2345:respawn:/mnt/data/ui_launcher.sh >> /var/volatile/tmp/toonui.log 2>&1"
 VNCS_ROW="vncs:2345:respawn:/mnt/data/toonvnc.sh respawn >> /var/volatile/tmp/x11vnc.log 2>&1"
@@ -399,38 +470,27 @@ do_install() {
     if [ "$IS_LOCAL" = 1 ]; then target_desc="local Toon"; fi
     echo "@@STEP 5/6: Binary plaatsen"
     say "Installing binaries + scripts to $target_desc..."
-    [ -n "$INITTAB_EDIT" ] && [ -e "$INITTAB_EDIT" ] && push "$INITTAB_EDIT" /mnt/data/inittab_edit.sh
-    push "$TOONUI_BIN"      /mnt/data/toonui
-    [ -n "$UI_LAUNCHER" ] && [ -e "$UI_LAUNCHER" ] && push "$UI_LAUNCHER"     /mnt/data/ui_launcher.sh
-    [ -n "$COMPANION_GATE" ] && [ -e "$COMPANION_GATE" ] && push "$COMPANION_GATE"  /mnt/data/companion_gate.sh
-    [ -n "$INTEG_INSTALLER" ] && [ -e "$INTEG_INSTALLER" ] && push "$INTEG_INSTALLER" /mnt/data/integrations-install.sh
-    [ -n "$TOONVNC_SH" ] && [ -e "$TOONVNC_SH" ] && push "$TOONVNC_SH"      /mnt/data/toonvnc.sh
-    [ -n "$OT_MODE_SH" ] && [ -e "$OT_MODE_SH" ] && push "$OT_MODE_SH"      /mnt/data/ot_mode_switch.sh
-    [ -n "$FBVNC_INPUT" ] && [ -e "$FBVNC_INPUT" ] && push "$FBVNC_INPUT" /mnt/data/fbvnc_input
+    install_file "$INITTAB_EDIT"    /mnt/data/inittab_edit.sh
+    install_file "$TOONUI_BIN"      /mnt/data/toonui
+    install_file "$UI_LAUNCHER"     /mnt/data/ui_launcher.sh
+    install_file "$COMPANION_GATE"  /mnt/data/companion_gate.sh
+    install_file "$INTEG_INSTALLER" /mnt/data/integrations-install.sh
+    install_file "$TOONVNC_SH"      /mnt/data/toonvnc.sh
+    install_file "$OT_MODE_SH"      /mnt/data/ot_mode_switch.sh
+    install_file "$FBVNC_INPUT"     /mnt/data/fbvnc_input
     if [ -n "$WASTEFETCH_BIN" ] && [ -e "$WASTEFETCH_BIN" ]; then
-        push "$WASTEFETCH_BIN" /mnt/data/wastefetch
+        install_file "$WASTEFETCH_BIN" /mnt/data/wastefetch
     else
         say "Note: wastefetch absent — waste calendar provider plugin execution will be unavailable"
     fi
-    if [ -n "$P1_BRIDGE_BIN" ] && [ -e "$P1_BRIDGE_BIN" ]; then
-        push "$P1_BRIDGE_BIN" /mnt/data/p1bridge
-    fi
+    install_file "$P1_BRIDGE_BIN"   /mnt/data/p1bridge
 
     echo "[3/5] Setting up WASM slave UI bundle..."
     if [ -n "$PWA_DIR" ] && [ -d "$PWA_DIR" ] && [ -f "$PWA_DIR/index.wasm" ]; then
         remote "mkdir -p /mnt/data/pwa/ui"
         for f in index.html index.js index.wasm; do
             [ -f "$PWA_DIR/$f" ] || continue
-            echo "  → /mnt/data/pwa/ui/$f"
-            if [ "$IS_LOCAL" = 1 ]; then
-                if [ "$PWA_DIR/$f" != "/mnt/data/pwa/ui/$f" ]; then
-                    cp -f "$PWA_DIR/$f" "/mnt/data/pwa/ui/${f}.new"
-                    mv -f "/mnt/data/pwa/ui/${f}.new" "/mnt/data/pwa/ui/$f"
-                fi
-            else
-                $SCP "$PWA_DIR/$f" "$TOON_USER@$TOON_HOST:/mnt/data/pwa/ui/${f}.new"
-                remote "mv -f /mnt/data/pwa/ui/${f}.new /mnt/data/pwa/ui/${f}"
-            fi
+            install_file "$PWA_DIR/$f" "/mnt/data/pwa/ui/$f"
         done
         remote '[ -s /mnt/data/pwa/ui/index.wasm ] && cd /mnt/data/pwa && rm -f \
             app.js sw.js manifest.json icon-192.png index.html index.js index.wasm \
@@ -447,7 +507,7 @@ do_install() {
         remote "[ -f /mnt/data/ui_choice ] || echo freetoon > /mnt/data/ui_choice"
     fi
     # toonui.cfg — write a basic-mode default ONLY if user has no cfg yet.
-    remote "[ -f /mnt/data/toonui.cfg ] || cat > /mnt/data/toonui.cfg" <<'CFG'
+    remote "[ -f /mnt/data/toonui.cfg ] || { cat > /mnt/data/toonui.cfg.new && chmod 600 /mnt/data/toonui.cfg.new && sync && mv -f /mnt/data/toonui.cfg.new /mnt/data/toonui.cfg; }" <<'CFG'
 auto_dim_enabled=1
 auto_dim_seconds=10
 active_brightness=800
@@ -476,11 +536,22 @@ CFG
 
     drop_row qbri
     drop_row p1br
-    disable_stock_qt
-    # killall first: pkill does not exist on Toon 1
-    remote "killall quby_bridge 2>/dev/null || pkill -x quby_bridge 2>/dev/null; killall p1bridge 2>/dev/null || pkill -x p1bridge 2>/dev/null; true"
-    remote "umount -l /dev/ttymxc0 2>/dev/null; true"
+    # FreeToon's row goes in BEFORE the stock qt rows are commented out, so
+    # a failure in between can never leave the Toon without any UI row
+    # (that used to be: stock off, then a failed upsert -> black screen after
+    # reboot). If disabling stock qt fails, roll our row back when it is new.
+    _had_toon_row=0
+    remote "grep -q '^toon:' /etc/inittab" && _had_toon_row=1
     upsert_row "$TOON_ROW"
+    if ! disable_stock_qt; then
+        say "ERROR: could not disable the stock qt-gui row"
+        [ "$_had_toon_row" = 1 ] || drop_row toon || true
+        echo "@@FAIL Kon stock qt-gui niet uitschakelen"
+        exit 5
+    fi
+    # killall first: pkill does not exist on Toon 1
+    remote "killall p1bridge 2>/dev/null || pkill -x p1bridge 2>/dev/null; true"
+    remote "$RELEASE_UART"
     if [ "$IS_LOCAL" = 1 ]; then
         if [ -f /mnt/data/toonui.cfg ] && grep -q '^vnc_enabled=1' /mnt/data/toonui.cfg 2>/dev/null; then
             upsert_row "$VNCS_ROW"
@@ -497,7 +568,7 @@ CFG
         fi
     fi
     if [ -n "$QUBY_BRIDGE_BIN" ] && [ -e "$QUBY_BRIDGE_BIN" ]; then
-        push "$QUBY_BRIDGE_BIN" /mnt/data/quby_bridge
+        install_file "$QUBY_BRIDGE_BIN" /mnt/data/quby_bridge
         # Only enable OT bridge proxy if FreeToon is active; stock qt-gui needs direct UART access
         if remote "[ \"\$(cat /mnt/data/ui_choice 2>/dev/null)\" != 'qt-gui' ]"; then
             remote "/mnt/data/ot_mode_switch.sh proxy" || true
@@ -546,6 +617,23 @@ elif [ -d /mnt/data/integrations ]; then
 fi
 true'
 
+# Runs on the Toon. quby_bridge (proxy/wireless mode) bind-mounts a PTY over
+# /dev/ttymxc0 and happ_thermstat reaches the boiler through it. Killing the
+# bridge alone leaves happ_thermstat on a dead PTY: no heating until a
+# reboot. Same sequence as ot_mode_switch.sh: kill the bridge, drop the
+# mount, restart happ_thermstat (init respawns it) so it reopens the real
+# UART. The qbri row must already be gone, or init restarts the bridge.
+# happ_thermstat is only restarted when a mount was actually present.
+RELEASE_UART='killall -9 quby_bridge 2>/dev/null || true
+if grep -q " /dev/ttymxc0 " /proc/mounts 2>/dev/null; then
+    sleep 1
+    umount -l /dev/ttymxc0 2>/dev/null || true
+    sleep 1
+    killall -9 happ_thermstat 2>/dev/null || true
+    echo "  released /dev/ttymxc0; happ_thermstat restarted on the real UART"
+fi
+true'
+
 # Runs on the Toon. Makes sure FreeToon is completely off the screen BEFORE stock
 # qt-gui starts: two UIs on one framebuffer, or qt-gui on toonui's 16bpp planes
 # (Toon 1; stock runs 32bpp), leave the stock UI garbled. Uses killall + pidof
@@ -578,6 +666,7 @@ do_uninstall() {
     remote "$INTEG_CLEANUP"
     echo "[3/5] Stopping FreeToon..."
     remote "$STOP_FREETOON_UI"
+    remote "$RELEASE_UART"
     echo "[4/5] Restoring stock qt inittab row..."
     if ! restore_stock_qt; then
         echo "ERROR: could not restore stock qt-gui; re-enabling FreeToon so the Toon keeps a UI." >&2

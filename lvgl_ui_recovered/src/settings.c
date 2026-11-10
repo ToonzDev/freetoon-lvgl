@@ -7,6 +7,10 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/stat.h>
+#ifndef WASM_BUILD
+#include <pthread.h>
+#endif
 
 #define CFG_PATH "/mnt/data/toonui.cfg"
 
@@ -852,8 +856,30 @@ static int json_esc(char * out, size_t outsz, const char * in) {
 }
 #endif
 
+#ifndef WASM_BUILD
+/* settings_save() is called from the LVGL thread and from worker threads
+ * (PWA server, integrations); two writers must not interleave in one file. */
+static pthread_mutex_t s_save_mtx = PTHREAD_MUTEX_INITIALIZER;
+static void settings_write_file(void);
+#endif
+
 void settings_save(void) {
+#ifndef WASM_BUILD
+    pthread_mutex_lock(&s_save_mtx);
     sanitize_all_strings();
+    settings_write_file();
+    pthread_mutex_unlock(&s_save_mtx);
+}
+
+/* Write toonui.cfg crash-safely: everything goes to toonui.cfg.tmp, which is
+ * flushed and fsync'ed before it is renamed over the real file. UBIFS does
+ * not order data before a rename, so without the fsync a power cut right
+ * after a save could leave an empty toonui.cfg (all settings lost). Any
+ * write error leaves the previous file untouched. */
+static void settings_write_file(void) {
+#else
+    sanitize_all_strings();
+#endif
 #ifdef WASM_BUILD
     /* Build a JSON blob covering the fields the WASM UI can actually edit
      * (anything wired via a textarea/toggle in screen_settings.c). The
@@ -889,9 +915,21 @@ void settings_save(void) {
     wasm_post_settings_blob(json);
     return;     /* don't try to fopen(CFG_PATH, "w") — no /mnt/data in WASM */
 #endif
-    FILE * f = fopen(cfg_path(), "w");
-    if (!f) f = fopen("toonui.cfg", "w");
-    if (!f) return;
+    char path[256], tmp[272];
+    snprintf(path, sizeof path, "%s", cfg_path());
+    snprintf(tmp, sizeof tmp, "%s.tmp", path);
+    FILE * f = fopen(tmp, "w");
+    if (!f) {
+        snprintf(path, sizeof path, "toonui.cfg");
+        snprintf(tmp, sizeof tmp, "toonui.cfg.tmp");
+        f = fopen(tmp, "w");
+    }
+    if (!f) {
+        fprintf(stderr, "[settings] save failed: cannot create %s\n", tmp);
+        return;
+    }
+    /* Holds the PWA/MQTT/VNC passwords and the PIN; only root reads it. */
+    fchmod(fileno(f), 0600);
     fprintf(f, "auto_dim_enabled=%d\n",  settings.auto_dim_enabled);
     fprintf(f, "auto_dim_seconds=%d\n",  settings.auto_dim_seconds);
     fprintf(f, "auto_home_enabled=%d\n", settings.auto_home_enabled);
@@ -1060,8 +1098,12 @@ void settings_save(void) {
                 settings.nilm_sig_name[i],
                 (double)settings.nilm_sig_lo[i],
                 (double)settings.nilm_sig_hi[i]);
-    fflush(f);
-    fclose(f);
+    int ok = !ferror(f) && fflush(f) == 0 && fsync(fileno(f)) == 0;
+    if (fclose(f) != 0) ok = 0;
+    if (!ok || rename(tmp, path) != 0) {
+        unlink(tmp);
+        fprintf(stderr, "[settings] save failed writing %s; previous file kept\n", path);
+    }
 }
 
 void vnc_apply_state(int enabled) {
