@@ -125,6 +125,15 @@ void ha_devices_load(void);
 /* Persist the current ha_devices[] back to ha_devices.conf. */
 void ha_devices_save(void);
 
+/* ha_devices[] is shared with the HA threads. The list layout is only
+ * changed on the UI thread (add/remove/load), so UI code may read entity_id,
+ * name, type and the int state fields directly; the state[] string is
+ * written by the HA threads — read it with ha_device_get_state(). Code on
+ * other threads must hold ha_devices_lock() while touching the array. */
+void ha_devices_lock(void);
+void ha_devices_unlock(void);
+void ha_device_get_state(int idx, char * out, size_t outsz);
+
 /* Device control (async, fire-and-forget). `type` selects the HA domain. */
 void ha_device_toggle_async(int type, const char * entity_id);      /* light/switch */
 void ha_device_cover_async(const char * entity_id, const char * cmd); /* "open"/"stop"/"close" */

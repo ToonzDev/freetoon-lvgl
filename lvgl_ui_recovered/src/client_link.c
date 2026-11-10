@@ -258,18 +258,23 @@ void client_link_apply_state(const char * j) {
 
     /* ---- calendar events ---- */
     {
+        /* Parsed into a private buffer and handed to the UI thread with
+         * calendar_publish(): this runs on the reader thread, and writing
+         * calendar_state here raced the UI drawing the same strings.
+         * The master always sends "cal" and "cal_connected" together. */
+        static calendar_event_t cal_tmp[CAL_MAX];
         const char * p = find_array(j, "cal");
         int idx = 0, v;
         char obj[200];
         while (p && idx < CAL_MAX && walk_object(&p, obj, sizeof obj)) {
-            calendar_event_t * e = &calendar_state.ev[idx];
+            calendar_event_t * e = &cal_tmp[idx];
+            memset(e, 0, sizeof *e);
             jstr(obj, "date", e->date,    sizeof e->date);
             jstr(obj, "time", e->time,    sizeof e->time);
             jstr(obj, "sum",  e->summary, sizeof e->summary);
             idx++;
         }
-        if (p) calendar_state.count = idx;
-        if (jint(j, "cal_connected", &v)) calendar_state.connected = v;
+        if (p) calendar_publish(cal_tmp, idx, jint(j, "cal_connected", &v) ? v : 1);
     }
 
     /* ---- news ticker (title + link + body + feed) ---- */

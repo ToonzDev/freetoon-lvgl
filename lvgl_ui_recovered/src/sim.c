@@ -25,6 +25,8 @@
 #include "ventilation.h"
 #include "efanlamp.h"
 #include "anim_overlay.h"
+#include "calendar.h"
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -508,6 +510,30 @@ static void soak_advance(uint32_t ms) {          /* let idle time pass */
     lv_timer_handler();
 }
 
+/* Producer thread for the calendar race check: publishes new events while
+ * the UI thread applies them (ui_idle_tick) and draws them. Build with
+ * SAN=-fsanitize=thread to have TSan verify calendar_state is only touched
+ * under the documented rules. */
+static int soak_cal_stop = 0;   /* accessed with __atomic_* */
+static void * soak_cal_thread(void * arg) {
+    (void)arg;
+    static calendar_event_t ev[8];
+    for (int k = 0; !__atomic_load_n(&soak_cal_stop, __ATOMIC_RELAXED); k++) {
+        for (int i = 0; i < 8; i++) {
+            snprintf(ev[i].date, sizeof ev[i].date, "2026-11-%02d", 10 + i);
+            snprintf(ev[i].time, sizeof ev[i].time, "%02d:00", (k + i) % 24);
+            snprintf(ev[i].summary, sizeof ev[i].summary,
+                     (k & 1) ? "short %d" : "a much longer event summary text %d", k);
+        }
+        calendar_publish(ev, 8, 1);
+        calendar_lock();                       /* a non-UI reader, like the PWA */
+        volatile int c = calendar_state.count; (void)c;
+        calendar_unlock();
+        usleep(500);
+    }
+    return NULL;
+}
+
 static int sim_soak(int rounds) {
     static const struct { const char * name; create_fn fn; } OWNED[] = {
         { "efanlamp",    screen_efanlamp_create },
@@ -565,6 +591,17 @@ static int sim_soak(int rounds) {
     }
     printf("[soak] %s (baseline after round 2: screens=%d timers=%d)\n",
            grew ? "FAIL: screens/timers keep growing" : "OK: stable", base_scr, base_tmr);
+
+    /* Calendar handover: worker publishes, UI thread applies + draws home. */
+    pthread_t ct;
+    __atomic_store_n(&soak_cal_stop, 0, __ATOMIC_RELAXED);
+    if (pthread_create(&ct, NULL, soak_cal_thread, NULL) == 0) {
+        for (int i = 0; i < 300; i++) { ui_idle_tick(); pump(1); }
+        __atomic_store_n(&soak_cal_stop, 1, __ATOMIC_RELAXED);
+        pthread_join(ct, NULL);
+        ui_idle_tick();
+        printf("[soak] calendar handover: %d events applied on the UI thread\n", calendar_state.count);
+    }
     return grew ? 1 : 0;
 }
 

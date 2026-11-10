@@ -31,6 +31,60 @@
 
 calendar_state_t calendar_state = {0};
 
+/* Thread model for calendar_state:
+ *  - It is WRITTEN only on the LVGL/UI thread, in calendar_apply_pending()
+ *    (called from ui_idle_tick), under cal_mtx.
+ *  - UI-thread readers (home, dim, calendar screen) need no lock: they run on
+ *    the writer's thread.
+ *  - Readers on other threads (notifications here, the PWA server) hold
+ *    cal_mtx via calendar_lock()/calendar_unlock().
+ *  - Producers on other threads (the iCal/HA poller, client_link) hand new
+ *    data over with calendar_publish().
+ * Before, the poller copied straight into calendar_state while the UI ran
+ * lv_label_set_text() on the same strings (torn/garbled text). */
+static pthread_mutex_t cal_mtx = PTHREAD_MUTEX_INITIALIZER;
+static calendar_event_t cal_pending_ev[CAL_MAX];
+static int              cal_pending_n = 0;
+static int              cal_pending_connected = 0;
+static int              cal_pending = 0;   /* 0 none, 1 replace, 2 disconnected-if-empty */
+
+void calendar_lock(void)   { pthread_mutex_lock(&cal_mtx); }
+void calendar_unlock(void) { pthread_mutex_unlock(&cal_mtx); }
+
+void calendar_publish(const calendar_event_t * ev, int n, int connected) {
+    if (n < 0) n = 0;
+    if (n > CAL_MAX) n = CAL_MAX;
+    pthread_mutex_lock(&cal_mtx);
+    if (ev && n) memcpy(cal_pending_ev, ev, (size_t)n * sizeof ev[0]);
+    cal_pending_n = (ev ? n : 0);
+    cal_pending_connected = connected;
+    __atomic_store_n(&cal_pending, 1, __ATOMIC_RELAXED);
+    pthread_mutex_unlock(&cal_mtx);
+}
+
+/* Fetch failed: keep the old events, but report "not connected" if there
+ * are none (same rule as before). */
+static void calendar_publish_failed(void) {
+    pthread_mutex_lock(&cal_mtx);
+    if (!cal_pending) __atomic_store_n(&cal_pending, 2, __ATOMIC_RELAXED);
+    pthread_mutex_unlock(&cal_mtx);
+}
+
+void calendar_apply_pending(void) {
+    /* Cheap lock-free peek every UI tick; the real check is under the lock. */
+    if (!__atomic_load_n(&cal_pending, __ATOMIC_RELAXED)) return;
+    pthread_mutex_lock(&cal_mtx);
+    if (cal_pending == 1) {
+        memcpy(calendar_state.ev, cal_pending_ev, (size_t)cal_pending_n * sizeof cal_pending_ev[0]);
+        calendar_state.count = cal_pending_n;
+        calendar_state.connected = cal_pending_connected;
+    } else if (cal_pending == 2) {
+        if (calendar_state.count == 0) calendar_state.connected = 0;
+    }
+    __atomic_store_n(&cal_pending, 0, __ATOMIC_RELAXED);
+    pthread_mutex_unlock(&cal_mtx);
+}
+
 #define CAL_SCRATCH (4 * 1024 * 1024)  /* iCal feeds carry full history+recurrence — can be >1 MB */
 #define CAL_TMP_MAX 256                 /* parse capacity before trim to CAL_MAX */
 #define CAL_HORIZON_DAYS 92             /* how far ahead recurrences are expanded (3 months) */
@@ -693,7 +747,9 @@ static void iso_at(char * out, size_t n, int days_from_now) {
     strftime(out, n, "%Y-%m-%dT00:00:00Z", &tm);
 }
 
-static void calendar_check_birthday(const char * today) {
+/* Runs on the poller thread on the freshly fetched events (evs/n), not on
+ * calendar_state, which only the UI thread writes. */
+static void calendar_check_birthday(const calendar_event_t * evs, int n, const char * today) {
     if (!settings.anim_enabled || !settings.anim_birthday_enabled) {
         if (anim_overlay_get_current() == ANIM_EFFECT_BALLOONS) {
             anim_overlay_stop();
@@ -706,8 +762,8 @@ static void calendar_check_birthday(const char * today) {
     int found_birthday = 0;
     const char * found_summary = "";
 
-    for (int i = 0; i < calendar_state.count; i++) {
-        calendar_event_t * ev = &calendar_state.ev[i];
+    for (int i = 0; i < n; i++) {
+        const calendar_event_t * ev = &evs[i];
         if (strcmp(ev->date, today) != 0) continue;
 
         char lower[128];
@@ -745,12 +801,27 @@ static void calendar_check_birthday(const char * today) {
     }
 }
 
-void calendar_refresh_now(void) {
-    if (!settings.calendar_enabled) { calendar_state.count = 0; calendar_state.connected = 0; return; }
+/* Only one refresh at a time: the poller and calendar_refresh_async() can
+ * both get here, and they share the static parse buffer below. */
+static pthread_mutex_t cal_refresh_mtx = PTHREAD_MUTEX_INITIALIZER;
+static volatile int    g_cal_last_ok = 0;   /* result of the last refresh */
+
+static int calendar_refresh_locked(void);
+
+int calendar_refresh_now(void) {
+    pthread_mutex_lock(&cal_refresh_mtx);
+    int ok = calendar_refresh_locked();
+    g_cal_last_ok = ok;
+    pthread_mutex_unlock(&cal_refresh_mtx);
+    return ok;
+}
+
+static int calendar_refresh_locked(void) {
+    if (!settings.calendar_enabled) { calendar_publish(NULL, 0, 0); return 0; }
     /* Heap, not BSS — the iCal scratch is multi-MB now (full feeds). Allocated
      * per refresh (every 30 min) and freed at the end. */
     char * buf = malloc(CAL_SCRATCH);
-    if (!buf) return;
+    if (!buf) return 0;
     static calendar_event_t tmp[CAL_TMP_MAX];
     int n = 0, ok = 0;
     char today[12]; today_str(today, sizeof today);
@@ -803,15 +874,13 @@ void calendar_refresh_now(void) {
     if (ok) {
         qsort(tmp, n, sizeof tmp[0], ev_cmp);
         if (n > CAL_MAX) n = CAL_MAX;
-        for (int i = 0; i < n; i++) calendar_state.ev[i] = tmp[i];
-        calendar_state.count = n;
-        calendar_state.connected = 1;
-        calendar_check_birthday(today);
+        calendar_publish(tmp, n, 1);            /* applied on the UI thread */
+        calendar_check_birthday(tmp, n, today);
     } else {
-        if (calendar_state.count == 0)
-            calendar_state.connected = 0;
+        calendar_publish_failed();
     }
     free(buf);
+    return ok;
 }
 
 static volatile int g_cal_wake = 0;
@@ -856,8 +925,17 @@ static void calendar_check_notifications(void) {
         if (g_notified[i].when > now - 60) g_notified[w++] = g_notified[i];
     g_notified_n = w;
 
-    for (int i = 0; i < calendar_state.count; i++) {
-        calendar_event_t * ev = &calendar_state.ev[i];
+    /* Poller thread: take a consistent copy (calendar_state is written on the
+     * UI thread). Static: only this thread runs here, and it is 14 KB. */
+    static calendar_event_t snap[CAL_MAX];
+    calendar_lock();
+    int n = calendar_state.count;
+    if (n > CAL_MAX) n = CAL_MAX;
+    if (n > 0) memcpy(snap, calendar_state.ev, (size_t)n * sizeof snap[0]);
+    calendar_unlock();
+
+    for (int i = 0; i < n; i++) {
+        const calendar_event_t * ev = &snap[i];
         if (!ev->time[0]) continue;                          /* timed events only */
         time_t st = event_epoch(ev->date, ev->time);
         if (st == (time_t)-1) continue;
@@ -892,11 +970,13 @@ static void * cal_thread(void * arg) {
     for (;;) {
         int has_source = settings.calendar_enabled &&
                          (settings.calendar_ha_entity[0] || settings.calendar_ics_url[0]);
-        if (since_refresh >= 1800 || (has_source && !calendar_state.connected) || g_cal_wake) {
+        /* g_cal_last_ok, not calendar_state.connected: the latter is only
+         * updated once the UI thread applies the published result. */
+        if (since_refresh >= 1800 || (has_source && !g_cal_last_ok) || g_cal_wake) {
             g_cal_wake = 0;
             calendar_refresh_now();
             since_refresh = 0;
-            if (has_source && !calendar_state.connected) {
+            if (has_source && !g_cal_last_ok) {
                 /* WiFi still connecting or temporary network hiccup at boot:
                  * retry quickly (every 10s) until initial data is acquired */
                 for (int s = 0; s < 10 && !g_cal_wake; s++)

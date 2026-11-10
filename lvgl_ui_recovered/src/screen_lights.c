@@ -243,12 +243,14 @@ static void refresh_cb(lv_timer_t * t) {
         ha_device_t * D = &ha_devices[R->dev_idx];
         if (D->type == HADEV_COVER) {
             if (R->lbl_state) {
+                char st[sizeof D->state];
+                ha_device_get_state(R->dev_idx, st, sizeof st);  /* written by the HA thread */
                 if (!D->available) lv_label_set_text(R->lbl_state, tr("offline", "offline"));
                 else if (D->position >= 0)
                     lv_label_set_text_fmt(R->lbl_state, "%s  %d%%",
-                                          D->state[0] ? D->state : tr("scherm", "cover"), D->position);
+                                          st[0] ? st : tr("scherm", "cover"), D->position);
                 else
-                    lv_label_set_text(R->lbl_state, D->state[0] ? D->state : "--");
+                    lv_label_set_text(R->lbl_state, st[0] ? st : "--");
             }
             if (R->slider && D->position >= 0)
                 lv_slider_set_value(R->slider, D->position, LV_ANIM_OFF);
@@ -291,6 +293,9 @@ lv_obj_t * screen_lights_create(void) {
     /* Singleton scaffold; rows are (re)built on SCREEN_LOADED. */
     if (scr_root && scr_light_mode == settings.home_light_mode) return scr_root;
     if (scr_root) { lv_obj_del(scr_root); scr_root = NULL; }
+    /* Rebuild (light-mode/theme toggle): the old timer must go too, or one
+     * more paused timer leaks per toggle. */
+    if (refresh_timer) { lv_timer_del(refresh_timer); refresh_timer = NULL; }
     scr_light_mode = settings.home_light_mode;
 
     scr_root = lv_obj_create(NULL);

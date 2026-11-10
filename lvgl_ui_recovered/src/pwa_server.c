@@ -252,6 +252,8 @@ static int render_state_json(char * body, size_t sz) {
 
     /* ---- calendar events (next-up) */
     if (p < end) p += snprintf(p, end-p, "\"cal\":[");
+    /* PWA connection thread: calendar_state is written on the UI thread. */
+    calendar_lock();
     for (int i = 0; i < calendar_state.count; i++) {
         const calendar_event_t * e = &calendar_state.ev[i];
         char sum[96];
@@ -261,8 +263,9 @@ static int render_state_json(char * body, size_t sz) {
             "{\"date\":\"%s\",\"time\":\"%s\",\"sum\":\"%s\"}",
             e->date, e->time, sum);
     }
-    if (p < end) p += snprintf(p, end-p, "],\"cal_connected\":%d,",
-        calendar_state.connected);
+    int cal_conn = calendar_state.connected;
+    calendar_unlock();
+    if (p < end) p += snprintf(p, end-p, "],\"cal_connected\":%d,", cal_conn);
 
     /* ---- news ticker (title + link + body + feed index)
      * Body is the RSS <description> (HTML-stripped, up to ~900 chars). Without

@@ -26,7 +26,16 @@ typedef struct {
 extern calendar_state_t calendar_state;
 
 int  calendar_start(void);          /* background poller; 0 on success */
-void calendar_refresh_now(void);    /* on-demand refresh (runs in caller thread) */
+int  calendar_refresh_now(void);    /* on-demand refresh (runs in caller thread); 1 = fetched */
+
+/* calendar_state is written only on the UI thread. UI-thread code reads it
+ * directly. Other threads read it only between calendar_lock()/unlock(),
+ * and hand new data over with calendar_publish(); the UI thread applies it
+ * in calendar_apply_pending() (called from ui_idle_tick). */
+void calendar_lock(void);
+void calendar_unlock(void);
+void calendar_publish(const calendar_event_t * ev, int n, int connected);
+void calendar_apply_pending(void);
 void calendar_refresh_async(void);  /* on-demand refresh on a detached thread (UI-safe) */
 
 #endif

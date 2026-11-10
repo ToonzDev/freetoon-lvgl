@@ -421,7 +421,27 @@ int hadev_type_from_str(const char * s) {
     return HADEV_LIGHT;
 }
 
-void ha_devices_save(void) {
+/* g_dev_mtx guards the layout of ha_devices[] (add/remove shift it) and the
+ * state[] strings. The HA poller / websocket threads write device state while
+ * the device manager on the UI thread edits the list and the UI draws the
+ * strings; before, the poller could apply a result into a shifted slot and
+ * the UI could read a half-written state string. The plain int fields are
+ * volatile word writes and may be read without the lock. */
+static pthread_mutex_t g_dev_mtx = PTHREAD_MUTEX_INITIALIZER;
+void ha_devices_lock(void)   { pthread_mutex_lock(&g_dev_mtx); }
+void ha_devices_unlock(void) { pthread_mutex_unlock(&g_dev_mtx); }
+
+/* Copy a device's state string under the lock (for UI readers). */
+void ha_device_get_state(int idx, char * out, size_t outsz) {
+    if (!out || !outsz) return;
+    out[0] = 0;
+    pthread_mutex_lock(&g_dev_mtx);
+    if (idx >= 0 && idx < ha_device_count)
+        snprintf(out, outsz, "%s", ha_devices[idx].state);
+    pthread_mutex_unlock(&g_dev_mtx);
+}
+
+static void devices_save_unlocked(void) {
     FILE * f = fopen(HA_DEVICES_CONF, "w");
     if (!f) return;
     fprintf(f, "# type|entity_id|Name|pin   (type = light|cover|switch|script|scene)\n");
@@ -431,6 +451,12 @@ void ha_devices_save(void) {
                 D->entity_id, D->name, D->pin_home ? 1 : 0);
     }
     fclose(f);
+}
+
+void ha_devices_save(void) {
+    pthread_mutex_lock(&g_dev_mtx);
+    devices_save_unlocked();
+    pthread_mutex_unlock(&g_dev_mtx);
 }
 
 static void devices_add(int type, const char * entity, const char * name, int pin) {
@@ -446,7 +472,14 @@ static void devices_add(int type, const char * entity, const char * name, int pi
     D->position   = -1;
 }
 
+static void devices_load_unlocked(void);
 void ha_devices_load(void) {
+    pthread_mutex_lock(&g_dev_mtx);
+    devices_load_unlocked();
+    pthread_mutex_unlock(&g_dev_mtx);
+}
+
+static void devices_load_unlocked(void) {
     ha_device_count = 0;
     FILE * f = fopen(HA_DEVICES_CONF, "r");
     if (f) {
@@ -483,7 +516,7 @@ void ha_devices_load(void) {
         devices_add(HADEV_COVER, settings.curtain_entity, "Gordijnen",  0);
     if (settings.blinds_entity[0])
         devices_add(HADEV_COVER, settings.blinds_entity,  "Jaloezieen", 0);
-    if (ha_device_count > 0) ha_devices_save();
+    if (ha_device_count > 0) devices_save_unlocked();
     fprintf(stderr, "[ha] migrated %d devices to " HA_DEVICES_CONF "\n", ha_device_count);
 }
 
@@ -509,11 +542,28 @@ static void apply_device(ha_device_t * D, const char * body) {
  * are stateless and skipped. */
 static void poll_devices(void) {
     char body[768];
-    for (int i = 0; i < ha_device_count; i++) {
-        ha_device_t * D = &ha_devices[i];
-        if (D->type == HADEV_SCRIPT || D->type == HADEV_SCENE) continue;
-        if (ha_get_state(D->entity_id, body, sizeof body) != 0) { D->available = 0; continue; }
-        apply_device(D, body);
+    for (int i = 0; ; i++) {
+        /* Snapshot this slot's entity under the lock, fetch without it (it
+         * is a network call), then re-find the entity: the device manager may
+         * have added/removed devices meanwhile, shifting the array. */
+        char ent[64];
+        int type;
+        pthread_mutex_lock(&g_dev_mtx);
+        if (i >= ha_device_count) { pthread_mutex_unlock(&g_dev_mtx); break; }
+        snprintf(ent, sizeof ent, "%s", ha_devices[i].entity_id);
+        type = ha_devices[i].type;
+        pthread_mutex_unlock(&g_dev_mtx);
+        if (type == HADEV_SCRIPT || type == HADEV_SCENE) continue;
+
+        int rc = ha_get_state(ent, body, sizeof body);
+        pthread_mutex_lock(&g_dev_mtx);
+        for (int k = 0; k < ha_device_count; k++) {
+            if (strcmp(ha_devices[k].entity_id, ent) != 0) continue;
+            if (rc != 0) ha_devices[k].available = 0;
+            else         apply_device(&ha_devices[k], body);
+            break;
+        }
+        pthread_mutex_unlock(&g_dev_mtx);
     }
 }
 
@@ -553,22 +603,30 @@ void ha_device_run_async(int type, const char * entity_id) {
 
 /* ---- list editing (settings device manager) ---- */
 int ha_device_add(int type, const char * entity_id, const char * name, int pin) {
+    pthread_mutex_lock(&g_dev_mtx);
     int before = ha_device_count;
     devices_add(type, entity_id, name, pin);
-    if (ha_device_count == before) return -1;   /* rejected: full / unsafe id */
-    ha_devices_save();
-    return ha_device_count - 1;
+    int idx = (ha_device_count == before) ? -1 : ha_device_count - 1;  /* -1: full / unsafe id */
+    if (idx >= 0) devices_save_unlocked();
+    pthread_mutex_unlock(&g_dev_mtx);
+    return idx;
 }
 void ha_device_remove(int idx) {
-    if (idx < 0 || idx >= ha_device_count) return;
-    for (int i = idx; i < ha_device_count - 1; i++) ha_devices[i] = ha_devices[i + 1];
-    ha_device_count--;
-    ha_devices_save();
+    pthread_mutex_lock(&g_dev_mtx);
+    if (idx >= 0 && idx < ha_device_count) {
+        for (int i = idx; i < ha_device_count - 1; i++) ha_devices[i] = ha_devices[i + 1];
+        ha_device_count--;
+        devices_save_unlocked();
+    }
+    pthread_mutex_unlock(&g_dev_mtx);
 }
 void ha_device_set_pin(int idx, int pin) {
-    if (idx < 0 || idx >= ha_device_count) return;
-    ha_devices[idx].pin_home = pin ? 1 : 0;
-    ha_devices_save();
+    pthread_mutex_lock(&g_dev_mtx);
+    if (idx >= 0 && idx < ha_device_count) {
+        ha_devices[idx].pin_home = pin ? 1 : 0;
+        devices_save_unlocked();
+    }
+    pthread_mutex_unlock(&g_dev_mtx);
 }
 
 /* Strip leading/trailing whitespace in place. Returns the input pointer
@@ -1267,8 +1325,10 @@ static void dispatch_event(const char * msg) {
              !strcmp(ent, settings.ha_gas_entity))
         apply_ha_number(ns, &ha_state.energy_gas_m3, &ha_state.have_gas);
     /* Unified device list (light/cover/switch). */
+    pthread_mutex_lock(&g_dev_mtx);
     for (int i = 0; i < ha_device_count; i++)
         if (!strcmp(ent, ha_devices[i].entity_id)) { apply_device(&ha_devices[i], ns); break; }
+    pthread_mutex_unlock(&g_dev_mtx);
     /* Legacy ha_lights array (old Lights screen — kept until migrated). */
     for (int i = 0; i < ha_light_count; i++)
         if (!strcmp(ent, ha_lights[i].entity_id)) { apply_light(&ha_lights[i], ns); break; }

@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
 static lv_obj_t * scr_root = NULL;
 static lv_obj_t * lbl_title;
@@ -32,6 +33,26 @@ static lv_obj_t * fc_wind_lbl[WEATHER_FORECAST_DAYS];
 static lv_obj_t * fc_wind_arrow[WEATHER_FORECAST_DAYS];
 static lv_obj_t * radar_img = NULL;
 static int radar_loaded = 0;
+/* Identity of the GIF file we loaded. weather.c swaps in each new radar by
+ * `mv`, which gives a new inode; lv_gif keeps the old file open, so without
+ * this check the radar stayed at whatever it was on first view. */
+static ino_t  radar_ino = 0;
+static time_t radar_mtime = 0;
+#define RADAR_FILE "/tmp/toonui_radar.gif"
+
+static void radar_note_loaded(void) {
+    struct stat st;
+    if (stat(RADAR_FILE, &st) == 0) { radar_ino = st.st_ino; radar_mtime = st.st_mtime; }
+    else { radar_ino = 0; radar_mtime = 0; }
+}
+
+/* 1 if there is a radar file and it is not the one currently loaded. */
+static int radar_file_new(void) {
+    struct stat st;
+    if (stat(RADAR_FILE, &st) != 0) return 0;
+    if (!radar_loaded) return 1;
+    return st.st_ino != radar_ino || st.st_mtime != radar_mtime;
+}
 static lv_timer_t * refresh_timer = NULL;
 
 static int radar_zoom = 200;
@@ -217,11 +238,14 @@ static void refresh_cb(lv_timer_t * t) {
     lv_label_set_text(lbl_title, wx.weatherreport_title);
     lv_label_set_text(lbl_body,  wx.weatherreport_text);
 
-    if (radar_img && !radar_loaded && access("/tmp/toonui_radar.gif", R_OK) == 0) {
-        lv_gif_set_src(radar_img, "S:/tmp/toonui_radar.gif");
+    /* (Re)load when a new radar GIF has arrived — only while the radar view
+     * is showing, since loading restarts the GIF animation timer. */
+    if (radar_img && fc_view_mode == 0 && radar_file_new()) {
+        lv_gif_set_src(radar_img, "S:" RADAR_FILE);
         lv_img_set_zoom(radar_img, radar_zoom);
         lv_obj_center(radar_img);
         radar_loaded = 1;
+        radar_note_loaded();
     }
 
     int show_hourly = settings.forecast_mode != FORECAST_DAILY
@@ -357,9 +381,10 @@ lv_obj_t * screen_forecast_create(void) {
     /* Buienradar radar GIF. With our local gifdec patch the no-GCT
        case is now accepted; the per-frame LCT populates the palette. */
     radar_img = lv_gif_create(radar_frame);
-    if (access("/tmp/toonui_radar.gif", R_OK) == 0) {
-        lv_gif_set_src(radar_img, "S:/tmp/toonui_radar.gif");
+    if (access(RADAR_FILE, R_OK) == 0) {
+        lv_gif_set_src(radar_img, "S:" RADAR_FILE);
         radar_loaded = 1;
+        radar_note_loaded();
     } else {
         radar_loaded = 0;
     }

@@ -657,8 +657,14 @@ static void on_vent_mode(lv_event_t * e) {
  * Replaces the old fixed curtain + blinds tiles (covers are now just pinned
  * cover devices, configurable in Settings -> Devices). */
 #define HOME_PIN_MAX 3
+/* A pinned tile is bound to its device by entity_id, not by position in
+ * ha_devices[]: ha_device_remove() shifts that array and the home screen is
+ * not rebuilt, so an index made the tile show (and toggle!) a different
+ * entity after a device above it was removed. Event user data is the tile's
+ * own slot in home_pins[]; the device is looked up on every use. */
 typedef struct {
-    int        dev_idx;     /* index into ha_devices[] */
+    char       entity[64];  /* ha_devices[].entity_id this tile controls */
+    char       name[48];    /* shown if the device has been removed */
     lv_obj_t * tile;
     lv_obj_t * lbl;         /* "<name>  <state>" */
     lv_obj_t * slider;      /* cover position / light brightness, or NULL */
@@ -668,7 +674,14 @@ typedef struct {
 static home_pin_t home_pins[HOME_PIN_MAX];
 static int        home_pin_count = 0;
 
-static int pin_ev_idx(lv_event_t * e) { return (int)(intptr_t)lv_event_get_user_data(e); }
+/* Current ha_devices[] index of pinned tile `slot`, or -1 if gone. */
+static int pin_dev(int slot) {
+    if (slot < 0 || slot >= home_pin_count || !home_pins[slot].entity[0]) return -1;
+    for (int i = 0; i < ha_device_count; i++)
+        if (strcmp(ha_devices[i].entity_id, home_pins[slot].entity) == 0) return i;
+    return -1;
+}
+static int pin_ev_idx(lv_event_t * e) { return pin_dev((int)(intptr_t)lv_event_get_user_data(e)); }
 static void on_pin_open (lv_event_t * e) { int i = pin_ev_idx(e); if (i>=0 && i<ha_device_count) ha_device_cover_async(ha_devices[i].entity_id, "open");  }
 static void on_pin_stop (lv_event_t * e) { int i = pin_ev_idx(e); if (i>=0 && i<ha_device_count) ha_device_cover_async(ha_devices[i].entity_id, "stop");  }
 static void on_pin_close(lv_event_t * e) { int i = pin_ev_idx(e); if (i>=0 && i<ha_device_count) ha_device_cover_async(ha_devices[i].entity_id, "close"); }
@@ -688,7 +701,10 @@ static void build_pin_tile(lv_obj_t * parent, int dev_idx, int slot) {
     ha_device_t * D = &ha_devices[dev_idx];
     home_pin_t * P = &home_pins[home_pin_count];
     memset(P, 0, sizeof *P);
-    P->dev_idx = dev_idx;
+    snprintf(P->entity, sizeof P->entity, "%s", D->entity_id);
+    snprintf(P->name, sizeof P->name, "%s", D->name);
+    /* Event user data: this tile's slot, resolved to a device via pin_dev(). */
+    void * ud = (void *)(intptr_t)home_pin_count;
 
     lv_obj_t * t = lv_obj_create(parent);
     P->tile = t;
@@ -716,7 +732,7 @@ static void build_pin_tile(lv_obj_t * parent, int dev_idx, int slot) {
         lv_obj_set_style_bg_color(P->slider,
             lv_color_hex(D->type == HADEV_LIGHT ? 0xffcc44 : 0x44aaff), LV_PART_INDICATOR);
         lv_obj_remove_style(P->slider, NULL, LV_PART_KNOB);
-        lv_obj_add_event_cb(P->slider, on_pin_pos, LV_EVENT_RELEASED, (void *)(intptr_t)dev_idx);
+        lv_obj_add_event_cb(P->slider, on_pin_pos, LV_EVENT_RELEASED, ud);
     }
 
     if (D->type == HADEV_COVER) {
@@ -731,7 +747,7 @@ static void build_pin_tile(lv_obj_t * parent, int dev_idx, int slot) {
             lv_obj_align(b, LV_ALIGN_RIGHT_MID, cb[i].x, 0);
             lv_obj_set_style_bg_color(b, lv_color_hex(cb[i].col), 0);
             lv_obj_set_style_radius(b, 8, 0);
-            lv_obj_add_event_cb(b, cb[i].cb, LV_EVENT_CLICKED, (void *)(intptr_t)dev_idx);
+            lv_obj_add_event_cb(b, cb[i].cb, LV_EVENT_CLICKED, ud);
             lv_obj_t * l = lv_label_create(b);
             lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
             lv_obj_set_style_text_font(l, SF(14), 0);
@@ -746,7 +762,7 @@ static void build_pin_tile(lv_obj_t * parent, int dev_idx, int slot) {
         lv_obj_set_style_bg_color(P->btn, lv_color_hex(run ? 0x2e5e8a : 0x3a4658), 0);
         lv_obj_set_style_radius(P->btn, 8, 0);
         lv_obj_add_event_cb(P->btn, run ? on_pin_run : on_pin_toggle, LV_EVENT_CLICKED,
-                            (void *)(intptr_t)dev_idx);
+                            ud);
         P->btn_lbl = lv_label_create(P->btn);
         lv_obj_set_style_text_color(P->btn_lbl, lv_color_hex(0xffffff), 0);
         lv_obj_set_style_text_font(P->btn_lbl, SF(14), 0);
@@ -2688,14 +2704,21 @@ static void refresh_cb(lv_timer_t * t) {
     /* Pinned device quick-tiles — live state from ha_devices[]. */
     for (int p = 0; p < home_pin_count; p++) {
         home_pin_t * P = &home_pins[p];
-        if (P->dev_idx < 0 || P->dev_idx >= ha_device_count || !P->lbl) continue;
-        ha_device_t * D = &ha_devices[P->dev_idx];
+        if (!P->lbl) continue;
+        int di = pin_dev(p);
+        if (di < 0) {                               /* device removed meanwhile */
+            lv_label_set_text_fmt(P->lbl, tr("%s  (verwijderd)", "%s  (removed)"), P->name);
+            continue;
+        }
+        ha_device_t * D = &ha_devices[di];
         if (!ha_state.connected) {
             lv_label_set_text_fmt(P->lbl, tr("%s  (HA offline)", "%s  (HA offline)"), D->name);
             continue;
         }
         if (D->type == HADEV_COVER) {
-            const char * s = D->state[0] ? D->state : "?";
+            char st[sizeof D->state];
+            ha_device_get_state(di, st, sizeof st);   /* written by the HA thread */
+            const char * s = st[0] ? st : "?";
             char pretty[24];
             snprintf(pretty, sizeof pretty, "%c%s",
                      (s[0] >= 'a' && s[0] <= 'z') ? s[0] - 'a' + 'A' : s[0], s + 1);
@@ -5385,6 +5408,10 @@ void screen_home_destroy(void) {
         tile_family = NULL;
         tile_water = NULL;
         for (int i = 0; i < 4; i++) {
+            /* The view structs are calloc'd; their widgets die with scr_root
+             * below, the structs used to leak on every home rebuild. */
+            free(slot_agenda[i]);
+            free(slot_templogger[i]);
             slot_agenda[i] = NULL;
             slot_waste[i] = NULL;
             slot_templogger[i] = NULL;
@@ -5414,8 +5441,11 @@ void screen_home_destroy(void) {
         for (int i = 0; i < 4; i++) rain_lbl_times[i] = NULL;
         s_rain_compact = 0;
         if (s == lv_scr_act()) {
-            lv_obj_t * blank = lv_obj_create(NULL);
-            lv_scr_load(blank);
+            /* Park on one reusable blank screen while home is rebuilt (a new
+             * blank per rebuild used to leak, one per theme/mode toggle). */
+            static lv_obj_t * s_blank = NULL;
+            if (!s_blank) s_blank = lv_obj_create(NULL);
+            lv_scr_load(s_blank);
             lv_obj_del(s);
         } else {
             lv_obj_del(s);

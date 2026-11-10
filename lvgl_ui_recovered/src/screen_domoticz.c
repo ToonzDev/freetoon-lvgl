@@ -178,6 +178,9 @@ static int scr_light_mode = -1;
 lv_obj_t * screen_domoticz_create(void) {
     if (scr_root && scr_light_mode == settings.home_light_mode) return scr_root;
     if (scr_root) { lv_obj_del(scr_root); scr_root = NULL; }
+    /* Rebuild (light-mode/theme toggle): the old timer must go too, or one
+     * more paused timer leaks per toggle. */
+    if (refresh_timer) { lv_timer_del(refresh_timer); refresh_timer = NULL; }
     scr_light_mode = settings.home_light_mode;
 
     scr_root = lv_obj_create(NULL);
