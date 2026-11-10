@@ -354,7 +354,7 @@
   - **Events**: Check whether Homey can push state changes (websocket / Flow webhook to the PWA server) instead of polling.
 
 ### 29. P1 Meter Readings (Meterstanden) Like the Stock QML UI
-- **Status**: Open (requested 2026-11-10).
+- **Status**: Implemented (495d80a, 2026-11-10).
 - **Description**:
   - The stock (QML) firmware shows the actual P1 meter readings (cumulative kWh import/export per tariff, gas m3). Show these in FreeToon too, e.g. on the Energy statistics screen.
   - Stock UI: a "Meterstanden" button top-right on the "Grafiek" screen (Energy statistics) opens a pop-up with the three absolute P1 meter readings. Mirror that.
