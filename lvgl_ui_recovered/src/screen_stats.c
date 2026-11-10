@@ -629,16 +629,36 @@ static void style_period_tab(int i, int sel) {
  * crucial when a wide window returns the real readings scattered among NaN
  * slots (otherwise every reading sits next to a NaN and all deltas vanish).
  * Drops the cross-tariff artefact jumps above `cap`. */
+/*
+ * The usage d = v[i] - v[prev] covers the interval between the two readings,
+ * so it is labelled with the timestamp of the PREVIOUS reading (the start of
+ * the interval). hcb_rrd stamps a consolidated bucket with its END: at 20:30
+ * on 10-11 the daily archive already returns "11-11 01:00" holding today's
+ * running total. Labelling the delta with v[i]'s own timestamp put today's
+ * usage under tomorrow (user report), the last day of a month in the next
+ * month, and hour 20-21 under "21:00". The year bucket moves with it. */
 static void diff_in_place(stats_series_t * s, int n, double cap) {
     double prev = NAN;   /* previous real cumulative reading */
+    char prev_lab[sizeof s->labels[0]] = "";
+    char prev_yy[sizeof s->year2[0]] = "";
     for (int i = 0; i < n; i++) {
         double v = s->samples[i];
         if (isnan(v)) continue;            /* leave NaN slots, keep prev */
-        if (isnan(prev)) { s->samples[i] = NAN; prev = v; continue; }
-        double d = (v >= prev) ? (v - prev) : NAN;
-        if (!isnan(d) && d > cap) d = NAN;
-        s->samples[i] = d;
+        char cur_lab[sizeof s->labels[0]], cur_yy[sizeof s->year2[0]];
+        memcpy(cur_lab, s->labels[i], sizeof cur_lab);
+        memcpy(cur_yy, s->year2[i], sizeof cur_yy);
+        if (!isnan(prev)) {
+            double d = (v >= prev) ? (v - prev) : NAN;
+            if (!isnan(d) && d > cap) d = NAN;
+            s->samples[i] = d;
+            memcpy(s->labels[i], prev_lab, sizeof prev_lab);   /* interval start */
+            memcpy(s->year2[i], prev_yy, sizeof prev_yy);
+        } else {
+            s->samples[i] = NAN;           /* first reading: no interval yet */
+        }
         prev = v;
+        memcpy(prev_lab, cur_lab, sizeof prev_lab);
+        memcpy(prev_yy, cur_yy, sizeof prev_yy);
     }
 }
 
@@ -765,7 +785,8 @@ static void render_chart(void) {
                 double diff_m3 = (cur_s - prev) / 1000.0; /* Liters to m3 */
                 if (diff_m3 < 50.0) {
                     g_bar_val[g_bar_count] = diff_m3;
-                    const char * lab = series.labels[i];
+                    /* interval start (see diff_in_place) */
+                    const char * lab = series.labels[i - 1];
                     snprintf(g_bar_label[g_bar_count], sizeof g_bar_label[0], "%.5s", lab + 6);
                     g_bar_count++;
                 }
