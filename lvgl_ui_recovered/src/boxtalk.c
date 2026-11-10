@@ -1124,25 +1124,36 @@ static int http_get_local(const char* path, char* out_body, size_t out_max) {
     a.sin_family = AF_INET;
     a.sin_port = htons(10080);
     a.sin_addr.s_addr = htonl(0x7f000001);
+    /* This runs on the 3 s poll thread that also drives the flame icon and
+     * setpoint, so a hung hcb_web must not stall it: 2 s per send/recv. */
+    struct timeval tv = { 2, 0 };
+    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+    setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
     if (connect(s, (struct sockaddr*)&a, sizeof(a)) != 0) { close(s); return -1; }
     char req[512];
     int n = snprintf(req, sizeof(req),
         "GET %s HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n",
         path);
+    if (n < 0 || n >= (int)sizeof(req)) { close(s); return -1; }
     if (send(s, req, n, 0) != n) { close(s); return -1; }
 
     /* Drain full response. If out_body requested, accumulate up to out_max-1 bytes
-       and then locate the body (after \r\n\r\n). */
+       and then locate the body (after \r\n\r\n). A timeout or socket error is a
+       failure, not a (truncated) success. */
     char accum[4096];
     size_t acclen = 0;
+    int failed = 0;
     while (1) {
         if (acclen >= sizeof(accum) - 1) break;
         ssize_t k = recv(s, accum + acclen, sizeof(accum) - 1 - acclen, 0);
-        if (k <= 0) break;
+        if (k < 0 && errno == EINTR) continue;
+        if (k < 0) { failed = 1; break; }
+        if (k == 0) break;
         acclen += (size_t)k;
     }
     accum[acclen] = 0;
     close(s);
+    if (failed) return -1;
 
     if (out_body && out_max > 0) {
         const char* body = strstr(accum, "\r\n\r\n");
@@ -1163,17 +1174,30 @@ static int http_get_thermstat_full(const char* path_with_query, char* out_body, 
 
 /* Most recent sample of an hcb_rrd logger, e.g. thermstat_boilerTemp.
    Response shape: { "1794149040": 23.15}. Same source the stock
-   boilerstatus app reads. Returns 0 and fills *out on success. */
+   boilerstatus app reads. Returns 0 and fills *out on success, -1 on a
+   transient failure, RRD_NO_LOGGER if this Toon has no such logger (Toon 1
+   firmware doesn't define the boiler temp loggers).
+   The key is the sample's bucket time. On a Toon with a live boiler it is
+   the current (still running) minute, so it can be slightly in the future;
+   when the boiler link is down the logger stops and the last sample ages.
+   Samples older than RRD_MAX_AGE are refused so a dead link isn't shown as
+   a live temperature. A wall clock that isn't set yet (before NTP, years
+   behind) makes every sample look "future" and is not treated as stale. */
+#define RRD_NO_LOGGER (-2)
+#define RRD_MAX_AGE   (15 * 60)
 static int rrd_last_value(const char* logger, float* out) {
     char path[192], body[256];
     snprintf(path, sizeof(path),
              "/hcb_rrd?action=getRrdData&loggerName=%s&rra=30days&samples=1", logger);
     if (http_get_local(path, body, sizeof(body)) != 0) return -1;
+    if (strstr(body, "unknown logger")) return RRD_NO_LOGGER;
     if (strstr(body, "\"error\"")) return -1;
     const char* k1 = strchr(body, '"');
     const char* k2 = k1 ? strchr(k1 + 1, '"') : NULL;
     const char* col = k2 ? strchr(k2 + 1, ':') : NULL;
     if (!col) return -1;
+    long ts = strtol(k1 + 1, NULL, 10);
+    if (ts > 0 && (long)time(NULL) - ts > RRD_MAX_AGE) return -1;
     col++;
     while (*col == ' ' || *col == '\t' || *col == '"') col++;
     if (!strncmp(col, "NaN", 3) || !strncmp(col, "nan", 3) || !strncmp(col, "null", 4)) return -1;
@@ -1280,21 +1304,29 @@ static void* http_poll_thread(void* arg) {
         /* Boiler flow/return temps. The BoxTalk boilerTemps/boilerRetTemps
          * queries are only sent at handshake and from the adapters test
          * button, and on some Toons are never answered -> 0.0 forever.
-         * hcb_rrd logs both every minute, so read them from there like the
-         * stock boilerstatus app does: every ~60 s, or every ~15 s while a
-         * value is still missing. */
+         * hcb_rrd logs both (current minute while the boiler link is up),
+         * so read them from there like the stock boilerstatus app does:
+         * every ~60 s, or every ~15 s while a value is still missing.
+         * Toons whose firmware has no such logger (Toon 1) stop asking. */
         static int boiler_poll_cnt = 0;
+        static int boiler_rrd_absent = 0;
         int boiler_missing = toon_state.boiler_out_temp <= 0.0f ||
                              toon_state.boiler_in_temp  <= 0.0f;
-        if (++boiler_poll_cnt >= (boiler_missing ? 5 : 20)) {
+        if (!boiler_rrd_absent && ++boiler_poll_cnt >= (boiler_missing ? 5 : 20)) {
             boiler_poll_cnt = 0;
             float f;
-            if (rrd_last_value("thermstat_boilerTemp", &f) == 0 && f > 0.0f && f < 110.0f)
+            int rf = rrd_last_value("thermstat_boilerTemp", &f);
+            if (rf == 0 && f > 0.0f && f < 110.0f)
                 toon_state.boiler_out_temp = f;     /* flow / aanvoer */
-            if (rrd_last_value("thermstat_boilerRetTemp", &f) == 0 && f > 0.0f && f < 110.0f)
+            int rr = rrd_last_value("thermstat_boilerRetTemp", &f);
+            if (rr == 0 && f > 0.0f && f < 110.0f)
                 toon_state.boiler_in_temp = f;      /* return / retour */
+            if (rf == RRD_NO_LOGGER && rr == RRD_NO_LOGGER) {
+                boiler_rrd_absent = 1;
+                fprintf(stderr, "[bxt] no hcb_rrd boiler temp loggers on this Toon; rrd fallback off\n");
+            }
         }
-      
+
         /* 3 s — used to be 15 s, but that was the source of "the flame icon
          * lights up half a minute after the boiler kicks in" complaints.
          * burner_on / dhw_on / active_state / setpoint all ride this poll;
