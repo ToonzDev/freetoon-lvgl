@@ -331,6 +331,20 @@ static void mock_state(void) {
             L->reachable = 1; L->is_dimmable = H[i].dim;
         }
         settings.hue_enabled = 1;
+        /* A room and a zone ("everything except the reading lamp"). */
+        static const struct { const char * id, * name; int zone, n, any, all, pct; } G[] = {
+            { "1", "Woonkamer",                  0, 2, 1, 0, 70 },
+            { "7", "Woonkamer zonder leeslamp",  1, 1, 1, 1, 70 },
+        };
+        hue_state.group_count = (int)(sizeof G / sizeof G[0]);
+        for (int i = 0; i < hue_state.group_count; i++) {
+            hue_group_t * g = &hue_state.groups[i];
+            snprintf(g->id, sizeof g->id, "%s", G[i].id);
+            snprintf(g->name, sizeof g->name, "%s", G[i].name);
+            g->is_zone = G[i].zone; g->n_lights = G[i].n;
+            g->any_on = G[i].any; g->all_on = G[i].all; g->bri_pct = G[i].pct;
+        }
+        if (!settings.hue_tile_group[0]) snprintf(settings.hue_tile_group, sizeof settings.hue_tile_group, "7");
     }
     toon_state.connected     = 1;
     toon_state.msg_count     = 1;

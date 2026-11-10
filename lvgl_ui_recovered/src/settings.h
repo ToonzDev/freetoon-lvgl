@@ -348,6 +348,11 @@ typedef struct {
     float nilm_sig_lo  [NILM_CUSTOM_MAX];
     float nilm_sig_hi  [NILM_CUSTOM_MAX];
     int   nilm_sig_count;
+
+    /* Philips Hue room/zone controlled by the home "Hue" tile (bridge group
+     * id; "" = all lamps). Appended at the end: plugins read settings_t by
+     * declared offsets, so new fields go here (see plugin_abi.h). */
+    char  hue_tile_group[16];
 } settings_t;
 
 #define FORECAST_AUTO   0

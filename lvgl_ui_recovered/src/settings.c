@@ -331,6 +331,7 @@ void settings_load(void) {
         else if (strcmp(k, "hue_enabled")     == 0) { settings.hue_enabled = iv; seen_hue = 1; }
         else if (strcmp(k, "hue_host")        == 0) snprintf(settings.hue_host, sizeof settings.hue_host, "%s", v);
         else if (strcmp(k, "hue_user")        == 0) snprintf(settings.hue_user, sizeof settings.hue_user, "%s", v);
+        else if (strcmp(k, "hue_tile_group")  == 0) snprintf(settings.hue_tile_group, sizeof settings.hue_tile_group, "%s", v);
         else if (strcmp(k, "sonos_enabled")   == 0) { settings.sonos_enabled = iv; seen_sonos = 1; }
         else if (strcmp(k, "sonos_host")      == 0) snprintf(settings.sonos_host, sizeof settings.sonos_host, "%s", v);
         else if (strcmp(k, "sonos_port")      == 0) settings.sonos_port = iv;
@@ -992,6 +993,7 @@ static void settings_write_file(void) {
     fprintf(f, "hue_enabled=%d\n",     settings.hue_enabled);
     fprintf(f, "hue_host=%s\n",        settings.hue_host);
     fprintf(f, "hue_user=%s\n",        settings.hue_user);
+    fprintf(f, "hue_tile_group=%s\n",  settings.hue_tile_group);
     fprintf(f, "sonos_enabled=%d\n",   settings.sonos_enabled);
     fprintf(f, "sonos_host=%s\n",      settings.sonos_host);
     fprintf(f, "sonos_port=%d\n",      settings.sonos_port);

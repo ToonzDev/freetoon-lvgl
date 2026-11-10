@@ -36,6 +36,18 @@ typedef struct {
     int        last_reachable;
 } hue_row_t;
 
+/* Room / zone rows (from the bridge's /groups). */
+typedef struct {
+    char id[16];
+    lv_obj_t * lbl_state;
+    lv_obj_t * btn_toggle;
+    lv_obj_t * btn_lbl;
+    lv_obj_t * btn_tile;
+    lv_obj_t * btn_tile_lbl;
+    lv_obj_t * slider;
+    int        last_any, last_all, last_bri, last_tile;
+} hue_grow_t;
+
 static lv_obj_t   * scr_root      = NULL;
 static lv_obj_t   * list_box      = NULL;
 static lv_obj_t   * lbl_status    = NULL;
@@ -44,6 +56,9 @@ static lv_timer_t * refresh_timer = NULL;
 static hue_row_t    rows[HUE_MAX_LIGHTS];
 static int          row_count     = 0;
 static int          g_built_count = -1;
+static hue_grow_t   grows[HUE_MAX_GROUPS];
+static int          grow_count    = 0;
+static int          g_built_groups = -1;
 
 static void back_async(void * unused) { (void)unused; ui_pop(); }
 static void on_back_click(lv_event_t * e) {
@@ -74,6 +89,143 @@ static void on_all_off_click(lv_event_t * e) {
 static void on_all_on_click(lv_event_t * e) {
     (void)e;
     hue_all_on_async();
+}
+
+/* ---- rooms & zones ---------------------------------------------------- */
+static void on_group_toggle(lv_event_t * e) {
+    const char * id = (const char *)lv_event_get_user_data(e);
+    if (!id) return;
+    for (int i = 0; i < hue_state.group_count; i++)
+        if (strcmp(hue_state.groups[i].id, id) == 0) {
+            hue_group_set_on_async(id, !hue_state.groups[i].any_on);
+            return;
+        }
+}
+static void on_group_slider(lv_event_t * e) {
+    const char * id = (const char *)lv_event_get_user_data(e);
+    lv_obj_t * s = lv_event_get_target(e);
+    if (id && s) hue_group_set_bri_async(id, lv_slider_get_value(s));
+}
+/* "Tegel": this group goes on the home Hue tile; tap again = all lamps. */
+static void on_group_tile(lv_event_t * e) {
+    const char * id = (const char *)lv_event_get_user_data(e);
+    if (!id) return;
+    if (strcmp(settings.hue_tile_group, id) == 0) settings.hue_tile_group[0] = 0;
+    else snprintf(settings.hue_tile_group, sizeof settings.hue_tile_group, "%s", id);
+    settings_save();
+}
+
+static void update_group_display(hue_grow_t * R, const hue_group_t * G) {
+    int on_tile = strcmp(settings.hue_tile_group, G->id) == 0;
+    R->last_any = G->any_on; R->last_all = G->all_on;
+    R->last_bri = G->bri_pct; R->last_tile = on_tile;
+    if (R->lbl_state) {
+        const char * kind = G->is_zone ? tr("zone", "zone") : tr("ruimte", "room");
+        if (G->any_on) {
+            lv_label_set_text_fmt(R->lbl_state, "%s  %d%%  -  %s, %d %s",
+                                  G->all_on ? tr("aan", "on") : tr("deels aan", "partly on"),
+                                  G->bri_pct, kind, G->n_lights,
+                                  G->n_lights == 1 ? tr("lamp", "light") : tr("lampen", "lights"));
+            lv_obj_set_style_text_color(R->lbl_state, lv_color_hex(COL_ON), 0);
+        } else {
+            lv_label_set_text_fmt(R->lbl_state, tr("uit  -  %s, %d %s", "off  -  %s, %d %s"),
+                                  kind, G->n_lights,
+                                  G->n_lights == 1 ? tr("lamp", "light") : tr("lampen", "lights"));
+            lv_obj_set_style_text_color(R->lbl_state, lv_color_hex(COL_TEXT_DIM), 0);
+        }
+    }
+    if (R->btn_toggle) {
+        lv_obj_set_style_bg_color(R->btn_toggle, lv_color_hex(G->any_on ? COL_ON : COL_OFF), 0);
+        if (R->btn_lbl) lv_label_set_text(R->btn_lbl, G->any_on ? tr("Aan", "On") : tr("Uit", "Off"));
+    }
+    if (R->btn_tile) {
+        lv_obj_set_style_border_color(R->btn_tile, lv_color_hex(COL_ON), 0);
+        lv_obj_set_style_border_width(R->btn_tile, on_tile ? 2 : 0, 0);
+        if (R->btn_tile_lbl) {
+            if (on_tile) lv_label_set_text_fmt(R->btn_tile_lbl, "%s %s", LV_SYMBOL_OK, tr("Tegel", "Tile"));
+            else         lv_label_set_text(R->btn_tile_lbl, tr("Tegel", "Tile"));
+        }
+    }
+    if (R->slider) {
+        lv_obj_set_style_bg_color(R->slider, lv_color_hex(G->any_on ? COL_ON : COL_OFF), LV_PART_INDICATOR);
+        if (!lv_obj_has_state(R->slider, LV_STATE_PRESSED) && G->bri_pct > 0 &&
+            lv_slider_get_value(R->slider) != G->bri_pct)
+            lv_slider_set_value(R->slider, G->bri_pct, LV_ANIM_OFF);
+    }
+}
+
+static void section_header(const char * txt) {
+    lv_obj_t * h = lv_label_create(list_box);
+    lv_obj_set_style_text_color(h, lv_color_hex(COL_TEXT_DIM), 0);
+    lv_obj_set_style_text_font(h, SF(18), 0);
+    lv_label_set_text(h, txt);
+}
+
+static lv_obj_t * small_btn(lv_obj_t * card, int w, int x, lv_event_cb_t cb, void * ud,
+                            uint32_t bg, uint32_t fg, lv_obj_t ** lbl_out) {
+    lv_obj_t * b = lv_btn_create(card);
+    lv_obj_set_size(b, w, 32);
+    lv_obj_align(b, LV_ALIGN_TOP_RIGHT, x, 2);
+    lv_obj_set_style_bg_color(b, lv_color_hex(bg), 0);
+    lv_obj_set_style_radius(b, 8, 0);
+    lv_obj_set_ext_click_area(b, 10);
+    lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, ud);
+    lv_obj_t * l = lv_label_create(b);
+    lv_obj_set_style_text_color(l, lv_color_hex(fg), 0);
+    lv_obj_set_style_text_font(l, SF(14), 0);
+    lv_obj_center(l);
+    if (lbl_out) *lbl_out = l;
+    return b;
+}
+
+static void build_group_rows(void) {
+    grow_count = 0;
+    int n = hue_state.group_count;
+    g_built_groups = n;
+    if (n <= 0) return;
+    section_header(tr("Ruimtes en zones", "Rooms and zones"));
+    for (int i = 0; i < n && i < HUE_MAX_GROUPS; i++) {
+        const hue_group_t * G = &hue_state.groups[i];
+        hue_grow_t * R = &grows[grow_count++];
+        memset(R, 0, sizeof *R);
+        snprintf(R->id, sizeof R->id, "%s", G->id);
+
+        lv_obj_t * card = lv_obj_create(list_box);
+        lv_obj_set_size(card, lv_pct(100), 84);
+        lv_obj_set_style_bg_color(card, lv_color_hex(COL_CARD), 0);
+        lv_obj_set_style_border_color(card, lv_color_hex(THEME_BORDER), 0);
+        lv_obj_set_style_border_width(card, 1, 0);
+        lv_obj_set_style_radius(card, 12, 0);
+        lv_obj_set_style_pad_all(card, 8, 0);
+        lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t * nm = lv_label_create(card);
+        lv_obj_set_style_text_font(nm, SF(18), 0);
+        lv_obj_set_style_text_color(nm, lv_color_hex(COL_TEXT_HI), 0);
+        lv_label_set_text(nm, G->name);
+        lv_obj_align(nm, LV_ALIGN_TOP_LEFT, 4, 2);
+
+        R->lbl_state = lv_label_create(card);
+        lv_obj_set_style_text_font(R->lbl_state, SF(14), 0);
+        lv_obj_align(R->lbl_state, LV_ALIGN_TOP_LEFT, 4, 26);
+
+        R->btn_toggle = small_btn(card, 64, -2, on_group_toggle, R->id, COL_OFF, 0xffffff, &R->btn_lbl);
+        R->btn_tile   = small_btn(card, 92, -74, on_group_tile, R->id, THEME_BTN_BG, COL_TEXT_HI, &R->btn_tile_lbl);
+
+        lv_obj_t * s = lv_slider_create(card);
+        R->slider = s;
+        lv_obj_set_size(s, lv_pct(94), 14);
+        lv_obj_align(s, LV_ALIGN_BOTTOM_MID, 0, -2);
+        lv_slider_set_range(s, 1, 100);
+        lv_slider_set_value(s, G->bri_pct > 0 ? G->bri_pct : 1, LV_ANIM_OFF);
+        lv_obj_set_style_bg_color(s, lv_color_hex(0x223344), LV_PART_MAIN);
+        lv_obj_add_flag(s, LV_OBJ_FLAG_ADV_HITTEST);           /* knob only */
+        lv_obj_set_ext_click_area(s, 16);
+        lv_obj_add_event_cb(s, on_group_slider, LV_EVENT_RELEASED, R->id);
+
+        update_group_display(R, G);
+    }
+    section_header(tr("Lampen", "Lights"));
 }
 
 static void update_row_display(hue_row_t * R, const hue_light_t * L) {
@@ -139,6 +291,8 @@ static void build_rows(void) {
         return;
     }
     if (empty_hint) lv_obj_add_flag(empty_hint, LV_OBJ_FLAG_HIDDEN);
+
+    build_group_rows();
 
     for (int i = 0; i < n && i < HUE_MAX_LIGHTS; i++) {
         hue_light_t * L = &hue_state.lights[i];
@@ -235,10 +389,23 @@ static void refresh_cb(lv_timer_t * tmr) {
         }
     }
 
-    /* Rebuild rows if device count changed */
-    if (hue_state.count != g_built_count) {
+    /* Rebuild rows if the number of lamps or rooms/zones changed */
+    if (hue_state.count != g_built_count || hue_state.group_count != g_built_groups) {
         build_rows();
         return;
+    }
+
+    for (int i = 0; i < grow_count; i++) {
+        hue_grow_t * R = &grows[i];
+        for (int j = 0; j < hue_state.group_count; j++) {
+            const hue_group_t * G = &hue_state.groups[j];
+            if (strcmp(G->id, R->id) != 0) continue;
+            int on_tile = strcmp(settings.hue_tile_group, G->id) == 0;
+            if (G->any_on != R->last_any || G->all_on != R->last_all ||
+                G->bri_pct != R->last_bri || on_tile != R->last_tile)
+                update_group_display(R, G);
+            break;
+        }
     }
 
     /* Update existing rows */
@@ -276,6 +443,9 @@ static void on_scr_event(lv_event_t * e) {
         memset(rows, 0, sizeof rows);
         row_count = 0;
         g_built_count = -1;
+        memset(grows, 0, sizeof grows);
+        grow_count = 0;
+        g_built_groups = -1;
     }
 }
 

@@ -285,6 +285,94 @@ static int parse_hue_lights(const char * body) {
     return count;
 }
 
+/* Parse GET /api/<user>/groups: keep rooms and zones (skip entertainment
+ * areas, light groups etc.). Same object walk as parse_hue_lights. */
+static int parse_hue_groups(const char * body) {
+    if (!body || body[0] != '{') return -1;
+    static hue_group_t parsed[HUE_MAX_GROUPS];
+    int count = 0;
+    const char * p = body + 1;
+    while (*p && count < HUE_MAX_GROUPS) {
+        const char * id_quote = strchr(p, '"');
+        if (!id_quote) break;
+        const char * id_end = strchr(id_quote + 1, '"');
+        if (!id_end) break;
+        const char * colon = strchr(id_end, ':');
+        const char * brace = colon ? strchr(colon, '{') : NULL;
+        if (!brace) break;
+        char id_buf[16];
+        size_t id_len = (size_t)(id_end - (id_quote + 1));
+        if (id_len == 0 || id_len >= sizeof id_buf) { p = id_end + 1; continue; }
+        memcpy(id_buf, id_quote + 1, id_len);
+        id_buf[id_len] = 0;
+        int is_num = 1;
+        for (size_t i = 0; i < id_len; i++) if (!isdigit((unsigned char)id_buf[i])) { is_num = 0; break; }
+        if (!is_num) { p = id_end + 1; continue; }
+
+        int depth = 1;
+        const char * cur = brace + 1;
+        while (*cur && depth > 0) {
+            if (*cur == '{') depth++;
+            else if (*cur == '}') depth--;
+            cur++;
+        }
+        const char * obj_end = cur;
+
+        char type[24] = "";
+        json_extract_str(brace, obj_end, "type", type, sizeof type);
+        if (strcmp(type, "Room") == 0 || strcmp(type, "Zone") == 0) {
+            hue_group_t * G = &parsed[count];
+            memset(G, 0, sizeof *G);
+            snprintf(G->id, sizeof G->id, "%s", id_buf);
+            json_extract_str(brace, obj_end, "name", G->name, sizeof G->name);
+            G->is_zone = (type[0] == 'Z');
+            /* lamps: count the quoted ids in "lights":[...] */
+            const char * lp = strstr(brace, "\"lights\"");
+            if (lp && lp < obj_end) {
+                const char * a = strchr(lp, '[');
+                const char * b = a ? strchr(a, ']') : NULL;
+                if (a && b && b < obj_end)
+                    for (const char * q = a; q < b; q++) if (*q == '"') G->n_lights++;
+                G->n_lights /= 2;
+            }
+            const char * st = strstr(brace, "\"state\"");
+            if (st && st < obj_end) {
+                const char * sb = strchr(st, '{');
+                const char * se = sb ? strchr(sb, '}') : NULL;
+                if (sb && se && se < obj_end) {
+                    G->any_on = json_extract_int(sb, se, "any_on", 0);
+                    G->all_on = json_extract_int(sb, se, "all_on", 0);
+                }
+            }
+            const char * ac = strstr(brace, "\"action\"");
+            if (ac && ac < obj_end) {
+                const char * ab = strchr(ac, '{');
+                const char * ae = ab ? strchr(ab, '}') : NULL;
+                if (ab && ae && ae < obj_end) {
+                    int bri = json_extract_int(ab, ae, "bri", 254);
+                    if (bri < 1) bri = 1;
+                    if (bri > 254) bri = 254;
+                    G->bri_pct = (bri * 100 + 127) / 254;
+                }
+            }
+            if (G->name[0] && G->n_lights > 0) count++;
+        }
+        p = obj_end;
+    }
+    pthread_mutex_lock(&g_hue_lock);
+    hue_state.group_count = count;
+    for (int i = 0; i < count; i++) hue_state.groups[i] = parsed[i];
+    pthread_mutex_unlock(&g_hue_lock);
+    return count;
+}
+
+int hue_tile_group_index(void) {
+    if (!settings.hue_tile_group[0]) return -1;
+    for (int i = 0; i < hue_state.group_count; i++)
+        if (strcmp(hue_state.groups[i].id, settings.hue_tile_group) == 0) return i;
+    return -1;
+}
+
 /* Probe connection to Hue Bridge */
 int hue_probe(const char * host, const char * user) {
     if (!host || !host[0] || !user || !user[0]) return -2;
@@ -348,6 +436,10 @@ static void * hue_poll_worker(void * arg) {
             int rc = hue_http_req("GET", settings.hue_host, path, NULL, body, 65536, 4);
             if (rc == 0) {
                 parse_hue_lights(body);
+                /* Rooms and zones (for the group rows and the home tile). */
+                snprintf(path, sizeof(path), "/api/%s/groups", settings.hue_user);
+                if (hue_http_req("GET", settings.hue_host, path, NULL, body, 65536, 4) == 0)
+                    parse_hue_groups(body);
             } else {
                 pthread_mutex_lock(&g_hue_lock);
                 hue_state.connected = 0;
@@ -427,6 +519,17 @@ static void * hue_action_worker(void * arg) {
             snprintf(path, sizeof(path), "/api/%s/groups/0/action", settings.hue_user);
             snprintf(body, sizeof(body), "{\"on\":true}");
             hue_http_req("PUT", settings.hue_host, path, body, resp, sizeof(resp), 3);
+        } else if (a->action_type == 4 || a->action_type == 5) { /* group on/off, group bri */
+            snprintf(path, sizeof(path), "/api/%s/groups/%s/action", settings.hue_user, a->id);
+            if (a->action_type == 4) {
+                snprintf(body, sizeof(body), "{\"on\":%s}", a->val ? "true" : "false");
+            } else {
+                int bri = (a->val * 254 + 50) / 100;
+                if (bri < 1) bri = 1;
+                if (bri > 254) bri = 254;
+                snprintf(body, sizeof(body), "{\"on\":true,\"bri\":%d}", bri);
+            }
+            hue_http_req("PUT", settings.hue_host, path, body, resp, sizeof(resp), 3);
         }
         g_trigger_poll = 1;
     }
@@ -497,4 +600,37 @@ void hue_all_on_async(void) {
     }
     pthread_mutex_unlock(&g_hue_lock);
     queue_hue_act(NULL, 3, 0);
+}
+
+/* Group ids go into the URL path; only numeric ids exist on the bridge. */
+static int hue_group_id_ok(const char * id) {
+    if (!id || !id[0] || strlen(id) > 8) return 0;
+    for (const char * c = id; *c; c++) if (!isdigit((unsigned char)*c)) return 0;
+    return 1;
+}
+
+void hue_group_set_on_async(const char * id, int on) {
+    if (!hue_group_id_ok(id)) return;
+    pthread_mutex_lock(&g_hue_lock);
+    for (int i = 0; i < hue_state.group_count; i++)
+        if (strcmp(hue_state.groups[i].id, id) == 0) {
+            hue_state.groups[i].any_on = on ? 1 : 0;
+            hue_state.groups[i].all_on = on ? 1 : 0;
+        }
+    pthread_mutex_unlock(&g_hue_lock);
+    queue_hue_act(id, 4, on ? 1 : 0);
+}
+
+void hue_group_set_bri_async(const char * id, int pct) {
+    if (!hue_group_id_ok(id)) return;
+    if (pct < 1) pct = 1;
+    if (pct > 100) pct = 100;
+    pthread_mutex_lock(&g_hue_lock);
+    for (int i = 0; i < hue_state.group_count; i++)
+        if (strcmp(hue_state.groups[i].id, id) == 0) {
+            hue_state.groups[i].bri_pct = pct;
+            hue_state.groups[i].any_on = 1;
+        }
+    pthread_mutex_unlock(&g_hue_lock);
+    queue_hue_act(id, 5, pct);
 }

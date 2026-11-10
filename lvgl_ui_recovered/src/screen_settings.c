@@ -3477,8 +3477,8 @@ static void build_slot_options(int slot, char * out, size_t cap) {
         else if (slot == 2) def_label = tr("Ingebouwd (Ventilatie)", "Built-in (Ventilation)");
         else def_label = tr("Ingebouwd (Water)", "Built-in (Water)");
 
-        n = snprintf(out, cap, "%s\n%s\n%s", def_label,
-                     tr("Agenda", "Calendar"), tr("Afval", "Waste"));
+        n = snprintf(out, cap, "%s\n%s\n%s\n%s", def_label,
+                     tr("Agenda", "Calendar"), tr("Afval", "Waste"), "Philips Hue");
     } else {
         n = snprintf(out, cap, "%s\n%s\n%s\n%s\n%s\n%s\n%s",
                      tr("Geen", "None"),
@@ -3503,7 +3503,8 @@ static const char * slot_dropdown_to_id(int slot, int idx) {
     if (slot < 4) {
         if (idx == 1) return "local:agenda";
         if (idx == 2) return "local:waste";
-        const integration_meta_t * m = tile_slots_integration_at(idx - 3);
+        if (idx == 3) return "local:hue";
+        const integration_meta_t * m = tile_slots_integration_at(idx - 4);
         return m ? m->id : "";
     } else {
         if (idx == 1) return "local:energy";
@@ -3522,10 +3523,11 @@ static int slot_dropdown_from_id(int slot, const char * id) {
     if (slot < 4) {
         if (strcmp(id, "local:agenda") == 0) return 1;
         if (strcmp(id, "local:waste") == 0) return 2;
+        if (strcmp(id, "local:hue") == 0) return 3;
         int total = tile_slots_integration_count();
         for (int i = 0; i < total; i++) {
             const integration_meta_t * m = tile_slots_integration_at(i);
-            if (strcmp(m->id, id) == 0 || (strcmp(id, "local:sonos") == 0 && strcmp(m->id, "sonos") == 0)) return i + 3;
+            if (strcmp(m->id, id) == 0 || (strcmp(id, "local:sonos") == 0 && strcmp(m->id, "sonos") == 0)) return i + 4;
         }
     } else {
         if (strcmp(id, "local:energy") == 0) return 1;

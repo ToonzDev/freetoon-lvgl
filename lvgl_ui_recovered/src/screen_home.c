@@ -1299,6 +1299,123 @@ static void on_slot_waste_tap(lv_event_t * e) {
     (void)e;
 }
 
+/* ---- Philips Hue tile ("local:hue") ------------------------------------
+ * Assigned to a free tile slot in Settings -> Tegels, so it never covers
+ * another app's control. Shows the room/zone picked with "Tegel" on the Hue
+ * screen (settings.hue_tile_group; none = all lamps) with an on/off button;
+ * tapping the rest of the tile opens the Hue screen. */
+typedef struct {
+    lv_obj_t * root;
+    lv_obj_t * lbl_name;
+    lv_obj_t * lbl_state;
+    lv_obj_t * btn;
+    lv_obj_t * btn_lbl;
+} slot_hue_view_t;
+static slot_hue_view_t * slot_hue[4] = {0};
+
+static void on_slot_hue_open(lv_event_t * e) {
+    (void)e;
+    ui_push_owned(screen_hue_create());
+}
+
+static void on_slot_hue_toggle(lv_event_t * e) {
+    (void)e;
+    int gi = hue_tile_group_index();
+    if (gi >= 0) {
+        hue_group_t * G = &hue_state.groups[gi];
+        hue_group_set_on_async(G->id, !G->any_on);
+    } else {
+        int any = 0;
+        for (int i = 0; i < hue_state.count; i++) if (hue_state.lights[i].on) { any = 1; break; }
+        if (any) hue_all_off_async(); else hue_all_on_async();
+    }
+}
+
+static slot_hue_view_t * make_slot_hue(lv_obj_t * tile, lv_obj_t * title) {
+    if (!tile) return NULL;
+    slot_hue_view_t * v = calloc(1, sizeof *v);
+    if (!v) return NULL;
+    /* Cover the tile from just below its colour bar + title (the tile's own
+     * title label shows "Philips Hue"), so it looks like every other tile.
+     * Measured from the real title, since it sits lower on a Toon 1. */
+    lv_obj_update_layout(tile);
+    lv_coord_t th = lv_obj_get_content_height(tile);
+    lv_coord_t top = SY(34);
+    if (title) {
+        lv_coord_t content_y1 = tile->coords.y1 + lv_obj_get_style_pad_top(tile, LV_PART_MAIN);
+        lv_coord_t t = title->coords.y2 - content_y1 + 3;
+        if (t > 0 && t < th - SY(40)) top = t;
+    }
+    v->root = lv_obj_create(tile);
+    lv_obj_set_size(v->root, LV_PCT(100), th - top);
+    lv_obj_set_pos(v->root, 0, top);
+    lv_obj_set_style_bg_color(v->root, lv_color_hex(COL_TILE_BG), 0);
+    lv_obj_set_style_bg_opa(v->root, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(v->root, 0, 0);
+    lv_obj_set_style_radius(v->root, 0, 0);
+    lv_obj_set_style_pad_all(v->root, 0, 0);
+    lv_obj_clear_flag(v->root, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(v->root, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(v->root, on_slot_hue_open, LV_EVENT_CLICKED, NULL);
+
+    v->lbl_name = lv_label_create(v->root);
+    lv_obj_set_style_text_color(v->lbl_name, lv_color_hex(COL_TEXT_HI), 0);
+    lv_obj_set_style_text_font(v->lbl_name, SF(18), 0);
+    lv_label_set_long_mode(v->lbl_name, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(v->lbl_name, LV_PCT(100));
+    lv_obj_align(v->lbl_name, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    v->lbl_state = lv_label_create(v->root);
+    lv_obj_set_style_text_font(v->lbl_state, SF(14), 0);
+    lv_obj_align(v->lbl_state, LV_ALIGN_BOTTOM_LEFT, 0, SY(-6));
+
+    v->btn = lv_btn_create(v->root);
+    lv_obj_set_size(v->btn, SX(72), SY(38));
+    lv_obj_align(v->btn, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    lv_obj_set_style_radius(v->btn, 8, 0);
+    lv_obj_set_ext_click_area(v->btn, 10);
+    lv_obj_add_event_cb(v->btn, on_slot_hue_toggle, LV_EVENT_CLICKED, NULL);
+    v->btn_lbl = lv_label_create(v->btn);
+    lv_obj_set_style_text_color(v->btn_lbl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(v->btn_lbl, SF(14), 0);
+    lv_obj_center(v->btn_lbl);
+
+    lv_obj_add_flag(v->root, LV_OBJ_FLAG_HIDDEN);
+    return v;
+}
+
+static void fill_hue_overlay(slot_hue_view_t * v) {
+    if (!v) return;
+    if (!settings.hue_enabled || !hue_state.connected) {
+        lv_label_set_text(v->lbl_name, tr("Niet verbonden", "Not connected"));
+        lv_label_set_text(v->lbl_state, "");
+        lv_obj_add_flag(v->btn, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    lv_obj_clear_flag(v->btn, LV_OBJ_FLAG_HIDDEN);
+    int gi = hue_tile_group_index();
+    int on = 0, n_on = 0, n = 0;
+    if (gi >= 0) {
+        const hue_group_t * G = &hue_state.groups[gi];
+        lv_label_set_text(v->lbl_name, G->name);
+        on = G->any_on;
+        n = G->n_lights;
+        if (on) lv_label_set_text_fmt(v->lbl_state, "%s  %d%%", G->all_on ? tr("aan", "on") : tr("deels aan", "partly on"), G->bri_pct);
+        else    lv_label_set_text(v->lbl_state, tr("uit", "off"));
+    } else {
+        lv_label_set_text(v->lbl_name, tr("Alle lampen", "All lights"));
+        for (int i = 0; i < hue_state.count; i++) if (hue_state.lights[i].on) n_on++;
+        n = hue_state.count;
+        on = n_on > 0;
+        if (on) lv_label_set_text_fmt(v->lbl_state, tr("%d van %d aan", "%d of %d on"), n_on, n);
+        else    lv_label_set_text(v->lbl_state, tr("uit", "off"));
+    }
+    (void)n;
+    lv_obj_set_style_text_color(v->lbl_state, lv_color_hex(on ? THEME_ACCENT_BLUE : COL_TEXT_DIM), 0);
+    lv_obj_set_style_bg_color(v->btn, lv_color_hex(on ? THEME_ACCENT_BLUE : THEME_OFF), 0);
+    lv_label_set_text(v->btn_lbl, on ? tr("Aan", "On") : tr("Uit", "Off"));
+}
+
 static lv_obj_t * make_slot_waste(lv_obj_t * tile, uint32_t bg) {
     if (!tile) return NULL;
     lv_obj_t * l = lv_label_create(tile);
@@ -1503,6 +1620,8 @@ static int slot_render_or_agenda(int slot, int ai, lv_obj_t * lbl_main, lv_obj_t
             title_to_show = tr("Agenda", "Calendar");
         } else if (b && !strcmp(b, "local:waste")) {
             title_to_show = tr("Afval", "Waste");
+        } else if (b && !strcmp(b, "local:hue")) {
+            title_to_show = "Philips Hue";
         } else if (b && m && (m->tile_title[0] || m->id[0])) {
             title_to_show = tile_slots_integration_title(m);
         } else {
@@ -1519,6 +1638,19 @@ static int slot_render_or_agenda(int slot, int ai, lv_obj_t * lbl_main, lv_obj_t
             lv_label_set_text(lbl_title_slot[slot], title_to_show);
         }
     }
+
+    if (b && !strcmp(b, "local:hue")) {
+        if (slot_waste[ai]) lv_obj_add_flag(slot_waste[ai], LV_OBJ_FLAG_HIDDEN);
+        if (slot_agenda[ai]) lv_obj_add_flag(slot_agenda[ai]->root, LV_OBJ_FLAG_HIDDEN);
+        if (slot_templogger[ai]) lv_obj_add_flag(slot_templogger[ai]->root, LV_OBJ_FLAG_HIDDEN);
+        if (slot_hue[ai]) {
+            fill_hue_overlay(slot_hue[ai]);
+            lv_obj_clear_flag(slot_hue[ai]->root, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_move_foreground(slot_hue[ai]->root);
+        }
+        return 1;
+    }
+    if (slot_hue[ai]) lv_obj_add_flag(slot_hue[ai]->root, LV_OBJ_FLAG_HIDDEN);
 
     if (b && (!strcmp(b, "local:agenda") || !strcmp(b, "agenda") || (m && !strcmp(m->tile_type, "agenda_list")))) {
         if (slot_waste[ai]) lv_obj_add_flag(slot_waste[ai], LV_OBJ_FLAG_HIDDEN);
@@ -4319,6 +4451,7 @@ lv_obj_t * screen_home_create(void) {
     lbl_title_slot[TILE_SLOT_ENERGY] = energy_t.title;
     slot_agenda[0] = make_slot_agenda(tile_energy, 0x4477cc);
     slot_waste[0]  = make_slot_waste(tile_energy, 0x1e3a24);
+    slot_hue[0]    = make_slot_hue(tile_energy, energy_t.title);
     slot_templogger[0] = make_slot_templogger(tile_energy);
     int ew = 214, eh = 130;
     if (settings.custom_layout_enabled) {
@@ -4375,6 +4508,7 @@ lv_obj_t * screen_home_create(void) {
     lbl_title_slot[TILE_SLOT_VENT] = vent.title;
     slot_agenda[2] = make_slot_agenda(tile_vent, 0x4477cc);
     slot_waste[2]  = make_slot_waste(tile_vent, 0x1e3a24);
+    slot_hue[2]    = make_slot_hue(tile_vent, vent.title);
     slot_templogger[2] = make_slot_templogger(tile_vent);
 
     /* Speed % shares the title row with the "Vent" label so the
@@ -4472,6 +4606,7 @@ lv_obj_t * screen_home_create(void) {
     lbl_title_slot[TILE_SLOT_FAMILY] = family_t.title;
     slot_agenda[1] = make_slot_agenda(tile_family, 0x4477cc);
     slot_waste[1]  = make_slot_waste(tile_family, 0x1e3a24);
+    slot_hue[1]    = make_slot_hue(tile_family, family_t.title);
     slot_templogger[1] = make_slot_templogger(tile_family);
     /* Two scrolling labels — the formatted address ("City > Street > Num")
      * almost always exceeds the 194-px tile width, so we use
@@ -4661,6 +4796,7 @@ lv_obj_t * screen_home_create(void) {
     lbl_title_slot[TILE_SLOT_WATER] = water_t.title;
     slot_agenda[3] = make_slot_agenda(tile_water, 0x4477cc);
     slot_waste[3]  = make_slot_waste(tile_water, 0x1e3a24);
+    slot_hue[3]    = make_slot_hue(tile_water, water_t.title);
     slot_templogger[3] = make_slot_templogger(tile_water);
 
     /* Long-press on any of the four right-column tiles → tile-slots picker.
@@ -5413,6 +5549,8 @@ void screen_home_destroy(void) {
              * below, the structs used to leak on every home rebuild. */
             free(slot_agenda[i]);
             free(slot_templogger[i]);
+            free(slot_hue[i]);
+            slot_hue[i] = NULL;
             slot_agenda[i] = NULL;
             slot_waste[i] = NULL;
             slot_templogger[i] = NULL;
