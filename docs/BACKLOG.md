@@ -343,3 +343,12 @@
   - **Quby Bridge & Afvalwijzer Optimalisaties**:
     - Logging reductie en automatische rotatie voor `quby-bridge` om tmpfs opslagruimte te besparen.
     - Standaard afvalwijzer provider ingesteld op *Overige gemeentes* voor verbeterde directe werking.
+
+### 28. Homey Integration
+- **Status**: Open (requested 2026-11-10).
+- **Description**:
+  - Add Athom Homey as a smart-home source next to Home Assistant and Domoticz: show and switch Homey devices (lights, plugs, blinds) and read sensors on FreeToon tiles.
+- **Investigation Points**:
+  - **API**: Homey Pro exposes a local Web API (`http://<homey>/api/...`, bearer token / API key from the Homey developer tools); Homey Bridge/cloud-only setups need the cloud API. Decide which to support first.
+  - **Reuse**: Follow the Domoticz/HA pattern (`domoticz.c`, `homeassistant.c`): poller thread, device list picker, tile binding. TLS-verified fetches (Toon CA bundle is kept current via tsc).
+  - **Events**: Check whether Homey can push state changes (websocket / Flow webhook to the PWA server) instead of polling.
