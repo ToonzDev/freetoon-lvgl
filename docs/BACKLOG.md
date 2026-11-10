@@ -345,9 +345,19 @@
     - Standaard afvalwijzer provider ingesteld op *Overige gemeentes* voor verbeterde directe werking.
 
 ### 28. Homey Integration
-- **Status**: Open (requested 2026-11-10).
+- **Status**: Waiting for the requesting user's Homey model + sample API data (no Homey available to the developer; 2026-11-10).
 - **Description**:
   - Add Athom Homey as a smart-home source next to Home Assistant and Domoticz: show and switch Homey devices (lights, plugs, blinds) and read sensors on FreeToon tiles.
+- **Decisions (2026-11-10)**:
+  - Built into toonui (like Domoticz/HA), not a Marketplace app: Settings -> Homey (IP + API key), devices on the Lights screen, home tile switches.
+  - First version: switch lights/plugs (on/off + dim), blinds/covers (open/close/position), sensor values on tiles, trigger Flows.
+  - Target the Homey Pro (2023) local Web API with an API key. Older Homey Pro / Homey Bridge need Athom cloud OAuth — only if the requester has one of those.
+- **API plan (Homey Pro 2023, local)**: `Authorization: Bearer <API key>` against `http://<homey>/api/`:
+  - devices: `GET manager/devices/device/` (class, capabilities, capabilitiesObj values/units, zone); control: `PUT manager/devices/device/<id>/capability/<cap>` `{"value": ...}` (onoff, dim 0..1, windowcoverings_state / windowcoverings_set).
+  - flows: `GET manager/flow/flow/` + `manager/flow/advancedflow/`; trigger: `POST .../<id>/trigger`.
+  - zones for grouping: `GET manager/zones/zone/`. Poll (~5 s); Homey's realtime API is socket.io, not worth it for v1.
+  - API key scopes needed: device read + control, flow start.
+  - Build/test against real JSON from the requester first (device list can be large; parser must be robust).
 - **Investigation Points**:
   - **API**: Homey Pro exposes a local Web API (`http://<homey>/api/...`, bearer token / API key from the Homey developer tools); Homey Bridge/cloud-only setups need the cloud API. Decide which to support first.
   - **Reuse**: Follow the Domoticz/HA pattern (`domoticz.c`, `homeassistant.c`): poller thread, device list picker, tile binding. TLS-verified fetches (Toon CA bundle is kept current via tsc).
