@@ -384,3 +384,12 @@
   - `install.sh` downloads the binary from the latest release but the helper scripts (ui_launcher.sh, inittab_edit.sh, integrations-install.sh, ...) from the `main` branch, so every push to `main` is live for every updating Toon and the scripts can mismatch the binary.
 - **Approach**:
   - Ship the scripts as release assets (or a scripts tarball) and fetch them from the same release tag as the binary; keep `main` only as fallback for old releases. Pairs naturally with parked review step 4 (signed SHA256SUMS per release).
+
+### 33. Release 1.0.6: Security & Stability Review, Toon 1 Touch/Clock, Meterstanden
+- **Status**: Released (tag 1.0.6, 2026-11-10).
+- **Contents**:
+  - Security: no takeover of the web login via /set-password; all settings/remote values shell-quoted (no root command injection); marketplace catalog/plugins verified; plugin ABI gate (Sonos 1.0.8 / Stocks 1.0.5 / Teletekst 1.0.6).
+  - Installer: verified downloads (no truncated binaries/scripts), synced copies, inittab order that always keeps a UI row, uninstall releases the boiler UART and stops FreeToon before stock qt-gui; Toon 1 stock UI back at 32bpp.
+  - Stability: timer use-after-free fixes (stats tooltip, family map, package banner), per-open screens freed (no memory growth), OTGW advanced screen off the UI thread, thread-safe calendar/HA data, crash-safe settings and schedule saves.
+  - Toon 1: clock no longer 1 h behind (TZ), factory touch calibration (whole X button responds), no pkill dependency.
+  - Features/fixes: "Meterstanden" pop-up, energy usage on the right day, boiler flow/return correct (incl. HA MQTT), calendar retries a timed-out feed, pinned HA tiles follow their entity, forecast radar refreshes.
