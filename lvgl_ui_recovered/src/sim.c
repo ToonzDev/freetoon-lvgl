@@ -25,6 +25,7 @@
 #include "ventilation.h"
 #include "efanlamp.h"
 #include "anim_overlay.h"
+#include "hue.h"
 #include "calendar.h"
 #include <pthread.h>
 #include <stdio.h>
@@ -313,6 +314,24 @@ static void sim_boiler_tick(void) {
 
 /* Representative data so the screens render like a live Toon. */
 static void mock_state(void) {
+    /* Hue: a few lamps so the Hue screen has rows to render. */
+    {
+        static const struct { const char * id, * name; int on, pct, dim; } H[] = {
+            { "1", "Woonkamer plafond", 1, 70, 1 },
+            { "2", "Leeslamp",          0, 40, 1 },
+            { "3", "Tuinverlichting",   1, 100, 0 },
+        };
+        hue_state.connected = 1;
+        hue_state.count = (int)(sizeof H / sizeof H[0]);
+        for (int i = 0; i < hue_state.count; i++) {
+            hue_light_t * L = &hue_state.lights[i];
+            snprintf(L->id, sizeof L->id, "%s", H[i].id);
+            snprintf(L->name, sizeof L->name, "%s", H[i].name);
+            L->on = H[i].on; L->bri_pct = H[i].pct; L->bri = H[i].pct * 254 / 100;
+            L->reachable = 1; L->is_dimmable = H[i].dim;
+        }
+        settings.hue_enabled = 1;
+    }
     toon_state.connected     = 1;
     toon_state.msg_count     = 1;
     toon_state.boiler_type   = 1;   /* OpenTherm */
@@ -484,6 +503,7 @@ static const struct { const char * name; create_fn fn; } SCREENS[] = {
     { "crypto_pick", screen_crypto_picker_create },
     { "crypto",      screen_crypto_create },
     { "templogger",  screen_templogger_create },
+    { "hue",         screen_hue_create },
 };
 #define N_SCREENS ((int)(sizeof SCREENS / sizeof SCREENS[0]))
 

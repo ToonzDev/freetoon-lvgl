@@ -61,6 +61,7 @@ static void on_slider_change(lv_event_t * e) {
     lv_obj_t * s = lv_event_get_target(e);
     if (id && s) {
         int v = lv_slider_get_value(s);
+        if (v < 1) v = 1;                 /* dimming never switches off */
         hue_light_set_bri_async(id, v);
     }
 }
@@ -108,7 +109,15 @@ static void update_row_display(hue_row_t * R, const hue_light_t * L) {
         }
     }
 
-    if (R->slider && lv_slider_get_value(R->slider) != L->bri_pct) {
+    /* Bar in the "on" colour only while the lamp is on. */
+    if (R->slider) {
+        uint32_t c = (L->reachable && L->on) ? COL_ON : COL_OFF;
+        lv_obj_set_style_bg_color(R->slider, lv_color_hex(c), LV_PART_INDICATOR);
+        lv_obj_set_style_border_color(R->slider, lv_color_hex(c), LV_PART_KNOB);
+    }
+    /* Don't yank the knob away while the user is dragging it. */
+    if (R->slider && !lv_obj_has_state(R->slider, LV_STATE_PRESSED) &&
+        lv_slider_get_value(R->slider) != L->bri_pct && L->bri_pct > 0) {
         lv_slider_set_value(R->slider, L->bri_pct, LV_ANIM_OFF);
     }
 }
@@ -181,15 +190,31 @@ static void build_rows(void) {
 
         /* Slider for dimmable lights */
         if (L->is_dimmable) {
+            /* Brightness only — on/off is the button. User report: touching
+             * the slider often switched the lamp on or off. A tap anywhere on
+             * the thin full-width track jumped the value there (or to 0 =
+             * off) and was sent on release, also when the tap was meant to
+             * scroll the list. Now only the (bigger) knob is grabbable
+             * (ADV_HITTEST: hit test = knob + ext click area), taps on the
+             * track fall through to the list, and the range starts at 1 %. */
             lv_obj_t * s = lv_slider_create(card);
             R->slider = s;
-            lv_obj_set_size(s, SX(900), SY(14));
-            lv_obj_align(s, LV_ALIGN_BOTTOM_MID, 0, SY(-4));
-            lv_slider_set_range(s, 0, 100);
-            lv_slider_set_value(s, L->bri_pct, LV_ANIM_OFF);
+            lv_obj_set_size(s, SX(860), SY(12));
+            lv_obj_align(s, LV_ALIGN_BOTTOM_MID, 0, SY(-8));
+            lv_slider_set_range(s, 1, 100);
+            lv_slider_set_value(s, L->bri_pct > 0 ? L->bri_pct : 1, LV_ANIM_OFF);
             lv_obj_set_style_bg_color(s, lv_color_hex(0x223344), LV_PART_MAIN);
             lv_obj_set_style_bg_color(s, lv_color_hex(COL_ON), LV_PART_INDICATOR);
             lv_obj_set_style_bg_color(s, lv_color_hex(0xffffff), LV_PART_KNOB);
+            lv_obj_set_style_pad_all(s, SY(11), LV_PART_KNOB);     /* bigger knob */
+            /* The knob is the only grab point now, so make it stand out
+             * (a white knob vanished on the light theme's white card). */
+            lv_obj_set_style_border_color(s, lv_color_hex(COL_ON), LV_PART_KNOB);
+            lv_obj_set_style_border_width(s, 3, LV_PART_KNOB);
+            lv_obj_set_style_shadow_width(s, 8, LV_PART_KNOB);
+            lv_obj_set_style_shadow_opa(s, LV_OPA_30, LV_PART_KNOB);
+            lv_obj_add_flag(s, LV_OBJ_FLAG_ADV_HITTEST);           /* knob only */
+            lv_obj_set_ext_click_area(s, SY(14));                  /* forgiving grab */
             lv_obj_add_event_cb(s, on_slider_change, LV_EVENT_RELEASED, (void *)R->id);
         }
 
