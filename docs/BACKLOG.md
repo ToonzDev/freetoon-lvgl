@@ -345,7 +345,7 @@
     - Standaard afvalwijzer provider ingesteld op *Overige gemeentes* voor verbeterde directe werking.
 
 ### 28. Homey Integration
-- **Status**: Waiting for the requesting user's Homey model + sample API data (no Homey available to the developer; 2026-11-10).
+- **Status**: Requester has a Homey Pro (2023) -> local API key route confirmed; waiting for sample API data (no Homey available to the developer; 2026-11-10).
 - **Description**:
   - Add Athom Homey as a smart-home source next to Home Assistant and Domoticz: show and switch Homey devices (lights, plugs, blinds) and read sensors on FreeToon tiles.
 - **Decisions (2026-11-10)**:
