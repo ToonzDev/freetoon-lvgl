@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
+#include <time.h>
 
 static lv_obj_t * scr_root = NULL;
 static lv_obj_t * chart;
@@ -148,9 +149,134 @@ static void on_scr_delete(lv_event_t * e) {
     scr_root = NULL;
 }
 
+/* ---- Meterstanden (absolute P1 meter readings) ---------------------------
+ * Like the stock UI's "Meterstanden" button on the Grafiek screen: a pop-up
+ * with the current cumulative readings. They come from the same hcb_rrd
+ * loggers the charts use (Wh / litres); the latest sample is the current
+ * reading. Through stats_fetch_range, so client mode reads the master. */
+static lv_obj_t * s_meter_modal = NULL;
+
+static void meter_modal_close(void) {
+    if (s_meter_modal) { lv_obj_del(s_meter_modal); s_meter_modal = NULL; }
+}
+static void on_meter_close(lv_event_t * e) { (void)e; meter_modal_close(); }
+static void on_meter_modal_delete(lv_event_t * e) {
+    if (lv_event_get_target(e) == s_meter_modal) s_meter_modal = NULL;
+}
+
+/* Latest real (non-NaN) reading of a cumulative logger, or NAN. */
+static double meter_latest(const char * logger) {
+    static stats_series_t s;
+    long now = (long)time(NULL);
+    /* hcb_rrd stamps hourly buckets with their end time, so include the
+     * running hour that ends in the future. */
+    if (stats_fetch_range(logger, "5yrhours", now - 6 * 3600, now + 3600, 8, &s) != 0) return NAN;
+    for (int i = s.n - 1; i >= 0; i--)
+        if (!isnan(s.samples[i]) && s.samples[i] > 0) return s.samples[i];
+    return NAN;
+}
+
+/* "7.384,031" — Dutch grouping, 3 decimals. */
+static void fmt_reading(char * out, size_t n, double v) {
+    long long milli = (long long)(v * 1000.0 + 0.5);   /* readings are positive */
+    long long whole = milli / 1000;
+    int frac = (int)(milli % 1000);
+    char digits[32];
+    snprintf(digits, sizeof digits, "%lld", whole);
+    char grouped[48];
+    int len = (int)strlen(digits), o = 0;
+    for (int i = 0; i < len && o < (int)sizeof grouped - 2; i++) {
+        if (i > 0 && (len - i) % 3 == 0) grouped[o++] = '.';
+        grouped[o++] = digits[i];
+    }
+    grouped[o] = 0;
+    snprintf(out, n, "%s,%03d", grouped, frac);
+}
+
+static void meter_row(lv_obj_t * card, int row, const char * name, double v,
+                      double div, const char * unit) {
+    lv_obj_t * l = lv_label_create(card);
+    lv_obj_set_style_text_color(l, lv_color_hex(THEME_TEXT_DIM), 0);
+    lv_obj_set_style_text_font(l, SF(20), 0);
+    lv_label_set_text(l, name);
+    lv_obj_align(l, LV_ALIGN_TOP_LEFT, SX(24), SY(78 + row * 52));
+
+    char val[48], txt[64];
+    if (isnan(v)) snprintf(txt, sizeof txt, "--");
+    else { fmt_reading(val, sizeof val, v / div); snprintf(txt, sizeof txt, "%s %s", val, unit); }
+    lv_obj_t * r = lv_label_create(card);
+    lv_obj_set_style_text_color(r, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(r, SF(24), 0);
+    lv_label_set_text(r, txt);
+    lv_obj_align(r, LV_ALIGN_TOP_RIGHT, SX(-24), SY(76 + row * 52));
+}
+
+static void on_meter_open(lv_event_t * e) {
+    (void)e;
+    if (s_meter_modal || !scr_root) return;
+    hide_tooltip();
+
+    /* Fetch first (local hcb_rrd, a few small requests). */
+    double e_nt  = meter_latest("elec_quantity_nt");
+    double e_lt  = meter_latest("elec_quantity_lt");
+    double gas   = meter_latest("gas_quantity");
+    double p_nt  = meter_latest("elec_quantity_nt_prod");
+    double p_lt  = meter_latest("elec_quantity_lt_prod");
+    int has_prod = !isnan(p_nt) || !isnan(p_lt);
+
+    s_meter_modal = lv_obj_create(scr_root);
+    lv_obj_remove_style_all(s_meter_modal);
+    lv_obj_set_size(s_meter_modal, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_bg_color(s_meter_modal, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(s_meter_modal, LV_OPA_60, 0);
+    lv_obj_add_flag(s_meter_modal, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(s_meter_modal, on_meter_close, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(s_meter_modal, on_meter_modal_delete, LV_EVENT_DELETE, NULL);
+
+    int rows = 3 + (has_prod ? 2 : 0);
+    lv_obj_t * card = lv_obj_create(s_meter_modal);
+    lv_obj_set_size(card, SX(560), SY(150 + rows * 52));
+    lv_obj_center(card);
+    lv_obj_set_style_bg_color(card, lv_color_hex(THEME_CARD_BG), 0);
+    lv_obj_set_style_border_color(card, lv_color_hex(THEME_BORDER), 0);
+    lv_obj_set_style_border_width(card, 1, 0);
+    lv_obj_set_style_radius(card, 16, 0);
+    lv_obj_set_style_pad_all(card, 0, 0);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(card, LV_OBJ_FLAG_CLICKABLE);       /* taps on the card don't close */
+
+    lv_obj_t * t = lv_label_create(card);
+    lv_obj_set_style_text_color(t, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(t, SF(26), 0);
+    lv_label_set_text(t, tr("Meterstanden", "Meter readings"));
+    lv_obj_align(t, LV_ALIGN_TOP_LEFT, SX(24), SY(20));
+
+    int row = 0;
+    meter_row(card, row++, tr("Stroom normaal", "Electricity normal"), e_nt, 1000.0, "kWh");
+    meter_row(card, row++, tr("Stroom laag", "Electricity low"),       e_lt, 1000.0, "kWh");
+    meter_row(card, row++, tr("Gas", "Gas"),                           gas,  1000.0, "m3");
+    if (has_prod) {
+        meter_row(card, row++, tr("Teruglevering normaal", "Export normal"), p_nt, 1000.0, "kWh");
+        meter_row(card, row++, tr("Teruglevering laag", "Export low"),       p_lt, 1000.0, "kWh");
+    }
+
+    lv_obj_t * b = lv_btn_create(card);
+    lv_obj_set_size(b, SX(160), SY(48));
+    lv_obj_align(b, LV_ALIGN_BOTTOM_MID, 0, SY(-18));
+    lv_obj_set_style_bg_color(b, lv_color_hex(THEME_BTN_BG), 0);
+    lv_obj_set_style_radius(b, 12, 0);
+    lv_obj_add_event_cb(b, on_meter_close, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * bl = lv_label_create(b);
+    lv_obj_set_style_text_color(bl, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(bl, SF(20), 0);
+    lv_label_set_text(bl, tr("Sluiten", "Close"));
+    lv_obj_center(bl);
+}
+
 static void on_back(lv_event_t * e) {
     (void)e;
     close_rate_modal();
+    meter_modal_close();
     hide_tooltip();
     ui_pop();
 }
@@ -1242,6 +1368,20 @@ lv_obj_t * screen_stats_create(void) {
     lv_obj_set_style_text_color(xl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(xl, SF(22), 0);
     lv_obj_center(xl);
+
+    /* "Meterstanden" — left of the close button, as in the stock UI. */
+    lv_obj_t * mb = lv_btn_create(scr_root);
+    lv_obj_set_size(mb, SX(210), x_h);
+    lv_obj_align(mb, LV_ALIGN_TOP_RIGHT, SX(-12) - x_w - SX(14), SY(12));
+    lv_obj_set_style_bg_color(mb, lv_color_hex(THEME_BTN_BG), 0);
+    lv_obj_set_style_radius(mb, 12, 0);
+    lv_obj_set_ext_click_area(mb, 10);
+    lv_obj_add_event_cb(mb, on_meter_open, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * mbl = lv_label_create(mb);
+    lv_label_set_text(mbl, tr("Meterstanden", "Meter readings"));
+    lv_obj_set_style_text_color(mbl, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(mbl, SF(18), 0);
+    lv_obj_center(mbl);
 
     lv_obj_t * title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(title, lv_color_hex(THEME_TEXT_HI), 0);
