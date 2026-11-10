@@ -352,3 +352,31 @@
   - **API**: Homey Pro exposes a local Web API (`http://<homey>/api/...`, bearer token / API key from the Homey developer tools); Homey Bridge/cloud-only setups need the cloud API. Decide which to support first.
   - **Reuse**: Follow the Domoticz/HA pattern (`domoticz.c`, `homeassistant.c`): poller thread, device list picker, tile binding. TLS-verified fetches (Toon CA bundle is kept current via tsc).
   - **Events**: Check whether Homey can push state changes (websocket / Flow webhook to the PWA server) instead of polling.
+
+### 29. P1 Meter Readings (Meterstanden) Like the Stock QML UI
+- **Status**: Open (requested 2026-11-10).
+- **Description**:
+  - The stock (QML) firmware shows the actual P1 meter readings (cumulative kWh import/export per tariff, gas m3). Show these in FreeToon too, e.g. on the Energy statistics screen.
+- **Investigation Points**:
+  - Source: which BoxTalk/hcb service the stock UI reads them from (meteradapter / `hdrv_p1` dataset), or the HomeWizard/ESPHome P1 integrations when those are the energy source.
+
+### 30. Energy Statistics Show Data for the Next Day (User Report)
+- **Status**: Open / Investigation needed (user report, 2026-11-10).
+- **Description**:
+  - A user sees energy statistics attributed to the following day.
+- **Investigation Points**:
+  - Likely a day-boundary / time zone issue: check how `stats.c` / the rrd queries bucket samples per day (UTC vs local, rrd bucket end timestamps that lie at the next midnight). Note the Toon 1 clock bug fixed in dc2b27f (toonui ran in Europe/London) — check whether the reporter is on a Toon 1 without that fix.
+
+### 31. Close-Button (X) Touch Area Smaller on Toon 1
+- **Status**: Open (2026-11-10).
+- **Description**:
+  - On Toon 2 the whole X button responds; on Toon 1 only the upper part seems to.
+- **Investigation Points**:
+  - Toon 1 touch goes through `toon1_touch.c` (own calibration/scaling, 800x480); check the Y mapping near the top edge. Also check the buttons: sizes are hard-coded per screen (`x_w`/`x_h` with `DISP_VER < 600`) while positions use SY(); compare `lv_obj_set_ext_click_area` per screen.
+
+### 32. Installer Takes Scripts From the Release Instead of `main`
+- **Status**: Open (2026-11-10).
+- **Description**:
+  - `install.sh` downloads the binary from the latest release but the helper scripts (ui_launcher.sh, inittab_edit.sh, integrations-install.sh, ...) from the `main` branch, so every push to `main` is live for every updating Toon and the scripts can mismatch the binary.
+- **Approach**:
+  - Ship the scripts as release assets (or a scripts tarball) and fetch them from the same release tag as the binary; keep `main` only as fallback for old releases. Pairs naturally with parked review step 4 (signed SHA256SUMS per release).
