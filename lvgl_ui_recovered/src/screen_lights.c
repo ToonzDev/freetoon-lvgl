@@ -24,7 +24,7 @@
 #define COL_CARD      THEME_CARD_BG
 #define COL_TEXT_HI   THEME_TEXT_HI
 #define COL_TEXT_DIM  THEME_TEXT_DIM
-#define COL_ON        (settings.home_light_mode ? 0xd97706 : 0xffcc44)
+#define COL_ON        THEME_ACCENT_BLUE   /* "on" = the app's accent blue, same on every device screen */
 #define COL_OFF       THEME_OFF
 #define COL_OFFLINE   (settings.home_light_mode ? 0x94a3b8 : 0x6e6e6e)
 #define COL_ACCENT    THEME_ACCENT_BLUE

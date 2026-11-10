@@ -19,7 +19,8 @@
 #define COL_CARD     THEME_CARD_BG
 #define COL_TEXT_HI  THEME_TEXT_HI
 #define COL_TEXT_DIM THEME_TEXT_DIM
-#define COL_ON       (settings.home_light_mode ? 0x16a34a : 0x2e6e3a)
+#define COL_ON       THEME_ACCENT_BLUE   /* "on", same as Lights/Hue */
+#define COL_OPEN     (settings.home_light_mode ? 0x16a34a : 0x2e6e3a)   /* blind Open stays green */
 #define COL_OFF      THEME_OFF
 
 static lv_obj_t * scr_root   = NULL;
@@ -106,7 +107,7 @@ static void build_rows(void) {
             lv_obj_align(lv_obj_get_child(row, lv_obj_get_child_cnt(row)-1), LV_ALIGN_RIGHT_MID, SX(-4), 0);
             mk_btn(row, tr("Stop", "Stop"), 0x2a4060, on_blind_stop, d->idx, SX(110));
             lv_obj_align(lv_obj_get_child(row, lv_obj_get_child_cnt(row)-1), LV_ALIGN_RIGHT_MID, SX(-132), 0);
-            mk_btn(row, tr("Open", "Open"), COL_ON, on_blind_open, d->idx, SX(120));
+            mk_btn(row, tr("Open", "Open"), COL_OPEN, on_blind_open, d->idx, SX(120));
             lv_obj_align(lv_obj_get_child(row, lv_obj_get_child_cnt(row)-1), LV_ALIGN_RIGHT_MID, SX(-250), 0);
         } else {
             int is_t1 = (settings.domoticz_tile_idx1 == d->idx);

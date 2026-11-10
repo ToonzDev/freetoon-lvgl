@@ -38,6 +38,7 @@
 #include "templogger.h"
 #include "screen_chart_24h.h"
 #include "plugin_loader.h"
+#include "theme.h"
 #include "buienradar_rain.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -730,7 +731,7 @@ static void build_pin_tile(lv_obj_t * parent, int dev_idx, int slot) {
         lv_slider_set_value(P->slider, 0, LV_ANIM_OFF);
         lv_obj_set_style_bg_color(P->slider, lv_color_hex(0x223344), LV_PART_MAIN);
         lv_obj_set_style_bg_color(P->slider,
-            lv_color_hex(D->type == HADEV_LIGHT ? 0xffcc44 : 0x44aaff), LV_PART_INDICATOR);
+            lv_color_hex(THEME_ACCENT_BLUE), LV_PART_INDICATOR);   /* lights + covers, as on the Lights screen */
         lv_obj_remove_style(P->slider, NULL, LV_PART_KNOB);
         lv_obj_add_event_cb(P->slider, on_pin_pos, LV_EVENT_RELEASED, ud);
     }
@@ -2738,7 +2739,7 @@ static void refresh_cb(lv_timer_t * t) {
                 lv_obj_set_style_text_color(P->btn_lbl, lv_color_hex(settings.home_light_mode && !D->on ? 0x1e2838 : 0xffffff), 0);
             }
             if (P->btn) lv_obj_set_style_bg_color(P->btn,
-                            lv_color_hex(D->on ? (settings.home_light_mode ? 0xd97706 : 0xffcc44)
+                            lv_color_hex(D->on ? THEME_ACCENT_BLUE   /* "on", same as Lights/Hue */
                                                : (settings.home_light_mode ? 0xd0d8e2 : 0x3a4658)), 0);
             if (P->slider && D->type == HADEV_LIGHT) {
                 if (D->on && D->brightness > 0)
