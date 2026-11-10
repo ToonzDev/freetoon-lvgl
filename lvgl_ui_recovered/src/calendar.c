@@ -786,12 +786,12 @@ static void calendar_check_birthday(const calendar_event_t * evs, int n, const c
         if (!s_bday_active_today || strcmp(s_last_bday_date, today) != 0) {
             snprintf(s_last_bday_date, sizeof s_last_bday_date, "%s", today);
             s_bday_active_today = 1;
-            printf("[calendar] Verjaardag/feest vandaag ontdekt ('%s') -> 24h ballonnen actief!\n", found_summary);
+            fprintf(stderr, "[calendar] Verjaardag/feest vandaag ontdekt ('%s') -> 24h ballonnen actief!\n", found_summary);
             anim_overlay_trigger(ANIM_EFFECT_BALLOONS, 0); /* 0 = continuous 24h mode */
         }
     } else {
         if (s_bday_active_today) {
-            printf("[calendar] Verjaardag voorbij -> animatie gestopt\n");
+            fprintf(stderr, "[calendar] Verjaardag voorbij -> animatie gestopt\n");
             s_bday_active_today = 0;
             s_last_bday_date[0] = '\0';
             if (anim_overlay_get_current() == ANIM_EFFECT_BALLOONS) {
@@ -808,10 +808,25 @@ static volatile int    g_cal_last_ok = 0;   /* result of the last refresh */
 
 static int calendar_refresh_locked(void);
 
+static int g_cal_last_n = 0;               /* events in the last good refresh */
+static volatile int g_cal_partial = 0;     /* last refresh missed some sources */
+static int g_cal_have_complete = 0;        /* a refresh with every source has been published */
+
 int calendar_refresh_now(void) {
+    static int fail_logged = 0;
     pthread_mutex_lock(&cal_refresh_mtx);
     int ok = calendar_refresh_locked();
     g_cal_last_ok = ok;
+    /* One line per successful refresh (every 30 min); a failure is logged
+     * once, not on every 10 s retry while offline. */
+    if (ok) {
+        fprintf(stderr, "[calendar] refreshed%s: %d upcoming events shown\n",
+                g_cal_partial ? " (incomplete, retry in 1 min)" : "", g_cal_last_n);
+        fail_logged = 0;
+    } else if (settings.calendar_enabled && !fail_logged) {
+        fprintf(stderr, "[calendar] refresh failed (retrying) - keeping previous events\n");
+        fail_logged = 1;
+    }
     pthread_mutex_unlock(&cal_refresh_mtx);
     return ok;
 }
@@ -824,7 +839,18 @@ static int calendar_refresh_locked(void) {
     if (!buf) return 0;
     static calendar_event_t tmp[CAL_TMP_MAX];
     int n = 0, ok = 0;
+    int failed = 0;              /* sources that could not be fetched this round */
     char today[12]; today_str(today, sizeof today);
+
+    /* "Keep the previous complete events" only holds for the same sources:
+     * after the user edits the calendar URLs/entity, start over. */
+    static char s_src_sig[sizeof settings.calendar_ics_url + sizeof settings.calendar_ha_entity + 2];
+    char sig[sizeof s_src_sig];
+    snprintf(sig, sizeof sig, "%s|%s", settings.calendar_ha_entity, settings.calendar_ics_url);
+    if (strcmp(sig, s_src_sig) != 0) {
+        memcpy(s_src_sig, sig, sizeof sig);
+        g_cal_have_complete = 0;
+    }
 
     if (settings.calendar_ha_entity[0]) {
         char start[24], end[24];
@@ -832,12 +858,16 @@ static int calendar_refresh_locked(void) {
         iso_at(end, sizeof end, 92);
         if (ha_fetch_calendar(settings.calendar_ha_entity, start, end, buf, CAL_SCRATCH) == 0) {
             parse_ha(buf, tmp, &n, today); ok = 1;
+        } else {
+            failed++;
+            fprintf(stderr, "[calendar] HA calendar: fetch failed\n");
         }
     }
     if (settings.calendar_ics_url[0]) {
         char urls[sizeof settings.calendar_ics_url];
         snprintf(urls, sizeof urls, "%s", settings.calendar_ics_url);
         char * saveptr = NULL;
+        int feed_no = 0;
         for (char * u = strtok_r(urls, "\r\n;,", &saveptr); u; u = strtok_r(NULL, "\r\n;,", &saveptr)) {
             while (*u == ' ' || *u == '\t') u++;
             size_t ulen = strlen(u);
@@ -852,7 +882,19 @@ static int calendar_refresh_locked(void) {
             }
 
             buf[0] = 0;
-            if (http_fetch_to(target_url, buf, CAL_SCRATCH, 20) == 0 && strstr(buf, "VEVENT")) {
+            feed_no++;
+            /* 45 s: a big feed over TLS on a Toon 1 (400 MHz) that is also
+             * starting the UI and other fetches timed out at 20 s (curl exit
+             * 28), dropping that whole feed. */
+            int frc = http_fetch_to(target_url, buf, CAL_SCRATCH, 45);
+            if (frc != 0 || !strstr(buf, "VEVENT")) {
+                failed++;
+                /* Never log the URL: private iCal links carry a secret token. */
+                fprintf(stderr, "[calendar] feed %d: %s (%u bytes)\n", feed_no,
+                        frc != 0 ? "fetch failed" : "no VEVENT in response",
+                        (unsigned)strlen(buf));
+            } else {
+                int before = n;
                 /* RFC 5545: unfold lines broken with CRLF/LF followed by space or tab */
                 char * r = buf, * w = buf;
                 while (*r) {
@@ -866,16 +908,28 @@ static int calendar_refresh_locked(void) {
                 }
                 *w = 0;
                 parse_ics_cal(buf, tmp, &n, today);
+                fprintf(stderr, "[calendar] feed %d: %u bytes, %d upcoming events\n",
+                        feed_no, (unsigned)strlen(buf), n - before);
                 ok = 1;
             }
         }
     }
 
-    if (ok) {
+    /* Some sources fetched, some not (typically a timeout on one feed):
+     * that used to count as success, so the missing feed's events stayed
+     * gone until the next refresh 30 min later. Now a partial result never
+     * replaces an earlier complete one, and the poller retries in a minute.
+     * With nothing complete yet (boot), the partial set is shown meanwhile. */
+    g_cal_partial = (ok && failed > 0);
+    if (ok && (!g_cal_partial || !g_cal_have_complete)) {
         qsort(tmp, n, sizeof tmp[0], ev_cmp);
         if (n > CAL_MAX) n = CAL_MAX;
         calendar_publish(tmp, n, 1);            /* applied on the UI thread */
+        g_cal_last_n = n;
+        if (!g_cal_partial) g_cal_have_complete = 1;
         calendar_check_birthday(tmp, n, today);
+    } else if (ok) {
+        fprintf(stderr, "[calendar] %d source(s) failed - keeping the previous complete events\n", failed);
     } else {
         calendar_publish_failed();
     }
@@ -976,6 +1030,7 @@ static void * cal_thread(void * arg) {
             g_cal_wake = 0;
             calendar_refresh_now();
             since_refresh = 0;
+            if (g_cal_partial) since_refresh = 1800 - 60;   /* retry the missing feed(s) soon */
             if (has_source && !g_cal_last_ok) {
                 /* WiFi still connecting or temporary network hiccup at boot:
                  * retry quickly (every 10s) until initial data is acquired */
