@@ -1455,16 +1455,26 @@ static void on_uimode_confirm_yes(lv_event_t * e) {
         system("/mnt/data/ot_mode_switch.sh off >> /tmp/ot_mode_switch.log 2>&1");
     } else if (access("/mnt/data/inittab_edit.sh", X_OK) == 0) {
         system("/mnt/data/inittab_edit.sh drop qbri 2>/dev/null");
-        system("pkill -9 -x quby_bridge 2>/dev/null || true");
-        system("umount -l /dev/ttymxc0 2>/dev/null || true");
+        /* killall, not pkill (missing on Toon 1). After dropping the PTY
+         * mount, restart happ_thermstat so it reopens the real UART
+         * instead of staying on the dead PTY (no heating until reboot). */
+        system("killall -9 quby_bridge 2>/dev/null; "
+               "if grep -q ' /dev/ttymxc0 ' /proc/mounts 2>/dev/null; then "
+               "sleep 1; umount -l /dev/ttymxc0 2>/dev/null; sleep 1; "
+               "killall -9 happ_thermstat 2>/dev/null; fi; true");
     } else {
         system("cp -p /etc/inittab /etc/inittab.bak 2>/dev/null; "
                "grep -v '^qbri:' /etc/inittab > /etc/inittab.new 2>/dev/null || true; "
                "if [ -s /etc/inittab.new ] && [ $(wc -l < /etc/inittab.new 2>/dev/null || echo 0) -ge 15 ]; then "
                "  sync; mv -f /etc/inittab.new /etc/inittab && sync && (kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true); "
                "else rm -f /etc/inittab.new 2>/dev/null; fi");
-        system("pkill -9 -x quby_bridge 2>/dev/null || true");
-        system("umount -l /dev/ttymxc0 2>/dev/null || true");
+        /* killall, not pkill (missing on Toon 1). After dropping the PTY
+         * mount, restart happ_thermstat so it reopens the real UART
+         * instead of staying on the dead PTY (no heating until reboot). */
+        system("killall -9 quby_bridge 2>/dev/null; "
+               "if grep -q ' /dev/ttymxc0 ' /proc/mounts 2>/dev/null; then "
+               "sleep 1; umount -l /dev/ttymxc0 2>/dev/null; sleep 1; "
+               "killall -9 happ_thermstat 2>/dev/null; fi; true");
     }
     snprintf(settings.ot_bridge_mode, sizeof(settings.ot_bridge_mode), "off");
 
@@ -1583,12 +1593,12 @@ static void open_marketplace(lv_event_t * e) {
 /* Crypto tile-tap: live-search picker for the crypto integration's coins. */
 static void open_crypto_picker(lv_event_t * e) {
     (void)e;
-    ui_push(screen_crypto_picker_create());
+    ui_push_owned(screen_crypto_picker_create());
 }
 
 static void open_templogger(lv_event_t * e) {
     (void)e;
-    ui_push(screen_chart_24h_create(tile_slots_integration_by_id("temperaturelogger")));
+    ui_push_owned(screen_chart_24h_create(tile_slots_integration_by_id("temperaturelogger")));
 }
 
 /* Programma tile-tap: push the weekly thermostat schedule screen directly. */
@@ -1864,7 +1874,7 @@ static void on_hue_enabled_change(lv_event_t * e) {
 
 static void on_hue_view_click(lv_event_t * e) {
     (void)e;
-    ui_push(screen_hue_create());
+    ui_push_owned(screen_hue_create());
 }
 
 static void on_hue_test_click(lv_event_t * e) {

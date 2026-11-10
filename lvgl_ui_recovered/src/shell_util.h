@@ -88,4 +88,41 @@ static inline int sh_is_http_url(const char * s) {
     return 1;
 }
 
+#ifndef WASM_BUILD
+#include <dirent.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+/* pkill -f replacement: Toon 1's BusyBox has no pkill, so system("pkill ...")
+ * silently did nothing there. Sends `sig` to every process (other than us)
+ * whose command line contains `needle`. Returns how many were signalled.
+ * Same idea as kill_cmdline() in the shell scripts. */
+static inline int proc_kill_cmdline(const char * needle, int sig) {
+    if (!needle || !*needle) return 0;
+    DIR * d = opendir("/proc");
+    if (!d) return 0;
+    pid_t self = getpid();
+    int n = 0;
+    struct dirent * de;
+    while ((de = readdir(d)) != NULL) {
+        char * end;
+        long pid = strtol(de->d_name, &end, 10);
+        if (*end || pid <= 1 || (pid_t)pid == self) continue;
+        char path[64], buf[512];
+        snprintf(path, sizeof path, "/proc/%ld/cmdline", pid);
+        FILE * f = fopen(path, "r");
+        if (!f) continue;
+        size_t len = fread(buf, 1, sizeof buf - 1, f);
+        fclose(f);
+        for (size_t i = 0; i < len; i++) if (!buf[i]) buf[i] = ' ';   /* argv NULs */
+        buf[len] = 0;
+        if (strstr(buf, needle) && kill((pid_t)pid, sig) == 0) n++;
+    }
+    closedir(d);
+    return n;
+}
+#endif
+
 #endif

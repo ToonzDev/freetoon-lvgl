@@ -54,6 +54,14 @@ static void on_pick(lv_event_t * e) {
     ui_pop();
 }
 
+/* The pick_item blocks used to leak: on every open and on every refresh
+ * (lv_obj_clean). Free each one with its button. */
+static void on_item_delete(lv_event_t * e) {
+    lv_obj_t * btn = lv_event_get_target(e);
+    free(lv_obj_get_user_data(btn));
+    lv_obj_set_user_data(btn, NULL);
+}
+
 /* Fetch entities from HA and populate the list. */
 static void load_entities(void) {
     lv_obj_clean(lst_results);
@@ -94,6 +102,7 @@ static void load_entities(void) {
         lv_obj_set_user_data(btn, it);
 
         lv_obj_add_event_cb(btn, on_pick, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(btn, on_item_delete, LV_EVENT_DELETE, NULL);
 
         /* Style the entity_id line smaller and dimmer — it's line 1 of the
          * label. LV_LIST's default button label is a single lv_label, so the
@@ -113,9 +122,14 @@ static void on_refresh(lv_event_t * e) {
     load_entities();
 }
 
+/* The stack deletes this screen when it leaves (ui_push_owned), including
+ * via auto-home, which never runs on_back: restore the top layer this
+ * screen hid, unless the dim screen is up (it keeps the top layer hidden
+ * on purpose; waking restores it). */
 static void on_scr_delete(lv_event_t * e) {
-    (void)e;
-    lv_obj_clear_flag(lv_layer_top(), LV_OBJ_FLAG_HIDDEN);
+    if (!ui_is_dimmed()) lv_obj_clear_flag(lv_layer_top(), LV_OBJ_FLAG_HIDDEN);
+    if (lv_event_get_target(e) != scr_root) return;
+    scr_root = lbl_title = lst_results = spinner = NULL;
 }
 
 lv_obj_t * screen_ha_picker_create(void) {
@@ -191,7 +205,7 @@ void screen_ha_picker_open(const char * domain, lv_obj_t * target_ta) {
     g_target_ta = target_ta;
     g_add_type  = -1;
     lv_obj_add_flag(lv_layer_top(), LV_OBJ_FLAG_HIDDEN);
-    ui_push(screen_ha_picker_create());
+    ui_push_owned(screen_ha_picker_create());
 }
 
 /* "Add device" mode — the picked entity is appended to the device list as
@@ -203,5 +217,5 @@ void screen_ha_picker_open_add(const char * domain, int dev_type) {
     g_target_ta = NULL;
     g_add_type  = dev_type;
     lv_obj_add_flag(lv_layer_top(), LV_OBJ_FLAG_HIDDEN);
-    ui_push(screen_ha_picker_create());
+    ui_push_owned(screen_ha_picker_create());
 }

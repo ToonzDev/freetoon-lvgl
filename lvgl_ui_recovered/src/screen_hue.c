@@ -249,6 +249,14 @@ static void on_scr_event(lv_event_t * e) {
             lv_timer_del(refresh_timer);
             refresh_timer = NULL;
         }
+    } else if (c == LV_EVENT_DELETE && lv_event_get_target(e) == scr_root) {
+        /* Built per open, deleted by the stack (ui_push_owned) when it
+         * leaves. Forget every widget pointer of this instance. */
+        if (refresh_timer) { lv_timer_del(refresh_timer); refresh_timer = NULL; }
+        scr_root = list_box = lbl_status = empty_hint = NULL;
+        memset(rows, 0, sizeof rows);
+        row_count = 0;
+        g_built_count = -1;
     }
 }
 

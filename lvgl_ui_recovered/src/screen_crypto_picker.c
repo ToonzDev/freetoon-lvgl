@@ -14,10 +14,12 @@
 #include "i18n.h"
 #include "settings.h"
 #include "theme.h"
+#include "shell_util.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <signal.h>
 
 #define COINS_TSV   "/mnt/data/integrations/crypto/coins.tsv"
 #define CRYPTO_CONF "/mnt/data/integrations/crypto/crypto.conf"
@@ -34,6 +36,13 @@ static lv_obj_t * kb;
 static char sel_id[MAX_PICK][64];
 static char sel_sym[MAX_PICK][24];
 static int  sel_n = 0;
+
+/* Result buttons carry a malloc'd "id\tsym" as user data. */
+static void on_btn_delete(lv_event_t * e) {
+    lv_obj_t * btn = lv_event_get_target(e);
+    free(lv_obj_get_user_data(btn));
+    lv_obj_set_user_data(btn, NULL);
+}
 
 static int sel_index(const char * id) {
     for (int i = 0; i < sel_n; i++) if (strcmp(sel_id[i], id) == 0) return i;
@@ -93,11 +102,14 @@ static void refilter(void) {
         lv_obj_t * btn = lv_list_add_btn(lst_results, NULL, label);
         lv_obj_set_style_bg_color(btn, lv_color_hex(THEME_ROW_BG), 0);
         lv_obj_set_style_text_color(btn, lv_color_hex(THEME_TEXT_HI), 0);
-        /* stash the id+sym on the button via user_data (id\tsym, heap copy) */
+        /* stash the id+sym on the button via user_data (id\tsym, heap copy);
+         * freed with the button (the list is rebuilt on every keystroke). */
         char * ud = malloc(96);
+        if (!ud) continue;
         snprintf(ud, 96, "%s\t%s", id, sym);
         lv_obj_set_user_data(btn, ud);
         lv_obj_add_event_cb(btn, on_pick, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(btn, on_btn_delete, LV_EVENT_DELETE, NULL);
         shown++;
     }
     fclose(f);
@@ -187,15 +199,26 @@ static void save_and_reload(void) {
     for (int i = 0; i < sel_n; i++)
         fprintf(out, "COIN=%s,%s,0,below,off\n", sel_id[i], sel_sym[i]);
     fclose(out);
-    /* reload the daemon (init respawns it) so it picks up the new coins */
-    system("pkill -f integrations/crypto/crypto 2>/dev/null");
+    /* reload the daemon (init respawns it) so it picks up the new coins.
+     * Not pkill: it does not exist on Toon 1, where this silently did nothing. */
+#ifndef WASM_BUILD
+    proc_kill_cmdline("/mnt/data/integrations/crypto/", SIGTERM);
+#endif
 }
 
 static void on_save(lv_event_t * e) { (void)e; save_and_reload(); ui_pop(); }
 static void on_back(lv_event_t * e) { (void)e; ui_pop(); }
 
+/* Built per open and deleted by the stack (ui_push_owned) when it leaves;
+ * forget this instance's widgets so nothing touches them afterwards. */
+static void on_scr_delete(lv_event_t * e) {
+    if (lv_event_get_target(e) != scr_root) return;
+    scr_root = ta_search = lst_results = lbl_picked = kb = NULL;
+}
+
 lv_obj_t * screen_crypto_picker_create(void) {
     scr_root = lv_obj_create(NULL);
+    lv_obj_add_event_cb(scr_root, on_scr_delete, LV_EVENT_DELETE, NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(THEME_BG), 0);
     lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
 

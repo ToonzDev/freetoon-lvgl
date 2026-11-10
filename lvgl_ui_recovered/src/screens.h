@@ -9,6 +9,11 @@
 
 void ui_push(lv_obj_t * scr);
 void ui_pop(void);
+/* Push a screen that is built fresh on every open. The stack deletes it
+ * (async) once it leaves the stack — back button, auto-home, anything — so
+ * the screen must free its timers/data in an LV_EVENT_DELETE handler and
+ * must not cache its root in a static it reuses later. */
+void ui_push_owned(lv_obj_t * scr);
 int  ui_is_dimmed(void);
 /* Apply settings.home_theme live (swap dark<->stock home, no restart). */
 void ui_apply_home_theme(void);

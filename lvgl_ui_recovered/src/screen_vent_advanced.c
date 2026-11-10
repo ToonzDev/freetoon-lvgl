@@ -272,8 +272,23 @@ static void build_rows(void) {
     }
 }
 
+/* Deleted by the stack (ui_push_owned) whenever it leaves, also via
+ * auto-home, which never calls on_back: that path used to leave the 1 s
+ * timer running on freed labels and leak it on the next open. */
+static void on_scr_delete(lv_event_t * e) {
+    if (lv_event_get_target(e) != scr_root) return;
+    if (row_refresh_timer) { lv_timer_del(row_refresh_timer); row_refresh_timer = NULL; }
+    scr_root = list_col = lbl_status = NULL;
+    modal_backdrop = modal_value_lbl = modal_err_lbl = NULL;
+    modal_idx = -1;
+    memset(row_value_lbl, 0, sizeof row_value_lbl);
+    memset(row_label_lbl, 0, sizeof row_label_lbl);
+}
+
 lv_obj_t * screen_vent_advanced_create(void) {
+    if (row_refresh_timer) { lv_timer_del(row_refresh_timer); row_refresh_timer = NULL; }
     scr_root = lv_obj_create(NULL);
+    lv_obj_add_event_cb(scr_root, on_scr_delete, LV_EVENT_DELETE, NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(THEME_BG), 0);
     lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
 

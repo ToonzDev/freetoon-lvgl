@@ -100,9 +100,23 @@ static void refresh_cb(lv_timer_t * t) {
     }
 }
 
+/* Built fresh on every open and pushed with ui_push_owned(): the stack
+ * deletes it when it leaves. Free the 1 s timer with it (it used to keep
+ * running forever, one more per open). Only touch the statics if this is
+ * still the current instance. */
+static void on_scr_delete(lv_event_t * e) {
+    if (lv_event_get_target(e) != scr_root) return;
+    if (refresh_timer) { lv_timer_del(refresh_timer); refresh_timer = NULL; }
+    scr_root = NULL;
+    lbl_status = NULL;
+    for (int i = 0; i < FAN_BTN_COUNT; i++) fan_btns[i] = NULL;
+}
+
 /* ── screen builder ───────────────────────────────────────────── */
 lv_obj_t * screen_efanlamp_create(void) {
+    if (refresh_timer) { lv_timer_del(refresh_timer); refresh_timer = NULL; }
     scr_root = lv_obj_create(NULL);
+    lv_obj_add_event_cb(scr_root, on_scr_delete, LV_EVENT_DELETE, NULL);
     lv_obj_set_size(scr_root, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(COL_BG), 0);
     lv_obj_set_style_bg_opa(scr_root, LV_OPA_COVER, 0);

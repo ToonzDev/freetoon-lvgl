@@ -127,9 +127,13 @@ static void hide_tooltip(void) {
     s_tooltip_last_id = -1;
 }
 
+/* The auto-hide timer lives as long as the screen and is paused, not
+ * deleted, after it fires. It used to be a repeat_count=1 timer: LVGL frees
+ * those itself after the tick, but s_tooltip_timer kept pointing at it, so
+ * the next tap wrote into freed memory and leaving the screen double-freed. */
 static void tooltip_timer_cb(lv_timer_t * t) {
-    (void)t;
     hide_tooltip();
+    lv_timer_pause(t);
 }
 
 static void on_scr_delete(lv_event_t * e) {
@@ -276,7 +280,6 @@ static void show_tooltip(int b, int bar_screen_x, int bar_screen_y) {
     /* Start / reset 5-second auto-hide timer */
     if (!s_tooltip_timer) {
         s_tooltip_timer = lv_timer_create(tooltip_timer_cb, 5000, NULL);
-        lv_timer_set_repeat_count(s_tooltip_timer, 1);
     } else {
         lv_timer_reset(s_tooltip_timer);
         lv_timer_resume(s_tooltip_timer);

@@ -22,12 +22,42 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#ifndef WASM_BUILD
+#include <pthread.h>
+#endif
 
 static lv_obj_t * scr_root = NULL;
 static lv_obj_t * list_col = NULL;
 static lv_obj_t * lbl_status = NULL;
 static lv_timer_t * refresh_timer = NULL;
 static char        last_json[16384];
+
+/* The OTGW fetch (up to 8 s when the gateway hangs) runs on a short-lived
+ * worker thread, never on the LVGL thread: it used to run inline every 4 s,
+ * for the rest of uptime once the screen had been opened, freezing the UI
+ * whenever OTGW stopped answering. The UI timer only kicks a fetch while
+ * this screen is the visible one and picks up the finished result. */
+#define FETCH_EVERY_MS 4000
+static char           fetch_buf[16384];        /* written by the worker */
+static volatile int   fetch_busy = 0;          /* worker running */
+static volatile int   fetch_result = 0;        /* 0 none, 1 ok, -1 failed */
+static uint32_t       last_kick_ms = 0;
+#ifndef WASM_BUILD
+static pthread_mutex_t fetch_mtx = PTHREAD_MUTEX_INITIALIZER;
+
+static void * fetch_worker(void * arg) {
+    char * url = (char *)arg;
+    static char tmp[sizeof fetch_buf];         /* only one worker at a time */
+    int rc = http_fetch(url, tmp, sizeof tmp);
+    free(url);
+    pthread_mutex_lock(&fetch_mtx);
+    if (rc == 0) memcpy(fetch_buf, tmp, sizeof fetch_buf);
+    fetch_result = (rc == 0) ? 1 : -1;
+    fetch_busy = 0;
+    pthread_mutex_unlock(&fetch_mtx);
+    return NULL;
+}
+#endif
 
 /* Extract next "name"/"value"/"unit" triple starting at *p; advances *p past it.
    Returns 1 on success, 0 at end-of-stream. */
@@ -108,15 +138,48 @@ static void rebuild_list(void) {
 
 static void on_refresh(lv_timer_t * t) {
     (void)t;
+    /* Only while this screen is showing: no network or rebuilds in the
+     * background (dimmed, or a sub-screen on top). */
+    if (!scr_root || lv_scr_act() != scr_root) return;
     if (!settings.otgw_host[0]) {
         if (lbl_status) lv_label_set_text(lbl_status, tr("geen OTGW-host ingesteld", "no OTGW host configured"));
         return;
     }
+#ifndef WASM_BUILD
+    /* Pick up a finished fetch. */
+    int res = 0;
+    pthread_mutex_lock(&fetch_mtx);
+    if (fetch_result != 0) {
+        res = fetch_result;
+        if (res > 0) memcpy(last_json, fetch_buf, sizeof last_json);
+        fetch_result = 0;
+    }
+    pthread_mutex_unlock(&fetch_mtx);
+    if (res > 0) rebuild_list();
+    else if (res < 0 && lbl_status) lv_label_set_text(lbl_status, tr("ophalen mislukt", "fetch failed"));
+
+    /* Kick the next one. */
+    uint32_t now = lv_tick_get();
+    if (!fetch_busy && (last_kick_ms == 0 || now - last_kick_ms >= FETCH_EVERY_MS)) {
+        char * url = malloc(160);
+        if (!url) return;
+        snprintf(url, 160, "http://%s/api/v1/otgw/otmonitor", settings.otgw_host);
+        fetch_busy = 1;
+        last_kick_ms = now ? now : 1;
+        pthread_t th;
+        if (pthread_create(&th, NULL, fetch_worker, url) == 0) {
+            pthread_detach(th);
+        } else {
+            free(url);
+            fetch_busy = 0;
+        }
+    }
+#else
     char url[160];
     snprintf(url, sizeof(url), "http://%s/api/v1/otgw/otmonitor", settings.otgw_host);
-    int rc = http_fetch(url, last_json, sizeof(last_json));
-    if (rc == 0) rebuild_list();
+    if (http_fetch(url, last_json, sizeof(last_json)) == 0) rebuild_list();
     else if (lbl_status) lv_label_set_text(lbl_status, tr("ophalen mislukt", "fetch failed"));
+#endif
 }
 
 static void on_back(lv_event_t * e) {
@@ -124,8 +187,20 @@ static void on_back(lv_event_t * e) {
     ui_pop();
 }
 
+/* Built per open; the stack deletes it when it leaves (ui_push_owned).
+ * Before, nothing ever deleted the screen or its timer. A fetch still in
+ * flight only writes fetch_buf, never widgets, so it can finish safely. */
+static void on_scr_delete(lv_event_t * e) {
+    if (lv_event_get_target(e) != scr_root) return;
+    if (refresh_timer) { lv_timer_del(refresh_timer); refresh_timer = NULL; }
+    scr_root = list_col = lbl_status = NULL;
+}
+
 lv_obj_t * screen_heater_advanced_create(void) {
+    if (refresh_timer) { lv_timer_del(refresh_timer); refresh_timer = NULL; }
+    last_kick_ms = 0;
     scr_root = lv_obj_create(NULL);
+    lv_obj_add_event_cb(scr_root, on_scr_delete, LV_EVENT_DELETE, NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(THEME_BG), 0);
     lv_obj_set_style_pad_all(scr_root, 0, 0);
 
@@ -173,9 +248,10 @@ lv_obj_t * screen_heater_advanced_create(void) {
                           LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     lv_obj_set_style_pad_row(list_col, 0, 0);
 
-    /* first fetch + 4s refresh */
-    on_refresh(NULL);
-    refresh_timer = lv_timer_create(on_refresh, 4000, NULL);
+    /* The timer runs every 500 ms but only picks up results / kicks a
+     * background fetch every 4 s, and only while this screen is showing.
+     * The first tick (right after the screen is loaded) starts a fetch. */
+    refresh_timer = lv_timer_create(on_refresh, 500, NULL);
 
     return scr_root;
 }

@@ -485,6 +485,89 @@ static const struct { const char * name; create_fn fn; } SCREENS[] = {
 };
 #define N_SCREENS ((int)(sizeof SCREENS / sizeof SCREENS[0]))
 
+/* ---- soak test --------------------------------------------------------
+ * `toonui-sim soak [rounds]`: opens and closes every per-open ("owned")
+ * screen many times, via the back path (ui_pop), via auto-home, and via
+ * auto-home while the dim screen is up, then checks that the number of
+ * LVGL screens and timers stays flat from round to round. Leaked screens
+ * stay reachable through LVGL's screen list, so LeakSanitizer can't see
+ * them; these counts can. Build with SAN=-fsanitize=address (see Makefile)
+ * to also catch use-after-free in timers / delete handlers. Exit code 0 =
+ * stable, 1 = growth. */
+static lv_obj_t * soak_chart(void) { return screen_chart_24h_create(NULL); }
+static lv_obj_t * soak_ha_picker(void) { screen_ha_picker_open("light", NULL); return NULL; }
+
+static int count_timers(void) {
+    int n = 0;
+    for (lv_timer_t * t = lv_timer_get_next(NULL); t; t = lv_timer_get_next(t)) n++;
+    return n;
+}
+
+static void soak_advance(uint32_t ms) {          /* let idle time pass */
+    lv_tick_inc(ms);
+    lv_timer_handler();
+}
+
+static int sim_soak(int rounds) {
+    static const struct { const char * name; create_fn fn; } OWNED[] = {
+        { "efanlamp",    screen_efanlamp_create },
+        { "chart_24h",   soak_chart },
+        { "hue",         screen_hue_create },
+        { "crypto_pick", screen_crypto_picker_create },
+        { "vent_adv",    screen_vent_advanced_create },
+        { "heater",      screen_heater_advanced_create },
+        { "ha_picker",   soak_ha_picker },       /* pushes itself */
+    };
+    const int n_owned = (int)(sizeof OWNED / sizeof OWNED[0]);
+    settings.auto_dim_enabled  = 0;
+    settings.auto_home_enabled = 0;
+    ui_init();
+    pump(5);
+    lv_disp_t * d = lv_disp_get_default();
+    int base_scr = -1, base_tmr = -1, grew = 0;
+
+    for (int r = 1; r <= rounds; r++) {
+        /* 1. open + back, every screen */
+        for (int i = 0; i < n_owned; i++) {
+            lv_obj_t * s = OWNED[i].fn();
+            if (s) ui_push_owned(s);
+            pump(3);
+            ui_pop();
+            pump(2);
+        }
+        /* 2. two stacked screens dropped by auto-home (no back button) */
+        settings.auto_home_enabled = 1; settings.auto_home_seconds = 1;
+        settings.auto_dim_enabled  = 0;
+        ui_mark_activity();
+        ui_push_owned(screen_efanlamp_create());
+        ui_push_owned(screen_vent_advanced_create());
+        pump(3);
+        soak_advance(1200);
+        ui_idle_tick();
+        pump(2);
+        /* 3. dim first, then auto-home collapses the screen under the dim */
+        settings.auto_dim_enabled = 1;  settings.auto_dim_seconds  = 1;
+        settings.auto_home_seconds = 3;
+        ui_mark_activity();
+        ui_push_owned(screen_heater_advanced_create());
+        pump(3);
+        soak_advance(1200); ui_idle_tick();      /* dims */
+        soak_advance(2500); ui_idle_tick();      /* auto-home under the dim */
+        ui_wake_now(); ui_idle_tick();           /* wake -> home */
+        pump(2);
+        settings.auto_dim_enabled = 0; settings.auto_home_enabled = 0;
+        ui_mark_activity();
+
+        int scr = (int)d->screen_cnt, tmr = count_timers();
+        if (r == 2) { base_scr = scr; base_tmr = tmr; }
+        printf("[soak] round %3d: screens=%d timers=%d\n", r, scr, tmr);
+        if (r > 2 && (scr > base_scr || tmr > base_tmr)) grew = 1;
+    }
+    printf("[soak] %s (baseline after round 2: screens=%d timers=%d)\n",
+           grew ? "FAIL: screens/timers keep growing" : "OK: stable", base_scr, base_tmr);
+    return grew ? 1 : 0;
+}
+
 static void render_one(create_fn fn, const char * out) {
     lv_obj_t * scr = fn();
     lv_scr_load(scr);
@@ -594,6 +677,12 @@ int main(int argc, char ** argv) {
                             getenv("DISPLAY") ? getenv("DISPLAY") : "<unset>");
             return 1;
         }
+    }
+
+    if (!strcmp(mode, "soak")) {
+        int rounds = (argc > 2) ? atoi(argv[2]) : 30;
+        if (rounds < 2) rounds = 2;
+        return sim_soak(rounds);
     }
 
     if (!strcmp(mode, "all")) {

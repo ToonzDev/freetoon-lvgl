@@ -21,7 +21,23 @@
 
 #define STACK_MAX 8
 static lv_obj_t * stack[STACK_MAX];
+/* owned[i]: stack[i] was pushed with ui_push_owned() — a screen built fresh
+ * on every open. The stack deletes it once it leaves the stack (back,
+ * auto-home collapse), so its LV_EVENT_DELETE handler can free timers and
+ * per-screen data. Singleton screens (home, settings, dim, ...) use plain
+ * ui_push() and are never deleted here. */
+static unsigned char owned[STACK_MAX];
 static int sp = 0;
+
+/* Delete an owned screen that has just left the stack. Async: we may be
+ * inside one of its own event callbacks (its back button), and the screen
+ * must no longer be the active one — callers load the new screen first. */
+static void release_screen(lv_obj_t * scr, int was_owned) {
+    if (!scr || !was_owned) return;
+    for (int i = 0; i < sp; i++) if (stack[i] == scr) return;   /* still in use */
+    if (scr == lv_scr_act()) return;
+    lv_obj_del_async(scr);
+}
 
 /* Request a clean UI restart. Drops a marker so ui_launcher.sh's crash-loop
  * guard doesn't mistake this intentional _exit(0) for a crash (3 fast exits
@@ -111,16 +127,29 @@ static inline int is_sleep_or_away(void) {
     return (toon_state.active_state == 2 || toon_state.active_state == 3);
 }
 
-void ui_push(lv_obj_t * scr) {
-    if (sp >= STACK_MAX || !scr) return;
+static void push_impl(lv_obj_t * scr, int own) {
+    if (!scr) return;
+    if (sp >= STACK_MAX) {
+        /* Full stack: an owned screen nobody will ever pop would leak. */
+        if (own) lv_obj_del_async(scr);
+        return;
+    }
+    owned[sp] = (unsigned char)own;
     stack[sp++] = scr;
     lv_scr_load(scr);
 }
 
+void ui_push(lv_obj_t * scr)       { push_impl(scr, 0); }
+void ui_push_owned(lv_obj_t * scr) { push_impl(scr, 1); }
+
 void ui_pop(void) {
     if (sp <= 1) return;
     sp--;
+    lv_obj_t * gone = stack[sp];
+    int gone_owned = owned[sp];
+    owned[sp] = 0;
     lv_scr_load(stack[sp - 1]);
+    release_screen(gone, gone_owned);
 }
 
 static volatile int wake_pending = 0;
@@ -251,14 +280,27 @@ void ui_idle_tick(void) {
             int on_subscreen = is_dimmed ? (sp > 2) : (sp > 1);
             if (on_subscreen) {
                 fprintf(stderr, "[ui] auto-home after %u ms idle\n", elapsed_ms);
+                /* Sub-screens dropped here never get their back button, so
+                 * owned ones must be released by the stack itself. */
+                lv_obj_t * dropped[STACK_MAX];
+                unsigned char dropped_own[STACK_MAX];
+                int nd = 0;
+                int last = is_dimmed ? sp - 1 : sp;      /* dim screen stays on top */
+                for (int i = 1; i < last; i++) {
+                    dropped[nd] = stack[i];
+                    dropped_own[nd++] = owned[i];
+                }
                 if (is_dimmed) {
                     /* Keep the dim screen on top; make home the only thing under it. */
                     stack[1] = stack[sp - 1];
+                    owned[1] = owned[sp - 1];
                     sp = 2;
                 } else {
                     sp = 1;
                     lv_scr_load(stack[0]);
                 }
+                for (int i = sp; i < STACK_MAX; i++) owned[i] = 0;
+                for (int i = 0; i < nd; i++) release_screen(dropped[i], dropped_own[i]);
             }
             /* Also dismiss any top-layer modals (calendar, waste, news) and
              * return home's swipe page to main page (CR2). */

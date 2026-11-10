@@ -58,6 +58,7 @@ gmtime_r@GLIBC_2.4
 inet_addr@GLIBC_2.4
 inet_pton@GLIBC_2.4
 ioctl@GLIBC_2.4
+kill@GLIBC_2.4
 listen@GLIBC_2.4
 localtime@GLIBC_2.4
 localtime_r@GLIBC_2.4

@@ -303,19 +303,17 @@ static void load_series_data(void) {
     }
 }
 
+/* Each screen instance owns the ctx it was created with (passed as the
+ * event user data). The screen is deleted asynchronously by the stack
+ * (ui_push_owned), possibly after a new instance already set g_ctx, so
+ * free only our own ctx and only clear g_ctx if it is still ours. */
 static void on_scr_delete(lv_event_t * e) {
-    (void)e;
-    if (g_ctx) {
-        free(g_ctx);
-        g_ctx = NULL;
-    }
+    chart_screen_ctx_t * ctx = (chart_screen_ctx_t *)lv_event_get_user_data(e);
+    if (g_ctx == ctx) g_ctx = NULL;
+    free(ctx);
 }
 
 lv_obj_t * screen_chart_24h_create(const integration_meta_t * meta) {
-    if (g_ctx) {
-        free(g_ctx);
-        g_ctx = NULL;
-    }
     g_ctx = calloc(1, sizeof(chart_screen_ctx_t));
     if (!g_ctx) return NULL;
 
@@ -358,7 +356,7 @@ lv_obj_t * screen_chart_24h_create(const integration_meta_t * meta) {
     g_ctx->scr = scr;
     lv_obj_set_style_bg_color(scr, lv_color_hex(COL_BG), 0);
     lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(scr, on_scr_delete, LV_EVENT_DELETE, NULL);
+    lv_obj_add_event_cb(scr, on_scr_delete, LV_EVENT_DELETE, g_ctx);
 
     /* ---- Top Bar: Close ("X") Button (Top Right) ---- */
     int x_w = (DISP_HOR < 1000) ? 68 : 74;

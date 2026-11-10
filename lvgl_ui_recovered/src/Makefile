@@ -120,6 +120,15 @@ CFLAGS  := $(SYSROOTFLAG) $(ARCHFLAGS) -O2 -Wall -Wextra -Wno-unused-parameter -
            -MMD -MP
 LDFLAGS := $(SYSROOTFLAG) $(ARCHFLAGS) -pthread -lm -lrt -ldl -rdynamic $(GLIBC_LDFLAGS) -Wl,--no-keep-memory
 
+# Optional extra flags for host (sim) debug builds, e.g. the screen soak test
+# under AddressSanitizer (separate build dir so objects don't mix):
+#   make TARGET=sim SAN="-fsanitize=address -fno-omit-frame-pointer -g" \
+#        BUILDDIR=../build-sim-asan OUT=toonui-sim-asan
+#   ../build-sim-asan/toonui-sim-asan soak 30
+SAN ?=
+CFLAGS  += $(SAN)
+LDFLAGS += $(SAN)
+
 # Local patches to the read-only lvgl submodule, reapplied idempotently here so a
 # fresh `git submodule update` / clone doesn't silently revert them. Currently:
 # the no-global-color-table GIF fix the buienradar radar map depends on (without

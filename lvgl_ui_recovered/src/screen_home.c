@@ -45,6 +45,7 @@
 #include <string.h>
 #include <time.h>
 #include <math.h>
+#include <unistd.h>
 
 #define COL_BG          (settings.home_light_mode ? 0xe4eaf2 : 0x0f1a2a)
 #define COL_TILE_BG     (settings.home_light_mode ? 0xffffff : 0x1a2a44)
@@ -283,6 +284,7 @@ static int        news_last_nn   = 0;
 static lv_obj_t * news_box       = NULL;
 static lv_obj_t * news_modal     = NULL;
 static lv_obj_t * map_modal      = NULL;
+static void map_forget(void);
 static lv_obj_t * news_pane      = NULL;   /* scrollable right reading pane */
 static lv_obj_t * news_body_lbl  = NULL;   /* reading pane article text */
 static lv_obj_t * news_body_title = NULL;
@@ -570,12 +572,12 @@ int open_integration_by_id(const char * b) {
     }
     if (!strcmp(b, "local:templogger") || !strcmp(b, "temperaturelogger")) {
         const integration_meta_t * tm = tile_slots_integration_by_id("temperaturelogger");
-        ui_push(screen_chart_24h_create(tm));
+        ui_push_owned(screen_chart_24h_create(tm));
         return 1;
     }
     if (meta) {
         if (!strcmp(meta->detail_type, "chart_24h")) {
-            ui_push(screen_chart_24h_create(meta));
+            ui_push_owned(screen_chart_24h_create(meta));
             return 1;
         }
         if (!strcmp(meta->id, "crypto")) {
@@ -1341,7 +1343,7 @@ static void fill_waste_overlay(lv_obj_t * l) {
 
 static void on_slot_templogger_tap(lv_event_t * e) {
     (void)e;
-    ui_push(screen_chart_24h_create(tile_slots_integration_by_id("temperaturelogger")));
+    ui_push_owned(screen_chart_24h_create(tile_slots_integration_by_id("temperaturelogger")));
 }
 
 static slot_templogger_view_t * make_slot_templogger(lv_obj_t * tile) {
@@ -3141,7 +3143,7 @@ static void open_lights_backend(void) {
     if (settings.enable_domoticz || (settings.client_mode && domoticz_state.count > 0))
         ui_push(screen_domoticz_create());
     else if (settings.hue_enabled || hue_state.count > 0)
-        ui_push(screen_hue_create());
+        ui_push_owned(screen_hue_create());
     else
         ui_push(screen_lights_create());
 }
@@ -3219,7 +3221,7 @@ static void on_page1_slot(lv_event_t * e) {
 
             /* Slot 0: efanlamp tile when configured and unassigned */
             if (i == 0 && settings.efanlamp_host[0] && (!b0 || !b0[0])) {
-                ui_push(screen_efanlamp_create());
+                ui_push_owned(screen_efanlamp_create());
                 return;
             }
 
@@ -3240,8 +3242,11 @@ void screen_home_dismiss_modals(void) {
         news_modal = NULL;
     }
     if (map_modal) {
-        lv_obj_del_async(map_modal);
-        map_modal = NULL;
+        /* Auto-dim / auto-home land here, possibly mid-download: stop the
+         * map timer now, not just the modal (map_tick would paint freed objs). */
+        lv_obj_t * m = map_modal;
+        map_forget();
+        lv_obj_del_async(m);
     }
 }
 
@@ -3533,7 +3538,7 @@ void screen_home_open_news(void) { on_news_tap(NULL); }
  * (off the UI thread — downloads must never block LVGL) and overlay a marker.
  * A/B buttons switch between the two tracked people. */
 #define MAP_TILE_DISP SX(200)      /* on-screen px per 256px OSM tile (downscaled to fit; SX-scaled for Toon 1) */
-typedef struct { float lat, lon; int zoom; } map_req_t;
+typedef struct { float lat, lon; int zoom; int gen; } map_req_t;
 
 static int g_map_zoom   = 13;      /* OSM zoom level; lower = wider area / less detail */
 static int g_map_person = 0;       /* which tracked person is shown */
@@ -3549,6 +3554,10 @@ static lv_obj_t  * map_status   = NULL;
 static lv_timer_t * map_timer   = NULL;
 static volatile int g_map_ready = 0;            /* 0 loading, 1 ok, -1 fail */
 static volatile int g_map_mx = 256, g_map_my = 256;  /* marker px in the 512 box */
+/* Every zoom / person tap starts a new download thread. The generation lets
+ * only the newest one publish: an older, slower fetch finishing last must
+ * not overwrite the tiles or flip g_map_ready for the newer request. */
+static volatile int g_map_gen = 0;
 
 static void * map_fetch_thread(void * arg) {
     map_req_t r = *(map_req_t *)arg; free(arg);
@@ -3557,22 +3566,34 @@ static void * map_fetch_thread(void * arg) {
     double fx = (r.lon + 180.0) / 360.0 * n;
     double fy = (1.0 - asinh(tan(latrad)) / M_PI) / 2.0 * n;
     int left = (int)floor(fx - 0.5), top = (int)floor(fy - 0.5);
-    g_map_mx = (int)((fx - left) * 256.0);
-    g_map_my = (int)((fy - top) * 256.0);
+    int mx = (int)((fx - left) * 256.0);
+    int my = (int)((fy - top) * 256.0);
     int ok = 1;
-    for (int row = 0; row < 2; row++)
-        for (int col = 0; col < 2; col++) {
+    /* Download into per-generation files, then rename into place only if
+     * this is still the current request. */
+    for (int row = 0; row < 2 && r.gen == g_map_gen; row++)
+        for (int col = 0; col < 2 && r.gen == g_map_gen; col++) {
             int tx = left + col, ty = top + row;
             tx = ((tx % n) + n) % n;
             if (ty < 0) ty = 0;
             if (ty >= n) ty = n - 1;
             char cmd[400];
             snprintf(cmd, sizeof cmd,
-                "curl -fsSL -m 12 -A 'freetoon-map/1.0' -o /tmp/map_%d.png "
+                "curl -fsSL -m 12 -A 'freetoon-map/1.0' -o /tmp/map_g%d_%d.png "
                 "'https://tile.openstreetmap.org/%d/%d/%d.png'",
-                row * 2 + col, z, tx, ty);
+                r.gen, row * 2 + col, z, tx, ty);
             if (system(cmd) != 0) ok = 0;
         }
+    for (int i = 0; i < 4; i++) {
+        char tmp[48], dst[32];
+        snprintf(tmp, sizeof tmp, "/tmp/map_g%d_%d.png", r.gen, i);
+        snprintf(dst, sizeof dst, "/tmp/map_%d.png", i);
+        if (r.gen == g_map_gen && ok) rename(tmp, dst);
+        else unlink(tmp);
+    }
+    if (r.gen != g_map_gen) return NULL;          /* superseded: publish nothing */
+    g_map_mx = mx;
+    g_map_my = my;
     g_map_ready = ok ? 1 : -1;
     return NULL;
 }
@@ -3666,6 +3687,7 @@ static void start_map_fetch(int person) {
     map_req_t * r = malloc(sizeof *r);
     if (!r) return;
     r->lat = lat; r->lon = lon; r->zoom = g_map_zoom;
+    r->gen = ++g_map_gen;
     pthread_t th;
     if (pthread_create(&th, NULL, map_fetch_thread, r) == 0) pthread_detach(th);
     else { free(r); if (map_status) lv_label_set_text(map_status, tr("Kaart laden mislukt", "Map load failed")); return; }
@@ -3699,13 +3721,27 @@ EM_JS(void, wasm_map_kick, (int z,
 });
 #endif
 
-static void map_close(lv_event_t * e) {
-    (void)e;
+/* Stop the map timer and forget every map widget. Must run whenever the
+ * modal goes away: map_tick paints into map_imgs/map_status, so a timer
+ * that outlives the modal writes into freed objects. */
+static void map_forget(void) {
     if (map_timer) { lv_timer_del(map_timer); map_timer = NULL; }
-    if (map_modal) { lv_obj_del(map_modal); map_modal = NULL; }
+    g_map_gen++;                                  /* in-flight download: publish nothing */
+    map_modal = NULL;
     for (int i = 0; i < 4; i++) map_imgs[i] = NULL;
     map_box = map_marker = map_addr_lbl = map_status = NULL;
     map_top_lbl = map_btn_a = map_btn_b = map_btn_c = NULL;
+}
+/* Safety net for any other way the modal dies (e.g. the home screen being
+ * deleted with the modal on it): clean up if it is still the current one. */
+static void on_map_modal_delete(lv_event_t * e) {
+    if (lv_event_get_target(e) == map_modal) map_forget();
+}
+static void map_close(lv_event_t * e) {
+    (void)e;
+    lv_obj_t * m = map_modal;
+    map_forget();
+    if (m) lv_obj_del(m);
 }
 static void on_map_a(lv_event_t * e) { (void)e; start_map_fetch(0); }
 static void on_map_b(lv_event_t * e) { (void)e; start_map_fetch(1); }
@@ -3725,6 +3761,7 @@ static void open_family_map(lv_event_t * e) {
     lv_obj_set_style_bg_opa(map_modal, LV_OPA_70, 0);
     lv_obj_add_flag(map_modal, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(map_modal, map_close, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(map_modal, on_map_modal_delete, LV_EVENT_DELETE, NULL);
 
     lv_obj_t * card = lv_obj_create(map_modal);
     lv_obj_set_size(card, SX(640), SY(500));

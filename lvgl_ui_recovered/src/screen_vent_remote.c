@@ -40,7 +40,7 @@ static const char* mode_cmds[MODE_BTN_COUNT] = {
 
 /* ── helpers ────────────────────────────────────────────────── */
 static void on_back(lv_event_t * e)         { (void)e; ui_pop(); }
-static void on_open_advanced(lv_event_t * e){ (void)e; ui_push(screen_vent_advanced_create()); }
+static void on_open_advanced(lv_event_t * e){ (void)e; ui_push_owned(screen_vent_advanced_create()); }
 
 static void on_mode_btn(lv_event_t * e) {
     const char * cmd = (const char *)lv_event_get_user_data(e);

@@ -321,6 +321,17 @@ static void bw_click(lv_event_t * e) {
     banner_dismiss();
 }
 
+/* The banner lives on its parent screen. When that screen is rebuilt (theme
+ * or tile light-mode toggle -> screen_home_destroy) the box is deleted;
+ * the 1 s timer held bw->box and kept painting into freed objects, and
+ * every rebuild leaked a bw. Tie timer + bw to the box's lifetime. */
+static void bw_box_delete(lv_event_t * e) {
+    bw_t * bw = (bw_t *)lv_event_get_user_data(e);
+    if (!bw) return;
+    if (bw->t) { lv_timer_del(bw->t); bw->t = NULL; }
+    lv_mem_free(bw);
+}
+
 void packages_banner_attach(lv_obj_t * parent) {
     if (!parent) return;
     bw_t * bw = (bw_t *)lv_mem_alloc(sizeof(bw_t));
@@ -365,4 +376,5 @@ void packages_banner_attach(lv_obj_t * parent) {
     lv_obj_move_foreground(bw->box);
 
     bw->t = lv_timer_create(bw_tick, 1000, bw);
+    lv_obj_add_event_cb(bw->box, bw_box_delete, LV_EVENT_DELETE, bw);
 }

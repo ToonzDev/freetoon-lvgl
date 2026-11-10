@@ -47,7 +47,7 @@ static lv_timer_t * refresh_timer = NULL;
 static lv_obj_t * btn_prog[6] = {0};
 static const int  prog_state[6] = {-2, -1, 0, 1, 2, 3};
 
-static void on_open_advanced(lv_event_t * e) { (void)e; ui_push(screen_heater_advanced_create()); }
+static void on_open_advanced(lv_event_t * e) { (void)e; ui_push_owned(screen_heater_advanced_create()); }
 /* Gated via pin_modal: setpoint nudges, preset taps, and schedule/manual
  * mode toggle all run through pin_gate so the PIN prompts when enabled. */
 static void sp_up_apply(void * c)   { (void)c; boxtalk_setpoint_increase(); }

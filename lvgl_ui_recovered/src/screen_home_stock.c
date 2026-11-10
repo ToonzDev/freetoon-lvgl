@@ -222,7 +222,7 @@ static lv_obj_t * s_lights_handle_lbl = NULL;
 
 static void open_lights_backend(void) {
     if (settings.enable_domoticz)              ui_push(screen_domoticz_create());
-    else if (settings.hue_enabled || hue_state.count > 0) ui_push(screen_hue_create());
+    else if (settings.hue_enabled || hue_state.count > 0) ui_push_owned(screen_hue_create());
     else                                       ui_push(screen_lights_create());
 }
 static void s_lights_handle_set(bool open) {
@@ -671,10 +671,10 @@ static void on_slot_click(lv_event_t * e) {
     switch (link) {
         case LINK_STATS:    ui_push(screen_stats_create());           break;
         case LINK_FORECAST: ui_push(screen_forecast_create());        break;
-        case LINK_HEATER:   ui_push(screen_heater_advanced_create()); break;
+        case LINK_HEATER:   ui_push_owned(screen_heater_advanced_create()); break;
         case LINK_VENT:     ui_push(screen_vent_remote_create());     break;
         case LINK_TRACKERS: life360_map_open();                       break;
-        case LINK_EFAN:     ui_push(screen_efanlamp_create());        break;
+        case LINK_EFAN:     ui_push_owned(screen_efanlamp_create());        break;
         case LINK_AGENDA:   screen_calendar_show();                   break;
     }
 }
