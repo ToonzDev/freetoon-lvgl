@@ -357,18 +357,22 @@
 - **Status**: Open (requested 2026-11-10).
 - **Description**:
   - The stock (QML) firmware shows the actual P1 meter readings (cumulative kWh import/export per tariff, gas m3). Show these in FreeToon too, e.g. on the Energy statistics screen.
+  - Stock UI: a "Meterstanden" button top-right on the "Grafiek" screen (Energy statistics) opens a pop-up with the three absolute P1 meter readings. Mirror that.
+  - Note: hcb_rrd already serves the cumulative loggers (`elec_quantity_nt`, `elec_quantity_lt`, `gas_quantity`; Wh / L) — the latest sample of each is the current reading.
 - **Investigation Points**:
   - Source: which BoxTalk/hcb service the stock UI reads them from (meteradapter / `hdrv_p1` dataset), or the HomeWizard/ESPHome P1 integrations when those are the energy source.
 
 ### 30. Energy Statistics Show Data for the Next Day (User Report)
-- **Status**: Open / Investigation needed (user report, 2026-11-10).
+- **Status**: Fixed (4566336, 2026-11-10).
+- **Cause**: hcb_rrd stamps a bucket with its END time (the daily archive already returns "11-11 01:00" with today's running total), and each usage delta took the later reading's label. Deltas are now labelled with the interval start.
 - **Description**:
   - A user sees energy statistics attributed to the following day.
 - **Investigation Points**:
   - Likely a day-boundary / time zone issue: check how `stats.c` / the rrd queries bucket samples per day (UTC vs local, rrd bucket end timestamps that lie at the next midnight). Note the Toon 1 clock bug fixed in dc2b27f (toonui ran in Europe/London) — check whether the reporter is on a Toon 1 without that fix.
 
 ### 31. Close-Button (X) Touch Area Smaller on Toon 1
-- **Status**: Open (2026-11-10).
+- **Status**: Fixed (8528245, 2026-11-10), confirmed on a Toon 1.
+- **Cause**: Toon 1 touch ignored the factory tslib calibration (/etc/pointercal); the linear mapping was ~27 px off at the top and ~18 px at the right edge. toon1_touch now applies the calibration.
 - **Description**:
   - On Toon 2 the whole X button responds; on Toon 1 only the upper part seems to.
 - **Investigation Points**:
