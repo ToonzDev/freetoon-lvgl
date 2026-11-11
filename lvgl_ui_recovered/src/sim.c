@@ -259,6 +259,26 @@ static void redrawstat_monitor(lv_disp_drv_t * drv, uint32_t time, uint32_t px) 
     if (rs_px) { *rs_px += px; (*rs_n)++; *rs_ms += time; }
 }
 
+/* scrollbench helpers: the scrollable object with the most content to scroll,
+ * and a tree walk that switches shadows off (SB_NOSHADOW experiment). */
+static lv_obj_t * sb_find_scroller(lv_obj_t * o, lv_coord_t * best) {
+    lv_obj_t * found = NULL;
+    if (lv_obj_has_flag(o, LV_OBJ_FLAG_SCROLLABLE)) {
+        lv_coord_t r = lv_obj_get_scroll_top(o) + lv_obj_get_scroll_bottom(o);
+        if (r > *best) { *best = r; found = o; }
+    }
+    for (uint32_t i = 0; i < lv_obj_get_child_cnt(o); i++) {
+        lv_obj_t * f = sb_find_scroller(lv_obj_get_child(o, i), best);
+        if (f) found = f;
+    }
+    return found;
+}
+static void sb_strip_shadow(lv_obj_t * o) {
+    if (getenv("SB_NOSHADOW")) lv_obj_set_style_shadow_width(o, 0, 0);
+    if (getenv("SB_NORADIUS")) lv_obj_set_style_radius(o, 0, 0);
+    for (uint32_t i = 0; i < lv_obj_get_child_cnt(o); i++) sb_strip_shadow(lv_obj_get_child(o, i));
+}
+
 static void pump(int frames) {
     for (int i = 0; i < frames; i++) { lv_timer_handler(); lv_tick_inc(16); usleep(1000); }
 }
@@ -676,6 +696,7 @@ int main(int argc, char ** argv) {
     dd.hor_res  = DISP_HOR;
     dd.ver_res  = DISP_VER;
     lv_disp_drv_register(&dd);
+    ui_theme_install();
 
     static lv_indev_drv_t id;
     lv_indev_drv_init(&id);
@@ -786,6 +807,52 @@ int main(int argc, char ** argv) {
      * Nothing changes in the mock state, so ideally almost nothing is redrawn.
      * Runs twice: with the refresh timers and with every timer of >= 500 ms
      * paused, to separate refresh callbacks from animations. */
+    /* Cost of one scroll frame: `toonui-sim scrollbench [screen] [step_px] [frames]`.
+     * Scrolls the screen's biggest scroller step_px per frame (bouncing at the
+     * ends) and times each lv_refr_now(). Host ms are far below a Toon 1's
+     * (~65x for full-screen work) -- compare variants, not absolutes.
+     * SB_NOSHADOW=1 removes all shadows first. */
+    if (!strcmp(mode, "scrollbench")) {
+        const char * which = (argc > 2) ? argv[2] : "settings";
+        int step   = (argc > 3) ? atoi(argv[3]) : 8;
+        int frames = (argc > 4) ? atoi(argv[4]) : 300;
+        ui_init();
+        create_fn sfn = NULL;
+        for (int i = 0; i < N_SCREENS; i++)
+            if (!strcmp(which, SCREENS[i].name)) sfn = SCREENS[i].fn;
+        if (!sfn) { fprintf(stderr, "[scrollbench] unknown screen '%s'\n", which); return 1; }
+        ui_push(sfn());
+        pump(100);
+        for (lv_timer_t * t = lv_timer_get_next(NULL); t; t = lv_timer_get_next(t))
+            if (t->period >= 500) lv_timer_pause(t);
+        if (getenv("SB_NOSHADOW") || getenv("SB_NORADIUS")) sb_strip_shadow(lv_scr_act());
+        lv_coord_t range = 0;
+        lv_obj_t * sc = sb_find_scroller(lv_scr_act(), &range);
+        if (!sc) { fprintf(stderr, "[scrollbench] nothing scrollable\n"); return 1; }
+        static uint64_t px_sum; static uint32_t refr_n, refr_ms;
+        dd.monitor_cb = redrawstat_monitor;
+        redrawstat_ptr(&px_sum, &refr_n, &refr_ms);
+        lv_refr_now(NULL);
+        px_sum = 0; refr_n = 0;
+        double total = 0, worst = 0;
+        int dir = 1;
+        for (int i = 0; i < frames; i++) {
+            if (dir > 0 && lv_obj_get_scroll_bottom(sc) < step) dir = -1;
+            if (dir < 0 && lv_obj_get_scroll_top(sc) < step) dir = 1;
+            lv_obj_scroll_by(sc, 0, -dir * step, LV_ANIM_OFF);
+            struct timespec a, b;
+            clock_gettime(CLOCK_MONOTONIC, &a);
+            lv_refr_now(NULL);
+            clock_gettime(CLOCK_MONOTONIC, &b);
+            double ms = (b.tv_sec - a.tv_sec) * 1000.0 + (b.tv_nsec - a.tv_nsec) / 1e6;
+            total += ms; if (ms > worst) worst = ms;
+        }
+        fprintf(stderr, "[scrollbench] %s step %d px%s: %.3f ms/frame avg, %.3f worst, %.0f px/frame, scroll range %d px\n",
+                which, step, getenv("SB_NOSHADOW") ? " (no shadows)" : "",
+                total / frames, worst, refr_n ? (double)px_sum / refr_n : 0.0, (int)range);
+        return 0;
+    }
+
     if (!strcmp(mode, "redrawstat")) {
         int secs = (argc > 2) ? atoi(argv[2]) : 20;
         const char * which = (argc > 3) ? argv[3] : "home";

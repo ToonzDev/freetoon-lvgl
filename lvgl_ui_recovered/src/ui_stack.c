@@ -338,7 +338,43 @@ void ui_idle_tick(void) {
     }
 }
 
+/* Toon 1 only: theme extension on top of LVGL's default theme that drops the
+ * button shadow. The default theme gives every lv_btn a grey 50% shadow (the
+ * light bottom edge on tiles), redrawn (blurred, LV_SHADOW_CACHE_SIZE 0) on
+ * every frame: ~45% of a Settings scroll frame (sim scrollbench), which made
+ * scrolling on a Toon 1 visibly heavy. The Toon 2 has CPU to spare and keeps
+ * the look. Buttons that set their own shadow keep it (local styles win over
+ * theme styles). */
+#ifdef TOON1
+static void theme_noshadow_apply(lv_theme_t * th, lv_obj_t * obj) {
+    (void)th;
+    static lv_style_t st;
+    static int inited;
+    if (!inited) {
+        lv_style_init(&st);
+        lv_style_set_shadow_width(&st, 0);
+        lv_style_set_shadow_ofs_y(&st, 0);
+        inited = 1;
+    }
+    if (lv_obj_check_type(obj, &lv_btn_class)) lv_obj_add_style(obj, &st, 0);
+}
+
+#endif
+
+void ui_theme_install(void) {
+#ifdef TOON1
+    static lv_theme_t th;
+    lv_theme_t * base = lv_disp_get_theme(NULL);
+    if (!base || base == &th) return;
+    th = *base;
+    lv_theme_set_parent(&th, base);
+    lv_theme_set_apply_cb(&th, theme_noshadow_apply);
+    lv_disp_set_theme(NULL, &th);
+#endif
+}
+
 void ui_init(void) {
+    ui_theme_install();
     lv_obj_clear_flag(lv_layer_top(), LV_OBJ_FLAG_HIDDEN);
     lv_obj_t * home = settings.home_theme == 1 ? screen_home_stock_create()
                                                : screen_home_create();

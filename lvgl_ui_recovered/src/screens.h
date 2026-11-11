@@ -111,6 +111,7 @@ void ui_init(void);
 void ui_mark_activity(void);
 void ui_idle_tick(void);   /* call from main loop, cheap */
 void ui_wake_now(void);    /* explicit wake from dim screen tap */
+void ui_theme_install(void); /* theme tweaks (Toon 1: no button shadows); ui_init calls it */
 int  ui_is_dimmed(void);    /* returns 1 if dim screen is currently active */
 
 #endif
