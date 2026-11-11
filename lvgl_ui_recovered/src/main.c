@@ -200,6 +200,12 @@ int main(int argc, char** argv) {
         extern int hue_start(void);
         if (hue_start() != 0) fprintf(stderr, "[main] hue_start failed\n");
     }
+    {
+        /* Always started: idles until enabled + token set in Settings → Telegram,
+         * and imports an existing ToonBot config on first run. */
+        extern int telegram_start(void);
+        if (telegram_start() != 0) fprintf(stderr, "[main] telegram_start failed\n");
+    }
     if (weather_start() != 0)
         fprintf(stderr, "[main] weather_start failed\n");
     extern int buienradar_rain_start(void);

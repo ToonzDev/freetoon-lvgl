@@ -28,6 +28,8 @@ dlclose@GLIBC_2.4
 dlerror@GLIBC_2.4
 dlopen@GLIBC_2.4
 dlsym@GLIBC_2.4
+dup2@GLIBC_2.4
+execv@GLIBC_2.4
 fchmod@GLIBC_2.4
 fclose@GLIBC_2.4
 fcntl@GLIBC_2.4
@@ -39,6 +41,7 @@ fileno@GLIBC_2.4
 floor@GLIBC_2.4
 fmod@GLIBC_2.4
 fopen@GLIBC_2.4
+fork@GLIBC_2.4
 fprintf@GLIBC_2.4
 fputs@GLIBC_2.4
 fread@GLIBC_2.4
@@ -78,17 +81,19 @@ opendir@GLIBC_2.4
 pause@GLIBC_2.4
 pclose@GLIBC_2.4
 perror@GLIBC_2.4
+pipe@GLIBC_2.4
 popen@GLIBC_2.4
 pow@GLIBC_2.4
 printf@GLIBC_2.4
 pthread_attr_init@GLIBC_2.4
 pthread_attr_setdetachsta@GLIBC_2.4
 pthread_attr_setstacksize@GLIBC_2.4
+pthread_cond_broadcast@GLIBC_2.4
+pthread_cond_timedwait@GLIBC_2.4
 pthread_create@GLIBC_2.4
 pthread_detach@GLIBC_2.4
 pthread_mutex_lock@GLIBC_2.4
 pthread_mutex_unlock@GLIBC_2.4
-puts@GLIBC_2.4
 qsort@GLIBC_2.4
 raise@GLIBC_2.4
 rand@GLIBC_2.4
@@ -133,6 +138,7 @@ strtof@GLIBC_2.4
 strtok@GLIBC_2.4
 strtok_r@GLIBC_2.4
 strtol@GLIBC_2.4
+strtoll@GLIBC_2.4
 sync@GLIBC_2.4
 system@GLIBC_2.4
 tan@GLIBC_2.4
@@ -144,4 +150,5 @@ unlink@GLIBC_2.4
 usleep@GLIBC_2.4
 vfprintf@GLIBC_2.4
 vsnprintf@GLIBC_2.4
+waitpid@GLIBC_2.4
 write@GLIBC_2.4

@@ -34,6 +34,7 @@
 #include "update_check.h"
 #include "update_modal.h"
 #include "anim_overlay.h"
+#include "telegram.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -2012,6 +2013,354 @@ static void open_hue(lv_event_t * e) {
     lv_obj_set_style_text_font(lbl_hue_result, SF(16), 0);
     lv_label_set_text(lbl_hue_result, "");
     lv_obj_align(lbl_hue_result, LV_ALIGN_TOP_LEFT, SX(4), y);
+}
+
+/* ============================ Telegram bot ============================
+ * Settings → Telegram: token, on/off, the chat allow-list (approve chats that
+ * messaged the bot), push-alert switches and the last commands. The bot runs
+ * in telegram.c; this screen only talks to it through telegram_*(). */
+static lv_obj_t * tg_lbl_status = NULL;
+static lv_obj_t * tg_lbl_token  = NULL;
+static lv_obj_t * tg_ta_token   = NULL;
+static lv_obj_t * tg_chats_cont = NULL;
+static lv_obj_t * tg_lbl_log    = NULL;
+static lv_obj_t * tg_lbl_result = NULL;
+static unsigned   tg_ui_ver     = 0;
+static tg_chat_t  tg_ui_chats[TG_MAX_CHATS];
+static int        tg_ui_nchats  = 0;
+
+enum { TG_ACT_ALLOW, TG_ACT_DENY, TG_ACT_ALERTS, TG_ACT_REMOVE };
+
+static void tg_show_token(void) {
+    if (!tg_lbl_token) return;
+    const char * t = settings.telegram_token;
+    if (!t[0]) {
+        lv_label_set_text(tg_lbl_token, tr("Nog geen token ingesteld. Maak een bot via @BotFather in Telegram.",
+                                           "No token set yet. Create a bot with @BotFather in Telegram."));
+        return;
+    }
+    /* Show only the bot id and the last 4 characters. */
+    const char * colon = strchr(t, ':');
+    size_t len = strlen(t);
+    lv_label_set_text_fmt(tg_lbl_token, tr("Ingestelde token: %.*s:****%s", "Token set: %.*s:****%s"),
+                          colon ? (int)(colon - t) : 0, t, len > 4 ? t + len - 4 : "");
+}
+
+static void tg_on_enabled(lv_event_t * e) {
+    telegram_set_enabled(lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED));
+}
+
+static void tg_on_save_token(lv_event_t * e) {
+    (void)e;
+    const char * t = tg_ta_token ? lv_textarea_get_text(tg_ta_token) : "";
+    if (!t || !*t || !strchr(t, ':')) {
+        if (tg_lbl_result) lv_label_set_text(tg_lbl_result,
+            tr("Vul de volledige token in, bv. 123456789:AAH...", "Enter the full token, e.g. 123456789:AAH..."));
+        return;
+    }
+    telegram_set_token(t);
+    if (!settings.telegram_enabled) telegram_set_enabled(1);
+    lv_textarea_set_text(tg_ta_token, "");
+    tg_show_token();
+    if (tg_lbl_result) lv_label_set_text(tg_lbl_result,
+        tr("Token opgeslagen. Stuur nu /start naar je bot en keur de chat hieronder goed.",
+           "Token saved. Now send /start to your bot and approve the chat below."));
+}
+
+static void tg_on_alert_sw(lv_event_t * e) {
+    int bit = (int)(intptr_t)lv_event_get_user_data(e);
+    if (lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED)) settings.telegram_alerts |= bit;
+    else                                                          settings.telegram_alerts &= ~bit;
+    settings_save();
+}
+
+static void tg_on_test(lv_event_t * e) {
+    (void)e;
+    int n = telegram_send_test();
+    if (!tg_lbl_result) return;
+    if (n > 0) lv_label_set_text_fmt(tg_lbl_result, tr("Testmelding verstuurd naar %d chat(s).", "Test alert sent to %d chat(s)."), n);
+    else       lv_label_set_text(tg_lbl_result, tr("Geen goedgekeurde chat met meldingen aan.", "No approved chat with alerts on."));
+}
+
+static void tg_on_chat_btn(lv_event_t * e) {
+    int v = (int)(intptr_t)lv_event_get_user_data(e);
+    int idx = v / 4, act = v % 4;
+    if (idx < 0 || idx >= tg_ui_nchats) return;
+    const tg_chat_t * c = &tg_ui_chats[idx];
+    switch (act) {
+        case TG_ACT_ALLOW:  telegram_chat_set_state(c->id, TG_CHAT_ALLOWED); break;
+        case TG_ACT_DENY:   telegram_chat_set_state(c->id, TG_CHAT_DENIED); break;
+        case TG_ACT_ALERTS: telegram_chat_set_alerts(c->id, !c->alerts); break;
+        case TG_ACT_REMOVE: telegram_chat_remove(c->id); break;
+    }
+    /* The list is rebuilt by tg_tick() (not here: we're inside one of its buttons). */
+}
+
+static lv_obj_t * tg_small_btn(lv_obj_t * parent, const char * txt, uint32_t color, int idx, int act) {
+    lv_obj_t * b = lv_btn_create(parent);
+    lv_obj_set_size(b, SX(150), SY(46));
+    lv_obj_set_style_bg_color(b, lv_color_hex(color), 0);
+    lv_obj_set_style_radius(b, 10, 0);
+    lv_obj_add_event_cb(b, tg_on_chat_btn, LV_EVENT_CLICKED, (void *)(intptr_t)(idx * 4 + act));
+    lv_obj_t * l = lv_label_create(b);
+    lv_obj_set_style_text_font(l, SF(16), 0);
+    lv_label_set_text(l, txt);
+    lv_obj_center(l);
+    return b;
+}
+
+static void tg_build_chats(void) {
+    if (!tg_chats_cont) return;
+    lv_obj_clean(tg_chats_cont);
+    tg_chat_t all[TG_MAX_CHATS];
+    int n = telegram_get_chats(all, TG_MAX_CHATS);
+    /* Pending first: those are what the user came here for. */
+    tg_ui_nchats = 0;
+    for (int pass = 0; pass < 3; pass++)
+        for (int i = 0; i < n; i++) {
+            int want = pass == 0 ? TG_CHAT_PENDING : pass == 1 ? TG_CHAT_ALLOWED : TG_CHAT_DENIED;
+            if (all[i].state == want) tg_ui_chats[tg_ui_nchats++] = all[i];
+        }
+
+    if (tg_ui_nchats == 0) {
+        lv_obj_t * l = lv_label_create(tg_chats_cont);
+        lv_obj_set_style_text_color(l, lv_color_hex(THEME_TEXT_DIM), 0);
+        lv_obj_set_style_text_font(l, SF(16), 0);
+        lv_obj_set_width(l, SX(780));
+        lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
+        lv_label_set_text(l, tr("Nog geen chats. Stuur /start naar je bot in Telegram; de chat verschijnt hier om goed te keuren.",
+                                "No chats yet. Send /start to your bot in Telegram; the chat shows up here for approval."));
+        return;
+    }
+    for (int i = 0; i < tg_ui_nchats; i++) {
+        const tg_chat_t * c = &tg_ui_chats[i];
+        lv_obj_t * row = lv_obj_create(tg_chats_cont);
+        lv_obj_set_size(row, SX(800), SY(68));
+        lv_obj_set_style_bg_color(row, lv_color_hex(c->state == TG_CHAT_PENDING ? (settings.home_light_mode ? 0xfdecc8 : 0x5a4410) : THEME_ROW_BG), 0);
+        lv_obj_set_style_border_width(row, 0, 0);
+        lv_obj_set_style_radius(row, 12, 0);
+        lv_obj_set_style_pad_all(row, 8, 0);
+        lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t * nm = lv_label_create(row);
+        lv_obj_set_style_text_color(nm, lv_color_hex(THEME_TEXT_HI), 0);
+        lv_obj_set_style_text_font(nm, SF(20), 0);
+        lv_obj_set_width(nm, SX(410));
+        lv_label_set_long_mode(nm, LV_LABEL_LONG_DOT);
+        lv_label_set_text(nm, c->name);
+        lv_obj_align(nm, LV_ALIGN_TOP_LEFT, 0, 0);
+
+        const char * st = c->state == TG_CHAT_PENDING ? tr("wacht op goedkeuring", "awaiting approval")
+                        : c->state == TG_CHAT_ALLOWED ? (c->alerts ? tr("toegestaan, meldingen aan", "allowed, alerts on")
+                                                                   : tr("toegestaan, meldingen uit", "allowed, alerts off"))
+                        : tr("geweigerd", "denied");
+        lv_obj_t * sub = lv_label_create(row);
+        lv_obj_set_style_text_color(sub, lv_color_hex(c->state == TG_CHAT_PENDING ? THEME_WARN_ORANGE : THEME_TEXT_DIM), 0);
+        lv_obj_set_style_text_font(sub, SF(15), 0);
+        lv_label_set_text_fmt(sub, "%lld  -  %s", c->id, st);
+        lv_obj_align(sub, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+
+        lv_obj_t * b1, * b2;
+        if (c->state == TG_CHAT_PENDING) {
+            b1 = tg_small_btn(row, tr("Toestaan", "Allow"), 0x2e6e3a, i, TG_ACT_ALLOW);
+            b2 = tg_small_btn(row, tr("Weigeren", "Deny"), 0x8a2a2a, i, TG_ACT_DENY);
+        } else if (c->state == TG_CHAT_ALLOWED) {
+            b1 = tg_small_btn(row, c->alerts ? tr("Meldingen uit", "Alerts off") : tr("Meldingen aan", "Alerts on"),
+                              0x2a4060, i, TG_ACT_ALERTS);
+            b2 = tg_small_btn(row, tr("Verwijderen", "Remove"), 0x8a2a2a, i, TG_ACT_REMOVE);
+        } else {
+            b1 = tg_small_btn(row, tr("Toestaan", "Allow"), 0x2e6e3a, i, TG_ACT_ALLOW);
+            b2 = tg_small_btn(row, tr("Verwijderen", "Remove"), 0x8a2a2a, i, TG_ACT_REMOVE);
+        }
+        lv_obj_align(b2, LV_ALIGN_RIGHT_MID, 0, 0);
+        lv_obj_align_to(b1, b2, LV_ALIGN_OUT_LEFT_MID, -SX(8), 0);
+    }
+}
+
+static void tg_build_log(void) {
+    if (!tg_lbl_log) return;
+    tg_log_t log[TG_LOG_MAX];
+    int n = telegram_get_log(log, TG_LOG_MAX);
+    if (n == 0) {
+        lv_label_set_text(tg_lbl_log, tr("Nog geen berichten ontvangen.", "No messages received yet."));
+        return;
+    }
+    char buf[TG_LOG_MAX * 160];
+    size_t o = 0;
+    for (int i = 0; i < n && o < sizeof buf; i++) {
+        struct tm tm;
+        localtime_r(&log[i].t, &tm);
+        o += (size_t)snprintf(buf + o, sizeof buf - o, "%s%02d:%02d  %s: %s  (%s)",
+                              i ? "\n" : "", tm.tm_hour, tm.tm_min, log[i].who, log[i].text, log[i].result);
+    }
+    lv_label_set_text(tg_lbl_log, buf);
+}
+
+static void tg_tick(void) {
+    if (tg_lbl_status) {
+        char s[160];
+        telegram_status(s, sizeof s);
+        if (strcmp(lv_label_get_text(tg_lbl_status), s) != 0) lv_label_set_text(tg_lbl_status, s);
+    }
+    unsigned v = telegram_version();
+    if (v != tg_ui_ver) {
+        tg_ui_ver = v;
+        tg_build_chats();
+        tg_build_log();
+    }
+}
+
+static void tg_on_modal_delete(lv_event_t * e) {
+    (void)e;
+    tg_lbl_status = tg_lbl_token = tg_ta_token = tg_chats_cont = tg_lbl_log = tg_lbl_result = NULL;
+}
+
+static lv_obj_t * tg_section_label(lv_obj_t * parent, const char * txt) {
+    lv_obj_t * l = lv_label_create(parent);
+    lv_obj_set_style_text_color(l, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(l, SF(22), 0);
+    lv_obj_set_style_pad_top(l, SY(10), 0);
+    lv_label_set_text(l, txt);
+    return l;
+}
+
+static void tg_alert_row(lv_obj_t * parent, const char * txt, int bit) {
+    lv_obj_t * row = lv_obj_create(parent);
+    lv_obj_set_size(row, SX(800), SY(56));
+    lv_obj_set_style_bg_color(row, lv_color_hex(THEME_ROW_BG), 0);
+    lv_obj_set_style_border_width(row, 0, 0);
+    lv_obj_set_style_radius(row, 12, 0);
+    lv_obj_set_style_pad_hor(row, 12, 0);
+    lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t * l = lv_label_create(row);
+    lv_obj_set_style_text_color(l, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(l, SF(20), 0);
+    lv_label_set_text(l, txt);
+    lv_obj_align(l, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_obj_t * sw = lv_switch_create(row);
+    lv_obj_set_size(sw, SX(64), SY(30));
+    lv_obj_align(sw, LV_ALIGN_RIGHT_MID, 0, 0);
+    if (settings.telegram_alerts & bit) lv_obj_add_state(sw, LV_STATE_CHECKED);
+    lv_obj_add_event_cb(sw, tg_on_alert_sw, LV_EVENT_VALUE_CHANGED, (void *)(intptr_t)bit);
+}
+
+static void open_telegram_modal(lv_event_t * e) {
+    (void)e;
+    lv_obj_t * p = modal_open("Telegram", 900);
+    lv_obj_add_event_cb(p, tg_on_modal_delete, LV_EVENT_DELETE, NULL);
+    int is_t1 = (DISP_VER < 600);
+    int y = is_t1 ? 60 : 70;
+
+    lv_obj_t * r_en = panel_row(p, y, tr("Telegram-bot inschakelen", "Telegram bot enabled"), NULL);
+    row_switch(r_en, settings.telegram_enabled, tg_on_enabled);
+    y += is_t1 ? 72 : 88;
+
+    tg_lbl_status = lv_label_create(p);
+    lv_obj_set_style_text_color(tg_lbl_status, lv_color_hex(THEME_ACCENT_BLUE), 0);
+    lv_obj_set_style_text_font(tg_lbl_status, SF(18), 0);
+    lv_obj_set_width(tg_lbl_status, SX(780));
+    lv_label_set_long_mode(tg_lbl_status, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(tg_lbl_status, "");
+    lv_obj_align(tg_lbl_status, LV_ALIGN_TOP_LEFT, SX(4), y);
+    y += is_t1 ? 32 : 40;
+
+    lv_obj_t * lh = lv_label_create(p);
+    lv_obj_set_style_text_color(lh, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(lh, SF(22), 0);
+    lv_label_set_text(lh, tr("Bot-token:", "Bot token:"));
+    lv_obj_align(lh, LV_ALIGN_TOP_LEFT, SX(4), y + (is_t1 ? 2 : 4));
+    tg_ta_token = lv_textarea_create(p);
+    lv_obj_set_size(tg_ta_token, SX(440), SY(44));
+    lv_obj_align(tg_ta_token, LV_ALIGN_TOP_LEFT, SX(170), y);
+    lv_textarea_set_one_line(tg_ta_token, true);
+    lv_textarea_set_max_length(tg_ta_token, 63);
+    lv_textarea_set_placeholder_text(tg_ta_token, "123456789:AAH...");
+    lv_obj_t * b_save = lv_btn_create(p);
+    lv_obj_set_size(b_save, SX(180), SY(44));
+    lv_obj_align(b_save, LV_ALIGN_TOP_LEFT, SX(620), y);
+    lv_obj_set_style_bg_color(b_save, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_add_event_cb(b_save, tg_on_save_token, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * ls = lv_label_create(b_save); lv_obj_set_style_text_font(ls, SF(20), 0);
+    lv_label_set_text(ls, tr("Opslaan", "Save")); lv_obj_center(ls);
+    y += is_t1 ? 50 : 58;
+
+    tg_lbl_token = lv_label_create(p);
+    lv_obj_set_style_text_color(tg_lbl_token, lv_color_hex(THEME_TEXT_DIM), 0);
+    lv_obj_set_style_text_font(tg_lbl_token, SF(16), 0);
+    lv_obj_set_width(tg_lbl_token, SX(780));
+    lv_label_set_long_mode(tg_lbl_token, LV_LABEL_LONG_WRAP);
+    lv_obj_align(tg_lbl_token, LV_ALIGN_TOP_LEFT, SX(4), y);
+    tg_show_token();
+    y += is_t1 ? 28 : 34;
+
+    tg_lbl_result = lv_label_create(p);
+    lv_obj_set_style_text_color(tg_lbl_result, lv_color_hex(THEME_WARN_ORANGE), 0);
+    lv_obj_set_style_text_font(tg_lbl_result, SF(16), 0);
+    lv_obj_set_width(tg_lbl_result, SX(780));
+    lv_label_set_long_mode(tg_lbl_result, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(tg_lbl_result, "");
+    lv_obj_align(tg_lbl_result, LV_ALIGN_TOP_LEFT, SX(4), y);
+    y += is_t1 ? 26 : 32;
+
+    /* Everything below grows with the chat list, so it lives in one
+     * flex column instead of fixed y offsets. */
+    lv_obj_t * flow = lv_obj_create(p);
+    lv_obj_remove_style_all(flow);
+    lv_obj_set_width(flow, SX(810));
+    lv_obj_set_height(flow, LV_SIZE_CONTENT);
+    lv_obj_align(flow, LV_ALIGN_TOP_LEFT, 0, y);
+    lv_obj_set_flex_flow(flow, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(flow, SY(8), 0);
+    lv_obj_set_style_pad_left(flow, SX(4), 0);
+    lv_obj_clear_flag(flow, LV_OBJ_FLAG_SCROLLABLE);
+
+    tg_section_label(flow, tr("Chats", "Chats"));
+    tg_chats_cont = lv_obj_create(flow);
+    lv_obj_remove_style_all(tg_chats_cont);
+    lv_obj_set_width(tg_chats_cont, SX(805));
+    lv_obj_set_height(tg_chats_cont, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(tg_chats_cont, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(tg_chats_cont, SY(6), 0);
+    lv_obj_clear_flag(tg_chats_cont, LV_OBJ_FLAG_SCROLLABLE);
+
+    tg_section_label(flow, tr("Meldingen", "Alerts"));
+    tg_alert_row(flow, tr("Ketelstoring (OpenTherm)", "Boiler fault (OpenTherm)"), TG_ALERT_BOILER);
+    tg_alert_row(flow, tr("Lage waterdruk (< 0,8 bar)", "Low water pressure (< 0.8 bar)"), TG_ALERT_PRESSURE);
+    tg_alert_row(flow, tr("Thermostaat niet bereikbaar", "Thermostat unreachable"), TG_ALERT_OFFLINE);
+    lv_obj_t * b_test = lv_btn_create(flow);
+    lv_obj_set_size(b_test, SX(260), SY(46));
+    lv_obj_set_style_bg_color(b_test, lv_color_hex(0x2a4060), 0);
+    lv_obj_add_event_cb(b_test, tg_on_test, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * lt = lv_label_create(b_test); lv_label_set_text(lt, tr("Testmelding sturen", "Send test alert")); lv_obj_center(lt);
+
+    tg_section_label(flow, tr("Laatste berichten", "Recent messages"));
+    tg_lbl_log = lv_label_create(flow);
+    lv_obj_set_style_text_color(tg_lbl_log, lv_color_hex(THEME_TEXT_DIM), 0);
+    lv_obj_set_style_text_font(tg_lbl_log, SF(16), 0);
+    lv_obj_set_width(tg_lbl_log, SX(790));
+    lv_label_set_long_mode(tg_lbl_log, LV_LABEL_LONG_WRAP);
+
+    lv_obj_t * hint = lv_label_create(flow);
+    lv_obj_set_style_text_color(hint, lv_color_hex(THEME_TEXT_MUTED), 0);
+    lv_obj_set_style_text_font(hint, SF(15), 0);
+    lv_obj_set_width(hint, SX(790));
+    lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(hint, tr("Commando's zijn gelijk aan ToonBot: /info, /energie, /prog_c|t|s|w, /auto_a|u, /therm_xx. "
+                               "Gebruik ToonBot en deze bot niet tegelijk met dezelfde token.",
+                               "Commands match ToonBot: /info, /energie, /prog_c|t|s|w, /auto_a|u, /therm_xx. "
+                               "Don't run ToonBot and this bot on the same token."));
+
+    tg_ui_ver = telegram_version() - 1;   /* force the first build */
+    tg_tick();
+    modal_tick_fn = tg_tick;
+    modal_timer = lv_timer_create(modal_timer_cb, 1000, NULL);
+}
+
+/* Open Settings → Telegram directly (sim renders; future inbox deep link).
+ * Returns the modal's scrollable body. */
+lv_obj_t * screen_settings_open_telegram(void) {
+    open_telegram_modal(NULL);
+    return cur_modal;
 }
 
 /* Client mode: this Toon mirrors a master Toon over its PWA API. */
@@ -5183,6 +5532,10 @@ lv_obj_t * screen_settings_create(void) {
               tr("30 s schermvergrendeling", "30 s screen lock"), open_clean_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_HOME, tr("Tegels", "Tiles"),
               tr("starttegels toewijzen", "assign home tiles"), open_tile_slots_modal); n++;
+#ifndef WASM_BUILD   /* the bot runs on the Toon; the browser view can't manage it */
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_ENVELOPE, "Telegram",
+              tr("bot & meldingen", "bot & alerts"), open_telegram_modal); n++;
+#endif
     make_tile(GX(n), GY(n), &icon_chart, NULL, tr("Temperatuurlog", "Temperature log"),
               tr("24-uurs grafiek", "24-hour chart"), open_templogger); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_REFRESH, tr("UI herstarten", "Restart UI"),

@@ -353,6 +353,12 @@ typedef struct {
      * id; "" = all lamps). Appended at the end: plugins read settings_t by
      * declared offsets, so new fields go here (see plugin_abi.h). */
     char  hue_tile_group[16];
+
+    /* Built-in Telegram bot (telegram.c) — ToonBot replacement. Approved
+     * chats live in <data>/toonui_telegram_chats.txt, not here. */
+    int   telegram_enabled;      /* 0/1 — long-poll the Bot API */
+    char  telegram_token[64];    /* BotFather token "123456:ABC-..." */
+    int   telegram_alerts;       /* TG_ALERT_* bitmask (default all) */
 } settings_t;
 
 #define FORECAST_AUTO   0

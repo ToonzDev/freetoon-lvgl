@@ -98,6 +98,9 @@ settings_t settings = {
     .hue_enabled         = 0,
     .hue_host            = "",
     .hue_user            = "",
+    .telegram_enabled    = 0,
+    .telegram_token      = "",
+    .telegram_alerts     = 7,   /* TG_ALERT_DEFAULT */
     .sonos_enabled       = 0,
     .sonos_host          = "",
     .sonos_port          = 1400,
@@ -332,6 +335,9 @@ void settings_load(void) {
         else if (strcmp(k, "hue_host")        == 0) snprintf(settings.hue_host, sizeof settings.hue_host, "%s", v);
         else if (strcmp(k, "hue_user")        == 0) snprintf(settings.hue_user, sizeof settings.hue_user, "%s", v);
         else if (strcmp(k, "hue_tile_group")  == 0) snprintf(settings.hue_tile_group, sizeof settings.hue_tile_group, "%s", v);
+        else if (strcmp(k, "telegram_enabled") == 0) settings.telegram_enabled = iv ? 1 : 0;
+        else if (strcmp(k, "telegram_token")  == 0) snprintf(settings.telegram_token, sizeof settings.telegram_token, "%s", v);
+        else if (strcmp(k, "telegram_alerts") == 0) settings.telegram_alerts = iv & 7;
         else if (strcmp(k, "sonos_enabled")   == 0) { settings.sonos_enabled = iv; seen_sonos = 1; }
         else if (strcmp(k, "sonos_host")      == 0) snprintf(settings.sonos_host, sizeof settings.sonos_host, "%s", v);
         else if (strcmp(k, "sonos_port")      == 0) settings.sonos_port = iv;
@@ -994,6 +1000,9 @@ static void settings_write_file(void) {
     fprintf(f, "hue_host=%s\n",        settings.hue_host);
     fprintf(f, "hue_user=%s\n",        settings.hue_user);
     fprintf(f, "hue_tile_group=%s\n",  settings.hue_tile_group);
+    fprintf(f, "telegram_enabled=%d\n", settings.telegram_enabled);
+    fprintf(f, "telegram_token=%s\n",  settings.telegram_token);
+    fprintf(f, "telegram_alerts=%d\n", settings.telegram_alerts);
     fprintf(f, "sonos_enabled=%d\n",   settings.sonos_enabled);
     fprintf(f, "sonos_host=%s\n",      settings.sonos_host);
     fprintf(f, "sonos_port=%d\n",      settings.sonos_port);

@@ -710,6 +710,11 @@ int main(int argc, char ** argv) {
             id.read_cb  = x11_indev_read;
             ui_init();
             anim_overlay_init();
+            {   /* live bot in the GUI sim when a token is configured */
+                signal(SIGPIPE, SIG_IGN);
+                extern int telegram_start(void);
+                telegram_start();
+            }
             lv_refr_now(NULL);
             XFlush(g_x_display);
             fprintf(stderr, "[sim] Interactive GUI active in window (%dx%d)... Click with mouse; press ESC or close window to exit.\n", DISP_HOR, DISP_VER);
@@ -748,6 +753,43 @@ int main(int argc, char ** argv) {
                             getenv("DISPLAY") ? getenv("DISPLAY") : "<unset>");
             return 1;
         }
+    }
+
+    /* Headless Telegram bot run: `toonui-sim telegram [seconds]`. Point
+     * $TOONUI_TELEGRAM_API at a fake Bot API (or use a real test token in
+     * $TOONUI_DATA_DIR/toonui.cfg) to exercise the full command loop. */
+    if (!strcmp(mode, "telegram")) {
+        int secs = (argc > 2) ? atoi(argv[2]) : 60;
+        signal(SIGPIPE, SIG_IGN);
+        extern int telegram_start(void);
+        telegram_start();
+        for (int i = 0; i < secs * 10; i++) usleep(100000);
+        return 0;
+    }
+
+    /* Settings → Telegram render: `toonui-sim tgui out.ppm [scroll_px]`. */
+    if (!strcmp(mode, "tgui")) {
+        const char * out = (argc > 2) ? argv[2] : "/tmp/sim_tgui.ppm";
+        int scroll = (argc > 3) ? atoi(argv[3]) : 0;
+        signal(SIGPIPE, SIG_IGN);
+        extern int telegram_start(void);
+        telegram_start();
+        lv_obj_t * scr = screen_settings_create();
+        lv_scr_load(scr);
+        pump(60);
+        extern lv_obj_t * screen_settings_open_telegram(void);
+        lv_obj_t * m = screen_settings_open_telegram();
+        pump(80);
+        if (scroll && m) {
+            /* backdrop → panel → body (first child) */
+            lv_obj_t * panel = lv_obj_get_child(m, 0);
+            lv_obj_t * body = panel ? lv_obj_get_child(panel, 0) : NULL;
+            if (body) lv_obj_scroll_to_y(body, scroll, LV_ANIM_OFF);
+            pump(40);
+        }
+        dump_ppm(out);
+        fprintf(stderr, "[sim] tgui -> %s\n", out);
+        return 0;
     }
 
     if (!strcmp(mode, "soak")) {
