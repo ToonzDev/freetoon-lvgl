@@ -53,7 +53,7 @@ log() { echo "$(date '+%F %T') $*" >> "$LOG"; }
 # with whatever the UI saved without duplicating defaults.
 cfg_get() {
     [ -r "$TOONCFG" ] || return 0
-    sed -n "s/^$1=//p" "$TOONCFG" 2>/dev/null | tr -d '[:space:]' | head -n 1
+    sed -n "s/^$1=//p" "$TOONCFG" 2>/dev/null | tr -d ' \t\r\n' | head -n 1
 }
 
 # Toon 1 (i.MX27) vs Toon 2 (i.MX6 "nxt"): arch.conf carries "nxt" only on
@@ -299,18 +299,20 @@ fi
 # `|| true` so a prep hiccup never aborts the launcher under `set -e`.
 toon1_video_prep || true
 
-# Default UI when no explicit choice exists: freetoon on Toon 2 (i.MX6 "nxt"),
-# but qt-gui on Toon 1 — its 800x480 freetoon layout isn't finished, so the
-# stock UI is the safe out-of-box default there.
+# Default UI when no explicit choice exists (or the file is empty/garbled,
+# e.g. zero-length after a power cut on UBIFS): freetoon on both Toon 1 and
+# Toon 2. Toon 1 used to default to qt-gui while its 800x480 layout was
+# unfinished. If toonui can't start, the crash-loop guard below still falls
+# back to qt-gui, and the boot picker offers it for 10 s at every boot.
 default_ui() {
-    if grep -q nxt /etc/opkg/arch.conf 2>/dev/null; then echo freetoon; else echo qt-gui; fi
+    echo freetoon
 }
 
 # Read the persisted preference; fall back to the arch default when
 # missing/garbled so a fresh basic-install boots into a working UI.
 read_choice() {
     if [ -r "$CHOICE_FILE" ]; then
-        c=$(cat "$CHOICE_FILE" 2>/dev/null | tr -d '[:space:]')
+        c=$(cat "$CHOICE_FILE" 2>/dev/null | tr -d ' \t\r\n')
         case "$c" in
             qt-gui|qtgui|stock) echo qt-gui;     return ;;
             freetoon|toonui)    echo freetoon;   return ;;
@@ -334,7 +336,7 @@ log "boot: ui_choice=$CHOICE  toonui=$([ -x $TOONUI ] && echo yes || echo no)  q
 # bypass it and exec qt-gui directly. Without this, `toonui --bootpick` returns
 # rc=0 and the dispatcher below would start the freetoon GUI on the panel,
 # fighting the headless instance for the framebuffer + :10081.
-RAW_CHOICE=$(cat "$CHOICE_FILE" 2>/dev/null | tr -d '[:space:]')
+RAW_CHOICE=$(cat "$CHOICE_FILE" 2>/dev/null | tr -d ' \t\r\n')
 case "$RAW_CHOICE" in
     wasm|wasm-host|masterslave)
         log "wasm-host mode → stock qt-gui on panel (freetoon headless via tuih)"

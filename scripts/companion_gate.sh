@@ -25,7 +25,7 @@ BIN="$1";  shift   # remaining args are passed through to the binary
 
 read_choice() {
     if [ -r "$CHOICE_FILE" ]; then
-        c=$(cat "$CHOICE_FILE" 2>/dev/null | tr -d '[:space:]')
+        c=$(cat "$CHOICE_FILE" 2>/dev/null | tr -d ' \t\r\n')
         case "$c" in
             qt-gui|qtgui|stock) echo qt-gui; return ;;
             # WASM-host mode runs stock qt-gui on the panel and the stock

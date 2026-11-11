@@ -500,12 +500,12 @@ do_install() {
     fi
 
     echo "[4/5] Seeding default config..."
-    # Toon 1 default to qt-gui on first install; Toon 2 default to freetoon
-    if [ "$IS_TOON1" = 1 ]; then
-        remote "[ -f /mnt/data/ui_choice ] || echo qt-gui > /mnt/data/ui_choice"
-    else
-        remote "[ -f /mnt/data/ui_choice ] || echo freetoon > /mnt/data/ui_choice"
-    fi
+    # Default UI on first install is FreeToon on both Toon 1 and Toon 2. (Toon 1
+    # used to default to qt-gui while its 800x480 layout was unfinished; users
+    # then saw the old GUI come back right after "Installed successfully".)
+    # An empty/garbled file counts as missing. qt-gui stays one tap away in the
+    # 10 s boot picker, and ui_launcher.sh falls back to it after a crash loop.
+    remote "_c=\$(tr -d ' \t\r\n' < /mnt/data/ui_choice 2>/dev/null); case \"\$_c\" in freetoon|toonui|qt-gui|qtgui|stock|wasm|wasm-host|masterslave) ;; *) echo freetoon > /mnt/data/ui_choice ;; esac"
     # toonui.cfg — write a basic-mode default ONLY if user has no cfg yet.
     remote "[ -f /mnt/data/toonui.cfg ] || { cat > /mnt/data/toonui.cfg.new && chmod 600 /mnt/data/toonui.cfg.new && sync && mv -f /mnt/data/toonui.cfg.new /mnt/data/toonui.cfg; }" <<'CFG'
 auto_dim_enabled=1

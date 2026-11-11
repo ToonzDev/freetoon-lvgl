@@ -47,7 +47,7 @@ pause(){ printf 'Press Enter...'; read _; }
 reload_init(){ telinit q 2>/dev/null || kill -HUP 1 2>/dev/null || true; }
 have(){ [ -x "$1" ]; }
 
-ui_now(){ c=$(cat "$CHOICE" 2>/dev/null | tr -d '[:space:]'); [ -n "$c" ] || c=freetoon
+ui_now(){ c=$(cat "$CHOICE" 2>/dev/null | tr -d ' \t\r\n'); [ -n "$c" ] || c=freetoon
   case "$c" in qt-gui|qtgui|stock) echo "stock qt-gui";; wasm|wasm-host|masterslave) echo "qt-gui + WASM PWA";; *) echo "freetoon-lvgl";; esac; }
 picker_on(){ grep -q '^boot_picker_enabled=1' "$CFG" 2>/dev/null && echo on || echo off; }
 mirror_role(){ if grep -q '^bxpx:' "$IT" 2>/dev/null; then echo MASTER

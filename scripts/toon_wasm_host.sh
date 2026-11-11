@@ -24,7 +24,7 @@ POLL_S=5
 
 read_choice() {
     if [ -r "$CHOICE_FILE" ]; then
-        c=$(cat "$CHOICE_FILE" 2>/dev/null | tr -d '[:space:]')
+        c=$(cat "$CHOICE_FILE" 2>/dev/null | tr -d ' \t\r\n')
         case "$c" in
             wasm|wasm-host|masterslave) echo wasm; return ;;
         esac
