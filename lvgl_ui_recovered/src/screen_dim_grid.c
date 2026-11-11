@@ -4,6 +4,7 @@
  * No colour, no icons; this is the screen we want visible while idle.
  */
 #include "screens.h"
+#include "ui_lazy.h"
 #include "display.h"
 #include "i18n.h"
 #include "boxtalk.h"
@@ -92,8 +93,8 @@ static lv_obj_t * dim_box(int id, int * ow, int * oh) {
     lv_obj_remove_style_all(c);
     lv_obj_set_pos(c, x, y);
     lv_obj_set_size(c, w, h);
-    lv_obj_clear_flag(c, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLL_CHAIN);
-    if (!g_dim_blocks[id].visible) lv_obj_add_flag(c, LV_OBJ_FLAG_HIDDEN);
+    ui_obj_clear_flag(c, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLL_CHAIN);
+    if (!g_dim_blocks[id].visible) ui_obj_add_flag(c, LV_OBJ_FLAG_HIDDEN);
     if (ow) *ow = w;
     if (oh) *oh = h;
     return c;
@@ -120,7 +121,9 @@ static lv_obj_t * en_sol_vlbl, * en_sol_vunit;
 #define DIM_G_FULL_M3H  2.0f        /* gas (m³/h) at a full bar (fixed scale) */
 
 static void dim_vent_fan_anim_cb(void * obj, int32_t v) {
-    lv_img_set_angle((lv_obj_t *)obj, v);
+    /* ~10 fps is plenty for a spinning icon on an idle screen. */
+    static uint32_t last;
+    ui_img_set_angle_every((lv_obj_t *)obj, v, &last, 100);
 }
 static void dim_vent_apply_anim(int rpm) {
     if (!dim_vent_fan) return;
@@ -161,26 +164,26 @@ static void en_make_bar(lv_obj_t * parent, int w, int y, uint32_t color,
     *track = lv_obj_create(parent);
     lv_obj_remove_style_all(*track);
     lv_obj_set_size(*track, w, 10);
-    lv_obj_set_style_bg_color(*track, lv_color_hex(0x223040), 0);
-    lv_obj_set_style_bg_opa(*track, LV_OPA_COVER, 0);
+    ui_obj_set_style_bg_color(*track, lv_color_hex(0x223040), 0);
+    ui_obj_set_style_bg_opa(*track, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(*track, 5, 0);
-    lv_obj_clear_flag(*track, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_align(*track, LV_ALIGN_TOP_LEFT, 4, y);
+    ui_obj_clear_flag(*track, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    ui_obj_align(*track, LV_ALIGN_TOP_LEFT, 4, y);
 
     *fill = lv_obj_create(*track);
     lv_obj_remove_style_all(*fill);
     lv_obj_set_size(*fill, 0, 10);
-    lv_obj_set_style_bg_color(*fill, lv_color_hex(color), 0);
-    lv_obj_set_style_bg_opa(*fill, LV_OPA_COVER, 0);
+    ui_obj_set_style_bg_color(*fill, lv_color_hex(color), 0);
+    ui_obj_set_style_bg_opa(*fill, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(*fill, 5, 0);
-    lv_obj_clear_flag(*fill, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_align(*fill, LV_ALIGN_LEFT_MID, 0, 0);
+    ui_obj_clear_flag(*fill, LV_OBJ_FLAG_CLICKABLE);
+    ui_obj_align(*fill, LV_ALIGN_LEFT_MID, 0, 0);
 
     *lbl = lv_label_create(parent);
-    lv_obj_set_style_text_color(*lbl, lv_color_hex(color), 0);
-    lv_obj_set_style_text_font(*lbl, &lv_font_montserrat_18, 0);
-    lv_label_set_text(*lbl, "");
-    lv_obj_align(*lbl, LV_ALIGN_TOP_LEFT, 4, y + 13);
+    ui_obj_set_style_text_color(*lbl, lv_color_hex(color), 0);
+    ui_obj_set_style_text_font(*lbl, &lv_font_montserrat_18, 0);
+    ui_label_set_text(*lbl, "");
+    ui_obj_align(*lbl, LV_ALIGN_TOP_LEFT, 4, y + 13);
 }
 static void en_set_bar(lv_obj_t * fill, lv_obj_t * lbl,
                        int tw, float ratio, const char * txt) {
@@ -189,7 +192,7 @@ static void en_set_bar(lv_obj_t * fill, lv_obj_t * lbl,
     int w = (int)(ratio * tw + 0.5f);
     if (ratio > 0 && w < 3) w = 3;
     lv_obj_set_width(fill, w);
-    lv_label_set_text(lbl, txt);
+    ui_label_set_text(lbl, txt);
 }
 
 /* One vertical segmented bar (classic Toon style) inside the energy/gas block:
@@ -241,31 +244,31 @@ static void en_make_vbar(lv_obj_t * parent, int bw, int bh,
         lv_obj_set_size(segs[i], sw, sh);
         lv_obj_set_pos(segs[i], x0, y0 + i * (sh + gp));
         lv_obj_set_style_radius(segs[i], 1, 0);
-        lv_obj_set_style_border_width(segs[i], 0, 0);
-        lv_obj_set_style_bg_color(segs[i], lv_color_hex(0x2A3540), 0);
-        lv_obj_set_style_bg_opa(segs[i], LV_OPA_COVER, 0);
-        lv_obj_clear_flag(segs[i], LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+        ui_obj_set_style_border_width(segs[i], 0, 0);
+        ui_obj_set_style_bg_color(segs[i], lv_color_hex(0x2A3540), 0);
+        ui_obj_set_style_bg_opa(segs[i], LV_OPA_COVER, 0);
+        ui_obj_clear_flag(segs[i], LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
     }
 
     *lbl = lv_label_create(parent);
-    lv_obj_set_style_text_color(*lbl, lv_color_hex(0xffffff), 0);
+    ui_obj_set_style_text_color(*lbl, lv_color_hex(0xffffff), 0);
     const lv_font_t * vfont = is_1col ? ((DISP_VER < 600) ? &lv_font_montserrat_14 : &lv_font_montserrat_18)
                                       : ((DISP_VER < 600) ? &lv_font_montserrat_18 : &lv_font_montserrat_22);
-    lv_obj_set_style_text_font(*lbl, vfont, 0);
+    ui_obj_set_style_text_font(*lbl, vfont, 0);
     lv_obj_set_style_text_align(*lbl, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(*lbl, bw > 0 ? bw : LV_SIZE_CONTENT);
-    lv_label_set_text(*lbl, "");
+    ui_label_set_text(*lbl, "");
     lv_obj_set_pos(*lbl, 0, y0 + th + lbl_gap);
 
     if (unit_lbl) {
         if (is_1col) {
             *unit_lbl = lv_label_create(parent);
-            lv_obj_set_style_text_color(*unit_lbl, lv_color_hex(0xbbbbbb), 0);
+            ui_obj_set_style_text_color(*unit_lbl, lv_color_hex(0xbbbbbb), 0);
             const lv_font_t * ufont = (DISP_VER < 600) ? &lv_font_montserrat_12 : &lv_font_montserrat_14;
-            lv_obj_set_style_text_font(*unit_lbl, ufont, 0);
+            ui_obj_set_style_text_font(*unit_lbl, ufont, 0);
             lv_obj_set_style_text_align(*unit_lbl, LV_TEXT_ALIGN_CENTER, 0);
             lv_obj_set_width(*unit_lbl, bw > 0 ? bw : LV_SIZE_CONTENT);
-            lv_label_set_text(*unit_lbl, "");
+            ui_label_set_text(*unit_lbl, "");
             lv_obj_set_pos(*unit_lbl, 0, y0 + th + lbl_gap + val_h + unit_gap);
         } else {
             *unit_lbl = NULL;
@@ -285,15 +288,15 @@ static void en_set_vbar_color(lv_obj_t * segs[DIM_GRID_NSEG], lv_obj_t * lbl, lv
         if (!segs[i]) continue;
         int fb = DIM_GRID_NSEG - 1 - i;   /* 0 = bottom, 11 = top */
         uint32_t c = (fb < lit) ? (fb < 7 ? col_low : col_high) : 0x2A3540;
-        lv_obj_set_style_bg_color(segs[i], lv_color_hex(c), 0);
+        ui_obj_set_style_bg_color(segs[i], lv_color_hex(c), 0);
     }
     if (unit_lbl) {
-        if (lbl) lv_label_set_text(lbl, val);
-        lv_label_set_text(unit_lbl, unit);
+        if (lbl) ui_label_set_text(lbl, val);
+        ui_label_set_text(unit_lbl, unit);
     } else if (lbl) {
         char comb[32];
         snprintf(comb, sizeof comb, "%s %s", val, unit);
-        lv_label_set_text(lbl, comb);
+        ui_label_set_text(lbl, comb);
     }
 }
 
@@ -359,8 +362,8 @@ static void refresh_cb(lv_timer_t * t) {
     char clk_h[8], clk_m[8];
     strftime(clk_h, sizeof(clk_h), "%H", &tm);
     strftime(clk_m, sizeof(clk_m), "%M", &tm);
-    lv_label_set_text(lbl_clock_h, clk_h);
-    lv_label_set_text(lbl_clock_m, clk_m);
+    ui_label_set_text(lbl_clock_h, clk_h);
+    ui_label_set_text(lbl_clock_m, clk_m);
     lv_obj_update_layout(lbl_clock_h);
     lv_obj_update_layout(lbl_clock_m);
     lv_obj_align_to(lbl_clock_h, lbl_clock_colon, LV_ALIGN_OUT_LEFT_MID, -8, 0);
@@ -373,28 +376,28 @@ static void refresh_cb(lv_timer_t * t) {
     lv_coord_t max_w = s_date_box_w > 0 ? s_date_box_w - 12 : (DISP_HOR * 2 / 5);
     lv_coord_t max_h = s_date_box_h > 0 ? s_date_box_h - 8 : 60;
     const lv_font_t * df = pick_date_font(dt, max_w, max_h);
-    lv_obj_set_style_text_font(lbl_date, df, 0);
-    lv_label_set_text(lbl_date, dt);
+    ui_obj_set_style_text_font(lbl_date, df, 0);
+    ui_label_set_text(lbl_date, dt);
 
     /* Moon (top-right, beside the current-weather icon): white at night,
        hidden during the day. Day/night from a real sunrise/sunset calc. */
     if (dim_moon_img) {
         if (is_daytime_now()) {
-            lv_obj_add_flag(dim_moon_img, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(dim_moon_img, LV_OBJ_FLAG_HIDDEN);
         } else {
             const lv_img_dsc_t * ph = moon_phase_icon(80);
             if (lv_img_get_src(dim_moon_img) != ph)
-                lv_img_set_src(dim_moon_img, ph);
-            lv_obj_clear_flag(dim_moon_img, LV_OBJ_FLAG_HIDDEN);
+                ui_img_set_src(dim_moon_img, ph);
+            ui_obj_clear_flag(dim_moon_img, LV_OBJ_FLAG_HIDDEN);
         }
     }
 
     /* Always paint values: if data not yet present, fall back to a
        "wait..." marker instead of leaving the stale "-- C" default. */
     if (toon_state.indoor_temp > 0)
-        lv_label_set_text_fmt(lbl_temp, "%.1f°C", display_indoor_temp(toon_state.indoor_temp));
+        ui_label_set_text_fmt(lbl_temp, "%.1f°C", display_indoor_temp(toon_state.indoor_temp));
     else
-        lv_label_set_text(lbl_temp, "...");
+        ui_label_set_text(lbl_temp, "...");
     lv_obj_update_layout(lbl_temp);
 
     /* Setpoint & program state under room temp */
@@ -402,11 +405,11 @@ static void refresh_cb(lv_timer_t * t) {
         const char * prog = program_label();
         if (toon_state.setpoint > 0) {
             if (toon_state.burner_on)
-                lv_label_set_text_fmt(lbl_setpoint, "%s - naar %.1f°C", prog, toon_state.setpoint);
+                ui_label_set_text_fmt(lbl_setpoint, "%s - naar %.1f°C", prog, toon_state.setpoint);
             else
-                lv_label_set_text_fmt(lbl_setpoint, "%s - %.1f°C", prog, toon_state.setpoint);
+                ui_label_set_text_fmt(lbl_setpoint, "%s - %.1f°C", prog, toon_state.setpoint);
         } else {
-            lv_label_set_text(lbl_setpoint, prog ? prog : "");
+            ui_label_set_text(lbl_setpoint, prog ? prog : "");
         }
         lv_obj_update_layout(lbl_setpoint);
         if (dim_img_flame) lv_obj_align_to(dim_img_flame, lbl_setpoint, LV_ALIGN_OUT_BOTTOM_MID, 0, 4);
@@ -420,7 +423,7 @@ static void refresh_cb(lv_timer_t * t) {
 
     if (lbl_metrics) {
         if (!settings.show_dim_metrics) {
-            lv_obj_add_flag(lbl_metrics, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(lbl_metrics, LV_OBJ_FLAG_HIDDEN);
         } else {
             /* TVOC / eCO2 ppm / CH water pressure / air-quality badge on one
                greyed row. Missing inputs collapse to "--" so the strip layout
@@ -449,8 +452,8 @@ static void refresh_cb(lv_timer_t * t) {
 #else
             snprintf(buf, sizeof buf, "%s", bar);
 #endif
-            lv_label_set_text(lbl_metrics, buf);
-            lv_obj_clear_flag(lbl_metrics, LV_OBJ_FLAG_HIDDEN);
+            ui_label_set_text(lbl_metrics, buf);
+            ui_obj_clear_flag(lbl_metrics, LV_OBJ_FLAG_HIDDEN);
         }
     }
 
@@ -463,18 +466,18 @@ static void refresh_cb(lv_timer_t * t) {
      * home-tile version: drop+L/m while pouring, "+X.X L" briefly after. */
     if (dim_img_water && dim_lbl_water) {
         if (hw_state.connected_water && hw_state.water_lpm > 0.05f) {
-            lv_label_set_text_fmt(dim_lbl_water, "%.1f L/m",
+            ui_label_set_text_fmt(dim_lbl_water, "%.1f L/m",
                                   hw_state.water_lpm);
-            lv_obj_clear_flag(dim_img_water, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(dim_lbl_water, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_clear_flag(dim_img_water, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_clear_flag(dim_lbl_water, LV_OBJ_FLAG_HIDDEN);
         } else if (hw_state.connected_water && hw_state.water_session_l > 0) {
-            lv_label_set_text_fmt(dim_lbl_water, "+%.1f L",
+            ui_label_set_text_fmt(dim_lbl_water, "+%.1f L",
                                   hw_state.water_session_l);
-            lv_obj_clear_flag(dim_img_water, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(dim_lbl_water, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_clear_flag(dim_img_water, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_clear_flag(dim_lbl_water, LV_OBJ_FLAG_HIDDEN);
         } else {
-            lv_obj_add_flag(dim_img_water, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(dim_lbl_water, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(dim_img_water, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(dim_lbl_water, LV_OBJ_FLAG_HIDDEN);
         }
     }
 
@@ -483,18 +486,18 @@ static void refresh_cb(lv_timer_t * t) {
      * the glyph itself is the signal. */
     if (dim_img_flame) {
         if (toon_state.burner_on)
-            lv_obj_clear_flag(dim_img_flame, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_clear_flag(dim_img_flame, LV_OBJ_FLAG_HIDDEN);
         else
-            lv_obj_add_flag(dim_img_flame, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(dim_img_flame, LV_OBJ_FLAG_HIDDEN);
     }
-    if (lbl_burner) lv_obj_add_flag(lbl_burner, LV_OBJ_FLAG_HIDDEN);
+    if (lbl_burner) ui_obj_add_flag(lbl_burner, LV_OBJ_FLAG_HIDDEN);
     if (dim_img_faucet && dim_img_drop) {
         if (toon_state.dhw_on) {
-            lv_obj_clear_flag(dim_img_faucet, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(dim_img_drop,   LV_OBJ_FLAG_HIDDEN);
+            ui_obj_clear_flag(dim_img_faucet, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_clear_flag(dim_img_drop,   LV_OBJ_FLAG_HIDDEN);
         } else {
-            lv_obj_add_flag(dim_img_faucet, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(dim_img_drop,   LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(dim_img_faucet, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(dim_img_drop,   LV_OBJ_FLAG_HIDDEN);
         }
     }
 
@@ -510,37 +513,37 @@ static void refresh_cb(lv_timer_t * t) {
             /* Itho reported itself offline via its MQTT LWT — show that
                (overrides the mode) and park the spinner. Normal case below
                shows what it's doing (mode + %). */
-            lv_label_set_text(dim_vent_lbl, tr("offline", "offline"));
+            ui_label_set_text(dim_vent_lbl, tr("offline", "offline"));
             dim_vent_apply_anim(0);
-            lv_obj_clear_flag(dim_vent_fan, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(dim_vent_lbl, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_clear_flag(dim_vent_fan, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_clear_flag(dim_vent_lbl, LV_OBJ_FLAG_HIDDEN);
         } else if (vent_state.connected) {
             const char * pretty = vent_mode_label();
             if (vent_state.remaining_min > 0)
-                lv_label_set_text_fmt(dim_vent_lbl, "%s %dm %d %%",
+                ui_label_set_text_fmt(dim_vent_lbl, "%s %dm %d %%",
                                       pretty, vent_state.remaining_min,
                                       vent_state.speed_pct);
             else
-                lv_label_set_text_fmt(dim_vent_lbl, "%s %d %%",
+                ui_label_set_text_fmt(dim_vent_lbl, "%s %d %%",
                                       pretty, vent_state.speed_pct);
             dim_vent_apply_anim(vent_state.fan_rpm);
-            lv_obj_clear_flag(dim_vent_fan, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(dim_vent_lbl, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_clear_flag(dim_vent_fan, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_clear_flag(dim_vent_lbl, LV_OBJ_FLAG_HIDDEN);
         } else {
-            lv_obj_add_flag(dim_vent_fan, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(dim_vent_lbl, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(dim_vent_fan, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(dim_vent_lbl, LV_OBJ_FLAG_HIDDEN);
         }
     }
 
     if (wx_icon) {
         if (settings.show_dim_weather && weather_state.day_count > 0) {
             const char * ic = weather_state.days[0].icon;
-            lv_img_set_src(wx_icon, weather_icon_for_lg(ic));
-            lv_obj_set_style_img_recolor(wx_icon,
+            ui_img_set_src(wx_icon, weather_icon_for_lg(ic));
+            ui_obj_set_style_img_recolor(wx_icon,
                 lv_color_hex(weather_icon_color_for(ic)), 0);
-            lv_obj_clear_flag(wx_icon, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_clear_flag(wx_icon, LV_OBJ_FLAG_HIDDEN);
         } else {
-            lv_obj_add_flag(wx_icon, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(wx_icon, LV_OBJ_FLAG_HIDDEN);
         }
     }
     /* Forecast strip — 3-hourly to match home screen. Falls back to daily
@@ -550,11 +553,11 @@ static void refresh_cb(lv_timer_t * t) {
         if (settings.show_dim_weather && weather_state.connected) {
             const char * city = settings.weather_location[0]
                                 ? settings.weather_location : tr("Verwachting", "Forecast");
-            lv_label_set_text_fmt(dim_lbl_city, tr("%s  -  %.1f°C nu", "%s  -  %.1f°C now"),
+            ui_label_set_text_fmt(dim_lbl_city, tr("%s  -  %.1f°C nu", "%s  -  %.1f°C now"),
                                   city, weather_display_temp());
-            lv_obj_clear_flag(dim_lbl_city, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_clear_flag(dim_lbl_city, LV_OBJ_FLAG_HIDDEN);
         } else {
-            lv_obj_add_flag(dim_lbl_city, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(dim_lbl_city, LV_OBJ_FLAG_HIDDEN);
         }
     }
 
@@ -562,22 +565,22 @@ static void refresh_cb(lv_timer_t * t) {
      * address; colour still identifies who's who. Hidden until data lands. */
     if (dim_lbl_life360_a) {
         if (ha_state.loc_a[0]) {
-            lv_label_set_text_fmt(dim_lbl_life360_a, "%s: %s",
+            ui_label_set_text_fmt(dim_lbl_life360_a, "%s: %s",
                                   settings.life360_a_name[0] ? settings.life360_a_name : "A",
                                   ha_state.loc_a);
-            lv_obj_clear_flag(dim_lbl_life360_a, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_clear_flag(dim_lbl_life360_a, LV_OBJ_FLAG_HIDDEN);
         } else {
-            lv_obj_add_flag(dim_lbl_life360_a, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(dim_lbl_life360_a, LV_OBJ_FLAG_HIDDEN);
         }
     }
     if (dim_lbl_life360_b) {
         if (ha_state.loc_b[0]) {
-            lv_label_set_text_fmt(dim_lbl_life360_b, "%s: %s",
+            ui_label_set_text_fmt(dim_lbl_life360_b, "%s: %s",
                                   settings.life360_b_name[0] ? settings.life360_b_name : "B",
                                   ha_state.loc_b);
-            lv_obj_clear_flag(dim_lbl_life360_b, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_clear_flag(dim_lbl_life360_b, LV_OBJ_FLAG_HIDDEN);
         } else {
-            lv_obj_add_flag(dim_lbl_life360_b, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(dim_lbl_life360_b, LV_OBJ_FLAG_HIDDEN);
         }
     }
 
@@ -585,9 +588,9 @@ static void refresh_cb(lv_timer_t * t) {
     for (int i = 0; i < WEATHER_FORECAST_DAYS; i++) {
         if (!dim_fc_icon[i]) continue;
         if (!settings.show_dim_weather) {
-            lv_obj_add_flag(dim_fc_icon[i], LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(dim_fc_day[i],  LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(dim_fc_temp[i], LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(dim_fc_icon[i], LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(dim_fc_day[i],  LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(dim_fc_temp[i], LV_OBJ_FLAG_HIDDEN);
             continue;
         }
         /* For the hourly view, skip slot 0 — it's "now" and already lives
@@ -599,15 +602,15 @@ static void refresh_cb(lv_timer_t * t) {
             int si = i + 1;
             if (si < weather_state.hour_count) {
                 const weather_hour_t * h = &weather_state.hours[si];
-                lv_img_set_src(dim_fc_icon[i], weather_icon_for(h->icon));
-                lv_obj_set_style_img_recolor(dim_fc_icon[i],
+                ui_img_set_src(dim_fc_icon[i], weather_icon_for(h->icon));
+                ui_obj_set_style_img_recolor(dim_fc_icon[i],
                     lv_color_hex(weather_icon_color_for(h->icon)), 0);
-                lv_label_set_text(dim_fc_day[i], h->label);
+                ui_label_set_text(dim_fc_day[i], h->label);
                 if (h->wind_dir[0])
-                    lv_label_set_text_fmt(dim_fc_temp[i], "%.0f°C  %s%d",
+                    ui_label_set_text_fmt(dim_fc_temp[i], "%.0f°C  %s%d",
                                           weather_hour_display_temp(h), h->wind_dir, h->wind_bft);
                 else
-                    lv_label_set_text_fmt(dim_fc_temp[i], "%.0f°C",
+                    ui_label_set_text_fmt(dim_fc_temp[i], "%.0f°C",
                                           weather_hour_display_temp(h));
                 painted = 1;
             } else {
@@ -615,61 +618,61 @@ static void refresh_cb(lv_timer_t * t) {
                 int di = si - weather_state.hour_count;
                 if (di < weather_state.day_count) {
                     const weather_day_t * d = &weather_state.days[di];
-                    lv_img_set_src(dim_fc_icon[i], weather_icon_for(d->icon));
-                    lv_obj_set_style_img_recolor(dim_fc_icon[i],
+                    ui_img_set_src(dim_fc_icon[i], weather_icon_for(d->icon));
+                    ui_obj_set_style_img_recolor(dim_fc_icon[i],
                         lv_color_hex(weather_icon_color_for(d->icon)), 0);
-                    lv_label_set_text(dim_fc_day[i], d->day);
+                    ui_label_set_text(dim_fc_day[i], d->day);
                     if (d->wind_dir[0])
-                        lv_label_set_text_fmt(dim_fc_temp[i], "%.0f/%.0f  %s%d",
+                        ui_label_set_text_fmt(dim_fc_temp[i], "%.0f/%.0f  %s%d",
                                               d->min_temp, d->max_temp,
                                               d->wind_dir, d->wind_bft);
                     else
-                        lv_label_set_text_fmt(dim_fc_temp[i], "%.0f/%.0f°C",
+                        ui_label_set_text_fmt(dim_fc_temp[i], "%.0f/%.0f°C",
                                               d->min_temp, d->max_temp);
                     painted = 1;
                 }
             }
         } else if (i < weather_state.day_count) {
             const weather_day_t * d = &weather_state.days[i];
-            lv_img_set_src(dim_fc_icon[i], weather_icon_for(d->icon));
-            lv_obj_set_style_img_recolor(dim_fc_icon[i],
+            ui_img_set_src(dim_fc_icon[i], weather_icon_for(d->icon));
+            ui_obj_set_style_img_recolor(dim_fc_icon[i],
                 lv_color_hex(weather_icon_color_for(d->icon)), 0);
-            lv_label_set_text(dim_fc_day[i], d->day);
+            ui_label_set_text(dim_fc_day[i], d->day);
             if (d->wind_dir[0])
-                lv_label_set_text_fmt(dim_fc_temp[i], "%.0f/%.0f  %s%d",
+                ui_label_set_text_fmt(dim_fc_temp[i], "%.0f/%.0f  %s%d",
                                       d->min_temp, d->max_temp,
                                       d->wind_dir, d->wind_bft);
             else
-                lv_label_set_text_fmt(dim_fc_temp[i], "%.0f/%.0f°C",
+                ui_label_set_text_fmt(dim_fc_temp[i], "%.0f/%.0f°C",
                                       d->min_temp, d->max_temp);
             painted = 1;
         }
         if (painted) {
-            lv_obj_clear_flag(dim_fc_icon[i], LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(dim_fc_day[i],  LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(dim_fc_temp[i], LV_OBJ_FLAG_HIDDEN);
+            ui_obj_clear_flag(dim_fc_icon[i], LV_OBJ_FLAG_HIDDEN);
+            ui_obj_clear_flag(dim_fc_day[i],  LV_OBJ_FLAG_HIDDEN);
+            ui_obj_clear_flag(dim_fc_temp[i], LV_OBJ_FLAG_HIDDEN);
         } else {
-            lv_obj_add_flag(dim_fc_icon[i], LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(dim_fc_day[i],  LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(dim_fc_temp[i], LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(dim_fc_icon[i], LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(dim_fc_day[i],  LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(dim_fc_temp[i], LV_OBJ_FLAG_HIDDEN);
         }
     }
     if (lbl_outside_temp) {
         if (settings.show_dim_weather && weather_state.connected) {
-            lv_label_set_text_fmt(lbl_outside_temp, "%.1f C", weather_display_temp());
-            lv_obj_clear_flag(lbl_outside_temp, LV_OBJ_FLAG_HIDDEN);
+            ui_label_set_text_fmt(lbl_outside_temp, "%.1f C", weather_display_temp());
+            ui_obj_clear_flag(lbl_outside_temp, LV_OBJ_FLAG_HIDDEN);
         } else {
-            lv_obj_add_flag(lbl_outside_temp, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(lbl_outside_temp, LV_OBJ_FLAG_HIDDEN);
         }
     }
     if (wx_icon) {
         if (settings.show_dim_weather && weather_state.connected) {
-            lv_img_set_src(wx_icon, weather_icon_for_lg(weather_state.current_icon));
-            lv_obj_clear_flag(wx_icon, LV_OBJ_FLAG_HIDDEN);
-            if (lbl_outside) lv_obj_clear_flag(lbl_outside, LV_OBJ_FLAG_HIDDEN);
+            ui_img_set_src(wx_icon, weather_icon_for_lg(weather_state.current_icon));
+            ui_obj_clear_flag(wx_icon, LV_OBJ_FLAG_HIDDEN);
+            if (lbl_outside) ui_obj_clear_flag(lbl_outside, LV_OBJ_FLAG_HIDDEN);
         } else {
-            lv_obj_add_flag(wx_icon, LV_OBJ_FLAG_HIDDEN);
-            if (lbl_outside) lv_obj_add_flag(lbl_outside, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(wx_icon, LV_OBJ_FLAG_HIDDEN);
+            if (lbl_outside) ui_obj_add_flag(lbl_outside, LV_OBJ_FLAG_HIDDEN);
         }
     }
 
@@ -695,46 +698,46 @@ static void refresh_cb(lv_timer_t * t) {
                     snprintf(t2, sizeof t2, "%s", p2);
                     size_t n = strlen(t1); while (n && t1[n-1] == ' ') t1[--n] = 0;
                 }
-                lv_img_set_src(waste_icon, waste_icon_for_label_lg(t1));
-                lv_obj_set_style_img_recolor(waste_icon, lv_color_hex(0xffffff), 0);
-                lv_obj_set_style_img_recolor_opa(waste_icon, 255, 0);
+                ui_img_set_src(waste_icon, waste_icon_for_label_lg(t1));
+                ui_obj_set_style_img_recolor(waste_icon, lv_color_hex(0xffffff), 0);
+                ui_obj_set_style_img_recolor_opa(waste_icon, 255, 0);
                 if (waste_icon_2) {
                     if (t2[0]) {
-                        lv_img_set_src(waste_icon_2, waste_icon_for_label_lg(t2));
-                        lv_obj_set_style_img_recolor(waste_icon_2, lv_color_hex(0xffffff), 0);
-                        lv_obj_set_style_img_recolor_opa(waste_icon_2, 255, 0);
-                        lv_obj_clear_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
-                    } else lv_obj_add_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
+                        ui_img_set_src(waste_icon_2, waste_icon_for_label_lg(t2));
+                        ui_obj_set_style_img_recolor(waste_icon_2, lv_color_hex(0xffffff), 0);
+                        ui_obj_set_style_img_recolor_opa(waste_icon_2, 255, 0);
+                        ui_obj_clear_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
+                    } else ui_obj_add_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
                 }
 
                 long days_until = waste_days_until(wp.date);
                 const char * when = (days_until == 0) ? tr("Vandaag", "Today") : (days_until == 1) ? tr("Morgen", "Tomorrow") : NULL;
-                if (when) lv_label_set_text_fmt(lbl_waste, "%s: %s", when, l_clean);
+                if (when) ui_label_set_text_fmt(lbl_waste, "%s: %s", when, l_clean);
                 else {
                     int mo = atoi(wp.date + 5), dy = atoi(wp.date + 8);
-                    lv_label_set_text_fmt(lbl_waste, "%d-%d: %s", dy, mo, l_clean);
+                    ui_label_set_text_fmt(lbl_waste, "%d-%d: %s", dy, mo, l_clean);
                 }
-                lv_obj_clear_flag(waste_icon, LV_OBJ_FLAG_HIDDEN);
-                lv_obj_clear_flag(lbl_waste,  LV_OBJ_FLAG_HIDDEN);
+                ui_obj_clear_flag(waste_icon, LV_OBJ_FLAG_HIDDEN);
+                ui_obj_clear_flag(lbl_waste,  LV_OBJ_FLAG_HIDDEN);
             } else if (settings.dim_waste_lead_days <= 0) {
                 /* Filter off and genuinely no upcoming pickup → dimmed placeholder. */
-                lv_img_set_src(waste_icon, &icon_trash_lg);
-                lv_obj_set_style_img_recolor(waste_icon, lv_color_hex(0xffffff), 0);
-                lv_obj_set_style_img_recolor_opa(waste_icon, 100, 0); /* dimmed */
-                lv_label_set_text(lbl_waste, tr("Geen", "None"));
-                if (waste_icon_2) lv_obj_add_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
-                lv_obj_clear_flag(waste_icon, LV_OBJ_FLAG_HIDDEN);
-                lv_obj_clear_flag(lbl_waste,  LV_OBJ_FLAG_HIDDEN);
+                ui_img_set_src(waste_icon, &icon_trash_lg);
+                ui_obj_set_style_img_recolor(waste_icon, lv_color_hex(0xffffff), 0);
+                ui_obj_set_style_img_recolor_opa(waste_icon, 100, 0); /* dimmed */
+                ui_label_set_text(lbl_waste, tr("Geen", "None"));
+                if (waste_icon_2) ui_obj_add_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
+                ui_obj_clear_flag(waste_icon, LV_OBJ_FLAG_HIDDEN);
+                ui_obj_clear_flag(lbl_waste,  LV_OBJ_FLAG_HIDDEN);
             } else {
                 /* Lead filter on but the next pickup is beyond the window → hide. */
-                lv_obj_add_flag(waste_icon, LV_OBJ_FLAG_HIDDEN);
-                lv_obj_add_flag(lbl_waste,  LV_OBJ_FLAG_HIDDEN);
-                if (waste_icon_2) lv_obj_add_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
+                ui_obj_add_flag(waste_icon, LV_OBJ_FLAG_HIDDEN);
+                ui_obj_add_flag(lbl_waste,  LV_OBJ_FLAG_HIDDEN);
+                if (waste_icon_2) ui_obj_add_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
             }
         } else {
-            lv_obj_add_flag(waste_icon, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(lbl_waste,  LV_OBJ_FLAG_HIDDEN);
-            if (waste_icon_2) lv_obj_add_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(waste_icon, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(lbl_waste,  LV_OBJ_FLAG_HIDDEN);
+            if (waste_icon_2) ui_obj_add_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
         }
     }
 
@@ -820,40 +823,40 @@ static void refresh_cb(lv_timer_t * t) {
                                   en_pwr_lbl,   en_gas_lbl,   en_sol_lbl };
         for (unsigned i = 0; i < sizeof en_parts / sizeof en_parts[0]; i++)
             if (en_parts[i]) {
-                if (show && !vert) lv_obj_clear_flag(en_parts[i], LV_OBJ_FLAG_HIDDEN);
-                else               lv_obj_add_flag(en_parts[i], LV_OBJ_FLAG_HIDDEN);
+                if (show && !vert) ui_obj_clear_flag(en_parts[i], LV_OBJ_FLAG_HIDDEN);
+                else               ui_obj_add_flag(en_parts[i], LV_OBJ_FLAG_HIDDEN);
             }
         for (int i = 0; i < DIM_GRID_NSEG; i++) {
             if (en_pwr_segs[i]) {
-                if (show && vert) lv_obj_clear_flag(en_pwr_segs[i], LV_OBJ_FLAG_HIDDEN);
-                else              lv_obj_add_flag(en_pwr_segs[i], LV_OBJ_FLAG_HIDDEN);
+                if (show && vert) ui_obj_clear_flag(en_pwr_segs[i], LV_OBJ_FLAG_HIDDEN);
+                else              ui_obj_add_flag(en_pwr_segs[i], LV_OBJ_FLAG_HIDDEN);
             }
             if (en_gas_segs[i]) {
-                if (show && vert) lv_obj_clear_flag(en_gas_segs[i], LV_OBJ_FLAG_HIDDEN);
-                else              lv_obj_add_flag(en_gas_segs[i], LV_OBJ_FLAG_HIDDEN);
+                if (show && vert) ui_obj_clear_flag(en_gas_segs[i], LV_OBJ_FLAG_HIDDEN);
+                else              ui_obj_add_flag(en_gas_segs[i], LV_OBJ_FLAG_HIDDEN);
             }
             if (en_sol_segs[i]) {
-                if (show && vert) lv_obj_clear_flag(en_sol_segs[i], LV_OBJ_FLAG_HIDDEN);
-                else              lv_obj_add_flag(en_sol_segs[i], LV_OBJ_FLAG_HIDDEN);
+                if (show && vert) ui_obj_clear_flag(en_sol_segs[i], LV_OBJ_FLAG_HIDDEN);
+                else              ui_obj_add_flag(en_sol_segs[i], LV_OBJ_FLAG_HIDDEN);
             }
         }
         if (en_pwr_vlbl) {
-            if (show && vert) lv_obj_clear_flag(en_pwr_vlbl, LV_OBJ_FLAG_HIDDEN);
-            else              lv_obj_add_flag(en_pwr_vlbl, LV_OBJ_FLAG_HIDDEN);
+            if (show && vert) ui_obj_clear_flag(en_pwr_vlbl, LV_OBJ_FLAG_HIDDEN);
+            else              ui_obj_add_flag(en_pwr_vlbl, LV_OBJ_FLAG_HIDDEN);
         }
         if (en_gas_vlbl) {
-            if (show && vert) lv_obj_clear_flag(en_gas_vlbl, LV_OBJ_FLAG_HIDDEN);
-            else              lv_obj_add_flag(en_gas_vlbl, LV_OBJ_FLAG_HIDDEN);
+            if (show && vert) ui_obj_clear_flag(en_gas_vlbl, LV_OBJ_FLAG_HIDDEN);
+            else              ui_obj_add_flag(en_gas_vlbl, LV_OBJ_FLAG_HIDDEN);
         }
         if (en_sol_vlbl) {
-            if (show && vert) lv_obj_clear_flag(en_sol_vlbl, LV_OBJ_FLAG_HIDDEN);
-            else              lv_obj_add_flag(en_sol_vlbl, LV_OBJ_FLAG_HIDDEN);
+            if (show && vert) ui_obj_clear_flag(en_sol_vlbl, LV_OBJ_FLAG_HIDDEN);
+            else              ui_obj_add_flag(en_sol_vlbl, LV_OBJ_FLAG_HIDDEN);
         }
         lv_obj_t * en_vunits[] = { en_pwr_vunit, en_gas_vunit, en_sol_vunit };
         for (unsigned i = 0; i < sizeof en_vunits / sizeof en_vunits[0]; i++) {
             if (en_vunits[i]) {
-                if (show && vert) lv_obj_clear_flag(en_vunits[i], LV_OBJ_FLAG_HIDDEN);
-                else              lv_obj_add_flag(en_vunits[i], LV_OBJ_FLAG_HIDDEN);
+                if (show && vert) ui_obj_clear_flag(en_vunits[i], LV_OBJ_FLAG_HIDDEN);
+                else              ui_obj_add_flag(en_vunits[i], LV_OBJ_FLAG_HIDDEN);
             }
         }
     }
@@ -866,19 +869,19 @@ static void refresh_cb(lv_timer_t * t) {
                 if (r < calendar_state.count) {
                     char dt[32];
                     format_agenda_date_time(&calendar_state.ev[r], dt, sizeof(dt));
-                    lv_label_set_text(dim_lbl_agenda_time[r], dt);
-                    lv_label_set_text(dim_lbl_agenda_title[r], calendar_state.ev[r].summary);
+                    ui_label_set_text(dim_lbl_agenda_time[r], dt);
+                    ui_label_set_text(dim_lbl_agenda_title[r], calendar_state.ev[r].summary);
                 } else {
-                    lv_label_set_text(dim_lbl_agenda_time[r], "");
-                    lv_label_set_text(dim_lbl_agenda_title[r], "");
+                    ui_label_set_text(dim_lbl_agenda_time[r], "");
+                    ui_label_set_text(dim_lbl_agenda_title[r], "");
                 }
             }
         } else {
-            if (dim_lbl_agenda_time[0]) lv_label_set_text(dim_lbl_agenda_time[0], "");
-            if (dim_lbl_agenda_title[0]) lv_label_set_text(dim_lbl_agenda_title[0], tr("Geen afspraken", "No appointments"));
+            if (dim_lbl_agenda_time[0]) ui_label_set_text(dim_lbl_agenda_time[0], "");
+            if (dim_lbl_agenda_title[0]) ui_label_set_text(dim_lbl_agenda_title[0], tr("Geen afspraken", "No appointments"));
             for (int r = 1; r < dim_agenda_row_count; r++) {
-                if (dim_lbl_agenda_time[r]) lv_label_set_text(dim_lbl_agenda_time[r], "");
-                if (dim_lbl_agenda_title[r]) lv_label_set_text(dim_lbl_agenda_title[r], "");
+                if (dim_lbl_agenda_time[r]) ui_label_set_text(dim_lbl_agenda_time[r], "");
+                if (dim_lbl_agenda_title[r]) ui_label_set_text(dim_lbl_agenda_title[r], "");
             }
         }
     }
@@ -887,28 +890,28 @@ static void refresh_cb(lv_timer_t * t) {
         buienradar_rain_snapshot_t rsnap;
         buienradar_rain_get_snapshot(&rsnap);
         if (dim_rain_lbl_status) {
-            lv_label_set_text(dim_rain_lbl_status, rsnap.summary_3h[0] ? rsnap.summary_3h : "");
+            ui_label_set_text(dim_rain_lbl_status, rsnap.summary_3h[0] ? rsnap.summary_3h : "");
         }
         int has_rain = rsnap.has_rain_3h;
         if (rsnap.is_valid && !has_rain) {
-            if (dim_rain_lbl_empty) lv_obj_clear_flag(dim_rain_lbl_empty, LV_OBJ_FLAG_HIDDEN);
-            if (dim_rain_hdr) lv_obj_add_flag(dim_rain_hdr, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(dim_rain_chart, LV_OBJ_FLAG_HIDDEN);
+            if (dim_rain_lbl_empty) ui_obj_clear_flag(dim_rain_lbl_empty, LV_OBJ_FLAG_HIDDEN);
+            if (dim_rain_hdr) ui_obj_add_flag(dim_rain_hdr, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(dim_rain_chart, LV_OBJ_FLAG_HIDDEN);
             for (int i = 0; i < 3; i++) {
-                if (dim_thresh_lbl[i]) lv_obj_add_flag(dim_thresh_lbl[i], LV_OBJ_FLAG_HIDDEN);
+                if (dim_thresh_lbl[i]) ui_obj_add_flag(dim_thresh_lbl[i], LV_OBJ_FLAG_HIDDEN);
             }
             for (int i = 0; i < 4; i++) {
-                if (dim_rain_lbl_times[i]) lv_obj_add_flag(dim_rain_lbl_times[i], LV_OBJ_FLAG_HIDDEN);
+                if (dim_rain_lbl_times[i]) ui_obj_add_flag(dim_rain_lbl_times[i], LV_OBJ_FLAG_HIDDEN);
             }
         } else {
-            if (dim_rain_lbl_empty) lv_obj_add_flag(dim_rain_lbl_empty, LV_OBJ_FLAG_HIDDEN);
-            if (dim_rain_hdr) lv_obj_clear_flag(dim_rain_hdr, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(dim_rain_chart, LV_OBJ_FLAG_HIDDEN);
+            if (dim_rain_lbl_empty) ui_obj_add_flag(dim_rain_lbl_empty, LV_OBJ_FLAG_HIDDEN);
+            if (dim_rain_hdr) ui_obj_clear_flag(dim_rain_hdr, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_clear_flag(dim_rain_chart, LV_OBJ_FLAG_HIDDEN);
             for (int i = 0; i < 3; i++) {
-                if (dim_thresh_lbl[i]) lv_obj_clear_flag(dim_thresh_lbl[i], LV_OBJ_FLAG_HIDDEN);
+                if (dim_thresh_lbl[i]) ui_obj_clear_flag(dim_thresh_lbl[i], LV_OBJ_FLAG_HIDDEN);
             }
             for (int i = 0; i < 4; i++) {
-                if (dim_rain_lbl_times[i]) lv_obj_clear_flag(dim_rain_lbl_times[i], LV_OBJ_FLAG_HIDDEN);
+                if (dim_rain_lbl_times[i]) ui_obj_clear_flag(dim_rain_lbl_times[i], LV_OBJ_FLAG_HIDDEN);
             }
             int n = rsnap.count_3h;
             if (n <= 0) n = 38;
@@ -918,11 +921,11 @@ static void refresh_cb(lv_timer_t * t) {
             }
             lv_chart_refresh(dim_rain_chart);
             if (rsnap.count_3h > 0) {
-                if (dim_rain_lbl_times[0]) lv_label_set_text(dim_rain_lbl_times[0], tr("Nu", "Now"));
-                if (dim_rain_lbl_times[1]) lv_label_set_text(dim_rain_lbl_times[1], rsnap.points_3h[n / 3].time_str);
-                if (dim_rain_lbl_times[2]) lv_label_set_text(dim_rain_lbl_times[2], rsnap.points_3h[2 * n / 3].time_str);
+                if (dim_rain_lbl_times[0]) ui_label_set_text(dim_rain_lbl_times[0], tr("Nu", "Now"));
+                if (dim_rain_lbl_times[1]) ui_label_set_text(dim_rain_lbl_times[1], rsnap.points_3h[n / 3].time_str);
+                if (dim_rain_lbl_times[2]) ui_label_set_text(dim_rain_lbl_times[2], rsnap.points_3h[2 * n / 3].time_str);
                 if (dim_rain_lbl_times[3]) {
-                    lv_label_set_text(dim_rain_lbl_times[3], rsnap.points_3h[n - 1].time_str);
+                    ui_label_set_text(dim_rain_lbl_times[3], rsnap.points_3h[n - 1].time_str);
                     if (dim_rain_chart) lv_obj_align_to(dim_rain_lbl_times[3], dim_rain_chart, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, 2);
                 }
             }
@@ -941,9 +944,9 @@ lv_obj_t * screen_dim_grid_create(void) {
     if (scr_root) return scr_root;
 
     scr_root = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(scr_root, lv_color_hex(0x000000), 0);
-    lv_obj_set_style_bg_opa(scr_root, LV_OPA_COVER, 0);
-    lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
+    ui_obj_set_style_bg_color(scr_root, lv_color_hex(0x000000), 0);
+    ui_obj_set_style_bg_opa(scr_root, LV_OPA_COVER, 0);
+    ui_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
 
     /* Package banner overlay (hidden when queue empty). Attached BEFORE
      * the wake-tap event handler so its CLICKABLE flag wins over the
@@ -952,27 +955,27 @@ lv_obj_t * screen_dim_grid_create(void) {
     packages_banner_attach(scr_root);
 
     /* Whole screen is a wake target. */
-    lv_obj_add_flag(scr_root, LV_OBJ_FLAG_CLICKABLE);
+    ui_obj_add_flag(scr_root, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(scr_root, on_wake_tap, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(scr_root, on_screen_loaded, LV_EVENT_SCREEN_LOADED, NULL);
 
     /* Clock — custom 96pt Montserrat inside its customizable dim box (DB_CLOCK) */
     lv_obj_t * bx_clock = dim_box(DB_CLOCK, NULL, NULL);
     lbl_clock_colon = lv_label_create(bx_clock);
-    lv_obj_set_style_text_color(lbl_clock_colon, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_clock_colon, SF(96), 0);
-    lv_label_set_text(lbl_clock_colon, ":");
-    lv_obj_align(lbl_clock_colon, LV_ALIGN_CENTER, 0, 0);
+    ui_obj_set_style_text_color(lbl_clock_colon, lv_color_hex(0xffffff), 0);
+    ui_obj_set_style_text_font(lbl_clock_colon, SF(96), 0);
+    ui_label_set_text(lbl_clock_colon, ":");
+    ui_obj_align(lbl_clock_colon, LV_ALIGN_CENTER, 0, 0);
 
     lbl_clock_h = lv_label_create(bx_clock);
-    lv_obj_set_style_text_color(lbl_clock_h, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_clock_h, SF(96), 0);
-    lv_label_set_text(lbl_clock_h, "--");
+    ui_obj_set_style_text_color(lbl_clock_h, lv_color_hex(0xffffff), 0);
+    ui_obj_set_style_text_font(lbl_clock_h, SF(96), 0);
+    ui_label_set_text(lbl_clock_h, "--");
 
     lbl_clock_m = lv_label_create(bx_clock);
-    lv_obj_set_style_text_color(lbl_clock_m, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_clock_m, SF(96), 0);
-    lv_label_set_text(lbl_clock_m, "--");
+    ui_obj_set_style_text_color(lbl_clock_m, lv_color_hex(0xffffff), 0);
+    ui_obj_set_style_text_font(lbl_clock_m, SF(96), 0);
+    ui_label_set_text(lbl_clock_m, "--");
 
     lv_obj_update_layout(lbl_clock_colon);
     lv_obj_update_layout(lbl_clock_h);
@@ -986,11 +989,11 @@ lv_obj_t * screen_dim_grid_create(void) {
     s_date_box_w = dw;
     s_date_box_h = dh;
     lbl_date = lv_label_create(bx_date);
-    lv_obj_set_style_text_color(lbl_date, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_date, SF(28), 0);
+    ui_obj_set_style_text_color(lbl_date, lv_color_hex(0xffffff), 0);
+    ui_obj_set_style_text_font(lbl_date, SF(28), 0);
     lv_obj_set_style_text_align(lbl_date, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_text(lbl_date, "");
-    lv_obj_align(lbl_date, LV_ALIGN_CENTER, 0, 0);
+    ui_label_set_text(lbl_date, "");
+    ui_obj_align(lbl_date, LV_ALIGN_CENTER, 0, 0);
 
     /* ===== peripheral blocks — each rendered INSIDE its grid cell so the
      * "Dim indeling" editor is true WYSIWYG (content lands where the cell is).
@@ -1014,13 +1017,13 @@ lv_obj_t * screen_dim_grid_create(void) {
     lv_obj_set_flex_flow(wrow, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(wrow, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(wrow, 8, 0);
-    lv_obj_clear_flag(wrow, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_align(wrow, LV_ALIGN_TOP_MID, 0, 10);
+    ui_obj_clear_flag(wrow, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    ui_obj_align(wrow, LV_ALIGN_TOP_MID, 0, 10);
 
     wx_icon = lv_img_create(wrow);
-    lv_img_set_src(wx_icon, &icon_wx_cloud_lg);
-    lv_obj_set_style_img_recolor(wx_icon, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_img_recolor_opa(wx_icon, 255, 0);
+    ui_img_set_src(wx_icon, &icon_wx_cloud_lg);
+    ui_obj_set_style_img_recolor(wx_icon, lv_color_hex(0xffffff), 0);
+    ui_obj_set_style_img_recolor_opa(wx_icon, 255, 0);
 
     /* temp over "Buiten" in a column, so "Buiten" sits directly UNDER the
      * temperature (not centred under the whole icon+temp pair). */
@@ -1029,19 +1032,19 @@ lv_obj_t * screen_dim_grid_create(void) {
     lv_obj_set_size(wcol, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(wcol, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(wcol, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_clear_flag(wcol, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    ui_obj_clear_flag(wcol, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
 
     lbl_outside_temp = lv_label_create(wcol);
-    lv_obj_set_style_text_color(lbl_outside_temp, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_outside_temp, wtemp_font, 0);
+    ui_obj_set_style_text_color(lbl_outside_temp, lv_color_hex(0xffffff), 0);
+    ui_obj_set_style_text_font(lbl_outside_temp, wtemp_font, 0);
     lv_label_set_long_mode(lbl_outside_temp, LV_LABEL_LONG_CLIP);
     lv_obj_set_width(lbl_outside_temp, LV_SIZE_CONTENT);
-    lv_label_set_text(lbl_outside_temp, "--");
+    ui_label_set_text(lbl_outside_temp, "--");
 
     lbl_outside = lv_label_create(wcol);
-    lv_obj_set_style_text_color(lbl_outside, lv_color_hex(0xbbbbbb), 0);
-    lv_obj_set_style_text_font(lbl_outside, &lv_font_montserrat_22, 0);
-    lv_label_set_text(lbl_outside, tr("Buiten", "Outside"));
+    ui_obj_set_style_text_color(lbl_outside, lv_color_hex(0xbbbbbb), 0);
+    ui_obj_set_style_text_font(lbl_outside, &lv_font_montserrat_22, 0);
+    ui_label_set_text(lbl_outside, tr("Buiten", "Outside"));
 
     /* Moon phase icon removed per CR11 */
     dim_moon_img = NULL;
@@ -1049,130 +1052,130 @@ lv_obj_t * screen_dim_grid_create(void) {
     /* ---- WASTE: bin icon(s) centred top, label centred below ---- */
     int sbw = 0, sbh = 0; lv_obj_t * bx_s = dim_box(DB_WASTE, &sbw, &sbh); (void)sbh;
     waste_icon = lv_img_create(bx_s);
-    lv_img_set_src(waste_icon, &icon_trash_lg);
-    lv_obj_set_style_img_recolor(waste_icon, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_img_recolor_opa(waste_icon, 255, 0);
-    lv_obj_align(waste_icon, LV_ALIGN_TOP_MID, -6, 8);
-    lv_obj_add_flag(waste_icon, LV_OBJ_FLAG_HIDDEN);
+    ui_img_set_src(waste_icon, &icon_trash_lg);
+    ui_obj_set_style_img_recolor(waste_icon, lv_color_hex(0xffffff), 0);
+    ui_obj_set_style_img_recolor_opa(waste_icon, 255, 0);
+    ui_obj_align(waste_icon, LV_ALIGN_TOP_MID, -6, 8);
+    ui_obj_add_flag(waste_icon, LV_OBJ_FLAG_HIDDEN);
 
     waste_icon_2 = lv_img_create(bx_s);
-    lv_img_set_src(waste_icon_2, &icon_trash_lg);
-    lv_obj_set_style_img_recolor_opa(waste_icon_2, 255, 0);
-    lv_obj_align(waste_icon_2, LV_ALIGN_TOP_MID, 46, 8);
-    lv_obj_add_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
+    ui_img_set_src(waste_icon_2, &icon_trash_lg);
+    ui_obj_set_style_img_recolor_opa(waste_icon_2, 255, 0);
+    ui_obj_align(waste_icon_2, LV_ALIGN_TOP_MID, 46, 8);
+    ui_obj_add_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
 
     lbl_waste = lv_label_create(bx_s);
-    lv_obj_set_style_text_color(lbl_waste, lv_color_hex(0xbbbbbb), 0);
-    lv_obj_set_style_text_font(lbl_waste, (DISP_VER < 600) ? &lv_font_montserrat_14 : &lv_font_montserrat_18, 0);
+    ui_obj_set_style_text_color(lbl_waste, lv_color_hex(0xbbbbbb), 0);
+    ui_obj_set_style_text_font(lbl_waste, (DISP_VER < 600) ? &lv_font_montserrat_14 : &lv_font_montserrat_18, 0);
     lv_obj_set_width(lbl_waste, sbw - 8);
     lv_obj_set_style_text_align(lbl_waste, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(lbl_waste, LV_LABEL_LONG_WRAP);
-    lv_obj_align(lbl_waste, LV_ALIGN_TOP_MID, 0, (DISP_VER < 600) ? 90 : 92);
-    lv_obj_add_flag(lbl_waste, LV_OBJ_FLAG_HIDDEN);
+    ui_obj_align(lbl_waste, LV_ALIGN_TOP_MID, 0, (DISP_VER < 600) ? 90 : 92);
+    ui_obj_add_flag(lbl_waste, LV_OBJ_FLAG_HIDDEN);
 
     /* ---- THERMO: indoor temp + setpoint/program state below ---- */
     int tbw = 0, tbh = 0; lv_obj_t * bx_t = dim_box(DB_THERMO, &tbw, &tbh); (void)tbh;
     lbl_temp = lv_label_create(bx_t);
-    lv_obj_set_style_text_color(lbl_temp, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(lbl_temp, SF(96), 0);
-    lv_label_set_text(lbl_temp, "--.-°C");
-    lv_obj_align(lbl_temp, LV_ALIGN_CENTER, 0, -14);
+    ui_obj_set_style_text_color(lbl_temp, lv_color_hex(0xffffff), 0);
+    ui_obj_set_style_text_font(lbl_temp, SF(96), 0);
+    ui_label_set_text(lbl_temp, "--.-°C");
+    ui_obj_align(lbl_temp, LV_ALIGN_CENTER, 0, -14);
 
     lbl_setpoint = lv_label_create(bx_t);
-    lv_obj_set_style_text_color(lbl_setpoint, lv_color_hex(0xdddddd), 0);
-    lv_obj_set_style_text_font(lbl_setpoint, SF(20), 0);
+    ui_obj_set_style_text_color(lbl_setpoint, lv_color_hex(0xdddddd), 0);
+    ui_obj_set_style_text_font(lbl_setpoint, SF(20), 0);
     lv_obj_set_width(lbl_setpoint, (tbw > 0) ? tbw : LV_PCT(100));
     lv_obj_set_style_text_align(lbl_setpoint, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_text(lbl_setpoint, "");
-    lv_obj_align(lbl_setpoint, LV_ALIGN_CENTER, 0, (DISP_VER < 600 ? 28 : 34));
+    ui_label_set_text(lbl_setpoint, "");
+    ui_obj_align(lbl_setpoint, LV_ALIGN_CENTER, 0, (DISP_VER < 600 ? 28 : 34));
 
     lbl_program  = NULL;
     lbl_metrics  = NULL;
     lbl_burner   = NULL;
 
     dim_img_flame = lv_img_create(bx_t);
-    lv_img_set_src(dim_img_flame, &icon_radiator);
+    ui_img_set_src(dim_img_flame, &icon_radiator);
     lv_img_set_zoom(dim_img_flame, 256);
-    lv_obj_set_style_img_recolor(dim_img_flame, lv_color_hex(0xff8866), 0);
-    lv_obj_set_style_img_recolor_opa(dim_img_flame, 255, 0);
+    ui_obj_set_style_img_recolor(dim_img_flame, lv_color_hex(0xff8866), 0);
+    ui_obj_set_style_img_recolor_opa(dim_img_flame, 255, 0);
     lv_obj_align_to(dim_img_flame, lbl_temp, LV_ALIGN_OUT_BOTTOM_MID, 0, 4);
-    lv_obj_add_flag(dim_img_flame, LV_OBJ_FLAG_HIDDEN);
+    ui_obj_add_flag(dim_img_flame, LV_OBJ_FLAG_HIDDEN);
 
     dim_img_faucet = lv_img_create(bx_t);
-    lv_img_set_src(dim_img_faucet, &icon_faucet);
+    ui_img_set_src(dim_img_faucet, &icon_faucet);
     lv_img_set_zoom(dim_img_faucet, 256);
-    lv_obj_set_style_img_recolor(dim_img_faucet, lv_color_hex(0xff5544), 0);
-    lv_obj_set_style_img_recolor_opa(dim_img_faucet, 255, 0);
+    ui_obj_set_style_img_recolor(dim_img_faucet, lv_color_hex(0xff5544), 0);
+    ui_obj_set_style_img_recolor_opa(dim_img_faucet, 255, 0);
     lv_obj_align_to(dim_img_faucet, lbl_temp, LV_ALIGN_OUT_BOTTOM_MID, -10, 4);
-    lv_obj_add_flag(dim_img_faucet, LV_OBJ_FLAG_HIDDEN);
+    ui_obj_add_flag(dim_img_faucet, LV_OBJ_FLAG_HIDDEN);
 
     dim_img_drop = lv_img_create(bx_t);
-    lv_img_set_src(dim_img_drop, &icon_drop);
+    ui_img_set_src(dim_img_drop, &icon_drop);
     lv_img_set_zoom(dim_img_drop, 256);
-    lv_obj_set_style_img_recolor(dim_img_drop, lv_color_hex(0xff5544), 0);
-    lv_obj_set_style_img_recolor_opa(dim_img_drop, 255, 0);
+    ui_obj_set_style_img_recolor(dim_img_drop, lv_color_hex(0xff5544), 0);
+    ui_obj_set_style_img_recolor_opa(dim_img_drop, 255, 0);
     lv_obj_align_to(dim_img_drop, dim_img_faucet, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
-    lv_obj_add_flag(dim_img_drop, LV_OBJ_FLAG_HIDDEN);
+    ui_obj_add_flag(dim_img_drop, LV_OBJ_FLAG_HIDDEN);
 
     dim_img_water = lv_img_create(bx_t);
-    lv_img_set_src(dim_img_water, &icon_drop);
+    ui_img_set_src(dim_img_water, &icon_drop);
     lv_img_set_zoom(dim_img_water, 256);
-    lv_obj_set_style_img_recolor(dim_img_water, lv_color_hex(0x66bbff), 0);
-    lv_obj_set_style_img_recolor_opa(dim_img_water, 255, 0);
-    lv_obj_align(dim_img_water, LV_ALIGN_TOP_MID, -150, 18);
-    lv_obj_add_flag(dim_img_water, LV_OBJ_FLAG_HIDDEN);
+    ui_obj_set_style_img_recolor(dim_img_water, lv_color_hex(0x66bbff), 0);
+    ui_obj_set_style_img_recolor_opa(dim_img_water, 255, 0);
+    ui_obj_align(dim_img_water, LV_ALIGN_TOP_MID, -150, 18);
+    ui_obj_add_flag(dim_img_water, LV_OBJ_FLAG_HIDDEN);
 
     dim_lbl_water = lv_label_create(bx_t);
-    lv_obj_set_style_text_color(dim_lbl_water, lv_color_hex(0x66bbff), 0);
-    lv_obj_set_style_text_font(dim_lbl_water, &lv_font_montserrat_22, 0);
-    lv_label_set_text(dim_lbl_water, "");
-    lv_obj_align(dim_lbl_water, LV_ALIGN_TOP_MID, -110, 18);
-    lv_obj_add_flag(dim_lbl_water, LV_OBJ_FLAG_HIDDEN);
+    ui_obj_set_style_text_color(dim_lbl_water, lv_color_hex(0x66bbff), 0);
+    ui_obj_set_style_text_font(dim_lbl_water, &lv_font_montserrat_22, 0);
+    ui_label_set_text(dim_lbl_water, "");
+    ui_obj_align(dim_lbl_water, LV_ALIGN_TOP_MID, -110, 18);
+    ui_obj_add_flag(dim_lbl_water, LV_OBJ_FLAG_HIDDEN);
 
     /* ---- VENT: fan icon centred, mode/% below ---- */
     int vbw = 0, vbh = 0; lv_obj_t * bx_v = dim_box(DB_VENT, &vbw, &vbh); (void)vbh;
     dim_vent_fan = lv_img_create(bx_v);
-    lv_img_set_src(dim_vent_fan, &icon_fan);
+    ui_img_set_src(dim_vent_fan, &icon_fan);
     lv_img_set_zoom(dim_vent_fan, 128);
-    lv_obj_set_style_img_recolor(dim_vent_fan, lv_color_hex(0xbbbbbb), 0);
-    lv_obj_set_style_img_recolor_opa(dim_vent_fan, 255, 0);
+    ui_obj_set_style_img_recolor(dim_vent_fan, lv_color_hex(0xbbbbbb), 0);
+    ui_obj_set_style_img_recolor_opa(dim_vent_fan, 255, 0);
     lv_img_set_pivot(dim_vent_fan, 40, 40);
-    lv_obj_align(dim_vent_fan, LV_ALIGN_TOP_MID, 0, 8);
-    lv_obj_add_flag(dim_vent_fan, LV_OBJ_FLAG_HIDDEN);
+    ui_obj_align(dim_vent_fan, LV_ALIGN_TOP_MID, 0, 8);
+    ui_obj_add_flag(dim_vent_fan, LV_OBJ_FLAG_HIDDEN);
 
     dim_vent_lbl = lv_label_create(bx_v);
-    lv_obj_set_style_text_color(dim_vent_lbl, lv_color_hex(0xbbbbbb), 0);
-    lv_obj_set_style_text_font(dim_vent_lbl, &lv_font_montserrat_18, 0);
-    lv_label_set_text(dim_vent_lbl, "-- %");
+    ui_obj_set_style_text_color(dim_vent_lbl, lv_color_hex(0xbbbbbb), 0);
+    ui_obj_set_style_text_font(dim_vent_lbl, &lv_font_montserrat_18, 0);
+    ui_label_set_text(dim_vent_lbl, "-- %");
     lv_obj_set_style_text_align(dim_vent_lbl, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(dim_vent_lbl, vbw - 4);
     /* The fan IMG object is 80px tall (zoom only shrinks the drawn pixels, not
      * the layout box), so the label must clear y=88, not y=52, or it lands on
      * the fan — same offset the waste block uses for its 80px bin glyph. */
-    lv_obj_align(dim_vent_lbl, LV_ALIGN_TOP_MID, 0, 84);
-    lv_obj_add_flag(dim_vent_lbl, LV_OBJ_FLAG_HIDDEN);
+    ui_obj_align(dim_vent_lbl, LV_ALIGN_TOP_MID, 0, 84);
+    ui_obj_add_flag(dim_vent_lbl, LV_OBJ_FLAG_HIDDEN);
 
     /* ---- FAMILY: Life360 lines stacked, right-aligned ---- */
     int fbw = 0, fbh = 0; lv_obj_t * bx_f = dim_box(DB_FAMILY, &fbw, &fbh); (void)fbh;
     dim_lbl_life360_a = lv_label_create(bx_f);
-    lv_obj_set_style_text_color(dim_lbl_life360_a, lv_color_hex(0x88aaff), 0);
-    lv_obj_set_style_text_font(dim_lbl_life360_a, &lv_font_montserrat_18, 0);
+    ui_obj_set_style_text_color(dim_lbl_life360_a, lv_color_hex(0x88aaff), 0);
+    ui_obj_set_style_text_font(dim_lbl_life360_a, &lv_font_montserrat_18, 0);
     lv_obj_set_width(dim_lbl_life360_a, fbw - 8);
     lv_obj_set_style_text_align(dim_lbl_life360_a, LV_TEXT_ALIGN_RIGHT, 0);
     lv_label_set_long_mode(dim_lbl_life360_a, LV_LABEL_LONG_DOT);
-    lv_label_set_text(dim_lbl_life360_a, "");
-    lv_obj_align(dim_lbl_life360_a, LV_ALIGN_TOP_RIGHT, -4, 8);
-    lv_obj_add_flag(dim_lbl_life360_a, LV_OBJ_FLAG_HIDDEN);
+    ui_label_set_text(dim_lbl_life360_a, "");
+    ui_obj_align(dim_lbl_life360_a, LV_ALIGN_TOP_RIGHT, -4, 8);
+    ui_obj_add_flag(dim_lbl_life360_a, LV_OBJ_FLAG_HIDDEN);
 
     dim_lbl_life360_b = lv_label_create(bx_f);
-    lv_obj_set_style_text_color(dim_lbl_life360_b, lv_color_hex(0xff88cc), 0);
-    lv_obj_set_style_text_font(dim_lbl_life360_b, &lv_font_montserrat_18, 0);
+    ui_obj_set_style_text_color(dim_lbl_life360_b, lv_color_hex(0xff88cc), 0);
+    ui_obj_set_style_text_font(dim_lbl_life360_b, &lv_font_montserrat_18, 0);
     lv_obj_set_width(dim_lbl_life360_b, fbw - 8);
     lv_obj_set_style_text_align(dim_lbl_life360_b, LV_TEXT_ALIGN_RIGHT, 0);
     lv_label_set_long_mode(dim_lbl_life360_b, LV_LABEL_LONG_DOT);
-    lv_label_set_text(dim_lbl_life360_b, "");
-    lv_obj_align(dim_lbl_life360_b, LV_ALIGN_TOP_RIGHT, -4, 34);
-    lv_obj_add_flag(dim_lbl_life360_b, LV_OBJ_FLAG_HIDDEN);
+    ui_label_set_text(dim_lbl_life360_b, "");
+    ui_obj_align(dim_lbl_life360_b, LV_ALIGN_TOP_RIGHT, -4, 34);
+    ui_obj_add_flag(dim_lbl_life360_b, LV_OBJ_FLAG_HIDDEN);
 
     dim_lbl_city  = NULL;
     waste_box_ptr = NULL;
@@ -1187,29 +1190,29 @@ lv_obj_t * screen_dim_grid_create(void) {
         int cx = i * col_w + col_w / 2;
 
         dim_fc_icon[i] = lv_img_create(bx_c);
-        lv_img_set_src(dim_fc_icon[i], &icon_wx_cloud);
-        lv_obj_set_style_img_recolor(dim_fc_icon[i], lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_img_recolor_opa(dim_fc_icon[i], 255, 0);
+        ui_img_set_src(dim_fc_icon[i], &icon_wx_cloud);
+        ui_obj_set_style_img_recolor(dim_fc_icon[i], lv_color_hex(0xffffff), 0);
+        ui_obj_set_style_img_recolor_opa(dim_fc_icon[i], 255, 0);
         lv_obj_set_pos(dim_fc_icon[i], cx - 20, (DISP_VER < 600) ? 2 : 4);
-        lv_obj_add_flag(dim_fc_icon[i], LV_OBJ_FLAG_HIDDEN);
+        ui_obj_add_flag(dim_fc_icon[i], LV_OBJ_FLAG_HIDDEN);
 
         dim_fc_day[i] = lv_label_create(bx_c);
-        lv_obj_set_style_text_color(dim_fc_day[i], lv_color_hex(0xbbbbbb), 0);
-        lv_obj_set_style_text_font(dim_fc_day[i], fc_font, 0);
-        lv_label_set_text(dim_fc_day[i], "");
+        ui_obj_set_style_text_color(dim_fc_day[i], lv_color_hex(0xbbbbbb), 0);
+        ui_obj_set_style_text_font(dim_fc_day[i], fc_font, 0);
+        ui_label_set_text(dim_fc_day[i], "");
         lv_obj_set_style_text_align(dim_fc_day[i], LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_width(dim_fc_day[i], col_w);
         lv_obj_set_pos(dim_fc_day[i], i * col_w, day_dy);
-        lv_obj_add_flag(dim_fc_day[i], LV_OBJ_FLAG_HIDDEN);
+        ui_obj_add_flag(dim_fc_day[i], LV_OBJ_FLAG_HIDDEN);
 
         dim_fc_temp[i] = lv_label_create(bx_c);
-        lv_obj_set_style_text_color(dim_fc_temp[i], lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(dim_fc_temp[i], fc_font, 0);
-        lv_label_set_text(dim_fc_temp[i], "");
+        ui_obj_set_style_text_color(dim_fc_temp[i], lv_color_hex(0xffffff), 0);
+        ui_obj_set_style_text_font(dim_fc_temp[i], fc_font, 0);
+        ui_label_set_text(dim_fc_temp[i], "");
         lv_obj_set_style_text_align(dim_fc_temp[i], LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_width(dim_fc_temp[i], col_w);
         lv_obj_set_pos(dim_fc_temp[i], i * col_w, temp_dy);
-        lv_obj_add_flag(dim_fc_temp[i], LV_OBJ_FLAG_HIDDEN);
+        ui_obj_add_flag(dim_fc_temp[i], LV_OBJ_FLAG_HIDDEN);
     }
 
     /* ---- STROOM (power) + GAS + ZON: separate single-metric blocks, each a value +
@@ -1252,21 +1255,21 @@ lv_obj_t * screen_dim_grid_create(void) {
         for (int r = 0; r < dim_agenda_row_count; r++) {
             /* Col 1: Date & Time (dd/mm hh:mm) */
             lv_obj_t * lt = lv_label_create(bx_a);
-            lv_obj_set_style_text_color(lt, lv_color_hex(0xffffff), 0);
-            lv_obj_set_style_text_font(lt, SF(15), 0);
+            ui_obj_set_style_text_color(lt, lv_color_hex(0xffffff), 0);
+            ui_obj_set_style_text_font(lt, SF(15), 0);
             lv_obj_set_width(lt, time_col_w);
-            lv_label_set_text(lt, "");
-            lv_obj_align(lt, LV_ALIGN_TOP_LEFT, 4, 3 + r * row_h);
+            ui_label_set_text(lt, "");
+            ui_obj_align(lt, LV_ALIGN_TOP_LEFT, 4, 3 + r * row_h);
             dim_lbl_agenda_time[r] = lt;
 
             /* Col 2: Event title / summary */
             lv_obj_t * ls = lv_label_create(bx_a);
-            lv_obj_set_style_text_color(ls, lv_color_hex(0xffffff), 0);
-            lv_obj_set_style_text_font(ls, SF(15), 0);
+            ui_obj_set_style_text_color(ls, lv_color_hex(0xffffff), 0);
+            ui_obj_set_style_text_font(ls, SF(15), 0);
             lv_obj_set_width(ls, title_w);
             lv_label_set_long_mode(ls, LV_LABEL_LONG_DOT);
-            lv_label_set_text(ls, "");
-            lv_obj_align(ls, LV_ALIGN_TOP_LEFT, title_x, 3 + r * row_h);
+            ui_label_set_text(ls, "");
+            ui_obj_align(ls, LV_ALIGN_TOP_LEFT, title_x, 3 + r * row_h);
             dim_lbl_agenda_title[r] = ls;
         }
     }
@@ -1279,32 +1282,32 @@ lv_obj_t * screen_dim_grid_create(void) {
         lv_obj_t * rhdr = lv_obj_create(bx_r);
         dim_rain_hdr = rhdr;
         lv_obj_set_size(rhdr, LV_PCT(100), 28);
-        lv_obj_align(rhdr, LV_ALIGN_TOP_LEFT, 0, 0);
-        lv_obj_set_style_bg_opa(rhdr, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_width(rhdr, 0, 0);
+        ui_obj_align(rhdr, LV_ALIGN_TOP_LEFT, 0, 0);
+        ui_obj_set_style_bg_opa(rhdr, LV_OPA_TRANSP, 0);
+        ui_obj_set_style_border_width(rhdr, 0, 0);
         lv_obj_set_style_pad_all(rhdr, 0, 0);
-        lv_obj_clear_flag(rhdr, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+        ui_obj_clear_flag(rhdr, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
 
         lv_obj_t * r_icon = lv_img_create(rhdr);
-        lv_img_set_src(r_icon, &icon_drop);
+        ui_img_set_src(r_icon, &icon_drop);
         lv_img_set_zoom(r_icon, 160);
-        lv_obj_set_style_img_recolor(r_icon, lv_color_hex(0x5a9bd3), 0);
-        lv_obj_set_style_img_recolor_opa(r_icon, 255, 0);
-        lv_obj_align(r_icon, LV_ALIGN_LEFT_MID, 2, 0);
+        ui_obj_set_style_img_recolor(r_icon, lv_color_hex(0x5a9bd3), 0);
+        ui_obj_set_style_img_recolor_opa(r_icon, 255, 0);
+        ui_obj_align(r_icon, LV_ALIGN_LEFT_MID, 2, 0);
 
         dim_rain_lbl_title = lv_label_create(rhdr);
-        lv_obj_set_style_text_color(dim_rain_lbl_title, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(dim_rain_lbl_title, SF(16), 0);
-        lv_label_set_text(dim_rain_lbl_title, tr("Neerslag", "Rain"));
+        ui_obj_set_style_text_color(dim_rain_lbl_title, lv_color_hex(0xffffff), 0);
+        ui_obj_set_style_text_font(dim_rain_lbl_title, SF(16), 0);
+        ui_label_set_text(dim_rain_lbl_title, tr("Neerslag", "Rain"));
         lv_obj_align_to(dim_rain_lbl_title, r_icon, LV_ALIGN_OUT_RIGHT_MID, 6, 0);
 
         dim_rain_lbl_status = lv_label_create(rhdr);
-        lv_obj_set_style_text_color(dim_rain_lbl_status, lv_color_hex(0x88aabb), 0);
-        lv_obj_set_style_text_font(dim_rain_lbl_status, SF(13), 0);
+        ui_obj_set_style_text_color(dim_rain_lbl_status, lv_color_hex(0x88aabb), 0);
+        ui_obj_set_style_text_font(dim_rain_lbl_status, SF(13), 0);
         if (rbw > 200) lv_obj_set_width(dim_rain_lbl_status, rbw - 140);
         lv_label_set_long_mode(dim_rain_lbl_status, LV_LABEL_LONG_DOT);
-        lv_label_set_text(dim_rain_lbl_status, "");
-        lv_obj_align(dim_rain_lbl_status, LV_ALIGN_RIGHT_MID, -2, 0);
+        ui_label_set_text(dim_rain_lbl_status, "");
+        ui_obj_align(dim_rain_lbl_status, LV_ALIGN_RIGHT_MID, -2, 0);
 
         dim_rain_chart = lv_chart_create(bx_r);
         int label_w = (rbw > 180) ? 44 : 0;
@@ -1313,19 +1316,19 @@ lv_obj_t * screen_dim_grid_create(void) {
         if (chart_h > 65) chart_h = 65;
         if (chart_h < 38) chart_h = 38;
         lv_obj_set_size(dim_rain_chart, chart_w, chart_h);
-        lv_obj_align(dim_rain_chart, LV_ALIGN_BOTTOM_RIGHT, -4, -20);
-        lv_obj_set_style_bg_color(dim_rain_chart, lv_color_hex(0x141e2a), 0);
-        lv_obj_set_style_border_color(dim_rain_chart, lv_color_hex(0x1e2c3e), 0);
-        lv_obj_set_style_border_width(dim_rain_chart, 1, 0);
+        ui_obj_align(dim_rain_chart, LV_ALIGN_BOTTOM_RIGHT, -4, -20);
+        ui_obj_set_style_bg_color(dim_rain_chart, lv_color_hex(0x141e2a), 0);
+        ui_obj_set_style_border_color(dim_rain_chart, lv_color_hex(0x1e2c3e), 0);
+        ui_obj_set_style_border_width(dim_rain_chart, 1, 0);
         lv_obj_set_style_radius(dim_rain_chart, 8, 0);
         lv_obj_set_style_pad_ver(dim_rain_chart, 2, 0);
         lv_obj_set_style_pad_hor(dim_rain_chart, 0, 0);
-        lv_obj_clear_flag(dim_rain_chart, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+        ui_obj_clear_flag(dim_rain_chart, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
 
         lv_chart_set_type(dim_rain_chart, LV_CHART_TYPE_BAR);
         lv_chart_set_range(dim_rain_chart, LV_CHART_AXIS_PRIMARY_Y, 0, 100);
         lv_chart_set_div_line_count(dim_rain_chart, 4, 4);
-        lv_obj_set_style_line_color(dim_rain_chart, lv_color_hex(0x223344), LV_PART_MAIN);
+        ui_obj_set_style_line_color(dim_rain_chart, lv_color_hex(0x223344), LV_PART_MAIN);
         lv_obj_set_style_line_opa(dim_rain_chart, LV_OPA_50, LV_PART_MAIN);
         lv_obj_set_style_pad_column(dim_rain_chart, 1, LV_PART_MAIN);
         lv_obj_set_style_radius(dim_rain_chart, 2, LV_PART_ITEMS);
@@ -1336,9 +1339,9 @@ lv_obj_t * screen_dim_grid_create(void) {
         for (int i = 0; i < 3; i++) {
             if (label_w > 0) {
                 dim_thresh_lbl[i] = lv_label_create(bx_r);
-                lv_obj_set_style_text_color(dim_thresh_lbl[i], lv_color_hex(0x88aabb), 0);
-                lv_obj_set_style_text_font(dim_thresh_lbl[i], SF(11), 0);
-                lv_label_set_text(dim_thresh_lbl[i], thresh_names[i]);
+                ui_obj_set_style_text_color(dim_thresh_lbl[i], lv_color_hex(0x88aabb), 0);
+                ui_obj_set_style_text_font(dim_thresh_lbl[i], SF(11), 0);
+                ui_label_set_text(dim_thresh_lbl[i], thresh_names[i]);
                 int y_off = (chart_h * i) / 3 - 6;
                 lv_obj_align_to(dim_thresh_lbl[i], dim_rain_chart, LV_ALIGN_OUT_LEFT_TOP, -4, y_off);
             } else {
@@ -1348,9 +1351,9 @@ lv_obj_t * screen_dim_grid_create(void) {
 
         for (int i = 0; i < 4; i++) {
             dim_rain_lbl_times[i] = lv_label_create(bx_r);
-            lv_obj_set_style_text_color(dim_rain_lbl_times[i], lv_color_hex(0x88aabb), 0);
-            lv_obj_set_style_text_font(dim_rain_lbl_times[i], SF(12), 0);
-            lv_label_set_text(dim_rain_lbl_times[i], "");
+            ui_obj_set_style_text_color(dim_rain_lbl_times[i], lv_color_hex(0x88aabb), 0);
+            ui_obj_set_style_text_font(dim_rain_lbl_times[i], SF(12), 0);
+            ui_label_set_text(dim_rain_lbl_times[i], "");
             if (i == 0) {
                 lv_obj_align_to(dim_rain_lbl_times[i], dim_rain_chart, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 2);
             } else if (i == 3) {
@@ -1361,11 +1364,11 @@ lv_obj_t * screen_dim_grid_create(void) {
         }
 
         dim_rain_lbl_empty = lv_label_create(bx_r);
-        lv_obj_set_style_text_color(dim_rain_lbl_empty, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(dim_rain_lbl_empty, SF(15), 0);
-        lv_label_set_text(dim_rain_lbl_empty, tr("Geen neerslag verwacht", "No rain expected"));
-        lv_obj_align(dim_rain_lbl_empty, LV_ALIGN_CENTER, 0, 0);
-        lv_obj_add_flag(dim_rain_lbl_empty, LV_OBJ_FLAG_HIDDEN);
+        ui_obj_set_style_text_color(dim_rain_lbl_empty, lv_color_hex(0xffffff), 0);
+        ui_obj_set_style_text_font(dim_rain_lbl_empty, SF(15), 0);
+        ui_label_set_text(dim_rain_lbl_empty, tr("Geen neerslag verwacht", "No rain expected"));
+        ui_obj_align(dim_rain_lbl_empty, LV_ALIGN_CENTER, 0, 0);
+        ui_obj_add_flag(dim_rain_lbl_empty, LV_OBJ_FLAG_HIDDEN);
     }
 
     if (!refresh_timer) refresh_timer = lv_timer_create(refresh_cb, 1000, NULL);

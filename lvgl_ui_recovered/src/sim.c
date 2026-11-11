@@ -207,7 +207,13 @@ static void x11_gui_close(void) {
     }
 }
 
+static int rs_trace;   /* redrawstat: REDRAW_TRACE=N prints the first N flushed areas */
 static void sim_flush(lv_disp_drv_t * drv, const lv_area_t * a, lv_color_t * px) {
+    if (rs_trace > 0) {
+        rs_trace--;
+        fprintf(stderr, "[redrawstat] flush %d,%d-%d,%d (%dx%d)\n", a->x1, a->y1, a->x2, a->y2,
+                a->x2 - a->x1 + 1, a->y2 - a->y1 + 1);
+    }
     for (int y = a->y1; y <= a->y2; y++)
         for (int x = a->x1; x <= a->x2; x++)
             fb[y * DISP_HOR + x] = *px++;
@@ -775,32 +781,44 @@ int main(int argc, char ** argv) {
         return 0;
     }
 
-    /* Redraw cost of an idle home screen: `toonui-sim redrawstat [seconds]`.
+    /* Redraw cost of an idle screen: `toonui-sim redrawstat [seconds] [screen]`
+     * (screen: home (default), any SCREENS name; "dim" = classic dim, "dimgrid" = custom dim).
      * Nothing changes in the mock state, so ideally almost nothing is redrawn.
-     * Runs twice: with the home refresh timer (500 ms) and with it paused, to
-     * separate refresh_cb's share from clock/animations. */
+     * Runs twice: with the refresh timers and with every timer of >= 500 ms
+     * paused, to separate refresh callbacks from animations. */
     if (!strcmp(mode, "redrawstat")) {
         int secs = (argc > 2) ? atoi(argv[2]) : 20;
+        const char * which = (argc > 3) ? argv[3] : "home";
         ui_init();
+        if (strcmp(which, "home")) {
+            create_fn sfn = NULL;
+            if (!strcmp(which, "dimgrid")) { settings.dim_custom_enabled = 1; sfn = screen_dim_create; }
+            if (!strcmp(which, "dim"))     { settings.dim_custom_enabled = 0; sfn = screen_dim_create; }
+            for (int i = 0; !sfn && i < N_SCREENS; i++)
+                if (!strcmp(which, SCREENS[i].name)) sfn = SCREENS[i].fn;
+            if (!sfn) { fprintf(stderr, "[redrawstat] unknown screen '%s'\n", which); return 1; }
+            ui_push(sfn());
+        }
         pump(200);                                     /* settle: first layout + loads */
         static uint64_t px_sum; static uint32_t refr_n, refr_ms;
         dd.monitor_cb = redrawstat_monitor;
         redrawstat_ptr(&px_sum, &refr_n, &refr_ms);
         for (int pass = 0; pass < 2; pass++) {
-            if (pass == 1) {                           /* pause every 500 ms timer = home refresh */
+            if (pass == 1) {                           /* pause the refresh timers (>= 500 ms) */
                 for (lv_timer_t * t = lv_timer_get_next(NULL); t; t = lv_timer_get_next(t))
-                    if (t->period == 500) lv_timer_pause(t);
+                    if (t->period >= 500) lv_timer_pause(t);
                 pump(40);
             }
             px_sum = 0; refr_n = 0; refr_ms = 0;
+            rs_trace = getenv("REDRAW_TRACE") ? atoi(getenv("REDRAW_TRACE")) : 0;
             struct timespec a, b;
             clock_gettime(CLOCK_MONOTONIC, &a);
             int frames = secs * 1000 / 16;
             for (int i = 0; i < frames; i++) { lv_timer_handler(); lv_tick_inc(16); }
             clock_gettime(CLOCK_MONOTONIC, &b);
             double cpu_ms = (b.tv_sec - a.tv_sec) * 1000.0 + (b.tv_nsec - a.tv_nsec) / 1e6;
-            fprintf(stderr, "[redrawstat] %s: %d s, %u redraws, %.0f px/s (%.2f screens/s), host CPU %.1f ms/s\n",
-                    pass == 0 ? "with home refresh  " : "home refresh paused",
+            fprintf(stderr, "[redrawstat] %s %s: %d s, %u redraws, %.0f px/s (%.2f screens/s), host CPU %.1f ms/s\n",
+                    which, pass == 0 ? "with refresh  " : "refresh paused",
                     secs, refr_n, (double)px_sum / secs,
                     (double)px_sum / secs / (DISP_HOR * DISP_VER), cpu_ms / secs);
         }

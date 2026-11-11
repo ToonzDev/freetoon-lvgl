@@ -10,6 +10,7 @@
  * the freetoon dark dim (screen_dim.c) is still used for the dark theme.
  */
 #include "screens.h"
+#include "ui_lazy.h"
 #include "i18n.h"
 #include "display.h"
 #include "fonts_opensans.h"
@@ -70,9 +71,9 @@ static int d_show_waterp(void) {
 
 static lv_obj_t * d_lbl(lv_obj_t * par, const char * txt, const lv_font_t * font, uint32_t col) {
     lv_obj_t * l = lv_label_create(par);
-    lv_label_set_text(l, txt);
-    lv_obj_set_style_text_font(l, font, 0);
-    lv_obj_set_style_text_color(l, lv_color_hex(col), 0);
+    ui_label_set_text(l, txt);
+    ui_obj_set_style_text_font(l, font, 0);
+    ui_obj_set_style_text_color(l, lv_color_hex(col), 0);
     return l;
 }
 
@@ -154,11 +155,11 @@ static void d_refresh(lv_timer_t * t) {
     char b[64];
 
     snprintf(b, sizeof b, "%02d:%02d", tm.tm_hour, tm.tm_min);
-    lv_label_set_text(d_clock, b);
+    ui_label_set_text(d_clock, b);
     static const char * mnd[12] = {"januari","februari","maart","april","mei","juni",
         "juli","augustus","september","oktober","november","december"};
     snprintf(b, sizeof b, "%d %s", tm.tm_mday, mnd[tm.tm_mon]);
-    lv_label_set_text(d_date, b);
+    ui_label_set_text(d_date, b);
 
     /* water pressure + low alert — wp<=0 means no reading (boxtalk swallows
      * zeros), so show -- without the false "te laag" alarm. */
@@ -166,47 +167,47 @@ static void d_refresh(lv_timer_t * t) {
         float wp = toon_state.water_pressure;
         int have = (wp > 0.05f);
         if (have) { snprintf(b, sizeof b, "%.1f bar", wp); d_comma(b); } else strcpy(b, "-- bar");
-        lv_label_set_text(d_water, b);
+        ui_label_set_text(d_water, b);
         int low = (have && wp < 1.0f);
-        lv_obj_set_style_text_color(d_water, lv_color_hex(low ? D_RED : D_WHITE), 0);
+        ui_obj_set_style_text_color(d_water, lv_color_hex(low ? D_RED : D_WHITE), 0);
         (low ? lv_obj_clear_flag : lv_obj_add_flag)(d_water_banner, LV_OBJ_FLAG_HIDDEN);
         snprintf(b, sizeof b, "%02d-%02d-%04d %02d:%02d:00",
                  tm.tm_mday, tm.tm_mon + 1, tm.tm_year + 1900, tm.tm_hour, tm.tm_min);
-        lv_label_set_text(d_water_ts, b);
-        lv_obj_clear_flag(d_water_lbl, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(d_water,     LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(d_water_ts,  LV_OBJ_FLAG_HIDDEN);
+        ui_label_set_text(d_water_ts, b);
+        ui_obj_clear_flag(d_water_lbl, LV_OBJ_FLAG_HIDDEN);
+        ui_obj_clear_flag(d_water,     LV_OBJ_FLAG_HIDDEN);
+        ui_obj_clear_flag(d_water_ts,  LV_OBJ_FLAG_HIDDEN);
     } else {
-        lv_obj_add_flag(d_water_lbl,    LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(d_water,        LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(d_water_ts,     LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(d_water_banner, LV_OBJ_FLAG_HIDDEN);
+        ui_obj_add_flag(d_water_lbl,    LV_OBJ_FLAG_HIDDEN);
+        ui_obj_add_flag(d_water,        LV_OBJ_FLAG_HIDDEN);
+        ui_obj_add_flag(d_water_ts,     LV_OBJ_FLAG_HIDDEN);
+        ui_obj_add_flag(d_water_banner, LV_OBJ_FLAG_HIDDEN);
     }
 
     /* big readout = indoor temp (default) or setpoint, per stock_big_indoor */
     float big_v = settings.stock_big_indoor ? toon_state.indoor_temp : toon_state.setpoint;
     float lo_v  = settings.stock_big_indoor ? toon_state.setpoint     : toon_state.indoor_temp;
     snprintf(b, sizeof b, "%.1f", big_v); d_comma(b);
-    lv_label_set_text(d_setpoint, b);
+    ui_label_set_text(d_setpoint, b);
     if (lo_v > 0) { snprintf(b, sizeof b, LV_SYMBOL_RIGHT "  %.1f°", lo_v); d_comma(b); }
     else strcpy(b, LV_SYMBOL_RIGHT "  --");
-    lv_label_set_text(d_eco, b);
+    ui_label_set_text(d_eco, b);
     /* "Continue on X,X" — stock Toon wording for the held setpoint. */
     { char sp[16]; snprintf(sp, sizeof sp, "%.1f", toon_state.setpoint); d_comma(sp);
       snprintf(b, sizeof b, tr("Verder op %s", "Continue on %s"), sp);
-      lv_label_set_text(d_prog, b); }
+      ui_label_set_text(d_prog, b); }
 
     /* current outside weather (top-right): white icon + temp, hidden until a
      * forecast lands or if the dim-weather toggle is off. */
     if (d_wx_icon && d_wx_temp) {
         if (settings.show_dim_weather && weather_state.connected) {
-            lv_img_set_src(d_wx_icon, weather_icon_for_lg(weather_state.current_icon));
+            ui_img_set_src(d_wx_icon, weather_icon_for_lg(weather_state.current_icon));
             snprintf(b, sizeof b, "%.0f°C", weather_display_temp());
-            lv_label_set_text(d_wx_temp, b);
-            lv_obj_clear_flag(d_wx_icon, LV_OBJ_FLAG_HIDDEN);
+            ui_label_set_text(d_wx_temp, b);
+            ui_obj_clear_flag(d_wx_icon, LV_OBJ_FLAG_HIDDEN);
         } else {
-            lv_obj_add_flag(d_wx_icon, LV_OBJ_FLAG_HIDDEN);
-            lv_label_set_text(d_wx_temp, "");
+            ui_obj_add_flag(d_wx_icon, LV_OBJ_FLAG_HIDDEN);
+            ui_label_set_text(d_wx_temp, "");
         }
     }
 
@@ -223,10 +224,10 @@ static void d_refresh(lv_timer_t * t) {
                 const char * nm = trk[i].name[0] ? trk[i].name : trk[i].entity;
                 const char * lc = trk[i].loc[0]  ? trk[i].loc  : "--";
                 snprintf(b, sizeof b, "%s: %s", nm, lc);
-                lv_label_set_text(d_trk[i], b);
-                lv_obj_clear_flag(d_trk[i], LV_OBJ_FLAG_HIDDEN);
+                ui_label_set_text(d_trk[i], b);
+                ui_obj_clear_flag(d_trk[i], LV_OBJ_FLAG_HIDDEN);
             } else {
-                lv_obj_add_flag(d_trk[i], LV_OBJ_FLAG_HIDDEN);
+                ui_obj_add_flag(d_trk[i], LV_OBJ_FLAG_HIDDEN);
             }
         }
     }
@@ -236,17 +237,17 @@ static void d_refresh(lv_timer_t * t) {
         if (vent_state.connected) {
             const char * pretty = vent_mode_label();
             if (vent_state.remaining_min > 0)
-                lv_label_set_text_fmt(d_vent_lbl, "%s %dm %d%%",
+                ui_label_set_text_fmt(d_vent_lbl, "%s %dm %d%%",
                                       pretty, vent_state.remaining_min, vent_state.speed_pct);
             else
-                lv_label_set_text_fmt(d_vent_lbl, "%s %d%%",
+                ui_label_set_text_fmt(d_vent_lbl, "%s %d%%",
                                       pretty, vent_state.speed_pct);
             d_vent_apply_anim(vent_state.fan_rpm);
-            lv_obj_clear_flag(d_vent_fan, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(d_vent_lbl, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_clear_flag(d_vent_fan, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_clear_flag(d_vent_lbl, LV_OBJ_FLAG_HIDDEN);
         } else {
-            lv_obj_add_flag(d_vent_fan, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(d_vent_lbl, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(d_vent_fan, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(d_vent_lbl, LV_OBJ_FLAG_HIDDEN);
         }
     }
 
@@ -255,48 +256,48 @@ static void d_refresh(lv_timer_t * t) {
         if (efanlamp.connected) {
             d_efan_apply_anim(efanlamp.fan_speed, efanlamp.fan_on);
             if (efanlamp.fan_on)
-                lv_label_set_text_fmt(d_efan_lbl, tr("L%d", "L%d"), efanlamp.fan_speed);
+                ui_label_set_text_fmt(d_efan_lbl, tr("L%d", "L%d"), efanlamp.fan_speed);
             else
-                lv_label_set_text(d_efan_lbl, tr("off", "off"));
-            lv_obj_clear_flag(d_efan_fan, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(d_efan_lbl, LV_OBJ_FLAG_HIDDEN);
+                ui_label_set_text(d_efan_lbl, tr("off", "off"));
+            ui_obj_clear_flag(d_efan_fan, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_clear_flag(d_efan_lbl, LV_OBJ_FLAG_HIDDEN);
         } else {
             d_efan_apply_anim(0, 0);
-            lv_obj_add_flag(d_efan_fan, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(d_efan_lbl, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(d_efan_fan, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(d_efan_lbl, LV_OBJ_FLAG_HIDDEN);
         }
     }
     /* BLE lamp brightness */
     if (d_efan_light_lbl) {
         if (efanlamp.connected) {
             if (efanlamp.light_on)
-                lv_label_set_text_fmt(d_efan_light_lbl, tr("lamp %d%%", "lamp %d%%"), efanlamp.light_brightness);
+                ui_label_set_text_fmt(d_efan_light_lbl, tr("lamp %d%%", "lamp %d%%"), efanlamp.light_brightness);
             else
-                lv_label_set_text(d_efan_light_lbl, tr("lamp uit", "lamp off"));
-            lv_obj_clear_flag(d_efan_light_lbl, LV_OBJ_FLAG_HIDDEN);
+                ui_label_set_text(d_efan_light_lbl, tr("lamp uit", "lamp off"));
+            ui_obj_clear_flag(d_efan_light_lbl, LV_OBJ_FLAG_HIDDEN);
         } else {
-            lv_obj_add_flag(d_efan_light_lbl, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(d_efan_light_lbl, LV_OBJ_FLAG_HIDDEN);
         }
     }
     /* BLE last source */
     if (d_efan_src_lbl) {
         if (efanlamp.connected && efanlamp.last_source[0]) {
-            lv_label_set_text(d_efan_src_lbl, (const char *)efanlamp.last_source);
-            lv_obj_clear_flag(d_efan_src_lbl, LV_OBJ_FLAG_HIDDEN);
+            ui_label_set_text(d_efan_src_lbl, (const char *)efanlamp.last_source);
+            ui_obj_clear_flag(d_efan_src_lbl, LV_OBJ_FLAG_HIDDEN);
         } else {
-            lv_obj_add_flag(d_efan_src_lbl, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(d_efan_src_lbl, LV_OBJ_FLAG_HIDDEN);
         }
     }
 
     /* energy bar + live watts number */
     float pw = d_power_w();
-    snprintf(b, sizeof b, "%.0f W", pw); lv_label_set_text(d_watts, b);
+    snprintf(b, sizeof b, "%.0f W", pw); ui_label_set_text(d_watts, b);
     float w = pw; if (w < 0) w = 0;
     int lit = (int)(w / 2500.0f * D_NSEG + 0.5f); if (lit > D_NSEG) lit = D_NSEG;
     for (int i = 0; i < D_NSEG; i++) {
         int fb = D_NSEG - 1 - i;
         uint32_t c = (fb < lit) ? (fb < 7 ? D_GREEN : 0xCCCC33) : 0x3A3A3A;
-        lv_obj_set_style_bg_color(d_eseg[i], lv_color_hex(c), 0);
+        ui_obj_set_style_bg_color(d_eseg[i], lv_color_hex(c), 0);
     }
 }
 
@@ -304,11 +305,11 @@ lv_obj_t * screen_dim_stock_create(void) {
     if (scr_root) return scr_root;
     scr_root = lv_obj_create(NULL);
     lv_obj_set_size(scr_root, lv_disp_get_hor_res(NULL), lv_disp_get_ver_res(NULL));
-    lv_obj_set_style_bg_color(scr_root, lv_color_hex(D_BG), 0);
-    lv_obj_set_style_bg_opa(scr_root, LV_OPA_COVER, 0);
+    ui_obj_set_style_bg_color(scr_root, lv_color_hex(D_BG), 0);
+    ui_obj_set_style_bg_opa(scr_root, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_all(scr_root, 0, 0);
-    lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(scr_root, LV_OBJ_FLAG_CLICKABLE);
+    ui_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
+    ui_obj_add_flag(scr_root, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(scr_root, on_wake, LV_EVENT_CLICKED, NULL);
 
     /* Freetoon wordmark */
@@ -330,11 +331,11 @@ lv_obj_t * screen_dim_stock_create(void) {
             lv_obj_set_size(d_eseg[i], SX(seg_w), SY(seg_h));
             lv_obj_set_pos(d_eseg[i], SX(x), SY(y0 + i * (seg_h + gap)));
             lv_obj_set_style_radius(d_eseg[i], SX(1), 0);
-            lv_obj_set_style_border_width(d_eseg[i], 0, 0);
-            lv_obj_set_style_bg_color(d_eseg[i], lv_color_hex(0x3A3A3A), 0);
+            ui_obj_set_style_border_width(d_eseg[i], 0, 0);
+            ui_obj_set_style_bg_color(d_eseg[i], lv_color_hex(0x3A3A3A), 0);
             lv_obj_set_style_pad_all(d_eseg[i], 0, 0);
-            lv_obj_clear_flag(d_eseg[i], LV_OBJ_FLAG_SCROLLABLE);
-            lv_obj_clear_flag(d_eseg[i], LV_OBJ_FLAG_CLICKABLE);
+            ui_obj_clear_flag(d_eseg[i], LV_OBJ_FLAG_SCROLLABLE);
+            ui_obj_clear_flag(d_eseg[i], LV_OBJ_FLAG_CLICKABLE);
         }
     }
 
@@ -356,11 +357,11 @@ lv_obj_t * screen_dim_stock_create(void) {
     d_water_banner = lv_obj_create(scr_root);
     lv_obj_set_size(d_water_banner, SX(282), SY(56));
     lv_obj_set_pos(d_water_banner, SX(356), SY(414));
-    lv_obj_set_style_bg_color(d_water_banner, lv_color_hex(D_RED), 0);
+    ui_obj_set_style_bg_color(d_water_banner, lv_color_hex(D_RED), 0);
     lv_obj_set_style_radius(d_water_banner, SX(4), 0);
-    lv_obj_set_style_border_width(d_water_banner, 0, 0);
-    lv_obj_clear_flag(d_water_banner, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_clear_flag(d_water_banner, LV_OBJ_FLAG_CLICKABLE);
+    ui_obj_set_style_border_width(d_water_banner, 0, 0);
+    ui_obj_clear_flag(d_water_banner, LV_OBJ_FLAG_SCROLLABLE);
+    ui_obj_clear_flag(d_water_banner, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_t * wb = d_lbl(d_water_banner,
         tr("Waterdruk te laag. Ketel bijvullen", "Water pressure too low. Refill boiler"),
         OSR(15), D_WHITE);
@@ -368,13 +369,13 @@ lv_obj_t * screen_dim_stock_create(void) {
     lv_obj_set_width(wb, SX(258));
     lv_obj_set_style_text_align(wb, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_center(wb);
-    lv_obj_add_flag(d_water_banner, LV_OBJ_FLAG_HIDDEN);
+    ui_obj_add_flag(d_water_banner, LV_OBJ_FLAG_HIDDEN);
 
     /* setpoint (right) + eco + program */
     d_setpoint = d_lbl(scr_root, "--,-", OSL(90), D_WHITE);
     lv_obj_set_pos(d_setpoint, SX(690), SY(252));
     d_eco = d_lbl(scr_root, LV_SYMBOL_RIGHT "  --", OSR(24), D_WHITE);
-    lv_obj_set_style_text_font(d_eco, SF(22), 0);   /* LV_SYMBOL lives in Montserrat */
+    ui_obj_set_style_text_font(d_eco, SF(22), 0);   /* LV_SYMBOL lives in Montserrat */
     lv_obj_set_pos(d_eco, SX(690), SY(388));
     lv_obj_t * sprout = d_make_sprout(scr_root);
     lv_obj_set_pos(sprout, SX(782), SY(386));
@@ -392,9 +393,9 @@ lv_obj_t * screen_dim_stock_create(void) {
     lv_obj_set_pos(d_wx_temp, SX(762), SY(38));
     d_wx_icon = lv_img_create(scr_root);
     lv_obj_set_pos(d_wx_icon, SX(924), SY(12));
-    lv_obj_set_style_img_recolor(d_wx_icon, lv_color_hex(0xffffff), 0);   /* all white */
-    lv_obj_set_style_img_recolor_opa(d_wx_icon, LV_OPA_COVER, 0);
-    lv_obj_add_flag(d_wx_icon, LV_OBJ_FLAG_HIDDEN);
+    ui_obj_set_style_img_recolor(d_wx_icon, lv_color_hex(0xffffff), 0);   /* all white */
+    ui_obj_set_style_img_recolor_opa(d_wx_icon, LV_OPA_COVER, 0);
+    ui_obj_add_flag(d_wx_icon, LV_OBJ_FLAG_HIDDEN);
 
     /* Trackers — top-centre stack (between the brand and the weather), up to
      * three "Name: location" lines. Hidden until configured + HA delivers. */
@@ -403,7 +404,7 @@ lv_obj_t * screen_dim_stock_create(void) {
         lv_obj_set_width(d_trk[i], SX(340));
         lv_label_set_long_mode(d_trk[i], LV_LABEL_LONG_DOT);   /* one line; ellipsize, never wrap */
         lv_obj_set_pos(d_trk[i], SX(372), SY(34 + i * 34));
-        lv_obj_add_flag(d_trk[i], LV_OBJ_FLAG_HIDDEN);
+        ui_obj_add_flag(d_trk[i], LV_OBJ_FLAG_HIDDEN);
     }
 
     /* Fan spinner — to the RIGHT of the big temperature, vertically centred on it.
@@ -411,29 +412,29 @@ lv_obj_t * screen_dim_stock_create(void) {
      * With pivot (40,40) the icon's rendered centre = pos_y + 40 (pivot stays fixed
      * under zoom), so pos_y = 285-40 = 245 to centre it on the numerals. */
     d_vent_fan = lv_img_create(scr_root);
-    lv_img_set_src(d_vent_fan, &icon_fan);
+    ui_img_set_src(d_vent_fan, &icon_fan);
     lv_img_set_zoom(d_vent_fan, 192);   /* 192/256 × 80 = 60 px */
-    lv_obj_set_style_img_recolor(d_vent_fan, lv_color_hex(D_WHITE), 0);
-    lv_obj_set_style_img_recolor_opa(d_vent_fan, LV_OPA_COVER, 0);
+    ui_obj_set_style_img_recolor(d_vent_fan, lv_color_hex(D_WHITE), 0);
+    ui_obj_set_style_img_recolor_opa(d_vent_fan, LV_OPA_COVER, 0);
     lv_img_set_pivot(d_vent_fan, 40, 40);
     lv_obj_set_pos(d_vent_fan, SX(912), SY(245));   /* centre ≈ (952, 285) */
-    lv_obj_add_flag(d_vent_fan, LV_OBJ_FLAG_HIDDEN);
+    ui_obj_add_flag(d_vent_fan, LV_OBJ_FLAG_HIDDEN);
 
     d_vent_lbl = d_lbl(scr_root, "", OSR(20), D_GREY);
     lv_obj_set_width(d_vent_lbl, SX(160));
     lv_obj_set_style_text_align(d_vent_lbl, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_pos(d_vent_lbl, SX(882), SY(322));   /* below the 60px icon */
-    lv_obj_add_flag(d_vent_lbl, LV_OBJ_FLAG_HIDDEN);
+    ui_obj_add_flag(d_vent_lbl, LV_OBJ_FLAG_HIDDEN);
 
     /* BLE fan spinner — below Itho vent, same column */
     d_efan_fan = lv_img_create(scr_root);
-    lv_img_set_src(d_efan_fan, &icon_fan);
+    ui_img_set_src(d_efan_fan, &icon_fan);
     lv_img_set_zoom(d_efan_fan, 192);   /* 60 px */
-    lv_obj_set_style_img_recolor(d_efan_fan, lv_color_hex(0x4FC3F7), 0);  /* light-blue tint */
-    lv_obj_set_style_img_recolor_opa(d_efan_fan, LV_OPA_COVER, 0);
+    ui_obj_set_style_img_recolor(d_efan_fan, lv_color_hex(0x4FC3F7), 0);  /* light-blue tint */
+    ui_obj_set_style_img_recolor_opa(d_efan_fan, LV_OPA_COVER, 0);
     lv_img_set_pivot(d_efan_fan, 40, 40);
     lv_obj_set_pos(d_efan_fan, SX(912), SY(370));
-    lv_obj_add_flag(d_efan_fan, LV_OBJ_FLAG_HIDDEN);
+    ui_obj_add_flag(d_efan_fan, LV_OBJ_FLAG_HIDDEN);
     /* Display-only: NOT clickable. A tap on the fan icon in dim state falls
      * through to scr_root's on_wake (just wakes the screen) instead of toggling
      * the fan — avoids accidentally switching the fan when reaching to wake. */
@@ -442,21 +443,21 @@ lv_obj_t * screen_dim_stock_create(void) {
     lv_obj_set_width(d_efan_lbl, SX(160));
     lv_obj_set_style_text_align(d_efan_lbl, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_pos(d_efan_lbl, SX(882), SY(438));
-    lv_obj_add_flag(d_efan_lbl, LV_OBJ_FLAG_HIDDEN);
+    ui_obj_add_flag(d_efan_lbl, LV_OBJ_FLAG_HIDDEN);
 
     /* BLE lamp label — amber, below fan label */
     d_efan_light_lbl = d_lbl(scr_root, "", OSR(20), 0xE6C200);
     lv_obj_set_width(d_efan_light_lbl, SX(160));
     lv_obj_set_style_text_align(d_efan_light_lbl, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_pos(d_efan_light_lbl, SX(882), SY(468));
-    lv_obj_add_flag(d_efan_light_lbl, LV_OBJ_FLAG_HIDDEN);
+    ui_obj_add_flag(d_efan_light_lbl, LV_OBJ_FLAG_HIDDEN);
 
     /* BLE source label — dim grey, below light label */
     d_efan_src_lbl = d_lbl(scr_root, "", OSR(16), 0x667788);
     lv_obj_set_width(d_efan_src_lbl, SX(160));
     lv_obj_set_style_text_align(d_efan_src_lbl, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_pos(d_efan_src_lbl, SX(882), SY(494));
-    lv_obj_add_flag(d_efan_src_lbl, LV_OBJ_FLAG_HIDDEN);
+    ui_obj_add_flag(d_efan_src_lbl, LV_OBJ_FLAG_HIDDEN);
 
     d_refresh(NULL);
     d_timer = lv_timer_create(d_refresh, 1000, NULL);
