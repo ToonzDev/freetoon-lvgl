@@ -403,3 +403,28 @@
   - Stability: timer use-after-free fixes (stats tooltip, family map, package banner), per-open screens freed (no memory growth), OTGW advanced screen off the UI thread, thread-safe calendar/HA data, crash-safe settings and schedule saves.
   - Toon 1: clock no longer 1 h behind (TZ), factory touch calibration (whole X button responds), no pkill dependency.
   - Features/fixes: "Meterstanden" pop-up, energy usage on the right day, boiler flow/return correct (incl. HA MQTT), calendar retries a timed-out feed, pinned HA tiles follow their entity, forecast radar refreshes.
+
+### 34. Release 1.0.7: Telegram Bot, Hue Rooms & Zones, Lighter Toon 1, Weather Location Fixes
+- **Status**: Released (tag 1.0.7 on 9012fb7, 2026-11-11).
+- **Contents**:
+  - Built-in Telegram bot (ToonBot replacement, approved chats, optional alerts); Philips Hue rooms & zones and a Hue home tile.
+  - Performance: idle home/dim screens no longer redraw the whole screen (Toon 1 toonui ~32% -> ~14% CPU on home, ~18% -> ~4% on dim); no button drop shadows on Toon 1 (Settings scroll frame ~45% cheaper).
+  - Weather: Dutch place names preferred over namesakes abroad (Ede/Epe resolved to Nigeria); saving Weer settings applies the location at once (was: only after a UI restart); a place that can't be found keeps the entered Buienradar-id and resolves the coordinates from it.
+  - Fixes: Freetoon default UI on Toon 1 after install, waste icon flicker on dim.
+  - Marketplace: Sonos Player 1.0.9 (TuneIn favourites start again).
+
+### 35. Daily Check for Marketplace App Updates
+- **Status**: Open (idea, 2026-11-11).
+- **Description**:
+  - FreeToon checks for its own updates (update_check.c: GitHub releases every 6 h, update banner, optional nightly auto-update), but marketplace apps are only compared with the catalog when the Marketplace screen is opened. A user never hears that e.g. Sonos 1.0.9 is out unless they go looking.
+- **Approach**:
+  - Once a day (alongside the FreeToon check), fetch the catalog (`catalog/index.json`, with the `?t=` cache-buster) and compare each installed integration's manifest version with the catalog version.
+  - Show it the same way as FreeToon updates (banner / badge on the Marketplace tile, "N app updates"); optionally an "update all" and an opt-in automatic update at the nightly auto-update hour.
+  - Reuse the existing compare/sort logic of the Marketplace screen; respect the plugin ABI gate (an update that needs a newer toonui must not be offered).
+
+### 36. Settings That Only Take Effect After a Restart
+- **Status**: Open (2026-11-11), after 1.0.7.
+- **Description**:
+  - The weather location was resolved only at start-up, so saving Settings -> Weer did nothing until a UI restart (fixed in 97a42e2). Audit the other settings screens for the same pattern: a value read once at start-up or cached in a thread, while the screen suggests it is applied immediately.
+- **Approach**:
+  - Grep for settings fields read only in thread start-up / init code; per hit either apply live (like `weather_relocate_async()`) or show the existing "restart needed" hint.
