@@ -163,7 +163,7 @@ static void on_weather_apply(lv_event_t * e) {
         snprintf(settings.weather_lon, sizeof settings.weather_lon, "%s", lv_textarea_get_text(ta_wx_lon));
     }
     settings_save();
-    weather_refresh_async();
+    weather_relocate_async();
     extern void buienradar_rain_refresh_async(void);
     buienradar_rain_refresh_async();
     if (lbl_wx_status)

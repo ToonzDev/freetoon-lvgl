@@ -55,10 +55,19 @@ float weather_hour_display_temp(const weather_hour_t * h) {
  * (weather_geocode). Drives the Open-Meteo current+forecast fetch. 0 = unresolved. */
 static double g_cfg_lat = 0.0, g_cfg_lon = 0.0;
 static volatile int g_wx_wake = 0;
+static volatile int g_wx_relocate = 0;   /* settings changed: resolve lat/lon again */
+
+/* "51.83" or "51,83" (Dutch decimal comma) -> 51.83; atof stopped at the comma. */
+static double coord_atof(const char * s) {
+    char b[24]; size_t i = 0;
+    for (; s && s[i] && i < sizeof b - 1; i++) b[i] = (s[i] == ',') ? '.' : s[i];
+    b[i] = 0;
+    return atof(b);
+}
 
 void weather_get_lat_lon(double * lat, double * lon) {
-    if (lat) *lat = (g_cfg_lat != 0.0 ? g_cfg_lat : (settings.weather_lat[0] ? atof(settings.weather_lat) : 0.0));
-    if (lon) *lon = (g_cfg_lon != 0.0 ? g_cfg_lon : (settings.weather_lon[0] ? atof(settings.weather_lon) : 0.0));
+    if (lat) *lat = (g_cfg_lat != 0.0 ? g_cfg_lat : (settings.weather_lat[0] ? coord_atof(settings.weather_lat) : 0.0));
+    if (lon) *lon = (g_cfg_lon != 0.0 ? g_cfg_lon : (settings.weather_lon[0] ? coord_atof(settings.weather_lon) : 0.0));
 }
 
 /* Case-insensitive strstr. Buienradar's data feed switched from lowercase keys
@@ -608,7 +617,8 @@ int weather_geocode(const char * city) {
     snprintf(url, sizeof url,
         "https://geocoding-api.open-meteo.com/v1/search?name=%s&count=5&language=nl&format=json",
         enc);
-    static char body[8192];
+    /* Not static: called from both the UI thread (settings save) and wx_thread. */
+    char body[8192];
     if (http_fetch(url, body, sizeof body) != 0) {
         fprintf(stderr, "[wx] geocode '%s': no response from geocoding-api.open-meteo.com\n", city);
         return 0;
@@ -651,12 +661,22 @@ static void * wx_thread(void * arg) {
     int radar_tick = 0;
     int geo_fails = 0, geo_fallback = 0;
     while (1) {
+        /* Weather settings saved: forget the coordinates in use so the manual
+           lat/lon or the city is resolved again now. Without this, typing or
+           clearing Lat/Lon only took effect after a UI restart, so a Toon could
+           keep showing a stale (wrong) location's weather indefinitely. */
+        if (g_wx_relocate) {
+            g_wx_relocate = 0;
+            g_cfg_lat = g_cfg_lon = 0.0;
+            geo_fails = 0; geo_fallback = 0;
+        }
         /* Resolve the configured city's exact lat/lon once (re-tried each loop
            until it sticks). Everything temperature/forecast keys off this. */
         if (g_cfg_lat == 0.0 && g_cfg_lon == 0.0) {
             if (settings.weather_lat[0] && settings.weather_lon[0]) {
-                g_cfg_lat = atof(settings.weather_lat);
-                g_cfg_lon = atof(settings.weather_lon);
+                g_cfg_lat = coord_atof(settings.weather_lat);
+                g_cfg_lon = coord_atof(settings.weather_lon);
+                fprintf(stderr, "[wx] using manual location (%.4f,%.4f)\n", g_cfg_lat, g_cfg_lon);
             }
         }
         if (g_cfg_lat == 0.0 && g_cfg_lon == 0.0 && settings.weather_location[0]) {
@@ -727,6 +747,11 @@ static void * wx_thread(void * arg) {
 }
 
 void weather_refresh_async(void) {
+    g_wx_wake = 1;
+}
+
+void weather_relocate_async(void) {
+    g_wx_relocate = 1;
     g_wx_wake = 1;
 }
 

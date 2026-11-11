@@ -407,6 +407,7 @@ static void mock_state(void) {
     weather_state.connected   = 1;
     weather_state.current_temp = 22.6f;
     weather_state.feel_temp    = 22.0f;
+    if (getenv("SIM_OUT_TEMP")) weather_state.current_temp = weather_state.feel_temp = (float)atof(getenv("SIM_OUT_TEMP"));
     strcpy(weather_state.current_desc, "Zonnig");
     strcpy(weather_state.current_icon, "a");
     static const char * hlbl[] = { "Nu", "16:00", "19:00", "22:00", "01:00", "04:00" };
