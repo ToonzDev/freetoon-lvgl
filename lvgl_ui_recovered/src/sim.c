@@ -812,6 +812,13 @@ int main(int argc, char ** argv) {
      * ends) and times each lv_refr_now(). Host ms are far below a Toon 1's
      * (~65x for full-screen work) -- compare variants, not absolutes.
      * SB_NOSHADOW=1 removes all shadows first. */
+    /* Weather location lookup against the live geocoder: `toonui-sim geocode <name>...`. */
+    if (!strcmp(mode, "geocode")) {
+        extern int weather_geocode(const char * city);
+        for (int a = 2; a < argc; a++) weather_geocode(argv[a]);
+        return 0;
+    }
+
     if (!strcmp(mode, "scrollbench")) {
         const char * which = (argc > 2) ? argv[2] : "settings";
         int step   = (argc > 3) ? atoi(argv[3]) : 8;

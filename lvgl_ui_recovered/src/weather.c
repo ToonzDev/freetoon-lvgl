@@ -600,29 +600,47 @@ int weather_geocode(const char * city) {
         }
     }
     enc[o] = 0;
+    /* Several results, not just the top one: the geocoder ranks worldwide by
+     * population, so "Ede" and "Epe" came back as towns in Nigeria (~30 C on
+     * the dim screen in November), "Born" as Turkey, "Bergen" as Norway.
+     * Prefer a Dutch match, then Belgian, then whatever ranked first. */
     char url[256];
     snprintf(url, sizeof url,
-        "https://geocoding-api.open-meteo.com/v1/search?name=%s&count=1&language=nl&format=json",
+        "https://geocoding-api.open-meteo.com/v1/search?name=%s&count=5&language=nl&format=json",
         enc);
-    static char body[4096];
+    static char body[8192];
     if (http_fetch(url, body, sizeof body) != 0) {
         fprintf(stderr, "[wx] geocode '%s': no response from geocoding-api.open-meteo.com\n", city);
         return 0;
     }
-    /* First "id": in the response is the top result's GeoNames id. */
-    const char * p = strstr(body, "\"id\":");
-    if (!p) {
+    /* Result objects are flat ({"id":..,"latitude":..,"country_code":"NL",..}),
+     * so each one runs from its '{' to the next '}'. */
+    const char * res = strstr(body, "\"results\":");
+    const char * pick = NULL, * pick_end = NULL;
+    int pick_rank = 99;
+    char cc[4] = "";
+    for (const char * p = res ? strchr(res, '{') : NULL; p; ) {
+        const char * e = strchr(p, '}');
+        if (!e) break;                                /* truncated last result */
+        char c[4] = "";
+        js_str(p, e, "country_code", c, sizeof c);
+        int rank = !strcasecmp(c, "NL") ? 0 : !strcasecmp(c, "BE") ? 1 : 2;
+        if (rank < pick_rank) { pick = p; pick_end = e; pick_rank = rank; snprintf(cc, sizeof cc, "%s", c); }
+        if (rank == 0) break;
+        p = strchr(e, '{');
+    }
+    if (!pick) {
         fprintf(stderr, "[wx] geocode '%s': no match — check the spelling in "
                         "Settings > Weather\n", city);
         return 0;
     }
-    int id = atoi(p + 5);
+    int id = (int)js_num(pick, pick_end, "id", 0);
     /* Capture the exact lat/lon — this is what the Open-Meteo current+forecast
      * fetch keys on (the GeoNames id is only kept for settings back-compat). */
-    double lat = js_num(body, body + strlen(body), "latitude", 0);
-    double lon = js_num(body, body + strlen(body), "longitude", 0);
+    double lat = js_num(pick, pick_end, "latitude", 0);
+    double lon = js_num(pick, pick_end, "longitude", 0);
     if (lat != 0.0 || lon != 0.0) { g_cfg_lat = lat; g_cfg_lon = lon; }
-    fprintf(stderr, "[wx] geocode '%s' -> id %d (%.4f,%.4f)\n", city, id, lat, lon);
+    fprintf(stderr, "[wx] geocode '%s' -> id %d (%.4f,%.4f, %s)\n", city, id, lat, lon, cc[0] ? cc : "?");
     return id;
 }
 
