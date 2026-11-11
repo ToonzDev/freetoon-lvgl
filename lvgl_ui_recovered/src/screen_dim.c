@@ -698,6 +698,11 @@ static void refresh_cb(lv_timer_t * t) {
     }
 }
 
+static void on_screen_loaded(lv_event_t * e) {
+    (void)e;
+    refresh_cb(NULL);
+}
+
 lv_obj_t * screen_dim_create(void) {
     /* Opt-in custom dim: only when the user has enabled it in the dim editor.
      * Default (flag 0) is this original absolute dim layout. Mirrors the home
@@ -719,6 +724,7 @@ lv_obj_t * screen_dim_create(void) {
     /* Whole screen is a wake target. */
     lv_obj_add_flag(scr_root, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(scr_root, on_wake_tap, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(scr_root, on_screen_loaded, LV_EVENT_SCREEN_LOADED, NULL);
 
     /* Freetoon wordmark, top-left — brands the standby screen and paints over
      * any boot-splash "TOON" residue that can linger in this corner (the bare
@@ -930,6 +936,7 @@ lv_obj_t * screen_dim_create(void) {
     lv_obj_set_style_img_recolor(waste_icon, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_img_recolor_opa(waste_icon, 255, 0);
     lv_obj_align(waste_icon, LV_ALIGN_TOP_LEFT, SX(70), SY(52));
+    lv_obj_add_flag(waste_icon, LV_OBJ_FLAG_HIDDEN);
 
     /* 2nd bin, shown only when the next pickup has two types on one day
        (e.g. Papier+Plastic) — each bin recoloured by its own type. */
@@ -948,6 +955,7 @@ lv_obj_t * screen_dim_create(void) {
     lv_obj_set_style_text_align(lbl_waste, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(lbl_waste, LV_LABEL_LONG_WRAP);
     lv_obj_align(lbl_waste, LV_ALIGN_TOP_LEFT, SX(10), waste_lbl_y);
+    lv_obj_add_flag(lbl_waste, LV_OBJ_FLAG_HIDDEN);
 
     /* (City header above forecast strip removed — location moved under wx icon) */
     dim_lbl_city = NULL;

@@ -930,6 +930,11 @@ static void refresh_cb(lv_timer_t * t) {
     }
 }
 
+static void on_screen_loaded(lv_event_t * e) {
+    (void)e;
+    refresh_cb(NULL);
+}
+
 /* Grid (customizable) dim — invoked by screen_dim_create() only when
  * settings.dim_custom_enabled is set. The default dim lives in screen_dim.c. */
 lv_obj_t * screen_dim_grid_create(void) {
@@ -949,6 +954,7 @@ lv_obj_t * screen_dim_grid_create(void) {
     /* Whole screen is a wake target. */
     lv_obj_add_flag(scr_root, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(scr_root, on_wake_tap, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(scr_root, on_screen_loaded, LV_EVENT_SCREEN_LOADED, NULL);
 
     /* Clock — custom 96pt Montserrat inside its customizable dim box (DB_CLOCK) */
     lv_obj_t * bx_clock = dim_box(DB_CLOCK, NULL, NULL);
@@ -1047,6 +1053,7 @@ lv_obj_t * screen_dim_grid_create(void) {
     lv_obj_set_style_img_recolor(waste_icon, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_img_recolor_opa(waste_icon, 255, 0);
     lv_obj_align(waste_icon, LV_ALIGN_TOP_MID, -6, 8);
+    lv_obj_add_flag(waste_icon, LV_OBJ_FLAG_HIDDEN);
 
     waste_icon_2 = lv_img_create(bx_s);
     lv_img_set_src(waste_icon_2, &icon_trash_lg);
@@ -1061,6 +1068,7 @@ lv_obj_t * screen_dim_grid_create(void) {
     lv_obj_set_style_text_align(lbl_waste, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(lbl_waste, LV_LABEL_LONG_WRAP);
     lv_obj_align(lbl_waste, LV_ALIGN_TOP_MID, 0, (DISP_VER < 600) ? 90 : 92);
+    lv_obj_add_flag(lbl_waste, LV_OBJ_FLAG_HIDDEN);
 
     /* ---- THERMO: indoor temp + setpoint/program state below ---- */
     int tbw = 0, tbh = 0; lv_obj_t * bx_t = dim_box(DB_THERMO, &tbw, &tbh); (void)tbh;
