@@ -9,6 +9,7 @@
 #include "meteradapter.h"
 #include "settings.h"
 #include "canonical_state.h"
+#include "http.h"
 #include <pthread.h>
 #include <unistd.h>
 #include <time.h>
@@ -84,7 +85,6 @@ void meteradapter_on_flow(float watts) {
  * (where 'value' is often null, but 'avgValue' holds the calculated wattage).
  * Also subtracts powerProduction if solar power is being generated. */
 void probe_happ_pwrusage(void) {
-    extern int http_fetch_to(const char *, char *, size_t, int);
     char buf[512] = {0};
     static int log_budget = 5;
     static int last_status = -1; /* 1 = got usage, 0 = null, -2 = fetch error */

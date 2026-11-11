@@ -245,6 +245,14 @@ static void sim_indev_read(lv_indev_drv_t * drv, lv_indev_data_t * data) {
     data->point.y = tap_y;
     data->state = tap_pressed ? LV_INDEV_STATE_PR : LV_INDEV_STATE_REL;
 }
+/* redrawstat: LVGL's monitor_cb reports each finished refresh (time, px). */
+static uint64_t * rs_px; static uint32_t * rs_n; static uint32_t * rs_ms;
+static void redrawstat_ptr(uint64_t * px, uint32_t * n, uint32_t * ms) { rs_px = px; rs_n = n; rs_ms = ms; }
+static void redrawstat_monitor(lv_disp_drv_t * drv, uint32_t time, uint32_t px) {
+    (void)drv;
+    if (rs_px) { *rs_px += px; (*rs_n)++; *rs_ms += time; }
+}
+
 static void pump(int frames) {
     for (int i = 0; i < frames; i++) { lv_timer_handler(); lv_tick_inc(16); usleep(1000); }
 }
@@ -764,6 +772,38 @@ int main(int argc, char ** argv) {
         extern int telegram_start(void);
         telegram_start();
         for (int i = 0; i < secs * 10; i++) usleep(100000);
+        return 0;
+    }
+
+    /* Redraw cost of an idle home screen: `toonui-sim redrawstat [seconds]`.
+     * Nothing changes in the mock state, so ideally almost nothing is redrawn.
+     * Runs twice: with the home refresh timer (500 ms) and with it paused, to
+     * separate refresh_cb's share from clock/animations. */
+    if (!strcmp(mode, "redrawstat")) {
+        int secs = (argc > 2) ? atoi(argv[2]) : 20;
+        ui_init();
+        pump(200);                                     /* settle: first layout + loads */
+        static uint64_t px_sum; static uint32_t refr_n, refr_ms;
+        dd.monitor_cb = redrawstat_monitor;
+        redrawstat_ptr(&px_sum, &refr_n, &refr_ms);
+        for (int pass = 0; pass < 2; pass++) {
+            if (pass == 1) {                           /* pause every 500 ms timer = home refresh */
+                for (lv_timer_t * t = lv_timer_get_next(NULL); t; t = lv_timer_get_next(t))
+                    if (t->period == 500) lv_timer_pause(t);
+                pump(40);
+            }
+            px_sum = 0; refr_n = 0; refr_ms = 0;
+            struct timespec a, b;
+            clock_gettime(CLOCK_MONOTONIC, &a);
+            int frames = secs * 1000 / 16;
+            for (int i = 0; i < frames; i++) { lv_timer_handler(); lv_tick_inc(16); }
+            clock_gettime(CLOCK_MONOTONIC, &b);
+            double cpu_ms = (b.tv_sec - a.tv_sec) * 1000.0 + (b.tv_nsec - a.tv_nsec) / 1e6;
+            fprintf(stderr, "[redrawstat] %s: %d s, %u redraws, %.0f px/s (%.2f screens/s), host CPU %.1f ms/s\n",
+                    pass == 0 ? "with home refresh  " : "home refresh paused",
+                    secs, refr_n, (double)px_sum / secs,
+                    (double)px_sum / secs / (DISP_HOR * DISP_VER), cpu_ms / secs);
+        }
         return 0;
     }
 

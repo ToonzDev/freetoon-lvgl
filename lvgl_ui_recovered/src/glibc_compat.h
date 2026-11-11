@@ -30,12 +30,13 @@
 #ifndef TOON1_GLIBC_COMPAT_H
 #define TOON1_GLIBC_COMPAT_H
 
-/* This header is force-included via -include before any system headers, so
- * __GLIBC__ isn't defined yet — pull it in explicitly so the next check
- * actually evaluates. */
-#include <features.h>
-
-#if defined(TOON1) && defined(__GLIBC__)
+/* No system header may be included here. This file is force-included BEFORE
+ * each source file's own `#define _GNU_SOURCE`; pulling in <features.h> at
+ * this point locks glibc's feature macros without GNU extensions for the
+ * whole TU, so memmem/strcasestr etc. were silently left undeclared (implicit
+ * declarations in pwa_server.c). The -include is only used by the Toon 1
+ * cross build, which is always glibc, so a TOON1 check is enough. */
+#if defined(TOON1)
 
 __asm__(".symver pthread_create,pthread_create@GLIBC_2.4");
 __asm__(".symver pthread_detach,pthread_detach@GLIBC_2.4");
