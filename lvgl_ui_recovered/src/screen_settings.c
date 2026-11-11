@@ -136,6 +136,13 @@ static lv_obj_t * news_feeds_list = NULL;   /* multi-feed list */
 static void on_weather_apply(lv_event_t * e) {
     (void)e;
     int city_changed = 0;
+    fprintf(stderr, "[settings] weather apply: city='%s' id='%s' lat='%s' lon='%s' (saved: '%s' %d '%s' '%s')\n",
+            ta_wx_city ? lv_textarea_get_text(ta_wx_city) : "-",
+            ta_wx_id   ? lv_textarea_get_text(ta_wx_id)   : "-",
+            ta_wx_lat  ? lv_textarea_get_text(ta_wx_lat)  : "-",
+            ta_wx_lon  ? lv_textarea_get_text(ta_wx_lon)  : "-",
+            settings.weather_location, settings.weather_location_id,
+            settings.weather_lat, settings.weather_lon);
     if (ta_wx_city) {
         const char * c = lv_textarea_get_text(ta_wx_city);
         city_changed = strcmp(c, settings.weather_location) != 0;
@@ -143,11 +150,19 @@ static void on_weather_apply(lv_event_t * e) {
                  sizeof settings.weather_location, "%s", c);
     }
     /* City is authoritative: a changed name auto-resolves the Buienradar id via
-     * Open-Meteo geocoding. The id field is only honoured as a manual override
-     * when the city is unchanged. */
+     * Open-Meteo geocoding. The id field is honoured as a manual override when
+     * the city is unchanged -- and also when the new name can't be found, which
+     * used to silently put the OLD id back into the field (a misspelt name plus
+     * a correct id came out as "Saved. De Bilt = 2757783"). */
+    int geo_failed = 0;
     if (city_changed && settings.weather_location[0]) {
         int gid = weather_geocode(settings.weather_location);
         if (gid > 0) settings.weather_location_id = gid;
+        else {
+            geo_failed = 1;
+            int id = ta_wx_id ? atoi(lv_textarea_get_text(ta_wx_id)) : 0;
+            if (id > 0) settings.weather_location_id = id;
+        }
         if (ta_wx_id) {
             char idbuf[12]; snprintf(idbuf, sizeof idbuf, "%d", settings.weather_location_id);
             lv_textarea_set_text(ta_wx_id, idbuf);
@@ -166,10 +181,19 @@ static void on_weather_apply(lv_event_t * e) {
     weather_relocate_async();
     extern void buienradar_rain_refresh_async(void);
     buienradar_rain_refresh_async();
-    if (lbl_wx_status)
-        lv_label_set_text_fmt(lbl_wx_status,
-            tr("Opgeslagen. %s = %d", "Saved. %s = %d"), settings.weather_location,
-            settings.weather_location_id);
+    if (lbl_wx_status) {
+        if (geo_failed)
+            lv_label_set_text_fmt(lbl_wx_status,
+                tr("Opgeslagen, maar plaats '%s' niet gevonden: controleer de spelling%s.",
+                   "Saved, but '%s' was not found: check the spelling%s."),
+                settings.weather_location,
+                (settings.weather_lat[0] && settings.weather_lon[0])
+                    ? tr(" (Lat/Lon worden gebruikt)", " (using Lat/Lon)") : "");
+        else
+            lv_label_set_text_fmt(lbl_wx_status,
+                tr("Opgeslagen. %s = %d", "Saved. %s = %d"), settings.weather_location,
+                settings.weather_location_id);
+    }
 }
 static void on_dim_waste_change(lv_event_t * e) {
     settings.show_dim_waste = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
@@ -1045,6 +1069,8 @@ static void open_weather_modal(lv_event_t * e) {
     lv_obj_set_style_text_color(lbl_wx_status, lv_color_hex(0x9fc4e6), 0);
     lv_obj_set_style_text_font(lbl_wx_status, SF(18), 0);
     lv_label_set_text(lbl_wx_status, "");
+    lv_obj_set_width(lbl_wx_status, SX(580));
+    lv_label_set_long_mode(lbl_wx_status, LV_LABEL_LONG_WRAP);
     lv_obj_align(lbl_wx_status, LV_ALIGN_TOP_LEFT, SX(220), SY(y + 12));
 }
 

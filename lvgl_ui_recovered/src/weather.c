@@ -654,6 +654,33 @@ int weather_geocode(const char * city) {
     return id;
 }
 
+/* Coordinates from the Buienradar/GeoNames id (Settings > Weer "Buienradar-id"),
+ * for when the place name can't be found (e.g. misspelt). Returns 1 on success. */
+static int weather_geocode_id(int id) {
+    if (id <= 0) return 0;
+    char url[128];
+    snprintf(url, sizeof url, "https://geocoding-api.open-meteo.com/v1/get?id=%d", id);
+    char body[2048];
+    if (http_fetch(url, body, sizeof body) != 0) return 0;
+    const char * end = body + strlen(body);
+    double lat = js_num(body, end, "latitude", 0);
+    double lon = js_num(body, end, "longitude", 0);
+    if (lat == 0.0 && lon == 0.0) {
+        fprintf(stderr, "[wx] location id %d: not found\n", id);
+        return 0;
+    }
+    g_cfg_lat = lat; g_cfg_lon = lon;
+    fprintf(stderr, "[wx] location id %d -> (%.4f,%.4f)\n", id, lat, lon);
+    return 1;
+}
+
+/* Resolve the configured place: by name, else by its Buienradar/GeoNames id. */
+static void weather_locate(void) {
+    weather_geocode(settings.weather_location);
+    if (g_cfg_lat == 0.0 && g_cfg_lon == 0.0)
+        weather_geocode_id(settings.weather_location_id);
+}
+
 static void * wx_thread(void * arg) {
     (void)arg;
     sleep(5);                            /* initial settling delay for WiFi at boot */
@@ -680,7 +707,7 @@ static void * wx_thread(void * arg) {
             }
         }
         if (g_cfg_lat == 0.0 && g_cfg_lon == 0.0 && settings.weather_location[0]) {
-            weather_geocode(settings.weather_location);
+            weather_locate();
             /* The geocoder is a second host that can be down/blocked/misspelled
                while api.open-meteo.com is fine — and without a lat/lon there is
                no fetch at all, so the user sees no weather whatsoever. After a
@@ -697,7 +724,7 @@ static void * wx_thread(void * arg) {
         if (geo_fallback && settings.weather_location[0]) {
             double fb_lat = g_cfg_lat, fb_lon = g_cfg_lon;
             g_cfg_lat = g_cfg_lon = 0.0;
-            weather_geocode(settings.weather_location);
+            weather_locate();
             if (g_cfg_lat == 0.0 && g_cfg_lon == 0.0) { g_cfg_lat = fb_lat; g_cfg_lon = fb_lon; }
             else { geo_fallback = 0; geo_fails = 0;
                    fprintf(stderr, "[wx] geocode recovered — using the configured location\n"); }

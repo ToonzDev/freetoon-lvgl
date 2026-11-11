@@ -977,10 +977,37 @@ int main(int argc, char ** argv) {
     lv_obj_t * scr = fn();
     lv_scr_load(scr);
     pump(150);
+    /* Steps: "x,y" tap; "scroll:<dy>" scrolls the biggest scroller (+ = down);
+     * "kbtype:<text>" / "kbclear" type into / empty the textarea the on-screen
+     * keyboard is bound to (what tapping its keys does); "shot:<file>" dumps
+     * the screen mid-sequence. */
     int taps = 0;
     for (int a = 3; a < argc; a++) {
         int x, y;
-        if (sscanf(argv[a], "%d,%d", &x, &y) == 2) { sim_tap(x, y); taps++; }
+        if (sscanf(argv[a], "%d,%d", &x, &y) == 2) { sim_tap(x, y); taps++; continue; }
+        if (!strncmp(argv[a], "scroll:", 7)) {
+            lv_coord_t best = 0;
+            lv_obj_t * sc = sb_find_scroller(lv_layer_top(), &best);   /* open modal first */
+            if (!sc) { best = 0; sc = sb_find_scroller(lv_scr_act(), &best); }
+            if (sc) lv_obj_scroll_by_bounded(sc, 0, -atoi(argv[a] + 7), LV_ANIM_OFF);
+            pump(20);
+            continue;
+        }
+        if (!strncmp(argv[a], "kbtype:", 7) || !strcmp(argv[a], "kbclear")) {
+            lv_obj_t * kb = NULL;
+            for (uint32_t i = 0; !kb && i < lv_obj_get_child_cnt(lv_layer_top()); i++) {
+                lv_obj_t * c = lv_obj_get_child(lv_layer_top(), i);
+                if (lv_obj_check_type(c, &lv_keyboard_class)) kb = c;
+            }
+            lv_obj_t * ta = kb ? lv_keyboard_get_textarea(kb) : NULL;
+            if (!ta) { fprintf(stderr, "[sim] %s: no keyboard textarea\n", argv[a]); continue; }
+            if (argv[a][2] == 'c') { while (lv_textarea_get_text(ta)[0]) { lv_textarea_set_cursor_pos(ta, LV_TEXTAREA_CURSOR_LAST); lv_textarea_del_char(ta); } }
+            else lv_textarea_add_text(ta, argv[a] + 7);
+            fprintf(stderr, "[sim] keyboard textarea now '%s'\n", lv_textarea_get_text(ta));
+            pump(10);
+            continue;
+        }
+        if (!strncmp(argv[a], "shot:", 5)) { pump(30); dump_ppm(argv[a] + 5); continue; }
     }
     pump(60);
     dump_ppm(out);

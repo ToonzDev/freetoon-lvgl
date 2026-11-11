@@ -1344,6 +1344,8 @@ static int handle_settings_post(int fd, const char * body) {
         if (city_changed && settings.weather_location[0]) {
             int gid = weather_geocode(settings.weather_location);
             if (gid > 0) settings.weather_location_id = gid;
+            else if (extract_int(body, "weather_location_id", &iv) && iv > 0)
+                settings.weather_location_id = iv;   /* name not found: keep the given id */
             weather_relocate_async();
         } else if (extract_int(body, "weather_location_id", &iv) && iv > 0) {
             settings.weather_location_id = iv;
