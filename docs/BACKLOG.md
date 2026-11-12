@@ -428,3 +428,13 @@
   - The weather location was resolved only at start-up, so saving Settings -> Weer did nothing until a UI restart (fixed in 97a42e2). Audit the other settings screens for the same pattern: a value read once at start-up or cached in a thread, while the screen suggests it is applied immediately.
 - **Approach**:
   - Grep for settings fields read only in thread start-up / init code; per hit either apply live (like `weather_relocate_async()`) or show the existing "restart needed" hint.
+
+### 37. HomeWizard: IP Fields on the Toon, Energy Sockets & kWh Meters, v2 API
+- **Status**: Open (user report, 2026-11-12).
+- **Description**:
+  - A user reports that the HomeWizard water meter, socket plugs, P1 meter and kWh meters don't work. P1 (HWE-P1) and water meter (HWE-WTR) are supported, but their IP addresses (`p1_elec_host` / `p1_water_host`) can only be set in `/mnt/data/toonui.cfg` over SSH: there is no field on the Toon. Energy Sockets (HWE-SKT) and kWh meters (HWE-KWH1/3, SDM230/630) are not supported at all.
+  - Workaround until then: "Lokale API" on per meter in the HomeWizard Energy app + a fixed IP in the router; the two hosts in toonui.cfg; Settings > Integraties: energy source "HomeWizard P1", switch on HomeWizard P1 and Watermeter, restart the UI.
+- **Approach**:
+  - Settings > Integraties: IP fields for the P1 and the water meter, like the ToonWater field (commit-on-defocus, host characters only), plus a short hint about "Lokale API".
+  - Energy Sockets: power on a tile, on/off via the local API (`/api/v1/state`, PUT `{"power_on":…}`); kWh meters: power like the P1. Mind the ESP socket-table limit (poll slowly, see hw_thread).
+  - HomeWizard v2 API: newer firmware has a local API v2 (HTTPS + bearer token, obtained by pressing the device button; README already mentions a v2 `P1_TOKEN` for p1bridge). Check whether v1 keeps working on current firmware or whether v2 should become the default, and how a user pairs on the Toon.
