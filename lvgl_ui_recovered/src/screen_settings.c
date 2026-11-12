@@ -21,6 +21,10 @@
 #include "theme.h"
 #include "i18n.h"
 #include "domoticz.h"
+#include "otgw.h"
+#include "ventilation.h"
+#include "ha_mqtt.h"
+#include "video.h"
 #include "hue.h"
 #include "homeassistant.h"
 #include "calendar.h"
@@ -203,6 +207,7 @@ static void on_weather_apply(lv_event_t * e) {
 }
 static void on_dim_waste_change(lv_event_t * e) {
     settings.show_dim_waste = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    waste_ensure_started();
 }
 static void on_waste_lead_change(lv_event_t * e) {
     int v = lv_slider_get_value(lv_event_get_target(e));
@@ -1148,9 +1153,10 @@ static void on_waste_apply(lv_event_t * e) {
     if (ta_waste_city)  snprintf(settings.waste_city,    sizeof settings.waste_city,    "%s", lv_textarea_get_text(ta_waste_city));
     if (ta_waste_ics)   snprintf(settings.waste_ics_url, sizeof settings.waste_ics_url, "%s", lv_textarea_get_text(ta_waste_ics));
     settings_save();
-    waste_state.wake_fetch = 1;   /* wake the background fetcher so the
-                                     "refreshes within a few seconds" status
-                                     below is actually true (else up to 4h). */
+    waste_ensure_started();       /* start or wake the background fetcher so
+                                     the "refreshes within a few seconds" status
+                                     below is actually true (else up to 4h, or
+                                     never when it wasn't running at boot). */
     if (lbl_waste_status)
         lv_label_set_text(lbl_waste_status,
             tr("Opgeslagen - de kalender ververst binnen enkele seconden.",
@@ -1791,6 +1797,7 @@ static void on_domoticz_enabled_change(lv_event_t * e) {
     settings.enable_domoticz =
         lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
     settings_save();
+    if (settings.enable_domoticz) domoticz_start();   /* once; it reads flag + host live */
 }
 static void on_domoticz_view_click(lv_event_t * e) {
     (void)e;
@@ -2844,6 +2851,8 @@ static void cal_feeds_rebuild(void);
 
 static void on_cal_enabled_change(lv_event_t * e) {
     settings.calendar_enabled = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    /* starts the calendar thread when switched on after boot, or re-fetches */
+    if (settings.calendar_enabled) calendar_refresh_async();
 }
 static void on_cal_notify_change(lv_event_t * e) {
     settings.calendar_notify_enabled = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
@@ -3557,6 +3566,7 @@ static void on_int_toonwater_host(lv_event_t * e) {
 static void on_int_video(lv_event_t * e) {
     settings.video_enabled = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
     settings_save();
+    video_set_enabled(settings.video_enabled);   /* Toon 1: warm pipeline on/off now */
 }
 
 static void open_ha_entities_modal(lv_event_t * e);
@@ -3801,7 +3811,6 @@ static void on_ha_entities_save(lv_event_t * e) {
         const char * tk = lv_textarea_get_text(ta_ha_token);
         if (tk && tk[0]) ha_set_token(tk);   /* write /mnt/data/ha.cfg */
     }
-    ha_start();                              /* reconnect with the new host + token */
     #define SAVE_TA(ta, field) do { \
         if (ta) { const char * v = lv_textarea_get_text(ta); \
                   snprintf(field, sizeof field, "%s", v ? v : ""); } \
@@ -3833,6 +3842,12 @@ static void on_ha_entities_save(lv_event_t * e) {
         settings.doorbell_seconds = iv;
     }
     #undef SAVE_TA
+    /* After the fields above: ha_start() decides on the doorbell worker from
+     * the entity/camera just saved. It reconnects a running client instead
+     * of starting a second one. */
+    ha_start();
+    if (settings.enable_ha && settings.ha_host[0] && !settings.client_mode)
+        ha_mqtt_start();                  /* once; as main.c does at boot */
     modal_close(e);                       /* persists settings, closes sub-modal, restores parent */
 }
 
@@ -4589,6 +4604,7 @@ static void on_apply_click(lv_event_t * e) {
     snprintf(settings.otgw_user, sizeof(settings.otgw_user), "%s", u ? u : "");
     snprintf(settings.otgw_pass, sizeof(settings.otgw_pass), "%s", p ? p : "");
     settings_save();
+    if (!settings.client_mode) otgw_start();   /* boiler telemetry without a restart */
 
     /* Apply mode switch via shell. We shell out because rewriting inittab
      * + pkill + umount is messy to do via syscalls. The script lives at
@@ -5489,8 +5505,8 @@ static void on_mqtt_apply_click(lv_event_t * e) {
         }
     }
     settings_save();
-    /* Also mirror to /mnt/data/mqtt.cfg so external scripts that read it
-     * (none today, future-proofing) stay in sync. */
+    /* Also mirror to /mnt/data/mqtt.cfg: the Itho status subscriber
+     * (ventilation.c) and the HA discovery push (ha_mqtt.c) read that file. */
     FILE * f = fopen("/mnt/data/mqtt.cfg", "w");
     if (f) {
         fprintf(f, "%s:%s:%s\n", settings.mqtt_host, settings.mqtt_user,
@@ -5498,6 +5514,8 @@ static void on_mqtt_apply_click(lv_event_t * e) {
         fclose(f); chmod("/mnt/data/mqtt.cfg", 0600);
     }
     mqtt_client_restart();
+    vent_mqtt_reload();        /* reconnect both with the new broker */
+    ha_mqtt_reload();
     lv_label_set_text(lbl_mqtt_result,
         tr("Toegepast - abonnee verbindt opnieuw met de nieuwe instellingen.",
            "Applied - subscriber reconnecting with new settings."));
@@ -5506,6 +5524,7 @@ static void on_mqtt_apply_click(lv_event_t * e) {
 static void on_mqtt_enabled_change(lv_event_t * e) {
     settings.mqtt_enabled = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
     settings_save();
+    mqtt_client_restart();     /* switching off drops the live session at once */
 }
 
 static void open_mqtt_modal(lv_event_t * e) {

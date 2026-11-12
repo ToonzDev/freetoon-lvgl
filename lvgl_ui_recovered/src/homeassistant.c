@@ -106,6 +106,7 @@ void ha_get_snapshot(ha_state_t * out) {
 }
 
 static char g_token[256] = "";
+static volatile int g_ha_reconnect = 0;   /* ha_start() on a running client: drop the WS and reconnect */
 
 static void load_token(void) {
     FILE * f = fopen(HA_TOKEN_PATH, "r");
@@ -1400,12 +1401,21 @@ static void * ha_thread(void * arg) {
         if (ws_send(fd, 0x1, (unsigned char *)sub, strlen(sub)) < 0) { close(fd); continue; }
         fprintf(stderr, "[ha] WebSocket connected + subscribed to state_changed\n");
         time_t last_ping = time(NULL);
-        while (1) {
+        g_ha_reconnect = 0;
+        while (!g_ha_reconnect) {
             fd_set rs; FD_ZERO(&rs); FD_SET(fd, &rs);
-            struct timeval tv = { .tv_sec = 20, .tv_usec = 0 };
+            /* 2 s wake-ups so a Settings save (g_ha_reconnect) is picked up
+             * quickly; the keep-alive ping below still goes every ~20 s. */
+            struct timeval tv = { .tv_sec = 2, .tv_usec = 0 };
             int s = select(fd + 1, &rs, NULL, NULL, &tv);
             if (s < 0) { if (errno == EINTR) continue; break; }
-            if (s == 0) { if (ws_send(fd, 0x9, NULL, 0) < 0) break; last_ping = time(NULL); continue; }
+            if (s == 0) {
+                if (time(NULL) - last_ping >= 20) {
+                    if (ws_send(fd, 0x9, NULL, 0) < 0) break;
+                    last_ping = time(NULL);
+                }
+                continue;
+            }
             int n = ws_recv_msg(fd, msg, sizeof msg);
             if (n < 0) break;
             if (strstr(msg, "state_changed")) dispatch_event(msg);
@@ -1618,14 +1628,21 @@ int ha_start(void) {
     if (!g_token[0]) {
         fprintf(stderr, "[ha] no token at " HA_TOKEN_PATH " — HA tile will stay disconnected\n");
     }
-    pthread_t t;
-    pthread_create(&t, NULL, ha_thread, NULL);
-    pthread_detach(t);
-    /* Doorbell live-footage runs separately so it never blocks the WS stream. */
-    if (settings.doorbell_entity[0] || settings.doorbell_camera[0]) {
-        pthread_t d;
-        if (pthread_create(&d, NULL, doorbell_thread, NULL) == 0) pthread_detach(d);
+    /* Called at start-up and again on every Settings save: start each worker
+     * once; a running client is told to reconnect (it re-reads host + token). */
+    static int ws_started = 0, bell_started = 0;
+    if (!ws_started) {
+        pthread_t t;
+        if (pthread_create(&t, NULL, ha_thread, NULL) == 0) { pthread_detach(t); ws_started = 1; }
+        fprintf(stderr, "[ha] WebSocket client started (host=%s)\n", HA_HOST);
+    } else {
+        g_ha_reconnect = 1;
+        fprintf(stderr, "[ha] settings changed — reconnecting (host=%s)\n", HA_HOST);
     }
-    fprintf(stderr, "[ha] WebSocket client started (host=%s)\n", HA_HOST);
+    /* Doorbell live-footage runs separately so it never blocks the WS stream. */
+    if (!bell_started && (settings.doorbell_entity[0] || settings.doorbell_camera[0])) {
+        pthread_t d;
+        if (pthread_create(&d, NULL, doorbell_thread, NULL) == 0) { pthread_detach(d); bell_started = 1; }
+    }
     return 0;
 }

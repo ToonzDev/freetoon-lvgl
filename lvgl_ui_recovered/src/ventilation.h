@@ -29,6 +29,8 @@ extern vent_state_t vent_state;
 
 /* Start the poller. Returns 0 on success. */
 int vent_start(void);
+/* mqtt.cfg changed: reconnect the Itho status subscriber with it. */
+void vent_mqtt_reload(void);
 
 /* Clean, capitalised display label for the current mode (Low/High/Auto/
  * Manual/Timer), derived from fan_info|last_cmd. Static buffer, LVGL thread

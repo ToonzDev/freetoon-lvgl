@@ -33,7 +33,8 @@ typedef struct {
 
 extern waste_state_t waste_state;
 
-int waste_start(void);
+int waste_start(void);           /* once; later calls are no-ops */
+void waste_ensure_started(void); /* start when configured, else wake a re-fetch */
 
 /* Returns the soonest upcoming pickup date and a comma-joined types list.
    `out_date` is empty if none scheduled. */

@@ -718,9 +718,33 @@ static void * waste_thread(void * arg) {
     return NULL;
 }
 
+/* Something to fetch for: dim-waste on or any address/ICS source. (Not
+ * is_waste_configured(): waste_plugin has a default, so that is always true
+ * and an unconfigured Toon would retry every 10 s.) */
+static int waste_wanted(void) {
+    return settings.show_dim_waste || settings.waste_postcode[0] || settings.waste_icsid[0] ||
+           settings.waste_street[0] || settings.waste_ics_url[0];
+}
+
+static pthread_mutex_t s_waste_start_mtx = PTHREAD_MUTEX_INITIALIZER;
+static int s_waste_started = 0;
+
 int waste_start(void) {
-    pthread_t th;
-    if (pthread_create(&th, NULL, waste_thread, NULL) != 0) return -1;
-    pthread_detach(th);
-    return 0;
+    pthread_mutex_lock(&s_waste_start_mtx);
+    int rc = 0;
+    if (!s_waste_started) {
+        pthread_t th;
+        if (pthread_create(&th, NULL, waste_thread, NULL) != 0) rc = -1;
+        else { pthread_detach(th); s_waste_started = 1; }
+    }
+    pthread_mutex_unlock(&s_waste_start_mtx);
+    return rc;
+}
+
+/* Start the fetcher once something is configured, or wake it to re-fetch
+ * now. Called from the waste settings (device + web) after a save. */
+void waste_ensure_started(void) {
+    if (!waste_wanted()) return;
+    if (s_waste_started) waste_state.wake_fetch = 1;
+    else waste_start();
 }

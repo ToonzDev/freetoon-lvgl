@@ -43,6 +43,10 @@
 #include "notify.h"
 #include "update_check.h"
 #include "canonical_state.h"
+#include "otgw.h"
+#include "ha_mqtt.h"
+#include "mqtt_client.h"
+#include "buienradar_rain.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1351,6 +1355,11 @@ static int handle_settings_get(int fd) {
 
 static int handle_settings_post(int fd, const char * body) {
     int iv; char sv[1024];
+    /* MQTT before the update: the web client re-sends these on every save,
+     * so only a real change may rewrite mqtt.cfg and reconnect (see below). */
+    char mq_before[sizeof settings.mqtt_host + sizeof settings.mqtt_user + sizeof settings.mqtt_pass + 32];
+    snprintf(mq_before, sizeof mq_before, "%s|%s|%s|%d|%d", settings.mqtt_host, settings.mqtt_user,
+             settings.mqtt_pass, settings.mqtt_port, settings.mqtt_enabled);
     if (extract_int(body, "auto_dim_enabled", &iv))   settings.auto_dim_enabled = !!iv;
     if (extract_int(body, "auto_dim_seconds", &iv))   settings.auto_dim_seconds = iv < 5 ? 5 : (iv > 300 ? 300 : iv);
     if (extract_int(body, "active_brightness", &iv))  settings.active_brightness = iv < 0 ? 0 : (iv > 1000 ? 1000 : iv);
@@ -1434,8 +1443,12 @@ static int handle_settings_post(int fd, const char * body) {
             else if (extract_int(body, "weather_location_id", &iv) && iv > 0)
                 settings.weather_location_id = iv;   /* name not found: keep the given id */
             weather_relocate_async();
-        } else if (extract_int(body, "weather_location_id", &iv) && iv > 0) {
+            buienradar_rain_refresh_async();   /* rain tile follows, as on the device */
+        } else if (extract_int(body, "weather_location_id", &iv) && iv > 0 &&
+                   iv != settings.weather_location_id) {
             settings.weather_location_id = iv;
+            weather_relocate_async();          /* was: stored, used only after a restart */
+            buienradar_rain_refresh_async();
         }
     }
     if (extract_str(body, "ot_bridge_mode", sv, sizeof sv) &&
@@ -1447,6 +1460,10 @@ static int handle_settings_post(int fd, const char * body) {
         snprintf(settings.mqtt_host, sizeof settings.mqtt_host, "%s", sv);
     if (extract_str(body, "mqtt_user", sv, sizeof sv))
         snprintf(settings.mqtt_user, sizeof settings.mqtt_user, "%s", sv);
+    if (extract_str(body, "mqtt_pass", sv, sizeof sv))     /* was sent but never read */
+        snprintf(settings.mqtt_pass, sizeof settings.mqtt_pass, "%s", sv);
+    if (extract_int(body, "auto_home_enabled", &iv))  settings.auto_home_enabled = !!iv;
+    if (extract_int(body, "auto_home_seconds", &iv))  settings.auto_home_seconds = iv < 5 ? 5 : (iv > 600 ? 600 : iv);
     if (extract_int(body, "client_mode", &iv))        settings.client_mode = !!iv;
     if (extract_str(body, "master_host", sv, sizeof sv))
         snprintf(settings.master_host, sizeof settings.master_host, "%s", sv);
@@ -1513,7 +1530,42 @@ static int handle_settings_post(int fd, const char * body) {
     if (extract_str(body, "tile_rotate_members", sv, sizeof sv))
         snprintf(settings.tile_rotate_members, sizeof settings.tile_rotate_members, "%s", sv);
     settings_save();
-    return send_status(fd, 200, "OK", "{\"ok\":1,\"note\":\"some changes apply after a toonui restart\"}");
+
+    /* Apply what changed now, like the device's own Settings screens do —
+     * the web client ignores the "restart" note below, so values used to sit
+     * unused until the next UI restart (backlog #36). Each call is a no-op
+     * or a start-once/wake, so re-sending unchanged fields is harmless. */
+    if (strstr(body, "\"waste_") || strstr(body, "\"show_dim_waste\""))
+        waste_ensure_started();
+    if (strstr(body, "\"news_"))
+        news_wake_fetch();
+    if (!settings.client_mode) {
+        if (strstr(body, "\"enable_p1_") || strstr(body, "\"p1_elec_host\"") || strstr(body, "\"p1_water_host\""))
+            homewizard_ensure_started();
+        if (strstr(body, "\"otgw_host\""))
+            otgw_start();
+        if (settings.enable_domoticz && (strstr(body, "\"enable_domoticz\"") || strstr(body, "\"domoticz_")))
+            domoticz_start();
+        if (settings.enable_ha && settings.ha_host[0] &&
+            (strstr(body, "\"ha_host\"") || strstr(body, "\"doorbell_")))
+            ha_start();
+    }
+    char mq_after[sizeof mq_before];
+    snprintf(mq_after, sizeof mq_after, "%s|%s|%s|%d|%d", settings.mqtt_host, settings.mqtt_user,
+             settings.mqtt_pass, settings.mqtt_port, settings.mqtt_enabled);
+    if (strcmp(mq_before, mq_after) != 0) {
+        /* mirror for the Itho subscriber + HA discovery, as Settings > MQTT does */
+        FILE * mf = fopen("/mnt/data/mqtt.cfg", "w");
+        if (mf) {
+            fprintf(mf, "%s:%s:%s\n", settings.mqtt_host, settings.mqtt_user, settings.mqtt_pass);
+            fclose(mf); chmod("/mnt/data/mqtt.cfg", 0600);
+        }
+        mqtt_client_restart();
+        vent_mqtt_reload();
+        ha_mqtt_reload();
+    }
+    return send_status(fd, 200, "OK", "{\"ok\":1,\"note\":\"theme, client mode, OT bridge mode, "
+                                      "ventilation, HA on/off and the energy source apply after a toonui restart\"}");
 }
 
 /* GET /api/update/status — current build + whether the background poll has

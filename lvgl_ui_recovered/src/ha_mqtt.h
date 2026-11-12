@@ -22,5 +22,6 @@
  * No-op if /mnt/data/mqtt.cfg is absent. Started from main.c after boxtalk.
  */
 int ha_mqtt_start(void);
+void ha_mqtt_reload(void);   /* mqtt.cfg changed: reconnect with it */
 
 #endif /* TOON_HA_MQTT_H */

@@ -266,15 +266,26 @@ static void do_dismiss_to_envelope(lv_event_t * e) {
     update_modal_close();
 }
 
+/* Auto-update needs the background checker. When update checks were off
+ * (toonui.cfg / web API), switching an auto-update on turns them back on
+ * and starts the checker, instead of a switch that silently does nothing. */
+static void ensure_checker(int want) {
+    if (!want || settings.update_check_enabled) return;
+    settings.update_check_enabled = 1;
+    update_check_start();
+}
+
 static void on_auto_update_toggle(lv_event_t * e) {
     lv_obj_t * sw = lv_event_get_target(e);
     settings.auto_update_enabled = lv_obj_has_state(sw, LV_STATE_CHECKED) ? 1 : 0;
+    ensure_checker(settings.auto_update_enabled);
     settings_save();
 }
 
 static void on_auto_update_apps_toggle(lv_event_t * e) {
     lv_obj_t * sw = lv_event_get_target(e);
     settings.auto_update_apps = lv_obj_has_state(sw, LV_STATE_CHECKED) ? 1 : 0;
+    ensure_checker(settings.auto_update_apps);
     settings_save();
 }
 

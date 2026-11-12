@@ -82,13 +82,17 @@ static void * otgw_thread(void * arg) {
     return NULL;
 }
 
+/* At boot and again from Settings > OT Bridge "Apply": starts the poller once
+ * a host is set (poll_otgw() re-reads the host every round). */
 int otgw_start(void) {
+    static volatile int started = 0;
     if (!settings.otgw_host[0]) {
         fprintf(stderr, "[otgw] no host configured — telemetry poller off\n");
         return 0;
     }
+    if (!__sync_bool_compare_and_swap(&started, 0, 1)) return 0;
     pthread_t t;
-    if (pthread_create(&t, NULL, otgw_thread, NULL) != 0) return -1;
+    if (pthread_create(&t, NULL, otgw_thread, NULL) != 0) { started = 0; return -1; }
     pthread_detach(t);
     fprintf(stderr, "[otgw] telemetry poller started (host=%s)\n", settings.otgw_host);
     return 0;

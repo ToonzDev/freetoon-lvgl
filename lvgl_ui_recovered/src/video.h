@@ -31,6 +31,7 @@ void video_install_button(lv_obj_t * parent, lv_obj_t * anchor);
  */
 void video_init(void);
 void video_shutdown(void);
+void video_set_enabled(int on);   /* Settings switch: start/stop the warm pipeline live */
 void video_open(void);
 void video_close(void);
 

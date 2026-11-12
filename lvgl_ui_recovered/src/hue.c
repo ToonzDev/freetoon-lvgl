@@ -8,6 +8,7 @@
 #include <ctype.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <stdint.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -20,6 +21,7 @@ hue_state_t hue_state = {0};
 static pthread_mutex_t g_hue_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_t       g_hue_thread;
 static volatile int    g_hue_running = 0;
+static volatile unsigned g_hue_gen = 0;   /* bumped per hue_start(): an older worker sees a new value and exits */
 static volatile int    g_trigger_poll = 0;
 
 /* Clean host string and extract port (default 80) */
@@ -425,11 +427,12 @@ int hue_pair(const char * host, char * out_user, size_t out_sz, char * err_msg, 
 
 /* Polling thread */
 static void * hue_poll_worker(void * arg) {
+    unsigned my_gen = (unsigned)(uintptr_t)arg;
     (void)arg;
     char * body = malloc(65536);
     if (!body) return NULL;
 
-    while (g_hue_running) {
+    while (g_hue_running && my_gen == g_hue_gen) {
         if (settings.hue_enabled && settings.hue_host[0] && settings.hue_user[0]) {
             char path[128];
             snprintf(path, sizeof(path), "/api/%s/lights", settings.hue_user);
@@ -452,7 +455,7 @@ static void * hue_poll_worker(void * arg) {
         }
 
         /* Sleep up to 6 seconds with fast wakeup if triggered */
-        for (int i = 0; i < 30 && g_hue_running; i++) {
+        for (int i = 0; i < 30 && g_hue_running && my_gen == g_hue_gen; i++) {
             if (g_trigger_poll) {
                 g_trigger_poll = 0;
                 break;
@@ -468,7 +471,11 @@ static void * hue_poll_worker(void * arg) {
 int hue_start(void) {
     if (g_hue_running) return 0;
     g_hue_running = 1;
-    if (pthread_create(&g_hue_thread, NULL, hue_poll_worker, NULL) != 0) {
+    /* Off->on within one poll interval: the old worker is still sleeping
+     * and would see g_hue_running == 1 again — the new generation makes it
+     * exit instead of polling next to the new one. */
+    unsigned gen = ++g_hue_gen;
+    if (pthread_create(&g_hue_thread, NULL, hue_poll_worker, (void *)(uintptr_t)gen) != 0) {
         g_hue_running = 0;
         return -1;
     }

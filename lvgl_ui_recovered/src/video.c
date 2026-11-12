@@ -39,6 +39,7 @@ void video_init(void)     {}
 void video_shutdown(void) {}
 void video_open(void)     {}
 void video_close(void)    {}
+void video_set_enabled(int on) { (void)on; }
 void video_install_button(lv_obj_t * parent, lv_obj_t * anchor) { (void)parent; (void)anchor; }
 #else
 
@@ -178,12 +179,32 @@ static void video_init_poll_cb(lv_timer_t * t)
             printf("[video] post-respawn: re-armed show on pid=%d\n", s_pid);
     }
 }
+static lv_timer_t * s_life_timer = NULL;
+
 void video_init(void)
 {
     if (!settings.video_enabled) return;
     /* Lifecycle timer -- spawns the initial warm child once
      * /dev/mxc_vpu appears, then respawns it whenever it exits. */
-    lv_timer_create(video_init_poll_cb, 2000, NULL);
+    s_life_timer = lv_timer_create(video_init_poll_cb, 2000, NULL);
+}
+
+/* Settings > Integraties video switch (LVGL thread): start the warm pipeline
+ * now, or stop it and free the VPU, without a UI restart. */
+void video_set_enabled(int on)
+{
+    if (on) {
+        if (!s_life_timer) s_life_timer = lv_timer_create(video_init_poll_cb, 2000, NULL);
+        else               lv_timer_resume(s_life_timer);
+    } else {
+        if (s_life_timer) lv_timer_pause(s_life_timer);
+        video_close();
+        if (s_pid > 0) {
+            kill(s_pid, SIGTERM);
+            waitpid(s_pid, NULL, 0);
+            s_pid = -1;
+        }
+    }
 }
 
 void video_shutdown(void)

@@ -647,6 +647,24 @@ static int mqtt_send_ping(int fd) {
     return (write(fd, pkt, 2) == 2) ? 0 : -1;
 }
 
+/* Socket of the live connection, so vent_mqtt_reload() can cut it short. */
+static pthread_mutex_t g_mqtt_fd_mtx = PTHREAD_MUTEX_INITIALIZER;
+static int g_mqtt_fd = -1;
+
+static void mqtt_fd_set(int fd) {
+    pthread_mutex_lock(&g_mqtt_fd_mtx);
+    g_mqtt_fd = fd;
+    pthread_mutex_unlock(&g_mqtt_fd_mtx);
+}
+
+/* Settings > MQTT "Apply" rewrote /mnt/data/mqtt.cfg: drop the current
+ * connection; mqtt_thread reloads the file and reconnects. */
+void vent_mqtt_reload(void) {
+    pthread_mutex_lock(&g_mqtt_fd_mtx);
+    if (g_mqtt_fd >= 0) shutdown(g_mqtt_fd, SHUT_RDWR);
+    pthread_mutex_unlock(&g_mqtt_fd_mtx);
+}
+
 /* Connect → subscribe → read loop. Returns when the connection dies; the
  * caller is expected to retry. */
 static void mqtt_run_once(void) {
@@ -681,6 +699,7 @@ static void mqtt_run_once(void) {
         fprintf(stderr, "[mqtt] CONNECT failed\n");
         close(fd); return;
     }
+    mqtt_fd_set(fd);
     fprintf(stderr, "[mqtt] connected to %s as %s, subscribing\n",
             g_mqtt_host, g_mqtt_user);
     /* Replace the retained "offline" from the will with a "online" marker
@@ -755,17 +774,25 @@ static void mqtt_run_once(void) {
      * instead of a frozen reading until the subscriber reconnects and the
      * next itho/ithostatus repopulates it. */
     vent_state.connected = 0;
+    mqtt_fd_set(-1);
     close(fd);
 }
 
 static void * mqtt_thread(void * arg) {
     (void)arg;
-    load_mqtt_conf();
-    if (!g_mqtt_user[0]) {
-        fprintf(stderr, "[mqtt] no /mnt/data/mqtt.cfg — push updates disabled\n");
-        return NULL;
-    }
+    int warned = 0;
     while (1) {
+        /* Re-read every round: Settings > MQTT may have written the file
+         * (or a new broker) since start-up. */
+        g_mqtt_host[0] = g_mqtt_user[0] = g_mqtt_pass[0] = 0;
+        load_mqtt_conf();
+        if (!g_mqtt_user[0]) {
+            if (!warned) fprintf(stderr, "[mqtt] no /mnt/data/mqtt.cfg yet — waiting for it\n");
+            warned = 1;
+            sleep(30);
+            continue;
+        }
+        warned = 0;
         mqtt_run_once();
         fprintf(stderr, "[mqtt] disconnected, retrying in 5s\n");
         sleep(5);

@@ -280,6 +280,8 @@ static void handle_cmd(const char * topic, const char * payload, int plen) {
 
 /* ---- connection loop ---------------------------------------------------- */
 
+static volatile int g_reload = 0;
+
 static void run_once(void) {
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
@@ -315,7 +317,8 @@ static void run_once(void) {
     time_t next_pub  = time(NULL) + HA_PUBLISH_S;
     time_t next_ping = time(NULL) + (HA_KEEPALIVE_S - 5);
 
-    while (1) {
+    g_reload = 0;
+    while (!g_reload) {   /* ha_mqtt_reload(): reconnect with the new mqtt.cfg */
         time_t now = time(NULL);
         if (now >= next_pub)  { publish_state(fd); next_pub  = now + HA_PUBLISH_S; }
         if (now >= next_ping) { if (mq_ping(fd) != 0) break; next_ping = now + (HA_KEEPALIVE_S - 5); }
@@ -358,13 +361,19 @@ static void * ha_mqtt_thread(void * arg) {
     return NULL;
 }
 
+/* Started once even without mqtt.cfg: the thread re-reads the file every 5 s,
+ * so a broker set up later in Settings > MQTT is picked up without a restart. */
 int ha_mqtt_start(void) {
-    if (load_cfg() != 0 || !g_host[0]) {
-        fprintf(stderr, "[ha_mqtt] no %s -> HA push disabled\n", MQTT_CFG);
-        return 0;                                          /* not an error */
-    }
+    static volatile int started = 0;
+    if (!__sync_bool_compare_and_swap(&started, 0, 1)) return 0;   /* before load_cfg: the thread owns g_host once running */
+    if (load_cfg() != 0 || !g_host[0])
+        fprintf(stderr, "[ha_mqtt] no %s yet -> HA push waits for it\n", MQTT_CFG);
     pthread_t t;
-    if (pthread_create(&t, NULL, ha_mqtt_thread, NULL) != 0) return -1;
+    if (pthread_create(&t, NULL, ha_mqtt_thread, NULL) != 0) { started = 0; return -1; }
     pthread_detach(t);
     return 0;
 }
+
+/* mqtt.cfg changed: drop the current connection; the thread reconnects with
+ * the new broker/credentials within a second or so. */
+void ha_mqtt_reload(void) { g_reload = 1; }

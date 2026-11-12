@@ -318,12 +318,16 @@ static void * update_thread(void * arg) {
 }
 
 int update_check_start(void) {
+    static volatile int started = 0;
     if (!settings.update_check_enabled) {
         fprintf(stderr, "[update] checks disabled in settings\n");
         return 0;
     }
+    /* Once: at boot, or from the Update modal when an auto-update switch
+     * turns checks back on (update_check_enable()). */
+    if (!__sync_bool_compare_and_swap(&started, 0, 1)) return 0;
     pthread_t t;
-    if (pthread_create(&t, NULL, update_thread, NULL) != 0) return -1;
+    if (pthread_create(&t, NULL, update_thread, NULL) != 0) { started = 0; return -1; }
     pthread_detach(t);
     fprintf(stderr, "[update] checker started (running %s, every %d s)\n",
             BUILD_VERSION, UPDATE_CHECK_INTERVAL_S);

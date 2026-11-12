@@ -518,9 +518,14 @@ static void * dz_thread(void * arg) {
     return NULL;
 }
 
+/* Once: at boot and from Settings (enable switch / "Save + connect"). dz_thread
+ * re-reads the enable flag and host every round, so a second thread is never
+ * needed — before this guard every Save added another poller. */
 int domoticz_start(void) {
+    static volatile int started = 0;
+    if (!__sync_bool_compare_and_swap(&started, 0, 1)) return 0;
     pthread_t t;
-    if (pthread_create(&t, NULL, dz_thread, NULL) != 0) return -1;
+    if (pthread_create(&t, NULL, dz_thread, NULL) != 0) { started = 0; return -1; }
     pthread_detach(t);
     return 0;
 }

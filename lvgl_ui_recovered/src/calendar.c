@@ -946,7 +946,16 @@ static void * kick_thread(void * arg) {
     calendar_refresh_now();
     return NULL;
 }
+int calendar_start(void);
+static volatile int g_cal_started = 0;
+
 void calendar_refresh_async(void) {
+    /* Enabled/added a source after start-up: the periodic thread (30-min
+     * refresh + pre-event notifications) wasn't running yet — start it now
+     * instead of only doing a one-shot fetch. */
+    if (!g_cal_started && settings.calendar_enabled &&
+        (settings.calendar_ha_entity[0] || settings.calendar_ics_url[0]))
+        calendar_start();
     g_cal_wake = 1;
     pthread_t t;
     if (pthread_create(&t, NULL, kick_thread, NULL) == 0) pthread_detach(t);
@@ -1047,8 +1056,11 @@ static void * cal_thread(void * arg) {
 }
 
 int calendar_start(void) {
+    /* Once: main.c at boot, or calendar_refresh_async() when enabled later
+     * (UI thread or the web API thread — hence the atomic claim). */
+    if (!__sync_bool_compare_and_swap(&g_cal_started, 0, 1)) return 0;
     pthread_t t;
-    if (pthread_create(&t, NULL, cal_thread, NULL) != 0) return -1;
+    if (pthread_create(&t, NULL, cal_thread, NULL) != 0) { g_cal_started = 0; return -1; }
     pthread_detach(t);
     return 0;
 }

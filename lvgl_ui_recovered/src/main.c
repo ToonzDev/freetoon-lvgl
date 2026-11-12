@@ -211,9 +211,7 @@ int main(int argc, char** argv) {
     extern int buienradar_rain_start(void);
     if (buienradar_rain_start() != 0)
         fprintf(stderr, "[main] buienradar_rain_start failed\n");
-    if (settings.show_dim_waste || settings.waste_postcode[0]) {
-        if (waste_start() != 0) fprintf(stderr, "[main] waste_start failed\n");
-    }
+    waste_ensure_started();   /* only when dim-waste or an address/ICS source is set */
     if (settings.news_enabled) {
         extern int news_start(void);
         news_start();

@@ -423,7 +423,16 @@
   - Reuse the existing compare/sort logic of the Marketplace screen; respect the plugin ABI gate (an update that needs a newer toonui must not be offered).
 
 ### 36. Settings That Only Take Effect After a Restart
-- **Status**: Open (2026-11-11), after 1.0.7.
+- **Status**: Implemented (2026-11-12): audit, then fixes. Builds and ABI checks pass on all targets; not yet tested on a Toon.
+  - Waste: the fetcher starts as soon as an address/ICS source or dim-waste is set (`waste_ensure_started()`). It used to start only with a postcode at boot, so ICS-id/street/ICS-URL-only setups never fetched.
+  - Home Assistant: Save reconnects the running client (it used to start an extra WebSocket thread on every Save). It runs after the fields are stored, so a newly entered doorbell starts its worker. HA MQTT discovery starts too.
+  - Calendar: switching it on or adding a source starts the periodic thread (30-min refresh + pre-event notifications), not just a one-shot fetch.
+  - OTGW: Apply starts the telemetry poller. Domoticz: the enable switch starts it, and "Save + connect" no longer adds a poller each time.
+  - MQTT: Apply reconnects the Itho status subscriber and the HA discovery push with the new `mqtt.cfg`. Both now wait for the file instead of giving up when it was missing at boot. Switching MQTT off drops the session at once.
+  - Video (Toon 1): the switch starts/stops the warm pipeline and frees the VPU.
+  - Auto-update switches turn update checks back on when they were off. Hue: a quick off/on no longer leaves two pollers running.
+  - Web settings API: applies waste/news/HomeWizard/OTGW/Domoticz/HA/MQTT changes live (MQTT only when it actually changed). It now reads `mqtt_pass` and `auto_home_*` (they were sent but ignored), and a changed Buienradar id relocates the weather.
+  - Still restart-only (with the hint): Itho ventilation on/off, HA on/off, energy source, ESPHome P1; client mode (prompts). Not done: `home_theme` and `ot_bridge_mode` from the web API (theme needs the LVGL thread; the OT mode switch must run the script).
 - **Description**:
   - The weather location was resolved only at start-up, so saving Settings -> Weer did nothing until a UI restart (fixed in 97a42e2). Audit the other settings screens for the same pattern: a value read once at start-up or cached in a thread, while the screen suggests it is applied immediately.
 - **Approach**:
@@ -450,6 +459,7 @@
   - A user's "Meterstanden" pop-up (#29) shows ~17,000 and ~14,000 kWh for electricity and ~13,000 m3 for gas. Their meter was replaced a week ago; the old meter read ~47,000 / ~40,000 kWh and ~41,000 m3, and the new meter is still close to zero. So the pop-up shows neither.
 - **Cause (hypothesis)**:
   - `on_meter_open()` in `screen_stats.c` shows the latest sample of the hcb_rrd cumulative loggers (`elec_quantity_nt` / `elec_quantity_lt` / `gas_quantity`). These are hcb_rrd's own running totals, not the meter's register. They probably started counting when the Toon (or the logger) was set up, so they never matched the meter. After a meter swap they keep going instead of dropping to the new meter's value.
+  - Supported by a second report (2026-11-12): on the stock QML UI the Meterstanden are correct. So the right values exist on the Toon and FreeToon reads the wrong source.
 - **Investigation Points**:
   - Where the stock QML UI gets its Meterstanden: probably the live P1 dataset from meteradapter / `hdrv_p1` (the raw DSMR registers 1.8.1 / 1.8.2 / gas). If so, read that instead of the rrd loggers.
   - Compare on a test Toon: rrd latest sample vs the P1 telegram / meteradapter values vs the physical meter.

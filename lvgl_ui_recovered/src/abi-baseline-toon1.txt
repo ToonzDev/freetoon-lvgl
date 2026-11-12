@@ -111,6 +111,7 @@ send@GLIBC_2.4
 setpgid@GLIBC_2.4
 setsockopt@GLIBC_2.4
 setvbuf@GLIBC_2.4
+shutdown@GLIBC_2.4
 sigaction@GLIBC_2.4
 sigemptyset@GLIBC_2.4
 sin@GLIBC_2.4
