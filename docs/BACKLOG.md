@@ -485,3 +485,12 @@
 - **Approach**:
   - Dump the happ_usermsg dataset for this notification to see which field carries the text; fall back to `plainText` in the inbox parser when `text` is empty.
   - Decide whether a one-time "settings imported" note should go to the inbox at all, or only be a banner/log line.
+
+### 41. Release 1.0.8: HomeWizard Sockets & kWh Meter, Remote Web Page, App Updates, Meter Readings, Live Settings
+- **Status**: Prepared (2026-11-12); tag 1.0.8 to be created on GitHub.
+- **Contents**:
+  - HomeWizard: IP fields on the Toon, Energy Sockets (Devices screen, Hue/Domoticz "Stekkers" button, client mirror), kWh meter as solar source, offer to use the P1 as energy source (#37).
+  - Remote-control web page on :10081; client mode signs in on a master with a web password; ToonWater sensor as water meter.
+  - Daily marketplace app-update check with home banner, "Alles updaten" and optional nightly app updates (#35).
+  - Weather from Buienradar only; radar buttons off the timestamp.
+  - Settings that apply without a restart (#36); Meterstanden from the meter's registers (#38); FreeToon notifications with text, TSC notice hidden (#39, #40).
