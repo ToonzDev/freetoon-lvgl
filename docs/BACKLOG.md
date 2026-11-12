@@ -430,7 +430,12 @@
   - Grep for settings fields read only in thread start-up / init code; per hit either apply live (like `weather_relocate_async()`) or show the existing "restart needed" hint.
 
 ### 37. HomeWizard: IP Fields on the Toon, Energy Sockets & kWh Meters, v2 API
-- **Status**: Open (user report, 2026-11-12).
+- **Status**: Implemented (2026-11-12), sim-tested against fake devices; not yet on a real HomeWizard device.
+  - Settings > Integraties: IP fields for the P1 and the water meter (filling one in switches it on), a kWh meter (solar) field and 4 Energy Sockets (name + IP), plus a "Lokale API" hint. All apply without a restart (`homewizard_ensure_started()`; the poller reads hosts live).
+  - kWh meter: `abs(active_power_w)` feeds the Solar tile (`energy_solar_w()`), ahead of the HA solar sensor.
+  - Energy Sockets: a "Stekkers (HomeWizard)" section on the Devices screen (the HA lights page, also shown when HA is off) with on/off (PUT `/api/v1/state`) and watts. Every device is polled once per ~10 s, on separate ticks.
+  - v2 API: not needed. HomeWizard's docs (2026-11) list v1 for P1, Socket, water meter and kWh meters; v2 is "planned" for the Socket and water meter, and no end date for v1 is given. v2 only matters for v2-only devices (Plug-In Battery HWE-BAT).
+  - Not done: the hw_* fields in the web settings API (pwa_server.c); sockets on the Domoticz/Hue lights screens (those users reach the HA Devices screen only when neither is configured); a client Toon doesn't mirror sockets.
 - **Description**:
   - A user reports that the HomeWizard water meter, socket plugs, P1 meter and kWh meters don't work. P1 (HWE-P1) and water meter (HWE-WTR) are supported, but their IP addresses (`p1_elec_host` / `p1_water_host`) can only be set in `/mnt/data/toonui.cfg` over SSH: there is no field on the Toon. Energy Sockets (HWE-SKT) and kWh meters (HWE-KWH1/3, SDM230/630) are not supported at all.
   - Workaround until then: "Lokale API" on per meter in the HomeWizard Energy app + a fixed IP in the router; the two hosts in toonui.cfg; Settings > Integraties: energy source "HomeWizard P1", switch on HomeWizard P1 and Watermeter, restart the UI.

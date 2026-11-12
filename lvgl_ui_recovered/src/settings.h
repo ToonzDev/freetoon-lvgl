@@ -373,6 +373,15 @@ typedef struct {
     /* Opt-in: install marketplace app updates at auto_update_hour (needs
      * update_check_enabled; app_updates.c). */
     int   auto_update_apps;
+
+    /* HomeWizard kWh meter (HWE-KWH1/3, SDM230/630-wifi), IPv4 address. Meant
+     * for the PV inverter: when set it feeds the Solar tile (energy.c). */
+    char  hw_kwh_host[24];
+    /* HomeWizard Energy Sockets (HWE-SKT): name + IPv4 each, shown with
+     * on/off + watts on the Devices screen. Empty host = slot unused. */
+#define HW_SOCKET_MAX 4
+    char  hw_socket_name[HW_SOCKET_MAX][24];
+    char  hw_socket_host[HW_SOCKET_MAX][24];
 } settings_t;
 
 #define FORECAST_AUTO   0

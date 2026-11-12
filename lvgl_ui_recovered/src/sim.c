@@ -22,6 +22,7 @@
 #include "client_link.h"
 #include "wastecollection.h"
 #include "homewizard.h"
+#include "energy.h"
 #include "meteradapter.h"
 #include "ventilation.h"
 #include "efanlamp.h"
@@ -853,6 +854,31 @@ int main(int argc, char ** argv) {
                 printf("t=%2ds connected=%d setpoint=%.2f indoor=%.2f\n", s,
                        toon_state.connected, toon_state.setpoint, toon_state.indoor_temp);
             if (s == 15) printf("setpoint 22.5 -> %s\n", client_link_setpoint(22.5f) == 0 ? "ok" : "FAILED");
+            fflush(stdout);
+        }
+        return 0;
+    }
+    /* HomeWizard kWh meter + Energy Sockets against (fake) devices from
+     * toonui.cfg: `toonui-sim hwtest [seconds]`. Switches socket 0 at t=8 s. */
+    if (!strcmp(mode, "hwtest")) {
+        extern int homewizard_start(void);
+        memset((void *)&hw_state, 0, sizeof hw_state);
+        homewizard_start();
+        int secs = (argc > 2) ? atoi(argv[2]) : 24;
+        for (int s = 1; s <= secs; s++) {
+            sleep(1);
+            if (s == 8) {
+                printf("t=%2ds switching socket 0 %s\n", s, hw_sockets[0].on ? "off" : "on");
+                homewizard_socket_set_async(0, !hw_sockets[0].on);
+            }
+            if (s % 4 == 0) {
+                printf("t=%2ds solar have=%d %.0f W |", s, energy_have_solar(), energy_solar_w());
+                for (int i = 0; i < HW_SOCKET_MAX; i++)
+                    if (settings.hw_socket_host[i][0])
+                        printf(" sock%d conn=%d on=%d %.0f W", i, hw_sockets[i].connected,
+                               hw_sockets[i].on, hw_sockets[i].power_w);
+                printf("\n");
+            }
             fflush(stdout);
         }
         return 0;

@@ -44,19 +44,34 @@ void homewizard_get_snapshot(hw_state_t * out) {
     pthread_mutex_unlock(&g_hw_state_mtx);
 }
 
-static int http_get(const char * ip, const char * path, char * out, size_t outsz) {
+hw_socket_t hw_sockets[HW_SOCKET_MAX];
+
+/* Plain HTTP/1.0 to a HomeWizard device (local API v1, port 80). `ip` must be
+ * an IPv4 address. `body` NULL = GET, otherwise PUT with a JSON body. */
+static int http_req(const char * ip, const char * path, const char * body,
+                    char * out, size_t outsz) {
     int s = socket(AF_INET, SOCK_STREAM, 0);
     if (s < 0) return -1;
     struct sockaddr_in a = {0};
     a.sin_family = AF_INET; a.sin_port = htons(80);
+#ifdef SIM
+    { const char * p = getenv("HW_SIM_PORT");   /* fake devices need no root */
+      if (p && atoi(p) > 0) a.sin_port = htons((uint16_t)atoi(p)); }
+#endif
     if (inet_pton(AF_INET, ip, &a.sin_addr) != 1) { close(s); return -1; }
     struct timeval tv = {.tv_sec = 3, .tv_usec = 0};
     setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
     if (connect(s, (struct sockaddr*)&a, sizeof(a)) != 0) { close(s); return -1; }
-    char req[256];
-    int n = snprintf(req, sizeof(req),
-        "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", path, ip);
+    char req[384];
+    int n = body
+        ? snprintf(req, sizeof(req),
+            "PUT %s HTTP/1.0\r\nHost: %s\r\nContent-Type: application/json\r\n"
+            "Content-Length: %u\r\nConnection: close\r\n\r\n%s",
+            path, ip, (unsigned)strlen(body), body)
+        : snprintf(req, sizeof(req),
+            "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", path, ip);
+    if (n <= 0 || n >= (int)sizeof req) { close(s); return -1; }
     if (send(s, req, n, 0) != n) { close(s); return -1; }
     size_t got = 0;
     while (got < outsz - 1) {
@@ -67,6 +82,10 @@ static int http_get(const char * ip, const char * path, char * out, size_t outsz
     out[got] = 0;
     close(s);
     return 0;
+}
+
+static int http_get(const char * ip, const char * path, char * out, size_t outsz) {
+    return http_req(ip, path, NULL, out, outsz);
 }
 
 /* Find "key": <number> and return parsed double. Returns dflt if missing. */
@@ -199,6 +218,94 @@ static void poll_water(void) {
     }
     water_update((float)parse_num(j, "total_liter_m3",   0),
                  (float)parse_num(j, "active_liter_lpm", 0), WATER_POLL_INTERVAL_S);
+}
+
+/* kWh meter (HWE-KWH1/3, SDM230/630) on the PV inverter. Its active_power_w
+ * sign depends on how it is wired (production is usually negative), so the
+ * Solar tile gets the magnitude. */
+static void poll_kwh(void) {
+    if (!settings.hw_kwh_host[0]) { hw_state.connected_kwh = 0; hw_state.polled_kwh = 0; return; }
+    hw_state.polled_kwh = 1;
+    static char body[2048];
+    if (http_get(settings.hw_kwh_host, "/api/v1/data", body, sizeof(body)) != 0) {
+        hw_state.connected_kwh = 0;
+        return;
+    }
+    const char * j = strstr(body, "\r\n\r\n");
+    j = j ? j + 4 : body;
+    if (!strstr(j, "active_power_w")) { hw_state.connected_kwh = 0; return; }
+    double w = parse_num(j, "active_power_w", 0);
+    hw_state.kwh_power_w   = (float)(w < 0 ? -w : w);
+    hw_state.connected_kwh = 1;
+    canonical_state_notify(CSTATE_EVT_ENERGY);
+}
+
+/* Energy Socket: GET /api/v1/data (active_power_w) + GET /api/v1/state
+ * ({"power_on":true,"switch_lock":false,"brightness":255}). */
+static volatile int s_socket_pending[HW_SOCKET_MAX];   /* a PUT is in flight */
+
+static void poll_socket(int i) {
+    hw_socket_t * S = &hw_sockets[i];
+    const char * ip = settings.hw_socket_host[i];
+    if (!ip[0]) { S->polled = 0; S->connected = 0; return; }
+    S->polled = 1;
+    char body[1536];
+    if (http_get(ip, "/api/v1/data", body, sizeof body) != 0 || !strstr(body, "active_power_w")) {
+        S->connected = 0;
+        return;
+    }
+    const char * j = strstr(body, "\r\n\r\n");
+    S->power_w = (float)parse_num(j ? j + 4 : body, "active_power_w", 0);
+    if (s_socket_pending[i]) { S->connected = 1; return; }   /* don't undo a switch */
+    if (http_get(ip, "/api/v1/state", body, sizeof body) != 0) { S->connected = 0; return; }
+    const char * p = strstr(body, "\"power_on\":");
+    if (p) {
+        p += 11;
+        while (*p == ' ') p++;
+        S->on = (*p == 't');
+    }
+    S->connected = 1;
+}
+
+typedef struct { int i; int on; } sock_cmd_t;
+
+static void * socket_set_thread(void * arg) {
+    sock_cmd_t c = *(sock_cmd_t *)arg;
+    free(arg);
+    char ip[sizeof settings.hw_socket_host[0]];
+    snprintf(ip, sizeof ip, "%s", settings.hw_socket_host[c.i]);
+    char out[512];
+    int rc = http_req(ip, "/api/v1/state", c.on ? "{\"power_on\":true}" : "{\"power_on\":false}",
+                      out, sizeof out);
+    if (rc != 0 || !strstr(out, "power_on")) {
+        fprintf(stderr, "[hw] socket %d switch failed\n", c.i);
+        hw_sockets[c.i].on = !c.on;          /* show the real state again */
+    }
+    s_socket_pending[c.i] = 0;
+    return NULL;
+}
+
+void homewizard_socket_set_async(int i, int on) {
+    if (i < 0 || i >= HW_SOCKET_MAX || !settings.hw_socket_host[i][0]) return;
+    if (s_socket_pending[i]) return;
+    sock_cmd_t * c = malloc(sizeof *c);
+    if (!c) return;
+    c->i = i; c->on = on ? 1 : 0;
+    s_socket_pending[i] = 1;
+    hw_sockets[i].on = c->on;                /* optimistic */
+    pthread_t t;
+    if (pthread_create(&t, NULL, socket_set_thread, c) != 0) {
+        free(c);
+        s_socket_pending[i] = 0;
+        return;
+    }
+    pthread_detach(t);
+}
+
+int homewizard_socket_count(void) {
+    int n = 0;
+    for (int i = 0; i < HW_SOCKET_MAX; i++) if (settings.hw_socket_host[i][0]) n++;
+    return n;
 }
 
 /* "key":"123" or "key":123 → number; dflt if missing. The ToonWater sensor
@@ -372,6 +479,10 @@ static void * hw_thread(void * arg) {
     time_t last_nilm_s = 0;
     while (1) {
         if (tick % 5 == 0) poll_p1();
+        /* kWh meter and sockets are ESPs too: ~10 s each, on different ticks. */
+        if (tick % 5 == 2) poll_kwh();
+        for (int i = 0; i < HW_SOCKET_MAX; i++)
+            if (tick % 5 == (unsigned)(i + 1) % 5) poll_socket(i);
         if (settings.toonwater_host[0]) {
             if (tick % (TOONWATER_POLL_INTERVAL_S / 2) == 0) poll_toonwater();
         } else {
@@ -424,19 +535,43 @@ static void toonwater_adopt_config(void) {
     fprintf(stderr, "[hw] adopted the ToonWater sensor %s from the ToonWater app\n", host);
 }
 
-int homewizard_start(void) {
-    toonwater_adopt_config();
-    /* Skip the polling thread entirely when both halves are off — keeps
-     * "basic" installs from spawning a thread that does nothing every 2 s
-     * and from contaminating connected_* flags on the home tile. */
-    if (!settings.enable_p1_elec && !settings.enable_p1_water) {
-        fprintf(stderr, "[hw] both P1 integrations disabled — not starting poller\n");
-        return 0;
-    }
+static int hw_anything_configured(void) {
+    return settings.enable_p1_elec || settings.enable_p1_water ||
+           settings.hw_kwh_host[0] || homewizard_socket_count() > 0;
+}
+
+static pthread_mutex_t s_start_mtx = PTHREAD_MUTEX_INITIALIZER;
+static int s_started = 0;
+
+/* Skip the polling thread while nothing is configured — keeps "basic"
+ * installs from spawning a thread that does nothing every 2 s and from
+ * contaminating connected_* flags on the home tile. Started later from
+ * Settings the moment something is switched on (no restart needed). */
+static int start_locked(void) {
+    if (s_started || !hw_anything_configured()) return 0;
     pthread_t th;
     if (pthread_create(&th, NULL, hw_thread, NULL) != 0) return -1;
     pthread_detach(th);
-    fprintf(stderr, "[hw] poller started (elec=%d water=%d)\n",
-            settings.enable_p1_elec, settings.enable_p1_water);
+    s_started = 1;
+    fprintf(stderr, "[hw] poller started (elec=%d water=%d kwh=%d sockets=%d)\n",
+            settings.enable_p1_elec, settings.enable_p1_water,
+            settings.hw_kwh_host[0] != 0, homewizard_socket_count());
     return 0;
+}
+
+void homewizard_ensure_started(void) {
+    if (settings.client_mode) return;   /* a client reads the master, not devices */
+    pthread_mutex_lock(&s_start_mtx);
+    start_locked();
+    pthread_mutex_unlock(&s_start_mtx);
+}
+
+int homewizard_start(void) {
+    toonwater_adopt_config();
+    pthread_mutex_lock(&s_start_mtx);
+    if (!hw_anything_configured())
+        fprintf(stderr, "[hw] no HomeWizard device configured — poller not started yet\n");
+    int rc = start_locked();
+    pthread_mutex_unlock(&s_start_mtx);
+    return rc;
 }

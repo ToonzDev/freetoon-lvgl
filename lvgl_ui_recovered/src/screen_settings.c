@@ -34,6 +34,7 @@
 #include "update_check.h"
 #include "update_modal.h"
 #include "app_updates.h"
+#include "homewizard.h"
 #include "anim_overlay.h"
 #include "telegram.h"
 #include "pwa_server.h"
@@ -3430,13 +3431,61 @@ static void integ_dirty_hint(void) {
     lv_obj_set_style_text_color(lbl_integ_hint, lv_color_hex(0xffcc66), 0);
 }
 
+/* HomeWizard switches apply live: the poller re-reads the flags and hosts
+ * every round and is started on demand. */
 static void on_int_p1_elec(lv_event_t * e) {
     settings.enable_p1_elec  = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
-    integ_dirty_hint();
+    settings_save();
+    homewizard_ensure_started();
 }
 static void on_int_p1_water(lv_event_t * e) {
     settings.enable_p1_water = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
-    integ_dirty_hint();
+    settings_save();
+    homewizard_ensure_started();
+}
+
+/* HomeWizard IP / name fields — the commit-on-defocus/delete pattern of
+ * on_int_p1esp_host. user_data = the hw_field_t below. IP fields keep only
+ * digits and dots: the local API is reached by IPv4 address (homewizard.c). */
+typedef struct { char * dst; size_t sz; int ip; int * enable; } hw_field_t;
+static hw_field_t s_hw_fields[3 + 2 * HW_SOCKET_MAX];
+static lv_obj_t * s_hw_enable_sw[2];   /* P1 / water switch, flipped on by an IP */
+
+static void on_int_hw_field(lv_event_t * e) {
+    lv_event_code_t c = lv_event_get_code(e);
+    if (c != LV_EVENT_DEFOCUSED && c != LV_EVENT_DELETE) return;
+    hw_field_t * F = (hw_field_t *)lv_event_get_user_data(e);
+    const char * v = lv_textarea_get_text(lv_event_get_target(e));
+    if (!F || !v) return;
+    char h[64]; size_t o = 0;
+    for (; *v && o + 1 < sizeof h && o + 1 < F->sz; v++) {
+        if (F->ip ? (isdigit((unsigned char)*v) || *v == '.') : ((unsigned char)*v >= 0x20))
+            h[o++] = *v;
+    }
+    h[o] = 0;
+    if (strcmp(h, F->dst) == 0) return;
+    snprintf(F->dst, F->sz, "%s", h);
+    if (h[0] && F->enable) *F->enable = 1;   /* an IP for P1/water switches it on */
+    settings_save();
+    homewizard_ensure_started();
+    if (c == LV_EVENT_DEFOCUSED && h[0] && F->enable) {
+        lv_obj_t * sw = (F->enable == &settings.enable_p1_elec) ? s_hw_enable_sw[0] : s_hw_enable_sw[1];
+        if (sw) lv_obj_add_state(sw, LV_STATE_CHECKED);
+    }
+}
+
+static lv_obj_t * hw_textarea(lv_obj_t * row, int w, int x, hw_field_t * F,
+                              const char * placeholder) {
+    lv_obj_t * ta = lv_textarea_create(row);
+    lv_obj_set_size(ta, SX(w), SY(44));
+    lv_obj_align(ta, LV_ALIGN_RIGHT_MID, SX(x), 0);
+    lv_textarea_set_one_line(ta, true);
+    lv_textarea_set_max_length(ta, (uint32_t)(F->sz - 1));
+    if (F->ip) lv_textarea_set_accepted_chars(ta, "0123456789.");
+    lv_textarea_set_placeholder_text(ta, placeholder);
+    lv_textarea_set_text(ta, F->dst);
+    lv_obj_add_event_cb(ta, on_int_hw_field, LV_EVENT_ALL, F);
+    return ta;
 }
 static void on_int_vent(lv_event_t * e) {
     settings.enable_vent     = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
@@ -3500,10 +3549,9 @@ static void on_int_toonwater_host(lv_event_t * e) {
     snprintf(settings.toonwater_host, sizeof settings.toonwater_host, "%s", h);
     if (h[0]) settings.enable_p1_water = 1;
     settings_save();
-    if (c == LV_EVENT_DEFOCUSED) {
-        if (h[0] && sw_int_p1_water) lv_obj_add_state(sw_int_p1_water, LV_STATE_CHECKED);
-        integ_dirty_hint();
-    }
+    homewizard_ensure_started();   /* the poller reads the host live */
+    if (c == LV_EVENT_DEFOCUSED && h[0] && sw_int_p1_water)
+        lv_obj_add_state(sw_int_p1_water, LV_STATE_CHECKED);
 }
 
 static void on_int_video(lv_event_t * e) {
@@ -3550,12 +3598,22 @@ static void open_integrations_modal(lv_event_t * e) {
     }
     y += 84;
 
+    /* HomeWizard devices: local API v1 must be switched on per device in the
+     * HomeWizard Energy app (Settings > Meters > <meter> > Local API). */
+    s_hw_fields[0] = (hw_field_t){ settings.p1_elec_host,  sizeof settings.p1_elec_host,  1, &settings.enable_p1_elec };
+    s_hw_fields[1] = (hw_field_t){ settings.p1_water_host, sizeof settings.p1_water_host, 1, &settings.enable_p1_water };
+    s_hw_fields[2] = (hw_field_t){ settings.hw_kwh_host,   sizeof settings.hw_kwh_host,   1, NULL };
+
     r = panel_row(p, y, tr("HomeWizard P1 (elektriciteit + gas)", "HomeWizard P1 (electricity + gas)"), NULL);
     sw_int_p1_elec = row_switch(r, settings.enable_p1_elec, on_int_p1_elec);
+    s_hw_enable_sw[0] = sw_int_p1_elec;
+    hw_textarea(r, 220, -84, &s_hw_fields[0], tr("IP P1-meter", "P1 meter IP"));
     y += 84;
 
-    r = panel_row(p, y, tr("Watermeter (HomeWizard of ToonWater)", "Water meter (HomeWizard or ToonWater)"), NULL);
+    r = panel_row(p, y, tr("Watermeter (HomeWizard)", "Water meter (HomeWizard)"), NULL);
     sw_int_p1_water = row_switch(r, settings.enable_p1_water, on_int_p1_water);
+    s_hw_enable_sw[1] = sw_int_p1_water;
+    hw_textarea(r, 220, -84, &s_hw_fields[1], tr("IP HomeWizard", "HomeWizard IP"));
     y += 84;
 
     /* oepi-loepi's ToonWater ESP sensor: filled in = the water meter reads it
@@ -3571,6 +3629,38 @@ static void open_integrations_modal(lv_event_t * e) {
         lv_obj_add_event_cb(ta, on_int_toonwater_host, LV_EVENT_ALL, NULL);
     }
     y += 84;
+
+    r = panel_row(p, y, tr("HomeWizard kWh-meter (zon)", "HomeWizard kWh meter (solar)"), NULL);
+    hw_textarea(r, 300, -12, &s_hw_fields[2], tr("IP, leeg = HA-sensor", "IP, empty = HA sensor"));
+    y += 84;
+
+    for (int i = 0; i < HW_SOCKET_MAX; i++) {
+        s_hw_fields[3 + 2 * i]     = (hw_field_t){ settings.hw_socket_name[i], sizeof settings.hw_socket_name[i], 0, NULL };
+        s_hw_fields[3 + 2 * i + 1] = (hw_field_t){ settings.hw_socket_host[i], sizeof settings.hw_socket_host[i], 1, NULL };
+        char t[48];
+        snprintf(t, sizeof t, tr("HomeWizard stekker %d", "HomeWizard socket %d"), i + 1);
+        r = panel_row(p, y, t, NULL);
+        hw_textarea(r, 190, -12,  &s_hw_fields[3 + 2 * i + 1], "IP");
+        hw_textarea(r, 190, -212, &s_hw_fields[3 + 2 * i],     tr("Naam", "Name"));
+        y += 84;
+    }
+
+    {
+        lv_obj_t * hint = lv_label_create(p);
+        lv_obj_set_style_text_font(hint, SF(16), 0);
+        lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
+        lv_obj_set_width(hint, SX(800));
+        lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
+        lv_label_set_text(hint,
+            tr("HomeWizard: zet per meter/stekker 'Lokale API' aan in de HomeWizard Energy-app "
+               "en geef het apparaat een vast IP-adres in je router. Stekkers staan op het "
+               "Apparaten-scherm. Werkt direct, zonder herstart.",
+               "HomeWizard: switch on 'Local API' per meter/socket in the HomeWizard Energy app "
+               "and give the device a fixed IP address in your router. Sockets appear on the "
+               "Devices screen. Applies at once, no restart."));
+        lv_obj_align(hint, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
+        y += 64;
+    }
 
     r = panel_row(p, y, tr("Itho-ventilatie", "Itho ventilation"), NULL);
     sw_int_vent = row_switch(r, settings.enable_vent, on_int_vent);
@@ -3594,18 +3684,16 @@ static void open_integrations_modal(lv_event_t * e) {
     lv_obj_set_width(lbl_integ_hint, SX(800));
     lv_label_set_long_mode(lbl_integ_hint, LV_LABEL_LONG_WRAP);
     lv_label_set_text(lbl_integ_hint,
-        tr("Elke integratie heeft zijn bijbehorende config nodig "
-           "(p1bridge.conf / vent.conf / ha.cfg) voordat de tegels oplichten. "
-           "Zet een schakelaar om en herstart toonui.",
-           "Each integration needs its companion config "
-           "(p1bridge.conf / vent.conf / ha.cfg) before its tiles light up. "
-           "Toggle a switch then restart toonui."));
-    lv_obj_align(lbl_integ_hint, LV_ALIGN_TOP_LEFT, SX(4), y);
+        tr("Itho-ventilatie, Home Assistant, de energiebron en de ESPHome-P1 "
+           "werken pas na een herstart van toonui.",
+           "Itho ventilation, Home Assistant, the energy source and the ESPHome P1 "
+           "take effect after a toonui restart."));
+    lv_obj_align(lbl_integ_hint, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
 
     /* Button to open the HA entity configuration modal. */
     lv_obj_t * b_ha = lv_btn_create(p);
     lv_obj_set_size(b_ha, SX(420), SY(50));
-    lv_obj_align(b_ha, LV_ALIGN_TOP_LEFT, SX(4), y + 60);
+    lv_obj_align(b_ha, LV_ALIGN_TOP_LEFT, SX(4), SY(y) + 60);
     lv_obj_set_style_bg_color(b_ha, lv_color_hex(0x335577), 0);
     lv_obj_add_event_cb(b_ha, open_ha_entities_modal, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bhl = lv_label_create(b_ha);

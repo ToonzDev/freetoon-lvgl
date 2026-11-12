@@ -31,9 +31,35 @@ typedef struct {
     volatile float  water_session_l;       /* litres in the current/last pour */
     volatile int    water_session_active;  /* 1 while pouring, 0 between */
     volatile int    water_session_age_s;   /* seconds since session ended (for fade) */
+
+    /* kWh meter on the PV inverter (settings.hw_kwh_host) */
+    volatile int    connected_kwh;
+    volatile int    polled_kwh;
+    volatile float  kwh_power_w;      /* production, always >= 0 (abs of active_power_w) */
 } hw_state_t;
 
 extern hw_state_t hw_state;
+
+/* HomeWizard Energy Sockets (settings.hw_socket_host[]). */
+typedef struct {
+    volatile int   polled;      /* a poll was attempted for the current host */
+    volatile int   connected;
+    volatile int   on;          /* power_on */
+    volatile float power_w;     /* active_power_w */
+} hw_socket_t;
+extern hw_socket_t hw_sockets[];   /* HW_SOCKET_MAX entries (settings.h) */
+
+/* Switch socket i on/off in the background (PUT /api/v1/state). The new
+ * state is shown at once; the next poll confirms it. */
+void homewizard_socket_set_async(int i, int on);
+
+/* Number of sockets with a host configured. */
+int  homewizard_socket_count(void);
+
+/* Start the poller if anything HomeWizard is configured and it isn't running
+ * yet. Safe to call repeatedly (Settings calls it after a change, so a newly
+ * enabled meter works without a UI restart). */
+void homewizard_ensure_started(void);
 
 /* Thread safety primitives */
 void homewizard_lock(void);

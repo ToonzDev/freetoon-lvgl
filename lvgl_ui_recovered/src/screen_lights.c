@@ -13,6 +13,7 @@
 #include "display.h"
 #include "i18n.h"
 #include "homeassistant.h"
+#include "homewizard.h"
 #include "icons.h"
 #include "settings.h"
 #include "theme.h"
@@ -189,17 +190,73 @@ static void add_header(const char * txt) {
     lv_label_set_text(h, txt);
 }
 
+/* ---- HomeWizard Energy Sockets (homewizard.c), below the HA devices ---- */
+typedef struct { int idx; lv_obj_t * lbl_state; lv_obj_t * btn; lv_obj_t * btn_lbl; } sock_row_t;
+static sock_row_t sock_rows[HW_SOCKET_MAX];
+static int        sock_row_count = 0;
+
+static void on_sock_toggle(lv_event_t * e) {
+    int i = ev_idx(e);
+    if (i >= 0 && i < HW_SOCKET_MAX)
+        homewizard_socket_set_async(i, !hw_sockets[i].on);
+}
+
+static void build_socket_rows(void) {
+    sock_row_count = 0;
+    if (homewizard_socket_count() == 0) return;
+    add_header(tr("Stekkers (HomeWizard)", "Sockets (HomeWizard)"));
+    for (int i = 0; i < HW_SOCKET_MAX; i++) {
+        if (!settings.hw_socket_host[i][0]) continue;
+        sock_row_t * R = &sock_rows[sock_row_count++];
+        R->idx = i;
+        lv_obj_t * c = make_card(56);
+        char name[48];
+        snprintf(name, sizeof name, "%s", settings.hw_socket_name[i][0] ? settings.hw_socket_name[i]
+                                                                       : settings.hw_socket_host[i]);
+        card_name(c, name, LV_ALIGN_LEFT_MID, 4, -8);
+        R->lbl_state = mk_state(c, LV_ALIGN_LEFT_MID, 4, 12);
+        R->btn = mk_btn(c, tr("Uit", "Off"), COL_OFF, 64, 36, LV_ALIGN_RIGHT_MID, -2, 0, on_sock_toggle, i);
+        R->btn_lbl = lv_obj_get_child(R->btn, 0);
+    }
+}
+
+static void refresh_socket_rows(void) {
+    for (int r = 0; r < sock_row_count; r++) {
+        sock_row_t * R = &sock_rows[r];
+        hw_socket_t * S = &hw_sockets[R->idx];
+        char txt[48]; uint32_t bcol, tcol; const char * blbl;
+        if (!S->connected) {
+            snprintf(txt, sizeof txt, "%s", S->polled ? tr("offline", "offline") : "--");
+            bcol = COL_OFFLINE; tcol = COL_OFFLINE; blbl = S->polled ? tr("Offline", "Offline") : "--";
+        } else if (S->on) {
+            snprintf(txt, sizeof txt, tr("aan  %.0f W", "on  %.0f W"), S->power_w);
+            bcol = COL_ON; tcol = COL_ON; blbl = tr("Aan", "On");
+        } else {
+            snprintf(txt, sizeof txt, "%s", tr("uit", "off"));
+            bcol = COL_OFF; tcol = COL_TEXT_DIM; blbl = tr("Uit", "Off");
+        }
+        /* only on change: refresh_cb runs every tick and a re-set label redraws */
+        if (strcmp(lv_label_get_text(R->lbl_state), txt) != 0) lv_label_set_text(R->lbl_state, txt);
+        if (strcmp(lv_label_get_text(R->btn_lbl), blbl) != 0)  lv_label_set_text(R->btn_lbl, blbl);
+        lv_obj_set_style_text_color(R->lbl_state, lv_color_hex(tcol), 0);
+        lv_obj_set_style_bg_color(R->btn, lv_color_hex(bcol), 0);
+    }
+}
+
 /* Clear + rebuild the device list from ha_devices[], grouped by type. */
 static void rebuild_rows(void) {
     if (!list) return;
     lv_obj_clean(list);
     row_count = 0;
+    sock_row_count = 0;
 
     int show = settings.enable_ha && ha_device_count > 0;
+    int socks = homewizard_socket_count() > 0;
     if (empty_hint) {
-        if (show) lv_obj_add_flag(empty_hint, LV_OBJ_FLAG_HIDDEN);
-        else      lv_obj_clear_flag(empty_hint, LV_OBJ_FLAG_HIDDEN);
+        if (show || socks) lv_obj_add_flag(empty_hint, LV_OBJ_FLAG_HIDDEN);
+        else               lv_obj_clear_flag(empty_hint, LV_OBJ_FLAG_HIDDEN);
     }
+    if (!show && socks) { build_socket_rows(); return; }
     if (!show) {
         lv_label_set_text(empty_hint,
             settings.enable_ha
@@ -223,6 +280,7 @@ static void rebuild_rows(void) {
             build_dev_row(i);
         }
     }
+    build_socket_rows();
 }
 
 static void on_scr_event(lv_event_t * e) {
@@ -238,6 +296,7 @@ static void on_scr_event(lv_event_t * e) {
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
     if (!scr_root || lv_scr_act() != scr_root) return;
+    refresh_socket_rows();
     for (int r = 0; r < row_count; r++) {
         dev_row_t * R = &rows[r];
         ha_device_t * D = &ha_devices[R->dev_idx];

@@ -494,7 +494,7 @@ static void refresh_slot(slot_t * s) {
          * indoors is running. */
         if (!energy_have_solar()) {
             lv_label_set_text(s->val, "-- Watt");
-            lv_label_set_text(s->sub, settings.ha_solar_entity[0]
+            lv_label_set_text(s->sub, (settings.ha_solar_entity[0] || settings.hw_kwh_host[0])
                 ? tr("Geen data", "No data")
                 : tr("Stel sensor in", "Set up sensor"));
             break;
@@ -643,7 +643,7 @@ static int tile_is_available(int t) {
         case TT_EFAN:
             return settings.efanlamp_host[0] || efanlamp.connected;
         case TT_SOLAR:
-            return settings.enable_ha && (settings.ha_solar_entity[0] || ha_state.have_solar);
+            return settings.hw_kwh_host[0] || (settings.enable_ha && (settings.ha_solar_entity[0] || ha_state.have_solar));
         default:
             return 1;
     }
