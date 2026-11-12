@@ -313,19 +313,39 @@ function show(id, hasData) {
   var on = (inLayout && el.hasAttribute("data-lt") && !EXTRA[id]) ? !!inLayout[id] : hasData;
   el.classList.toggle("hidden", !on);
 }
+/* <li> lists shared by the waste/agenda cards and tiles assigned to them. */
+function wasteItems() {
+  var wt = S.wt_next || [];
+  return wt.length ? wt.map(function (x) {
+    return '<li><span class="when">' + esc(dayLabel(x.date, x.days)) + "</span><span>" + esc(x.labels) + "</span></li>";
+  }).join("") : '<li class="muted">' + esc(t("nowaste")) + "</li>";
+}
+function calItems() {
+  var cal = S.cal || [];
+  return cal.length ? cal.slice(0, 5).map(function (e) {
+    var when = dayLabel(e.date, daysUntil(e.date)) + (e.time ? " " + e.time : "");
+    return '<li><span class="when">' + esc(when) + "</span><span>" + esc(e.sum) + "</span></li>";
+  }).join("") : '<li class="muted">' + esc(t("nocal")) + "</li>";
+}
+/* A card for an integration slot, or for a right-column tile the user
+   assigned another function (integration id, or "local:agenda" etc.). */
 function makeSlot(id, i) {
   var el = document.createElement("section");
   el.className = "card bar slotcard";
   el.id = "slot-" + i;
   el.setAttribute("data-slot", id);
-  el.innerHTML = '<h2></h2><div class="big"></div><div class="sub"></div>';
+  el.innerHTML = '<h2></h2><div class="big"></div><div class="sub"></div><ul class="list"></ul>';
   $("grid").appendChild(el);
   return el;
 }
+/* Right-column tile type -> index in S.tile_bind (TILE_SLOT_ENERGY..WATER). */
+var BIND_IDX = {6: 0, 9: 1, 8: 2, 7: 3};
 function applyLayout() {
   if (typeof S.layout_custom !== "number") return;     /* older Toon: data-driven */
-  var L = S.layout_custom ? (S.layout || []) : DEFAULT_LAYOUT;
-  var key = JSON.stringify(L);
+  /* Page 1 only: the swipe pages are not mirrored. */
+  var L = (S.layout_custom ? (S.layout || []) : DEFAULT_LAYOUT).filter(function (tl) { return !tl.p; });
+  var binds = S.tile_bind || [];
+  var key = JSON.stringify([L, binds]);
   if (key === layoutKey) return;
   layoutKey = key;
   var grid = $("grid");
@@ -337,8 +357,9 @@ function applyLayout() {
   });
   var next = 1, si = 0;
   L.forEach(function (tl) {
-    var el;
+    var el, bind = BIND_IDX[tl.t] !== undefined ? binds[BIND_IDX[tl.t]] : "";
     if (tl.t === 12) { if (!tl.id) return; el = makeSlot(tl.id, si++); }
+    else if (bind) el = makeSlot(bind, si++);
     else el = grid.querySelector('[data-lt="' + (tl.t === 4 ? 3 : tl.t) + '"]');
     if (!el || inLayout[el.id]) return;
     inLayout[el.id] = tl;
@@ -546,19 +567,12 @@ function renderTiles() {
   }
 
   /* Waste */
-  var wt = S.wt_next || [];
-  show("t-waste", !!S.waste_connected || wt.length > 0);
-  $("w-list").innerHTML = wt.length ? wt.map(function (x) {
-    return '<li><span class="when">' + esc(dayLabel(x.date, x.days)) + "</span><span>" + esc(x.labels) + "</span></li>";
-  }).join("") : '<li class="muted">' + esc(t("nowaste")) + "</li>";
+  show("t-waste", !!S.waste_connected || (S.wt_next || []).length > 0);
+  $("w-list").innerHTML = wasteItems();
 
   /* Calendar */
-  var cal = S.cal || [];
-  show("t-cal", !!S.cal_connected || cal.length > 0);
-  $("c-list").innerHTML = cal.length ? cal.slice(0, 5).map(function (e) {
-    var when = dayLabel(e.date, daysUntil(e.date)) + (e.time ? " " + e.time : "");
-    return '<li><span class="when">' + esc(when) + "</span><span>" + esc(e.sum) + "</span></li>";
-  }).join("") : '<li class="muted">' + esc(t("nocal")) + "</li>";
+  show("t-cal", !!S.cal_connected || (S.cal || []).length > 0);
+  $("c-list").innerHTML = calItems();
 
   /* Ventilation */
   show("t-vent", !!S.vent_connected);
@@ -668,10 +682,37 @@ function renderLights() {
 function renderSlots() {
   var byId = {};
   (S.integrations || []).forEach(function (m) { byId[m.id] = m; });
+  /* Built-in functions a tile can be assigned (same names the Toon checks
+     first, before installed integrations). */
+  var LOCAL = {
+    "local:agenda": ["Agenda", "Calendar", "#4477cc"], "agenda": ["Agenda", "Calendar", "#4477cc"],
+    "local:waste": ["Afval", "Waste", "#88dd66"],
+    "local:templogger": ["Temperatuur", "Temperature", "#ff8844"],
+    "temperaturelogger": ["Temperatuur", "Temperature", "#ff8844"],
+    "local:hue": ["Philips Hue", "Philips Hue", "#ffcc44"], "local:sonos": ["Sonos", "Sonos", "#cc66aa"]
+  };
   Array.prototype.forEach.call(document.querySelectorAll(".slotcard"), function (el) {
-    var m = byId[el.getAttribute("data-slot")];
-    var h = el.querySelector("h2"), v = el.querySelector(".big"), s = el.querySelector(".sub");
-    if (!m) { h.textContent = el.getAttribute("data-slot"); v.textContent = "--"; s.textContent = ""; return; }
+    var id = el.getAttribute("data-slot");
+    var h = el.querySelector("h2"), v = el.querySelector(".big"), s = el.querySelector(".sub"),
+        ul = el.querySelector("ul");
+    var loc = LOCAL[id];
+    if (loc) {
+      el.style.setProperty("--bc", loc[2]);
+      h.textContent = loc[lang];
+      var list = id === "local:waste" ? wasteItems() : /agenda/.test(id) ? calItems() : "";
+      ul.innerHTML = list;
+      ul.classList.toggle("hidden", !list);
+      v.classList.toggle("hidden", !!list);
+      s.classList.toggle("hidden", !!list);
+      if (/templogger|temperaturelogger/.test(id)) {
+        v.textContent = dec(S.indoor_temp, 1) + "°C";
+        s.textContent = S.humidity > 0 ? t("hum") + " " + num(S.humidity, 0) + "%" : "";
+      } else if (!list) { v.textContent = "--"; s.textContent = ""; }
+      return;
+    }
+    ul.classList.add("hidden");
+    var m = byId[id];
+    if (!m) { h.textContent = id; v.textContent = "--"; s.textContent = ""; return; }
     if (/^#?[0-9a-fA-F]{6}$/.test(m.tcolor || "")) el.style.setProperty("--bc", m.tcolor.charAt(0) === "#" ? m.tcolor : "#" + m.tcolor);
     h.textContent = m.ttitle || m.name || m.id;
     v.textContent = m.lval ? m.lval + (m.vunit ? " " + m.vunit : "") : "--";

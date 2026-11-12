@@ -203,6 +203,18 @@ static int render_state_json(char * body, size_t sz) {
      * tiles of the custom layout (type, page, grid cell, span; a slot tile also
      * carries its bound integration id). Without a custom layout the home
      * screen uses its built-in arrangement, which the page knows itself. */
+    /* What the four right-column tiles (Energie / Familie / Ventilatie /
+     * Water = TILE_SLOT_ENERGY..WATER) are assigned to: an integration id or
+     * "local:agenda" etc.; "" = the built-in function. */
+    {
+        char b[4][INTEG_ID_MAX];
+        for (int i = 0; i < 4; i++) {
+            const char * s = tile_slots_binding(i);
+            json_strcpy(b[i], s ? s : "", sizeof b[i]);
+        }
+        if (p < end) p += snprintf(p, end-p, "\"tile_bind\":[\"%s\",\"%s\",\"%s\",\"%s\"],",
+            b[0], b[1], b[2], b[3]);
+    }
     if (p < end) p += snprintf(p, end-p, "\"layout_custom\":%d,\"layout\":[",
         settings.custom_layout_enabled ? 1 : 0);
     if (settings.custom_layout_enabled) {
