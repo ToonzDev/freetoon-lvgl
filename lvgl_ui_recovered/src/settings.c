@@ -154,6 +154,7 @@ settings_t settings = {
     .video_overlay       = 0,
     .p1_elec_host        = "",
     .p1_water_host       = "",
+    .toonwater_host      = "",
     .vent_host           = "",
     .efanlamp_host       = "",
     .efanlamp_psk        = "",
@@ -438,6 +439,7 @@ void settings_load(void) {
         else if (strcmp(k, "doorbell_stream_url") == 0) snprintf(settings.doorbell_stream_url, sizeof settings.doorbell_stream_url, "%s", v);
         else if (strcmp(k, "p1_elec_host")     == 0) snprintf(settings.p1_elec_host, sizeof settings.p1_elec_host, "%s", v);
         else if (strcmp(k, "p1_water_host")    == 0) snprintf(settings.p1_water_host, sizeof settings.p1_water_host, "%s", v);
+        else if (strcmp(k, "toonwater_host")   == 0) snprintf(settings.toonwater_host, sizeof settings.toonwater_host, "%s", v);
         else if (strcmp(k, "vent_host")        == 0) snprintf(settings.vent_host, sizeof settings.vent_host, "%s", v);
         else if (strcmp(k, "efanlamp_host")    == 0) snprintf(settings.efanlamp_host, sizeof settings.efanlamp_host, "%s", v);
         else if (strcmp(k, "efanlamp_psk")     == 0) snprintf(settings.efanlamp_psk, sizeof settings.efanlamp_psk, "%s", v);
@@ -818,6 +820,7 @@ static void sanitize_all_strings(void) {
         settings.otgw_pass, settings.mqtt_host, settings.mqtt_user,
         settings.mqtt_pass, settings.domoticz_host, settings.master_host,
         settings.master_web_user, settings.master_web_pass,
+        settings.toonwater_host,
         settings.tile_rotate_members, settings.calendar_ha_entity,
         settings.ha_host, settings.curtain_entity,
         settings.curtain_bat_a, settings.curtain_bat_b, settings.blinds_entity,
@@ -1087,6 +1090,7 @@ static void settings_write_file(void) {
     fprintf(f, "doorbell_stream_url=%s\n", settings.doorbell_stream_url);
     fprintf(f, "p1_elec_host=%s\n", settings.p1_elec_host);
     fprintf(f, "p1_water_host=%s\n", settings.p1_water_host);
+    fprintf(f, "toonwater_host=%s\n", settings.toonwater_host);
     fprintf(f, "vent_host=%s\n", settings.vent_host);
     fprintf(f, "efanlamp_host=%s\n", settings.efanlamp_host);
     fprintf(f, "efanlamp_psk=%s\n", settings.efanlamp_psk);

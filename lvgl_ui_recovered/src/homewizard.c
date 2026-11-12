@@ -12,9 +12,11 @@
 #include "rrd_push.h"
 #include "settings.h"
 #include "canonical_state.h"
+#include "http.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <unistd.h>
 #include <time.h>
 #include <sys/time.h>   /* struct timeval — not transitively pulled in by sys/socket.h under musl/emscripten */
@@ -152,7 +154,12 @@ static float session_start_m3 = 0;
 static int   session_zero_seconds = 0;
 #define WATER_SESSION_GRACE_S 20   /* zero-flow seconds before we close   */
 #define WATER_SESSION_FADE_S  60   /* keep "+X L" visible this long after */
-#define WATER_POLL_INTERVAL_S 2
+#define WATER_POLL_INTERVAL_S 2    /* HomeWizard HWE-WTR */
+/* oepi-loepi's ToonWater sensor is an ESP8266: like the HWE-P1 (see hw_thread)
+ * it has a tiny lwIP socket table, so a fresh connection every 2 s risks
+ * hanging it. ToonWater itself polls every 10 s; 6 s keeps the tap readout
+ * responsive. Must be a multiple of the 2 s loop. */
+#define TOONWATER_POLL_INTERVAL_S 6
 
 /* Previous-poll total. Used to detect flow by diffing the cumulative
  * counter (which ticks per litre and is reliable down to 1 L pours) —
@@ -161,20 +168,27 @@ static int   session_zero_seconds = 0;
  * just-opened tap stay invisible if we trust it alone. */
 static float prev_total_m3 = -1.0f;
 
+static void water_disconnected(void) {
+    hw_state.connected_water = 0;
+    /* Zero the live flow too — otherwise the home tile keeps the stale L/min
+     * reading (and its spinner) up indefinitely until the meter comes back. */
+    hw_state.water_lpm = 0;
+}
+
+/* A new water reading (cumulative m³ + the device's own L/min), polled every
+ * interval_s seconds: derive the flow, update the tap session. Shared by the
+ * HomeWizard HWE-WTR and the ToonWater sensor. */
+static void water_update(float new_total_m3, float device_lpm, int interval_s);
+
 static void poll_water(void) {
     if (!settings.enable_p1_water || !settings.p1_water_host[0]) {
-        hw_state.connected_water = 0;
-        hw_state.water_lpm = 0;
+        water_disconnected();
         return;
     }
     hw_state.polled_water = 1;          /* a poll is being attempted */
     static char body[2048];
     if (http_get(settings.p1_water_host, "/api/v1/data", body, sizeof(body)) != 0) {
-        hw_state.connected_water = 0;
-        /* On a disconnect, zero the live flow too — otherwise the home
-         * tile keeps the stale L/min reading (and its spinner) up
-         * indefinitely until the WTR comes back. */
-        hw_state.water_lpm = 0;
+        water_disconnected();
         return;
     }
     const char * j = strstr(body, "\r\n\r\n");
@@ -183,17 +197,53 @@ static void poll_water(void) {
         hw_state.connected_water = 0;
         return;
     }
-    float new_total_m3 = (float)parse_num(j, "total_liter_m3",   0);
-    float device_lpm   = (float)parse_num(j, "active_liter_lpm", 0);
+    water_update((float)parse_num(j, "total_liter_m3",   0),
+                 (float)parse_num(j, "active_liter_lpm", 0), WATER_POLL_INTERVAL_S);
+}
 
+/* "key":"123" or "key":123 → number; dflt if missing. The ToonWater sensor
+ * quotes its numbers, and one firmware drops the opening quote of a value
+ * ("pulselength":13693") — skipping an optional quote copes with both. */
+static double parse_num_q(const char * json, const char * key, double dflt) {
+    char needle[64];
+    snprintf(needle, sizeof(needle), "\"%s\":", key);
+    const char * p = strstr(json, needle);
+    if (!p) return dflt;
+    p += strlen(needle);
+    while (*p == ' ' || *p == '\t' || *p == '"') p++;
+    char * e;
+    double v = strtod(p, &e);
+    return (e == p) ? dflt : v;
+}
+
+/* oepi-loepi's ToonWater sensor: GET http://<host>/water.html →
+ *   {"waterflow":"0","waterquantity":"1294748","today":"48",...,"leakdetect":"0"}
+ * waterflow in L/min, waterquantity = meter reading in litres. */
+static void poll_toonwater(void) {
+    if (!settings.enable_p1_water) { water_disconnected(); return; }
+    hw_state.polled_water = 1;
+    char url[96];
+    snprintf(url, sizeof url, "http://%s/water.html", settings.toonwater_host);
+    static char body[1024];
+    if (http_fetch_to(url, body, sizeof body, 4) != 0 || !strstr(body, "\"waterquantity\"")) {
+        water_disconnected();
+        return;
+    }
+    double litres = parse_num_q(body, "waterquantity", -1);
+    if (litres < 0) { water_disconnected(); return; }
+    water_update((float)(litres / 1000.0), (float)parse_num_q(body, "waterflow", 0),
+                 TOONWATER_POLL_INTERVAL_S);
+}
+
+static void water_update(float new_total_m3, float device_lpm, int interval_s) {
     /* Delta-derived flow: litres since last poll → L/min. Picks up tiny
      * pours the device's smoothed lpm misses entirely. The device's own
      * lpm wins when it's larger (heavy flow ramping up faster than the
-     * 2 s tick resolves). */
+     * poll tick resolves). */
     float derived_lpm = 0;
     if (prev_total_m3 >= 0 && new_total_m3 >= prev_total_m3) {
         float dl = (new_total_m3 - prev_total_m3) * 1000.0f;   /* litres */
-        derived_lpm = dl * (60.0f / (float)WATER_POLL_INTERVAL_S);
+        derived_lpm = dl * (60.0f / (float)interval_s);
     }
     prev_total_m3 = new_total_m3;
 
@@ -232,14 +282,14 @@ static void poll_water(void) {
         session_zero_seconds = 0;
     } else if (hw_state.water_session_active) {
         /* Flow stopped — wait the grace window before closing the session. */
-        session_zero_seconds += WATER_POLL_INTERVAL_S;
+        session_zero_seconds += interval_s;
         if (session_zero_seconds >= WATER_SESSION_GRACE_S) {
             hw_state.water_session_active = 0;
             hw_state.water_session_age_s = 0;
         }
     } else if (hw_state.water_session_l > 0) {
         /* Session closed; fade out the "+X L" display. */
-        hw_state.water_session_age_s += WATER_POLL_INTERVAL_S;
+        hw_state.water_session_age_s += interval_s;
         if (hw_state.water_session_age_s >=
             WATER_SESSION_GRACE_S + WATER_SESSION_FADE_S) {
             hw_state.water_session_l = 0;
@@ -322,7 +372,11 @@ static void * hw_thread(void * arg) {
     time_t last_nilm_s = 0;
     while (1) {
         if (tick % 5 == 0) poll_p1();
-        poll_water();
+        if (settings.toonwater_host[0]) {
+            if (tick % (TOONWATER_POLL_INTERVAL_S / 2) == 0) poll_toonwater();
+        } else {
+            poll_water();
+        }
         push_to_rrd();
         tick++;
         /* Feed NILM every 5 s from the cached P1 reading (P1 HTTP poll stays at
@@ -339,7 +393,39 @@ static void * hw_thread(void * arg) {
     return NULL;
 }
 
+/* A Toon that ran the ToonWater QML app has its sensor in
+ * /mnt/data/tsc/water_userSettings.json ({"urlString":"192.168.1.50",
+ * "domMode":"ESP",...}). Adopt it once when FreeToon has no water source yet,
+ * so the water meter keeps working after switching to FreeToon. The Domoticz
+ * mode of ToonWater is not adopted (FreeToon reads the sensor directly). */
+static void toonwater_adopt_config(void) {
+    if (settings.toonwater_host[0] || settings.p1_water_host[0]) return;
+    FILE * f = fopen("/mnt/data/tsc/water_userSettings.json", "r");
+    if (!f) return;
+    char buf[1024];
+    size_t n = fread(buf, 1, sizeof buf - 1, f);
+    fclose(f);
+    buf[n] = 0;
+    if (strstr(buf, "\"Domoticz\"")) return;
+    const char * p = strstr(buf, "\"urlString\"");
+    if (!p || !(p = strchr(p + 11, '"'))) return;
+    p++;
+    char host[64]; size_t o = 0;
+    for (; *p && *p != '"' && o + 1 < sizeof host; p++) {
+        char c = *p;
+        if (!(isalnum((unsigned char)c) || c == '.' || c == '-' || c == ':')) return;   /* not a host */
+        host[o++] = c;
+    }
+    host[o] = 0;
+    if (!host[0]) return;
+    snprintf(settings.toonwater_host, sizeof settings.toonwater_host, "%s", host);
+    settings.enable_p1_water = 1;
+    settings_save();
+    fprintf(stderr, "[hw] adopted the ToonWater sensor %s from the ToonWater app\n", host);
+}
+
 int homewizard_start(void) {
+    toonwater_adopt_config();
     /* Skip the polling thread entirely when both halves are off — keeps
      * "basic" installs from spawning a thread that does nothing every 2 s
      * and from contaminating connected_* flags on the home tile. */

@@ -112,9 +112,13 @@ static int probe_p1_elec(void) {
     return http_alive(url);
 }
 static int probe_p1_water(void) {
-    if (!settings.p1_water_host[0]) return -1;
     char url[160];
-    snprintf(url, sizeof(url), "http://%s/api/v1/data", settings.p1_water_host);
+    if (settings.toonwater_host[0])          /* oepi-loepi ToonWater sensor */
+        snprintf(url, sizeof(url), "http://%s/water.html", settings.toonwater_host);
+    else if (settings.p1_water_host[0])
+        snprintf(url, sizeof(url), "http://%s/api/v1/data", settings.p1_water_host);
+    else
+        return -1;
     return http_alive(url);
 }
 static int probe_itho(void) {

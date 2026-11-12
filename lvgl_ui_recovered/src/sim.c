@@ -857,6 +857,28 @@ int main(int argc, char ** argv) {
         }
         return 0;
     }
+    /* Water meter poller against a (fake) sensor: `toonui-sim watertest [toonwater-host] [seconds]`.
+     * Without a host it relies on toonui.cfg / the ToonWater app's settings file. */
+    if (!strcmp(mode, "watertest")) {
+        extern int homewizard_start(void);
+        if (argc > 2 && argv[2][0]) {
+            snprintf(settings.toonwater_host, sizeof settings.toonwater_host, "%s", argv[2]);
+            settings.enable_p1_water = 1;
+        }
+        memset((void *)&hw_state, 0, sizeof hw_state);
+        homewizard_start();
+        printf("toonwater_host=%s enable_p1_water=%d\n", settings.toonwater_host, settings.enable_p1_water);
+        int secs = (argc > 3) ? atoi(argv[3]) : 40;
+        for (int s = 1; s <= secs; s++) {
+            sleep(1);
+            if (s % 3 == 0)
+                printf("t=%2ds connected=%d total=%.3f m3 flow=%.1f L/min session=%.1f L active=%d\n", s,
+                       hw_state.connected_water, hw_state.water_total_m3, hw_state.water_lpm,
+                       hw_state.water_session_l, hw_state.water_session_active);
+            fflush(stdout);
+        }
+        return 0;
+    }
     if (!strcmp(mode, "geocode")) {
         extern int weather_geocode(const char * city);
         for (int a = 2; a < argc; a++) weather_geocode(argv[a]);

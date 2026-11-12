@@ -364,6 +364,11 @@ typedef struct {
      * master), used when the master has one. */
     char  master_web_user[32];
     char  master_web_pass[32];
+
+    /* oepi-loepi's ToonWater ESP sensor ("ip" or "ip:port", serves
+     * /water.html). When set, the water meter (enable_p1_water) reads it
+     * instead of the HomeWizard HWE-WTR. */
+    char  toonwater_host[64];
 } settings_t;
 
 #define FORECAST_AUTO   0

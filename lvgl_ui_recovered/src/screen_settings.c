@@ -39,6 +39,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <unistd.h>
 #include <pthread.h>
 #include <sys/stat.h>
@@ -3482,6 +3483,28 @@ static void on_int_p1esp_host(lv_event_t * e) {
     if (c == LV_EVENT_DEFOCUSED) integ_dirty_hint();
 }
 
+/* ToonWater sensor host — same commit-on-defocus/delete pattern. Only host
+ * characters are kept (it ends up in a URL). Filling it in also switches the
+ * water meter on. */
+static void on_int_toonwater_host(lv_event_t * e) {
+    lv_event_code_t c = lv_event_get_code(e);
+    if (c != LV_EVENT_DEFOCUSED && c != LV_EVENT_DELETE) return;
+    const char * v = lv_textarea_get_text(lv_event_get_target(e));
+    if (!v) return;
+    char h[sizeof settings.toonwater_host]; size_t o = 0;
+    for (; *v && o + 1 < sizeof h; v++)
+        if (isalnum((unsigned char)*v) || *v == '.' || *v == '-' || *v == ':') h[o++] = *v;
+    h[o] = 0;
+    if (strcmp(h, settings.toonwater_host) == 0) return;
+    snprintf(settings.toonwater_host, sizeof settings.toonwater_host, "%s", h);
+    if (h[0]) settings.enable_p1_water = 1;
+    settings_save();
+    if (c == LV_EVENT_DEFOCUSED) {
+        if (h[0] && sw_int_p1_water) lv_obj_add_state(sw_int_p1_water, LV_STATE_CHECKED);
+        integ_dirty_hint();
+    }
+}
+
 static void on_int_video(lv_event_t * e) {
     settings.video_enabled = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
     settings_save();
@@ -3530,8 +3553,22 @@ static void open_integrations_modal(lv_event_t * e) {
     sw_int_p1_elec = row_switch(r, settings.enable_p1_elec, on_int_p1_elec);
     y += 84;
 
-    r = panel_row(p, y, tr("HomeWizard HWE-WTR (water)", "HomeWizard HWE-WTR (water)"), NULL);
+    r = panel_row(p, y, tr("Watermeter (HomeWizard of ToonWater)", "Water meter (HomeWizard or ToonWater)"), NULL);
     sw_int_p1_water = row_switch(r, settings.enable_p1_water, on_int_p1_water);
+    y += 84;
+
+    /* oepi-loepi's ToonWater ESP sensor: filled in = the water meter reads it
+     * instead of the HomeWizard HWE-WTR. */
+    r = panel_row(p, y, tr("ToonWater-sensor (oepi-loepi)", "ToonWater sensor (oepi-loepi)"), NULL);
+    {
+        lv_obj_t * ta = lv_textarea_create(r);
+        lv_obj_set_size(ta, SX(300), SY(44));
+        lv_obj_align(ta, LV_ALIGN_RIGHT_MID, SX(-12), 0);
+        lv_textarea_set_one_line(ta, true);
+        lv_textarea_set_placeholder_text(ta, tr("IP, leeg = HomeWizard", "IP, empty = HomeWizard"));
+        lv_textarea_set_text(ta, settings.toonwater_host);
+        lv_obj_add_event_cb(ta, on_int_toonwater_host, LV_EVENT_ALL, NULL);
+    }
     y += 84;
 
     r = panel_row(p, y, tr("Itho-ventilatie", "Itho ventilation"), NULL);
