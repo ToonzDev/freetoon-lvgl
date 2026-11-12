@@ -160,6 +160,8 @@ settings_t settings = {
     .opnsense_host       = "",
     .client_mode         = 0,
     .master_host         = "",
+    .master_web_user     = "admin",
+    .master_web_pass     = "",
     .boot_picker_enabled = 1,
     .hide_offline_tiles  = 0,
     .update_check_enabled = 1,
@@ -345,6 +347,10 @@ void settings_load(void) {
         else if (strcmp(k, "client_mode")     == 0) settings.client_mode = iv;
         else if (strcmp(k, "master_host")     == 0)
             snprintf(settings.master_host, sizeof settings.master_host, "%s", v);
+        else if (strcmp(k, "master_web_user") == 0)
+            snprintf(settings.master_web_user, sizeof settings.master_web_user, "%s", v);
+        else if (strcmp(k, "master_web_pass") == 0)
+            snprintf(settings.master_web_pass, sizeof settings.master_web_pass, "%s", v);
         else if (strcmp(k, "rate_elec_kwh")   == 0) settings.rate_elec_kwh = strtof(v, NULL);
         else if (strcmp(k, "rate_gas_m3")     == 0) settings.rate_gas_m3   = strtof(v, NULL);
         else if (strcmp(k, "stats_show_euro") == 0) settings.stats_show_euro = iv;
@@ -811,6 +817,7 @@ static void sanitize_all_strings(void) {
         settings.ot_bridge_mode, settings.otgw_host, settings.otgw_user,
         settings.otgw_pass, settings.mqtt_host, settings.mqtt_user,
         settings.mqtt_pass, settings.domoticz_host, settings.master_host,
+        settings.master_web_user, settings.master_web_pass,
         settings.tile_rotate_members, settings.calendar_ha_entity,
         settings.ha_host, settings.curtain_entity,
         settings.curtain_bat_a, settings.curtain_bat_b, settings.blinds_entity,
@@ -1009,6 +1016,8 @@ static void settings_write_file(void) {
     fprintf(f, "sonos_zone=%s\n",      settings.sonos_zone);
     fprintf(f, "client_mode=%d\n",     settings.client_mode);
     fprintf(f, "master_host=%s\n",     settings.master_host);
+    fprintf(f, "master_web_user=%s\n", settings.master_web_user);
+    fprintf(f, "master_web_pass=%s\n", settings.master_web_pass);
     fprintf(f, "rate_elec_kwh=%.4f\n", settings.rate_elec_kwh);
     fprintf(f, "rate_gas_m3=%.4f\n",   settings.rate_gas_m3);
     fprintf(f, "stats_show_euro=%d\n", settings.stats_show_euro);

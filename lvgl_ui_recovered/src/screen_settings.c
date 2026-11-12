@@ -121,6 +121,8 @@ static lv_obj_t * ta_wx_lat  = NULL;
 static lv_obj_t * ta_wx_lon  = NULL;
 static lv_obj_t * lbl_wx_status = NULL;
 static lv_obj_t * ta_master   = NULL;
+static lv_obj_t * ta_master_user = NULL;
+static lv_obj_t * ta_master_pass = NULL;
 static lv_obj_t * sw_client   = NULL;
 /* Auto-rotate modal widgets */
 static lv_obj_t * sw_rotate       = NULL;
@@ -2398,12 +2400,23 @@ static void on_client_apply(lv_event_t * e) {
         const char * h = lv_textarea_get_text(ta_master);
         snprintf(settings.master_host, sizeof settings.master_host, "%s", h ? h : "");
     }
+    if (ta_master_user) {
+        const char * u = lv_textarea_get_text(ta_master_user);
+        snprintf(settings.master_web_user, sizeof settings.master_web_user, "%s", (u && *u) ? u : "admin");
+    }
+    if (ta_master_pass) {
+        const char * pw = lv_textarea_get_text(ta_master_pass);
+        snprintf(settings.master_web_pass, sizeof settings.master_web_pass, "%s", pw ? pw : "");
+    }
     settings_save();
     open_restart_confirm(NULL);   /* takes effect after a UI restart */
 }
 static void open_client_modal(lv_event_t * e) {
     (void)e;
     lv_obj_t * p = modal_open(tr("Clientmodus", "Client mode"), 470);
+    lv_obj_add_flag(p, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(p, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(p, LV_SCROLLBAR_MODE_AUTO);
     int y = 70;
 
     lv_obj_t * r = panel_row(p, y, tr("Clientmodus (een master-Toon spiegelen)", "Client mode (mirror a master Toon)"), NULL);
@@ -2421,6 +2434,40 @@ static void open_client_modal(lv_event_t * e) {
     lv_textarea_set_one_line(ta_master, true);
     lv_textarea_set_text(ta_master, settings.master_host);
     y += 64;
+
+    /* The master's web login (its Settings > Webtoegang), if it has one. */
+    lv_obj_t * lu = lv_label_create(p);
+    lv_obj_set_style_text_color(lu, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(lu, SF(22), 0);
+    lv_label_set_text(lu, tr("Web-gebruiker:", "Web user:"));
+    lv_obj_align(lu, LV_ALIGN_TOP_LEFT, SX(4), y);
+    ta_master_user = lv_textarea_create(p);
+    lv_obj_set_size(ta_master_user, SX(400), SY(44));
+    lv_obj_align(ta_master_user, LV_ALIGN_TOP_LEFT, SX(200), y - 4);
+    lv_textarea_set_one_line(ta_master_user, true);
+    lv_textarea_set_text(ta_master_user, settings.master_web_user);
+    y += 60;
+
+    lv_obj_t * lpw = lv_label_create(p);
+    lv_obj_set_style_text_color(lpw, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(lpw, SF(22), 0);
+    lv_label_set_text(lpw, tr("Web-wachtw.:", "Web password:"));
+    lv_obj_align(lpw, LV_ALIGN_TOP_LEFT, SX(4), y);
+    ta_master_pass = lv_textarea_create(p);
+    lv_obj_set_size(ta_master_pass, SX(400), SY(44));
+    lv_obj_align(ta_master_pass, LV_ALIGN_TOP_LEFT, SX(200), y - 4);
+    lv_textarea_set_one_line(ta_master_pass, true);
+    lv_textarea_set_password_mode(ta_master_pass, true);
+    lv_textarea_set_text(ta_master_pass, settings.master_web_pass);
+    y += 64;
+
+    lv_obj_t * lnote = lv_label_create(p);
+    lv_obj_set_style_text_color(lnote, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_font(lnote, SF(16), 0);
+    lv_label_set_text(lnote, tr("Gebruiker en wachtwoord van Webtoegang op de master (leeg als die geen login heeft).",
+                                "User and password of Web Access on the master (empty if it has no login)."));
+    lv_obj_align(lnote, LV_ALIGN_TOP_LEFT, SX(4), y);
+    y += 40;
 
     lv_obj_t * hint = lv_label_create(p);
     lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);

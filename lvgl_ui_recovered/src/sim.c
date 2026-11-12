@@ -19,6 +19,7 @@
 #include "layout.h"
 #include "boxtalk.h"
 #include "weather.h"
+#include "client_link.h"
 #include "wastecollection.h"
 #include "homewizard.h"
 #include "meteradapter.h"
@@ -834,6 +835,26 @@ int main(int argc, char ** argv) {
         if (pwa_start() != 0) return 1;
         int secs = (argc > 2) ? atoi(argv[2]) : 600;
         for (int s = 0; s < secs; s++) sleep(1);
+        return 0;
+    }
+    /* Client mode against a running master: `toonui-sim clientlink <master> [seconds]`.
+     * Uses master_web_user/pass from toonui.cfg; prints the mirrored state and
+     * sends one setpoint after 15 s. */
+    if (!strcmp(mode, "clientlink")) {
+        signal(SIGPIPE, SIG_IGN);
+        settings.client_mode = 1;
+        if (argc > 2) snprintf(settings.master_host, sizeof settings.master_host, "%s", argv[2]);
+        toon_state.connected = 0; toon_state.setpoint = 0;
+        client_link_start();
+        int secs = (argc > 3) ? atoi(argv[3]) : 30;
+        for (int s = 1; s <= secs; s++) {
+            sleep(1);
+            if (s % 5 == 0)
+                printf("t=%2ds connected=%d setpoint=%.2f indoor=%.2f\n", s,
+                       toon_state.connected, toon_state.setpoint, toon_state.indoor_temp);
+            if (s == 15) printf("setpoint 22.5 -> %s\n", client_link_setpoint(22.5f) == 0 ? "ok" : "FAILED");
+            fflush(stdout);
+        }
         return 0;
     }
     if (!strcmp(mode, "geocode")) {

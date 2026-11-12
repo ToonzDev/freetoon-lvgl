@@ -359,6 +359,11 @@ typedef struct {
     int   telegram_enabled;      /* 0/1 — long-poll the Bot API */
     char  telegram_token[64];    /* BotFather token "123456:ABC-..." */
     int   telegram_alerts;       /* TG_ALERT_* bitmask (default all) */
+
+    /* Client mode: the master's web login (Settings > Webtoegang on the
+     * master), used when the master has one. */
+    char  master_web_user[32];
+    char  master_web_pass[32];
 } settings_t;
 
 #define FORECAST_AUTO   0

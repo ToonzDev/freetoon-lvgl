@@ -54,6 +54,80 @@ static int host_ok(const char * h) {
     return 1;
 }
 
+/* ---- the master's web login ----
+ * A master with a web password (Settings > Webtoegang) redirects every API
+ * request to /login. The client then signs in with the master's credentials
+ * (Settings > Clientmodus) and keeps the session cookie in a jar on tmpfs; all
+ * requests to a FreeToon master carry it. A redirect later on (session
+ * expired, password changed) triggers a new sign-in. */
+#define MASTER_JAR "/tmp/ft_master_cookies"
+static pthread_mutex_t g_login_mu = PTHREAD_MUTEX_INITIALIZER;
+static int g_login_warned = 0;
+
+static void form_enc(char * out, size_t outsz, const char * s) {
+    static const char hex[] = "0123456789ABCDEF";
+    size_t o = 0;
+    for (; s && *s && o + 4 < outsz; s++) {
+        unsigned char c = (unsigned char)*s;
+        if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') out[o++] = (char)c;
+        else { out[o++] = '%'; out[o++] = hex[c >> 4]; out[o++] = hex[c & 15]; }
+    }
+    out[o] = 0;
+}
+
+/* The response is the master's login or set-password form. */
+static int is_login_page(const char * body) {
+    return strstr(body, "action=/login") || strstr(body, "action=/set-password");
+}
+
+/* Signs in on the master. Returns 0 when a session cookie was obtained. The
+ * credentials go to curl on stdin, so they never show up in a process list. */
+static int master_login(void) {
+    if (!host_ok(settings.master_host)) return -1;
+    if (!settings.master_web_pass[0]) {
+        if (!g_login_warned++)
+            fprintf(stderr, "[client_link] master %s requires its web login — enter its "
+                            "password in Settings > Client mode\n", settings.master_host);
+        return -1;
+    }
+    pthread_mutex_lock(&g_login_mu);
+    char cmd[256];
+    snprintf(cmd, sizeof cmd,
+        "curl -s -m 8 -o /dev/null -c " MASTER_JAR " --data-binary @- "
+        "'http://%s:%d/login' 2>/dev/null", settings.master_host, MASTER_PORT);
+    int ok = 0;
+    FILE * f = popen(cmd, "w");
+    if (f) {
+        char u[100], p[100];
+        form_enc(u, sizeof u, settings.master_web_user[0] ? settings.master_web_user : "admin");
+        form_enc(p, sizeof p, settings.master_web_pass);
+        fprintf(f, "user=%s&pass=%s", u, p);
+        pclose(f);
+        /* A wrong password returns the form again, without a cookie. */
+        FILE * j = fopen(MASTER_JAR, "r");
+        if (j) {
+            char line[256];
+            while (!ok && fgets(line, sizeof line, j)) ok = strstr(line, "ft_sess") != NULL;
+            fclose(j);
+        }
+    }
+    pthread_mutex_unlock(&g_login_mu);
+    if (ok) { g_login_warned = 0; fprintf(stderr, "[client_link] signed in on master %s\n", settings.master_host); }
+    else if (!g_login_warned++)
+        fprintf(stderr, "[client_link] sign-in on master %s failed — check the username "
+                        "and password in Settings > Client mode\n", settings.master_host);
+    return ok ? 0 : -1;
+}
+
+/* GET from a FreeToon master with the session cookie; signs in and retries
+ * once when the master answers with its login form. */
+static int master_get(const char * url, char * buf, size_t sz) {
+    if (http_fetch_cookies(url, MASTER_JAR, buf, sz) != 0) return -1;
+    if (!is_login_page(buf)) return 0;
+    if (master_login() != 0) return -1;
+    return http_fetch_cookies(url, MASTER_JAR, buf, sz) == 0 && !is_login_page(buf) ? 0 : -1;
+}
+
 /* ---- tiny JSON field extractors (flat object, known keys) ---- */
 static int jnum(const char * j, const char * key, double * out) {
     char pat[48];
@@ -708,13 +782,15 @@ static void * reader_thread(void * arg) {
 
         /* Probe master: check if FreeToon PWA port 10081 is open */
         snprintf(url, sizeof url, "http://%s:%d/api/state", settings.master_host, MASTER_PORT);
-        if (http_fetch_to(url, probe_buf, sizeof probe_buf, 2) == 0 && strstr(probe_buf, "indoor_temp")) {
+        if (master_get(url, probe_buf, sizeof probe_buf) == 0 && strstr(probe_buf, "indoor_temp")) {
             g_is_stock_master = 0;
             fprintf(stderr, "[client_link] connected to FreeToon master %s\n", settings.master_host);
             snprintf(url, sizeof url, "http://%s:%d/api/state/stream",
                      settings.master_host, MASTER_PORT);
+            /* With the session cookie; when it expires the master redirects,
+               the stream ends, and the probe above signs in again. */
             snprintf(cmd, sizeof cmd,
-                     "curl -s -N --connect-timeout 8 -A freetoon-client '%s' 2>/dev/null",
+                     "curl -s -N --connect-timeout 8 -b " MASTER_JAR " -A freetoon-client '%s' 2>/dev/null",
                      url);
             FILE * f = popen(cmd, "r");
             if (!f) { toon_state.connected = 0; sleep(5); continue; }
@@ -746,15 +822,29 @@ static void * reader_thread(void * arg) {
     return NULL;
 }
 
+/* POST once; returns the HTTP status (0 = no answer). */
+static int post_json_once(const char * path, const char * qjson) {
+    char cmd[1024];
+    snprintf(cmd, sizeof cmd,
+        "curl -s -m 6 -o /dev/null -w '%%{http_code}' -b " MASTER_JAR " -X POST "
+        "-H 'Content-Type: application/json' --data %s 'http://%s:%d%s' 2>/dev/null",
+        qjson, settings.master_host, MASTER_PORT, path);
+    FILE * f = popen(cmd, "r");
+    if (!f) return 0;
+    char out[16] = "";
+    if (!fgets(out, sizeof out, f)) out[0] = 0;
+    pclose(f);
+    return atoi(out);
+}
+
 static int post_json(const char * path, const char * json) {
     if (!host_ok(settings.master_host)) return -1;
-    char cmd[1024], qjson[600];
+    char qjson[600];
     if (!sh_quote(qjson, sizeof qjson, json)) return -1;
-    snprintf(cmd, sizeof cmd,
-        "curl -s -m 6 -X POST -H 'Content-Type: application/json' "
-        "--data %s 'http://%s:%d%s' >/dev/null 2>&1",
-        qjson, settings.master_host, MASTER_PORT, path);
-    return system(cmd) == 0 ? 0 : -1;
+    int code = post_json_once(path, qjson);
+    /* 302 = the master wants its web login (no or expired session). */
+    if (code == 302 && master_login() == 0) code = post_json_once(path, qjson);
+    return (code >= 200 && code < 300) ? 0 : -1;
 }
 
 int client_link_setpoint(float temp) {
