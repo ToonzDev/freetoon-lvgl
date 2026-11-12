@@ -406,12 +406,16 @@ lv_obj_t * screen_forecast_create(void) {
     lv_obj_set_style_text_color(fc_rain_lbl_status, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(fc_rain_lbl_status, SF(15), 0);
     lv_label_set_text(fc_rain_lbl_status, tr("Laden...", "Loading..."));
-    lv_obj_align(fc_rain_lbl_status, LV_ALIGN_TOP_LEFT, 6, 42);
+    lv_obj_align(fc_rain_lbl_status, LV_ALIGN_TOP_LEFT, 6, 4);
+    /* Up to the view-button stack (top-right); long summaries wrap to a
+       second line, which still clears the chart. */
+    lv_obj_set_width(fc_rain_lbl_status, rf_sz - 16 - 6 - ((DISP_VER < 600) ? 70 : 80) - 6 - 18);
+    lv_label_set_long_mode(fc_rain_lbl_status, LV_LABEL_LONG_WRAP);
 
     fc_rain_chart = lv_chart_create(fc_rain_cont);
     int label_w = 42;
     int chart_w = rf_sz - 16 - label_w;
-    int chart_h = rf_sz - 116;
+    int chart_h = rf_sz - 132;          /* top edge just below the view-button stack */
     lv_obj_set_size(fc_rain_chart, chart_w, chart_h);
     lv_obj_align(fc_rain_chart, LV_ALIGN_BOTTOM_RIGHT, -4, -26);
     lv_obj_set_style_bg_color(fc_rain_chart, lv_color_hex(settings.home_light_mode ? 0xeef4fa : 0x141e2a), 0);
@@ -463,10 +467,12 @@ lv_obj_t * screen_forecast_create(void) {
     lv_obj_align(fc_rain_lbl_empty, LV_ALIGN_CENTER, 0, 15);
     lv_obj_add_flag(fc_rain_lbl_empty, LV_OBJ_FLAG_HIDDEN);
 
-    /* Floating selector pill bar at top of radar_frame */
+    /* Floating view selector: the three buttons stacked in the top-right
+       corner, clear of the radar image's timestamp (top-left). */
+    int btn_w = (DISP_VER < 600) ? 70 : 80;
     lv_obj_t * pill_bar = lv_obj_create(radar_frame);
-    lv_obj_set_size(pill_bar, rf_sz - 16, 34);
-    lv_obj_align(pill_bar, LV_ALIGN_TOP_MID, 0, 6);
+    lv_obj_set_size(pill_bar, btn_w + 6, 3 * 26 + 2 * 4 + 6);
+    lv_obj_align(pill_bar, LV_ALIGN_TOP_RIGHT, -6, 6);
     lv_obj_set_style_bg_color(pill_bar, lv_color_hex(0x101722), 0);
     lv_obj_set_style_bg_opa(pill_bar, LV_OPA_80, 0);
     lv_obj_set_style_border_color(pill_bar, lv_color_hex(0x223344), 0);
@@ -475,12 +481,11 @@ lv_obj_t * screen_forecast_create(void) {
     lv_obj_set_style_pad_all(pill_bar, 3, 0);
     lv_obj_clear_flag(pill_bar, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
 
-    int btn_w = (rf_sz - 16 - 18) / 3;
     btn_view_radar = lv_btn_create(pill_bar);
     lv_obj_set_size(btn_view_radar, btn_w, 26);
-    lv_obj_align(btn_view_radar, LV_ALIGN_LEFT_MID, 2, 0);
+    lv_obj_align(btn_view_radar, LV_ALIGN_TOP_MID, 0, 0);
     lv_obj_set_style_radius(btn_view_radar, 6, 0);
-    lv_obj_set_ext_click_area(btn_view_radar, 6);
+    lv_obj_set_ext_click_area(btn_view_radar, 2);
     lv_obj_add_event_cb(btn_view_radar, on_view_btn_click, LV_EVENT_CLICKED, (void *)(intptr_t)0);
     lv_obj_t * lr = lv_label_create(btn_view_radar);
     lv_label_set_text(lr, tr("Radar", "Radar"));
@@ -489,9 +494,9 @@ lv_obj_t * screen_forecast_create(void) {
 
     btn_view_3h = lv_btn_create(pill_bar);
     lv_obj_set_size(btn_view_3h, btn_w, 26);
-    lv_obj_align(btn_view_3h, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_align(btn_view_3h, LV_ALIGN_TOP_MID, 0, 30);
     lv_obj_set_style_radius(btn_view_3h, 6, 0);
-    lv_obj_set_ext_click_area(btn_view_3h, 6);
+    lv_obj_set_ext_click_area(btn_view_3h, 2);
     lv_obj_add_event_cb(btn_view_3h, on_view_btn_click, LV_EVENT_CLICKED, (void *)(intptr_t)1);
     lv_obj_t * l3 = lv_label_create(btn_view_3h);
     lv_label_set_text(l3, tr("3 uur", "3 hours"));
@@ -500,9 +505,9 @@ lv_obj_t * screen_forecast_create(void) {
 
     btn_view_24h = lv_btn_create(pill_bar);
     lv_obj_set_size(btn_view_24h, btn_w, 26);
-    lv_obj_align(btn_view_24h, LV_ALIGN_RIGHT_MID, -2, 0);
+    lv_obj_align(btn_view_24h, LV_ALIGN_TOP_MID, 0, 60);
     lv_obj_set_style_radius(btn_view_24h, 6, 0);
-    lv_obj_set_ext_click_area(btn_view_24h, 6);
+    lv_obj_set_ext_click_area(btn_view_24h, 2);
     lv_obj_add_event_cb(btn_view_24h, on_view_btn_click, LV_EVENT_CLICKED, (void *)(intptr_t)2);
     lv_obj_t * l24 = lv_label_create(btn_view_24h);
     lv_label_set_text(l24, tr("24 uur", "24 hours"));
