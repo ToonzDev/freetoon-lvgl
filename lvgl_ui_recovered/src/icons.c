@@ -125,32 +125,23 @@ const lv_img_dsc_t * weather_icon_for(const char * letter) {
     if (!letter || !letter[0]) return &icon_wx_cloud;
     int night = wx_is_night(letter);
     switch (letter[0]) {
-        case 'a':                                       /* zonnig / helder */
+        /* Buienradar icon letters (python-buienradar condition table). */
+        case 'a':                                       /* onbewolkt */
             return night ? moon_phase_icon(40) : &icon_wx_sun;
-        case 'b':                                       /* half bewolkt */
-        case 'j':                                       /* half bewolkt nacht */
+        case 'b': case 'j': case 'o': case 'r':     /* half / licht bewolkt */
             return night ? &icon_wx_cloud : &icon_wx_sun_cloud;
-        case 'c':                                       /* half bewolkt + regen */
-        case 'f':                                       /* afwisselend bewolkt */
-        case 'l':                                       /* mist + lichte regen */
-            return &icon_wx_rain_light;
-        case 'd':                                       /* overwegend bewolkt */
-        case 'r':                                       /* zwaar bewolkt */
+        case 'c': case 'p':                             /* (zwaar) bewolkt */
             return &icon_wx_cloud;
-        case 'e':                                       /* bewolkt + regen */
-        case 'h':                                       /* zware buien */
-        case 'q':                                       /* regen */
-            return &icon_wx_rain_heavy;
-        case 'g':                                       /* onweer */
-        case 'm':                                       /* onweerbuien */
-            return &icon_wx_thunder;
-        case 'n':                                       /* sneeuw */
-        case 'p':                                       /* sneeuwbuien */
-        case 'u':                                       /* sneeuw / hagel */
-            return &icon_wx_snow;
-        case 'k':                                       /* mist */
-        case 'i':                                       /* heiig */
+        case 'd': case 'n':                             /* mist(banken) */
             return &icon_wx_fog;
+        case 'f': case 'k': case 'm':                 /* lichte regen / buien */
+            return &icon_wx_rain_light;
+        case 'h': case 'l': case 'q':                 /* regen / buien */
+            return &icon_wx_rain_heavy;
+        case 'g': case 's':                             /* onweer */
+            return &icon_wx_thunder;
+        case 'i': case 't': case 'u': case 'v': case 'w':  /* sneeuw, natte sneeuw */
+            return &icon_wx_snow;
         default:
             return &icon_wx_cloud;
     }
@@ -161,13 +152,13 @@ const lv_img_dsc_t * weather_icon_for_lg(const char * letter) {
     int night = wx_is_night(letter);
     switch (letter[0]) {
         case 'a': return night ? moon_phase_icon(80) : &icon_wx_sun_lg;
-        case 'b': case 'j': return night ? &icon_wx_cloud_lg : &icon_wx_sun_cloud_lg;
-        case 'c': case 'f': case 'l': return &icon_wx_rain_light_lg;
-        case 'd': case 'r': return &icon_wx_cloud_lg;
-        case 'e': case 'h': case 'q': return &icon_wx_rain_heavy_lg;
-        case 'g': case 'm': return &icon_wx_thunder_lg;
-        case 'n': case 'p': case 'u': return &icon_wx_snow_lg;
-        case 'k': case 'i': return &icon_wx_fog_lg;
+        case 'b': case 'j': case 'o': case 'r': return night ? &icon_wx_cloud_lg : &icon_wx_sun_cloud_lg;
+        case 'c': case 'p': return &icon_wx_cloud_lg;
+        case 'd': case 'n': return &icon_wx_fog_lg;
+        case 'f': case 'k': case 'm': return &icon_wx_rain_light_lg;
+        case 'h': case 'l': case 'q': return &icon_wx_rain_heavy_lg;
+        case 'g': case 's': return &icon_wx_thunder_lg;
+        case 'i': case 't': case 'u': case 'v': case 'w': return &icon_wx_snow_lg;
         default:  return &icon_wx_cloud_lg;
     }
 }
@@ -271,13 +262,13 @@ unsigned int weather_icon_color_for(const char * letter) {
     if (!letter || !letter[0]) return 0xc8d4e0;
     switch (letter[0]) {
         case 'a':                       return 0xffd24a;   /* sun        — warm yellow */
-        case 'b': case 'j':             return 0xf2c66a;   /* sun+cloud  — softer yellow */
-        case 'c': case 'f': case 'l':   return 0x6aa8ff;   /* rain_light — sky blue   */
-        case 'd': case 'r':             return 0xc8d4e0;   /* cloud      — blue-grey  */
-        case 'e': case 'h': case 'q':   return 0x3a78d6;   /* rain_heavy — deep blue  */
-        case 'g': case 'm':             return 0xffb938;   /* thunder    — amber bolt */
-        case 'n': case 'p': case 'u':   return 0xe8f0ff;   /* snow/hail  — ice white  */
-        case 'k': case 'i':             return 0x9aa6b3;   /* fog        — neutral grey */
+        case 'b': case 'j': case 'o': case 'r': return 0xf2c66a;   /* sun+cloud  — softer yellow */
+        case 'c': case 'p':             return 0xc8d4e0;   /* cloud      — blue-grey  */
+        case 'd': case 'n':             return 0x9aa6b3;   /* fog        — neutral grey */
+        case 'f': case 'k': case 'm':   return 0x6aa8ff;   /* rain_light — sky blue   */
+        case 'h': case 'l': case 'q':   return 0x3a78d6;   /* rain_heavy — deep blue  */
+        case 'g': case 's':             return 0xffb938;   /* thunder    — amber bolt */
+        case 'i': case 't': case 'u': case 'v': case 'w': return 0xe8f0ff;   /* snow       — ice white  */
         default:                        return 0xc8d4e0;
     }
 }

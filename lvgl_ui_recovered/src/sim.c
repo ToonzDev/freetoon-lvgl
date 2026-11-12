@@ -813,7 +813,19 @@ int main(int argc, char ** argv) {
      * ends) and times each lv_refr_now(). Host ms are far below a Toon 1's
      * (~65x for full-screen work) -- compare variants, not absolutes.
      * SB_NOSHADOW=1 removes all shadows first. */
-    /* Weather location lookup against the live geocoder: `toonui-sim geocode <name>...`. */
+    /* Weather location lookup against Buienradar: `toonui-sim geocode <name>...`.
+     * Full weather fetch + parse: `toonui-sim wxfetch <name> [lat lon] [id]` (id: the stored one, default De Bilt). */
+    if (!strcmp(mode, "wxfetch")) {
+        extern int weather_fetch_now(void);
+        if (argc > 2) snprintf(settings.weather_location, sizeof settings.weather_location, "%s", argv[2]);
+        settings.weather_lat[0] = settings.weather_lon[0] = 0;
+        if (argc > 4) {
+            snprintf(settings.weather_lat, sizeof settings.weather_lat, "%s", argv[3]);
+            snprintf(settings.weather_lon, sizeof settings.weather_lon, "%s", argv[4]);
+        }
+        if (argc > 5) settings.weather_location_id = atoi(argv[5]);
+        return weather_fetch_now() == 0 ? 0 : 1;
+    }
     if (!strcmp(mode, "geocode")) {
         extern int weather_geocode(const char * city);
         for (int a = 2; a < argc; a++) weather_geocode(argv[a]);

@@ -39,8 +39,8 @@ typedef struct {
    forecast.buienradar.nl/2.0/forecast/<id>/days[]/hours[]. */
 typedef struct {
     char  label[8];          /* "15:00" — local time of the slot */
-    float temperature;       /* °C (real temperature_2m) */
-    float feel_temp;         /* °C (apparent_temperature) */
+    float temperature;       /* °C */
+    float feel_temp;         /* °C (feel temperature) */
     int   wind_bft;
     char  wind_dir[6];
     char  icon[8];           /* first letter compatible with weather_icon_for */
@@ -48,7 +48,7 @@ typedef struct {
 
 typedef struct {
     volatile int    connected;
-    volatile float  current_temp;     /* live station temperature */
+    volatile float  current_temp;     /* forecast for the current hour */
     volatile float  feel_temp;
     char            current_desc[80];
     char            current_icon[8];
@@ -79,8 +79,13 @@ void weather_refresh_async(void);
  * and refetch. */
 void weather_relocate_async(void);
 
-/* Resolve a city name to a Buienradar/GeoNames location id (Open-Meteo
- * geocoding). Returns the id or 0 if not found. */
+/* Resolve a city name to a Buienradar/GeoNames location id (Buienradar
+ * location search, Dutch places first). Returns the id or 0 if not found. */
 int weather_geocode(const char * city);
+
+#ifdef SIM
+/* Synchronous lookup + forecast fetch that prints the result (sim `wxfetch`). */
+int weather_fetch_now(void);
+#endif
 
 #endif

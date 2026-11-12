@@ -188,17 +188,13 @@ static void * rain_thread(void * arg) {
     int tick_24h = 0;
 
     while (1) {
+        /* Manual Lat/Lon (decimal comma accepted), else the configured place's
+           coordinates, else De Bilt — the same fallback as the weather. */
         double lat = 0.0, lon = 0.0;
-        if (settings.weather_lat[0] && settings.weather_lon[0]) {
-            lat = atof(settings.weather_lat);
-            lon = atof(settings.weather_lon);
-        }
+        weather_get_lat_lon(&lat, &lon);
         if (lat == 0.0 && lon == 0.0) {
-            weather_get_lat_lon(&lat, &lon);
-        }
-        if (lat == 0.0 && lon == 0.0) {
-            lat = 52.01;
-            lon = 4.55;
+            lat = 52.1009;
+            lon = 5.1783;
         }
 
         char url_3h[256];

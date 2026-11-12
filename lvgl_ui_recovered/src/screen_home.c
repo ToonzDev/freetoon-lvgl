@@ -168,8 +168,9 @@ static void set_forecast_icon(lv_obj_t * cloud, lv_obj_t * sun,
                               const char * letter) {
     if (!cloud) return;
     int is_night   = is_night_code(letter);
-    int is_partly  = letter && (letter[0] == 'b' || letter[0] == 'j');
-    int is_thunder = letter && (letter[0] == 'g' || letter[0] == 'm');
+    int is_partly  = letter && (letter[0] == 'b' || letter[0] == 'j' ||
+                                 letter[0] == 'o' || letter[0] == 'r');
+    int is_thunder = letter && (letter[0] == 'g' || letter[0] == 's');
     int is_clear   = letter && letter[0] == 'a';
 
     /* Clear sky at night → moon icon, no overlay needed. */
@@ -184,7 +185,7 @@ static void set_forecast_icon(lv_obj_t * cloud, lv_obj_t * sun,
         /* Partly cloudy — white cloud + sun overlay (day) or moon overlay
          * (night). The night variant ("bb") swaps the yellow sun for a
          * pale moon so the slot doesn't render a sun glyph at midnight. */
-        ui_img_set_src(cloud, weather_icon_for("d"));            /* plain cloud */
+        ui_img_set_src(cloud, weather_icon_for("c"));            /* plain cloud */
         ui_obj_set_style_img_recolor(cloud, lv_color_hex(settings.home_light_mode ? 0x64748b : 0xf0f4f8), 0);
         if (sun) {
             if (is_night) {
@@ -202,7 +203,7 @@ static void set_forecast_icon(lv_obj_t * cloud, lv_obj_t * sun,
          * Single-recolor would have made the whole pictogram amber and
          * lost the "stormy" reading. Use the bolt-only icon (no cloud
          * portion) overlaid on a separately-recolored gray cloud. */
-        ui_img_set_src(cloud, weather_icon_for("d"));            /* plain cloud */
+        ui_img_set_src(cloud, weather_icon_for("c"));            /* plain cloud */
         ui_obj_set_style_img_recolor(cloud, lv_color_hex(settings.home_light_mode ? 0x475569 : 0x6a7888), 0);   /* stormy gray */
         if (sun) {
             ui_img_set_src(sun, &icon_wx_bolt);
@@ -5110,7 +5111,7 @@ lv_obj_t * screen_home_create(void) {
             fc_icon[i] = lv_img_create(col);
             ui_obj_set_style_img_recolor(fc_icon[i], lv_color_hex(settings.home_light_mode ? 0x64748b : 0xc8d4e0), 0);
             ui_obj_set_style_img_recolor_opa(fc_icon[i], 255, 0);
-            ui_img_set_src(fc_icon[i], weather_icon_for_lg("d"));   /* default cloud */
+            ui_img_set_src(fc_icon[i], weather_icon_for_lg("c"));   /* default cloud */
             ui_obj_align(fc_icon[i], LV_ALIGN_CENTER, 0, (int)(10 * hscale));
             ui_obj_add_flag(fc_icon[i], LV_OBJ_FLAG_EVENT_BUBBLE);
 
