@@ -36,7 +36,10 @@ int notify_show(const char * type, const char * subType, const char * text) {
         "<action class=\"invoke\" uuid=\"%s\" "
         "destuuid=\"%s\" serviceid=\"" NOTIF_SVC "\">"
         "<u:CreateNotification xmlns:u=\"" NOTIF_NS "\">"
-        "<type>%s</type><subType>%s</subType><plainText>%s</plainText>"
+        /* <text>, as the stock Notifications.qml send() does. This used to be
+         * <plainText>, an argument happ_usermsg doesn't know: every message
+         * FreeToon raised showed up in the inbox with an empty body (#40). */
+        "<type>%s</type><subType>%s</subType><text>%s</text>"
         "</u:CreateNotification></action>",
         boxtalk_our_uuid(), boxtalk_usermsg_uuid(), type, subType, esc);
     int rc = boxtalk_send_raw_xml(xml);

@@ -15,6 +15,8 @@
 #include "stats.h"
 #include "airhist.h"
 #include "homewizard.h"
+#include "meteradapter.h"
+#include "p1esphome.h"
 #include "energy.h"
 #include "settings.h"
 #include "theme.h"
@@ -216,12 +218,46 @@ static void on_meter_open(lv_event_t * e) {
     if (s_meter_modal || !scr_root) return;
     hide_tooltip();
 
-    /* Fetch first (local hcb_rrd, a few small requests). */
-    double e_nt  = meter_latest("elec_quantity_nt");
-    double e_lt  = meter_latest("elec_quantity_lt");
-    double gas   = meter_latest("gas_quantity");
-    double p_nt  = meter_latest("elec_quantity_nt_prod");
-    double p_lt  = meter_latest("elec_quantity_lt_prod");
+    /* The meter's own registers, in Wh / litres (rows divide by 1000):
+     *  - HomeWizard / ESPHome P1 as energy source: the P1 telegram totals.
+     *    Dutch DSMR: tariff 1 (1.8.1) is LOW, tariff 2 (1.8.2) is NORMAL.
+     *  - otherwise happ_pwrusage's powerUsage/gasUsage datasets (boxtalk.c),
+     *    exactly what the stock "Meterstanden" pop-up shows.
+     * Only without any of those: the hcb_rrd loggers. Those are hcb_rrd's
+     * own running totals and can differ from the meter (backlog #38: after a
+     * meter swap they kept counting from the old values), so say so. */
+    double e_nt = NAN, e_lt = NAN, gas = NAN, p_nt = NAN, p_lt = NAN;
+    int from_rrd = 0;
+    #define POS_OR_NAN(x) ((x) > 0 ? (double)(x) : NAN)
+    if (settings.energy_source == 1 && hw_state.connected_p1) {
+        e_nt = POS_OR_NAN(hw_state.kwh_import_t2) * 1000.0;
+        e_lt = POS_OR_NAN(hw_state.kwh_import_t1) * 1000.0;
+        gas  = POS_OR_NAN(hw_state.gas_m3) * 1000.0;
+        p_nt = POS_OR_NAN(hw_state.kwh_export_t2) * 1000.0;
+        p_lt = POS_OR_NAN(hw_state.kwh_export_t1) * 1000.0;
+    } else if (settings.energy_source == 2 && p1esp_state.connected) {
+        e_nt = POS_OR_NAN(p1esp_state.kwh_import_t2) * 1000.0;
+        e_lt = POS_OR_NAN(p1esp_state.kwh_import_t1) * 1000.0;
+        gas  = POS_OR_NAN(p1esp_state.gas_m3) * 1000.0;
+        p_nt = POS_OR_NAN(p1esp_state.kwh_export_t2) * 1000.0;
+        p_lt = POS_OR_NAN(p1esp_state.kwh_export_t1) * 1000.0;
+    } else if (meter_state.reading_elec_normal_wh > 0 || meter_state.reading_elec_low_wh > 0 ||
+               meter_state.reading_gas_l > 0) {
+        e_nt = POS_OR_NAN(meter_state.reading_elec_normal_wh);
+        e_lt = POS_OR_NAN(meter_state.reading_elec_low_wh);
+        gas  = POS_OR_NAN(meter_state.reading_gas_l);
+        p_nt = POS_OR_NAN(meter_state.reading_prod_normal_wh);
+        p_lt = POS_OR_NAN(meter_state.reading_prod_low_wh);
+    } else {
+        /* local hcb_rrd (or the master's in client mode), a few small requests */
+        e_nt = meter_latest("elec_quantity_nt");
+        e_lt = meter_latest("elec_quantity_lt");
+        gas  = meter_latest("gas_quantity");
+        p_nt = meter_latest("elec_quantity_nt_prod");
+        p_lt = meter_latest("elec_quantity_lt_prod");
+        from_rrd = !isnan(e_nt) || !isnan(e_lt) || !isnan(gas);
+    }
+    #undef POS_OR_NAN
     int has_prod = !isnan(p_nt) || !isnan(p_lt);
 
     s_meter_modal = lv_obj_create(scr_root);
@@ -235,7 +271,7 @@ static void on_meter_open(lv_event_t * e) {
 
     int rows = 3 + (has_prod ? 2 : 0);
     lv_obj_t * card = lv_obj_create(s_meter_modal);
-    lv_obj_set_size(card, SX(560), SY(150 + rows * 52));
+    lv_obj_set_size(card, SX(560), SY(150 + rows * 52 + (from_rrd ? 40 : 0)));
     lv_obj_center(card);
     lv_obj_set_style_bg_color(card, lv_color_hex(THEME_CARD_BG), 0);
     lv_obj_set_style_border_color(card, lv_color_hex(THEME_BORDER), 0);
@@ -258,6 +294,16 @@ static void on_meter_open(lv_event_t * e) {
     if (has_prod) {
         meter_row(card, row++, tr("Teruglevering normaal", "Export normal"), p_nt, 1000.0, "kWh");
         meter_row(card, row++, tr("Teruglevering laag", "Export low"),       p_lt, 1000.0, "kWh");
+    }
+    if (from_rrd) {
+        lv_obj_t * n = lv_label_create(card);
+        lv_obj_set_style_text_color(n, lv_color_hex(THEME_TEXT_DIM), 0);
+        lv_obj_set_style_text_font(n, SF(16), 0);
+        lv_obj_set_width(n, SX(512));
+        lv_label_set_long_mode(n, LV_LABEL_LONG_WRAP);
+        lv_label_set_text(n, tr("Geteld door de Toon - kan afwijken van de meter.",
+                                "Counted by the Toon - may differ from the meter."));
+        lv_obj_align(n, LV_ALIGN_TOP_LEFT, SX(24), SY(78 + row * 52));
     }
 
     lv_obj_t * b = lv_btn_create(card);

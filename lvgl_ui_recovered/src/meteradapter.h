@@ -16,6 +16,15 @@ typedef struct {
     volatile float gas_today_m3; /* today's gas usage in m³, <0 = unavailable */
     volatile float gas_now_m3h;  /* current gas flow rate in m³/h (from gasUsage) */
     volatile float gas_m3;       /* cumulative total gas in m³ */
+    /* The meter's own registers, as the stock "Meterstanden" pop-up shows
+     * them: happ_pwrusage's powerUsage / gasUsage datasets (meterReading,
+     * meterReadingLow, ...Produ in Wh; gas meterReading in litres). <0 =
+     * not received. Doubles: ~47 000 000 Wh is beyond float precision. */
+    volatile double reading_elec_normal_wh;
+    volatile double reading_elec_low_wh;
+    volatile double reading_prod_normal_wh;
+    volatile double reading_prod_low_wh;
+    volatile double reading_gas_l;
     /* NILM — step-change device detection */
     char   nilm_device[40];      /* matched device name + direction, e.g. "Fridge ON" */
     int    nilm_direction;       /* +1 = on, -1 = off */

@@ -93,6 +93,22 @@ void inbox_parse_dataset(const char * xml) {
         xml_text(start, stop, "type",       m->type,     sizeof(m->type));
         xml_text(start, stop, "subType",    m->sub_type, sizeof(m->sub_type));
         xml_text(start, stop, "text",       m->text,     sizeof(m->text));
+        if (!m->text[0])   /* sent as <plainText> by FreeToon before #40 */
+            xml_text(start, stop, "plainText", m->text, sizeof(m->text));
+
+        /* Nothing to show: FreeToon's own messages from before #40 reached
+         * happ_usermsg without a body ("telegram / imported" with no text).
+         * Hide those. Only FreeToon's own types: stock ones (error, update,
+         * tsc, ...) may legitimately carry no text and are worded by type. */
+        int ours = !strcmp(m->type, "telegram") || !strcmp(m->type, "calendar") ||
+                   !strcmp(m->type, "integration") || !strcmp(m->type, "package") ||
+                   !strcmp(m->type, "system") ||
+                   (!strcmp(m->type, "update") && !strcmp(m->sub_type, "freetoon"));
+        if (!m->text[0] && ours) {
+            memset(m, 0, sizeof(*m));
+            p = stop + strlen("</notification>");
+            continue;
+        }
 
         /* CR2: Suppress continuous system notification about Service Center connection */
         if (strstr(m->text, "Service Center") || strstr(m->text, "Service center") ||

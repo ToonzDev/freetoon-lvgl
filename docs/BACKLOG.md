@@ -454,7 +454,10 @@
   - HomeWizard v2 API: newer firmware has a local API v2 (HTTPS + bearer token, obtained by pressing the device button; README already mentions a v2 `P1_TOKEN` for p1bridge). Check whether v1 keeps working on current firmware or whether v2 should become the default, and how a user pairs on the Toon.
 
 ### 38. Meterstanden Pop-up Shows Readings That Match Neither the Old Nor the New Meter (User Report)
-- **Status**: Open (user report, 2026-11-12).
+- **Status**: Fixed (2026-11-12), sim-tested. Not yet checked against a real meter: neither test Toon has a working meter adapter.
+  - Stock source (qresource `apps/graph/GraphApp.qml` + `GraphScreen.qml`): BoxTalk dataset subscriptions `powerUsage` / `gasUsage` on `happ_pwrusage`, fields `meterReading` (normal) / `meterReadingLow` / `meterReadingProdu` / `meterReadingLowProdu` in Wh, gas `meterReading` in litres.
+  - FreeToon now subscribes to the same datasets (boxtalk.c, `meter_state.reading_*`). The pop-up shows those registers, or with HomeWizard / ESPHome as energy source that device's P1 totals (DSMR: t1 = low, t2 = normal). The hcb_rrd loggers are only a fallback, with a note "Geteld door de Toon - kan afwijken van de meter".
+  - Side finding, not changed: homewizard.c `push_to_rrd()` writes `kwh_import_t1` (NL low tariff) into `elec_quantity_nt` (normal) and t2 into `_lt`, so the HomeWizard normal/low split in the charts is probably swapped. Fixing it would mix up existing history; decide separately.
 - **Description**:
   - A user's "Meterstanden" pop-up (#29) shows ~17,000 and ~14,000 kWh for electricity and ~13,000 m3 for gas. Their meter was replaced a week ago; the old meter read ~47,000 / ~40,000 kWh and ~41,000 m3, and the new meter is still close to zero. So the pop-up shows neither.
 - **Cause (hypothesis)**:
@@ -474,7 +477,7 @@
   - `inbox.c` already drops the "Service Center" notifications in `inbox_parse_dataset()` (CR2 filter). Add the TSC resource-file message there, matching on its type/subType if it has a stable one, otherwise on "TSC resource file". Also consider sending a DeleteNotification so it doesn't stay in happ_usermsg.
 
 ### 40. Empty Inbox Message "telegram / imported" on Both Toons
-- **Status**: Open (user report, 2026-11-12).
+- **Status**: Fixed (2026-11-12), sim-tested. Cause confirmed in the stock source: `qb/notifications/Notifications.qml` sends CreateNotification with the argument `text`; FreeToon's `notify_show()` sent `plainText`, so every FreeToon notification (telegram, update, calendar, system, ...) arrived without a body. notify.c now sends `<text>`. The inbox falls back to `plainText`, and hides body-less entries of FreeToon's own types; stock types without text are kept.
 - **Description**:
   - Both Toons show an inbox message with the header "telegram / imported" and no text. It comes from `telegram.c` (ToonBot settings import, `notify_show("telegram", "imported", ...)`).
 - **Cause (hypothesis)**:

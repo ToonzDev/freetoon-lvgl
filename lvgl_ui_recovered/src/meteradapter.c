@@ -26,7 +26,9 @@ static const nilm_sig_t nilm_sigs[] = {
     /* no built-in signatures — every step goes to unknowns for user labelling */
 };
 
-meter_state_t    meter_state   = {0};
+meter_state_t    meter_state   = { .reading_elec_normal_wh = -1, .reading_elec_low_wh = -1,
+                                   .reading_prod_normal_wh = -1, .reading_prod_low_wh = -1,
+                                   .reading_gas_l = -1 };
 
 void meteradapter_on_flow(float watts) {
     static float  prev_w       = -1.0f;

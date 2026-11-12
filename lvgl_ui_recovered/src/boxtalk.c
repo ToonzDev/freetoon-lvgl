@@ -147,6 +147,7 @@ static char USERMSG_UUID[96]  = "qb-000000000000-0000000000:happ_usermsg";
 static char RRD_UUID[96]      = "qb-000000000000-0000000000:hcb_rrd";
 static char THERMD_UUID[96]   = "qb-000000000000-0000000000:happ_thermstat";
 static char CONFIG_UUID[96]   = "qb-000000000000-0000000000:hcb_config";
+static char PWRUSAGE_UUID[96] = "qb-000000000000-0000000000:happ_pwrusage";
 static char s_therm_settings_uuid[96] = {0};
 
 static void bt_seed_thermostat_settings_uuid(void) {
@@ -189,6 +190,7 @@ static void bt_init_dev_uuids(void) {
     snprintf(RRD_UUID,     sizeof RRD_UUID,     "%s:hcb_rrd",     dev_base);
     snprintf(THERMD_UUID,  sizeof THERMD_UUID,  "%s:happ_thermstat", dev_base);
     snprintf(CONFIG_UUID,  sizeof CONFIG_UUID,  "%s:hcb_config",     dev_base);
+    snprintf(PWRUSAGE_UUID, sizeof PWRUSAGE_UUID, "%s:happ_pwrusage", dev_base);
 }
 
 /* Runtime device UUIDs for other modules (inbox/notify) — avoids hardcoding
@@ -258,6 +260,46 @@ static int elem_text_float(const char* xml, const char* elem, float* out) {
     buf[n] = 0;
     *out = (float)atof(buf);
     return 1;
+}
+
+/* Like elem_text_float, into a double; NaN / empty / missing -> 0. Meter
+ * registers in Wh run to tens of millions, beyond float precision. */
+static int elem_text_double(const char * xml, const char * elem, double * out) {
+    char open[64], close[64];
+    snprintf(open, sizeof open, "<%s>", elem);
+    snprintf(close, sizeof close, "</%s>", elem);
+    const char * p = strstr(xml, open);
+    if (!p) return 0;
+    p += strlen(open);
+    const char * e = strstr(p, close);
+    if (!e || e == p) return 0;
+    char buf[48];
+    size_t n = (size_t)(e - p);
+    if (n >= sizeof buf) n = sizeof buf - 1;
+    memcpy(buf, p, n);
+    buf[n] = 0;
+    char * end;
+    double v = strtod(buf, &end);
+    if (end == buf || v != v) return 0;     /* not a number / NaN */
+    *out = v;
+    return 1;
+}
+
+/* <powerUsage>...<meterReading>Wh</meterReading><meterReadingLow>...</powerUsage>
+ * or <gasUsage>...<meterReading>litres</meterReading>...</gasUsage>. A register
+ * of 0 means "no meter / not read yet" — keep the previous value then. */
+static void pwrusage_parse_dataset(const char * xml) {
+    double v;
+    const char * pu = strstr(xml, "<powerUsage>");
+    if (pu) {
+        if (elem_text_double(pu, "meterReading", &v) && v > 0)         meter_state.reading_elec_normal_wh = v;
+        if (elem_text_double(pu, "meterReadingLow", &v) && v > 0)      meter_state.reading_elec_low_wh = v;
+        if (elem_text_double(pu, "meterReadingProdu", &v) && v > 0)    meter_state.reading_prod_normal_wh = v;
+        if (elem_text_double(pu, "meterReadingLowProdu", &v) && v > 0) meter_state.reading_prod_low_wh = v;
+    }
+    const char * gu = strstr(xml, "<gasUsage>");
+    if (gu && elem_text_double(gu, "meterReading", &v) && v > 0)
+        meter_state.reading_gas_l = v;
 }
 
 static time_t s_burner_last_active_ts = 0;
@@ -597,6 +639,9 @@ static void handle_msg(const char* xml) {
             && strstr(xml, "notifications")) {
             inbox_parse_dataset(xml);
         }
+        /* happ_pwrusage powerUsage / gasUsage datasets — meter readings */
+        if (!settings.client_mode && strstr(xml, "happ_pwrusage") && strstr(xml, "UpdateDataSet"))
+            pwrusage_parse_dataset(xml);
         /* happ_thermstat thermostatInfo dataset — the native source for the
          * calibrated room temp + humidity (the same push qt-gui consumes).
          * currentTemp/currentSetpoint are centi-°C; currentHumidity is %. */
@@ -1028,6 +1073,25 @@ static void send_initial_handshake(void) {
         "<requestFullSet>1</requestFullSet></u:UpdateDataSetSubscription></action>",
         OUR_UUID, THERMD_UUID);
     send_msg(buf);
+
+    /* happ_pwrusage's powerUsage + gasUsage datasets: the meter's own
+     * registers (meterReading/meterReadingLow/...Produ, gas meterReading),
+     * which is what the stock graph app's "Meterstanden" pop-up shows
+     * (GraphApp.qml BxtDatasetHandler "powerUsage"/"gasUsage"). The hcb_rrd
+     * elec_quantity_* loggers are hcb_rrd's own running totals and drift
+     * from the meter (e.g. after a meter swap) — backlog #38. */
+    static const char * const pwr_ds[] = { "powerUsage", "gasUsage" };
+    for (int i = 0; i < 2; i++) {
+        snprintf(buf, sizeof(buf),
+            "<action class=\"invoke\" uuid=\"%s\" destuuid=\"%s\" "
+            "serviceid=\"urn:hcb-hae-com:serviceId:specific1\">"
+            "<u:UpdateDataSetSubscription xmlns:u=\"urn:hcb-hae-com:service:specific1:1\">"
+            "<updateAction>add</updateAction><dataSet>%s</dataSet>"
+            "<autoExpire>0</autoExpire><supportsNaN>1</supportsNaN><supportsPartial>0</supportsPartial>"
+            "<requestFullSet>1</requestFullSet></u:UpdateDataSetSubscription></action>",
+            OUR_UUID, PWRUSAGE_UUID, pwr_ds[i]);
+        send_msg(buf);
+    }
 
     /* Subscribe to happ_usermsg notifications dataset (Inbox). */
     snprintf(buf, sizeof(buf),
@@ -1756,3 +1820,8 @@ int boxtalk_start(void) {
     }
     return 0;
 }
+
+#ifdef SIM
+/* Sim/tests: run a raw BoxTalk message through the real dispatcher. */
+void boxtalk_sim_feed(const char * xml) { handle_msg(xml); }
+#endif

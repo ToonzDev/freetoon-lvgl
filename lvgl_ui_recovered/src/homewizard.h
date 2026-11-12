@@ -14,6 +14,8 @@ typedef struct {
     volatile float  kwh_import_t2;    /* total_power_import_t2_kwh */
     volatile float  kwh_import_total; /* total_power_import_kwh */
     volatile float  kwh_export_total; /* total_power_export_kwh */
+    volatile float  kwh_export_t1;    /* total_power_export_t1_kwh (NL: low tariff) */
+    volatile float  kwh_export_t2;    /* total_power_export_t2_kwh (NL: normal tariff) */
     volatile int    tariff;           /* active_tariff: 1 or 2 */
     volatile float  gas_m3;           /* total_gas_m3 (cumulative) */
     volatile float  gas_hour_m3;      /* consumption over the trailing ~60 min,

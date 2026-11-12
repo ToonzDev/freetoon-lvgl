@@ -24,6 +24,7 @@
 #include "homewizard.h"
 #include "energy.h"
 #include "meteradapter.h"
+#include "inbox.h"
 #include "ventilation.h"
 #include "efanlamp.h"
 #include "anim_overlay.h"
@@ -482,6 +483,11 @@ static void mock_state(void) {
     ha_state.connected = 1;
     /* Solar production, so the Zonnepanelen tile has something to draw.
      * SIM_NO_SOLAR=1 renders the unconfigured state instead. */
+    /* SIM_METER=1: meter registers as happ_pwrusage publishes them (#38). */
+    if (getenv("SIM_METER")) {
+        meter_state.reading_elec_normal_wh = 2384117; meter_state.reading_elec_low_wh = 3051950;
+        meter_state.reading_prod_normal_wh = 812004;  meter_state.reading_gas_l = 1873441;
+    }
     if (!getenv("SIM_NO_SOLAR")) {
         snprintf(settings.ha_solar_entity, sizeof settings.ha_solar_entity, "sensor.solar_power");
         ha_state.solar_w = 1240.0f;
@@ -856,6 +862,41 @@ int main(int argc, char ** argv) {
             if (s == 15) printf("setpoint 22.5 -> %s\n", client_link_setpoint(22.5f) == 0 ? "ok" : "FAILED");
             fflush(stdout);
         }
+        return 0;
+    }
+    /* BoxTalk datasets through the real dispatcher (`toonui-sim bxtfeed`):
+     * happ_pwrusage powerUsage/gasUsage (meter readings, #38) and a
+     * happ_usermsg notifications set (#40). */
+    if (!strcmp(mode, "bxtfeed")) {
+        extern void boxtalk_sim_feed(const char * xml);
+
+        boxtalk_sim_feed(
+            "<action class=\"invoke\" uuid=\"qb-1:happ_pwrusage\" destuuid=\"qb-1:toonui\" "
+            "serviceid=\"urn:hcb-hae-com:serviceId:specific1\"><u:UpdateDataSet xmlns:u=\"urn:hcb-hae-com:service:specific1:1\">"
+            "<powerUsage><value>412</value><avgValue>380</avgValue><meterReading>1234567</meterReading>"
+            "<meterReadingLow>2345678</meterReadingLow><meterReadingProdu>345678</meterReadingProdu>"
+            "<meterReadingLowProdu>NaN</meterReadingLowProdu><isSmart>1</isSmart></powerUsage>"
+            "</u:UpdateDataSet></action>");
+        boxtalk_sim_feed(
+            "<action class=\"invoke\" uuid=\"qb-1:happ_pwrusage\" destuuid=\"qb-1:toonui\" "
+            "serviceid=\"urn:hcb-hae-com:serviceId:specific1\"><u:UpdateDataSet xmlns:u=\"urn:hcb-hae-com:service:specific1:1\">"
+            "<gasUsage><value>0</value><dayUsage>812</dayUsage><meterReading>98765</meterReading><isSmart>1</isSmart></gasUsage>"
+            "</u:UpdateDataSet></action>");
+        printf("elec normal %.0f Wh, low %.0f Wh, prod normal %.0f, prod low %.0f, gas %.0f L\n",
+               meter_state.reading_elec_normal_wh, meter_state.reading_elec_low_wh,
+               meter_state.reading_prod_normal_wh, meter_state.reading_prod_low_wh, meter_state.reading_gas_l);
+        boxtalk_sim_feed(
+            "<action class=\"invoke\" uuid=\"qb-1:happ_usermsg\" destuuid=\"qb-1:toonui\" "
+            "serviceid=\"urn:hcb-hae-com:serviceId:specific1\"><u:UpdateDataSet xmlns:u=\"urn:hcb-hae-com:service:specific1:1\">"
+            "<notifications>"
+            "<notification><uuid>a</uuid><type>telegram</type><subType>imported</subType><text></text></notification>"
+            "<notification><uuid>b</uuid><type>telegram</type><subType>pending</subType><text>Nieuwe chat wacht</text></notification>"
+            "<notification><uuid>c</uuid><type>error</type><subType>boiler</subType></notification>"
+            "<notification><uuid>d</uuid><type>system</type><subType>x</subType><plainText>Oude tekst</plainText></notification>"
+            "</notifications></u:UpdateDataSet></action>");
+        printf("inbox_count=%d\n", inbox_count);
+        for (int i = 0; i < inbox_count; i++)
+            printf("  %s/%s: '%s'\n", inbox_msgs[i].type, inbox_msgs[i].sub_type, inbox_msgs[i].text);
         return 0;
     }
     /* HomeWizard kWh meter + Energy Sockets against (fake) devices from

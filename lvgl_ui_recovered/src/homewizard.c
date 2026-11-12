@@ -155,6 +155,8 @@ static void poll_p1(void) {
     hw_state.kwh_import_t2    = (float)parse_num(j, "total_power_import_t2_kwh", 0);
     hw_state.kwh_import_total = (float)parse_num(j, "total_power_import_kwh", 0);
     hw_state.kwh_export_total = (float)parse_num(j, "total_power_export_kwh", 0);
+    hw_state.kwh_export_t1    = (float)parse_num(j, "total_power_export_t1_kwh", 0);
+    hw_state.kwh_export_t2    = (float)parse_num(j, "total_power_export_t2_kwh", 0);
     hw_state.tariff           = (int)  parse_num(j, "active_tariff",          1);
     hw_state.gas_m3           = (float)parse_num(j, "total_gas_m3",           0);
     gas_hour_update(hw_state.gas_m3);
