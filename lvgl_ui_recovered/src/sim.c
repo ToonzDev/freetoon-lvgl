@@ -826,6 +826,16 @@ int main(int argc, char ** argv) {
         if (argc > 5) settings.weather_location_id = atoi(argv[5]);
         return weather_fetch_now() == 0 ? 0 : 1;
     }
+    /* Remote page + API on :10081 with the mock state: `toonui-sim webserve [seconds]`.
+     * Web login follows toonui.cfg in $TOONUI_DATA_DIR (pwa_login_enabled=0 to skip). */
+    if (!strcmp(mode, "webserve")) {
+        extern int pwa_start(void);
+        signal(SIGPIPE, SIG_IGN);
+        if (pwa_start() != 0) return 1;
+        int secs = (argc > 2) ? atoi(argv[2]) : 600;
+        for (int s = 0; s < secs; s++) sleep(1);
+        return 0;
+    }
     if (!strcmp(mode, "geocode")) {
         extern int weather_geocode(const char * city);
         for (int a = 2; a < argc; a++) weather_geocode(argv[a]);

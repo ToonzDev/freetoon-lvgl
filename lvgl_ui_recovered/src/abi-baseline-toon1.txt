@@ -56,9 +56,11 @@ getenv@GLIBC_2.4
 gethostbyname@GLIBC_2.4
 gethostname@GLIBC_2.4
 getpid@GLIBC_2.4
+getsockname@GLIBC_2.4
 gettimeofday@GLIBC_2.4
 gmtime_r@GLIBC_2.4
 inet_addr@GLIBC_2.4
+inet_ntoa@GLIBC_2.4
 inet_pton@GLIBC_2.4
 ioctl@GLIBC_2.4
 kill@GLIBC_2.4

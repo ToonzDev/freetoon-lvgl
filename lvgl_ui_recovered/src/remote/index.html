@@ -1,0 +1,766 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f1a2a">
+<title>FreeToon</title>
+<!--
+  FreeToon remote control — served by pwa_server on :10081 (behind the web
+  login). Mirrors the home screen: clock, thermostat + presets, tiles and the
+  weather strip. Live data: /api/state/stream (SSE); actions: /api/setpoint,
+  /api/program, /api/vent, /api/curtain. Self-contained: no external files.
+  Compiled into the binary (Makefile -> remote_page.h); edit here.
+-->
+<style>
+:root{
+  --bg:#0f1a2a;--card:#1a2a44;--row:#1f3050;--btn:#223344;--btn-hi:#335577;
+  --text:#ffffff;--dim:#88aabb;--muted:#556677;--border:#335577;
+  --warm:#ffcc44;--accent:#44aaff;--active:#3377cc;--danger:#ff7766;
+}
+:root[data-theme=light]{
+  --bg:#e4eaf2;--card:#ffffff;--row:#f0f4f8;--btn:#d0d8e2;--btn-hi:#ccdaea;
+  --text:#1e2838;--dim:#687c94;--muted:#8898aa;--border:#c8d4e2;
+  --warm:#d97706;--accent:#1d4ed8;--active:#2f6fd0;--danger:#c0392b;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-tap-highlight-color:transparent}
+body{min-height:100vh;padding:12px max(12px,env(safe-area-inset-right)) 24px max(12px,env(safe-area-inset-left))}
+button{font:inherit;color:inherit;border:0;cursor:pointer}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.top{display:flex;align-items:center;gap:10px;max-width:1240px;margin:0 auto 12px}
+.top h1{font-size:18px;font-weight:600;margin:0;letter-spacing:.2px}
+.top .sp{flex:1}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--muted);display:inline-block}
+.dot.ok{background:#4c9}.dot.bad{background:var(--danger)}
+.status{font-size:13px;color:var(--dim);display:flex;align-items:center;gap:6px}
+.iconbtn{background:var(--card);width:38px;height:38px;border-radius:50%;display:grid;place-items:center;color:var(--dim)}
+.iconbtn:hover{color:var(--text)}
+.iconbtn svg{width:20px;height:20px}
+.banner{max-width:1240px;margin:0 auto 12px;padding:10px 14px;border-radius:12px;background:var(--danger);color:#fff;font-size:14px;display:none}
+.banner.show{display:block}
+
+.grid{max-width:1240px;margin:0 auto;display:grid;gap:12px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:640px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (min-width:1000px){.grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.card{background:var(--card);border-radius:14px;padding:14px 16px;min-width:0;position:relative}
+.card h2{margin:0 0 8px;font-size:17px;font-weight:500;color:var(--dim);display:flex;align-items:center;gap:8px}
+.card h2 .v{margin-left:auto;color:var(--text);font-size:15px}
+.card.bar::before{content:"";position:absolute;left:14px;right:14px;top:10px;height:4px;border-radius:2px;background:var(--bc,var(--accent))}
+.card.bar{padding-top:24px}
+.hidden{display:none!important}
+/* Layout mode: the Toon's home grid (12 columns x 8 rows per swipe page,
+   pages stacked). Tiles get grid-column/grid-row/order inline from JS; below
+   1000px the grid positions are dropped and only the reading order is kept. */
+@media (min-width:1000px){
+  .grid.lay{grid-template-columns:repeat(12,minmax(0,1fr));grid-auto-rows:minmax(64px,auto)}
+}
+@media (max-width:999.98px){
+  .grid.lay>.card{grid-column:auto!important;grid-row:auto!important}
+}
+.ticker{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:15px}
+.ticker a,.list a{color:inherit;text-decoration:none}
+.ticker a:hover,.list a:hover{text-decoration:underline}
+.onoff{margin-left:auto;font-size:13px;color:var(--muted)}
+.onoff.on{color:var(--warm)}
+.big{font-size:42px;font-weight:300;line-height:1.1}
+.mid{font-size:26px;font-weight:300}
+.sub{font-size:13px;color:var(--dim)}
+.muted{color:var(--muted)}
+.row{display:flex;align-items:center;gap:8px}
+.list{margin:0;padding:0;list-style:none}
+.list li{display:flex;gap:10px;padding:5px 0;font-size:14px;border-top:1px solid var(--row)}
+.list li:first-child{border-top:0}
+.list .when{color:var(--dim);min-width:74px;flex-shrink:0}
+
+/* clock */
+.clock{text-align:center;padding:18px 10px}
+.clock .t{font-size:64px;font-weight:300;letter-spacing:1px;line-height:1}
+.clock .d{font-size:20px;color:var(--dim);margin-top:4px}
+
+/* thermostat */
+.thermo{text-align:center}
+.thermo .room{font-size:56px;font-weight:300;color:var(--warm);line-height:1.05;margin:4px 0 2px}
+.thermo .meta{font-size:13px;color:var(--dim);display:flex;justify-content:center;gap:12px;flex-wrap:wrap;min-height:18px}
+.thermo .meta svg{width:15px;height:15px;vertical-align:-3px}
+.presets{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:14px 0 12px}
+.presets button{background:var(--btn);border-radius:8px;padding:9px 2px;font-size:14px;color:var(--dim);border:2px solid transparent}
+.presets button.on{background:var(--active);color:#fff;border-color:#fff}
+:root[data-theme=light] .presets button.on{border-color:#1e2838}
+.setp{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.setp button{width:56px;height:48px;border-radius:10px;background:var(--btn-hi);font-size:26px;line-height:1}
+.setp button:active{transform:scale(.96)}
+.setp .val{font-size:30px;font-weight:300}
+.setp .val.pending{color:var(--accent)}
+.modes{display:flex;gap:6px;justify-content:center;margin-top:12px}
+.modes button{background:var(--btn);border-radius:16px;padding:6px 14px;font-size:13px;color:var(--dim)}
+.modes button.on{background:var(--btn-hi);color:var(--text)}
+
+/* tiles */
+.kv{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:14px}
+.kv dt{color:var(--dim)}.kv dd{margin:0;text-align:right}
+.btns{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.btns button{background:var(--btn);border-radius:8px;padding:8px 12px;font-size:14px;flex:1}
+.btns button:hover{background:var(--btn-hi)}
+.radar img{width:100%;border-radius:10px;display:block;aspect-ratio:1;object-fit:cover;background:var(--row)}
+
+/* weather strip */
+.wx{grid-column:1/-1}
+.wx .head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:6px}
+.wx .head .mid{color:var(--warm)}
+.strip{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;text-align:center}
+.strip>div{padding:6px 0;min-width:0}
+.strip .h{font-size:16px}
+.strip .tp{font-size:16px;color:var(--warm)}
+.strip svg{width:44px;height:44px;margin:4px auto;display:block}
+.strip .w{font-size:13px;color:var(--dim)}
+.days{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;text-align:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--row)}
+.days svg{width:30px;height:30px;display:block;margin:2px auto}
+.days .n{font-size:13px;color:var(--dim)}
+.days .r{font-size:13px}
+.days .r b{color:var(--warm);font-weight:400}
+@media (max-width:420px){.strip svg{width:34px;height:34px}.clock .t{font-size:52px}.thermo .room{font-size:48px}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <g id="i-sun"><circle cx="12" cy="12" r="4.2" fill="currentColor" stroke="none"/><path d="M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></g>
+    <g id="i-moon"><path d="M15.5 3.5a8.5 8.5 0 1 0 5 13.6A7 7 0 0 1 15.5 3.5z" fill="currentColor" stroke="none"/></g>
+    <g id="i-cloud"><path d="M7 19h10.5a4.2 4.2 0 0 0 .4-8.4A6 6 0 0 0 6.4 12 3.6 3.6 0 0 0 7 19z" fill="currentColor" stroke="none"/></g>
+    <g id="i-cloud-s"><path d="M7 15.5h10.5a3.8 3.8 0 0 0 .4-7.6A5.5 5.5 0 0 0 7.2 9.1 3.2 3.2 0 0 0 7 15.5z" fill="currentColor" stroke="none"/></g>
+    <g id="i-flame"><path d="M12 2.5c.5 3.2 4.5 5 4.5 10a4.5 4.5 0 0 1-9 0c0-2.4 1.3-3.6 2.2-5 .4 1.4 1 2.2 1.8 2.5C11.2 7.5 11.5 5 12 2.5z" fill="currentColor" stroke="none"/></g>
+    <g id="i-tap"><path d="M4 9h9a3 3 0 0 1 3 3v2M4 6v6M16 18c0 1.1-.9 2-2 2s-2-.9-2-2c0-1.2 2-3.5 2-3.5s2 2.3 2 3.5z"/></g>
+    <g id="i-drop"><path d="M12 3s6 6.6 6 11a6 6 0 0 1-12 0c0-4.4 6-11 6-11z" fill="currentColor" stroke="none"/></g>
+    <g id="i-theme"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></g>
+    <g id="i-logout"><path d="M10 4H5v16h5M15 8l4 4-4 4M19 12H9"/></g>
+  </defs>
+</svg>
+
+<div class="top">
+  <h1>FreeToon</h1>
+  <span class="status"><span class="dot" id="dot"></span><span id="conn">…</span></span>
+  <span class="sp"></span>
+  <button class="iconbtn" id="btn-theme" title="Licht / donker"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-theme"/></svg></button>
+  <button class="iconbtn" id="btn-logout" title="Uitloggen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-logout"/></svg></button>
+</div>
+<div class="banner" id="banner"></div>
+
+<main class="grid" id="grid">
+  <section class="card clock" id="t-clock" data-lt="14">
+    <div class="t" id="clock">--:--</div>
+    <div class="d" id="date"></div>
+  </section>
+
+  <section class="card thermo" id="thermo" data-lt="1">
+    <div class="sub" data-t="room">Binnen</div>
+    <div class="room" id="room">--</div>
+    <div class="meta" id="tmeta"></div>
+    <div class="presets" id="presets">
+      <button data-p="0" data-t="p0">Comfort</button>
+      <button data-p="1" data-t="p1">Thuis</button>
+      <button data-p="2" data-t="p2">Slapen</button>
+      <button data-p="3" data-t="p3">Weg</button>
+    </div>
+    <div class="setp">
+      <button id="sp-dn" aria-label="lager">&minus;</button>
+      <div><div class="sub" data-t="setp">Ingesteld</div><div class="val" id="setp">--</div></div>
+      <button id="sp-up" aria-label="hoger">+</button>
+    </div>
+    <div class="modes">
+      <button id="m-prog" data-t="mprog">Programma</button>
+      <button id="m-man" data-t="mman">Handmatig</button>
+    </div>
+  </section>
+
+  <section class="card bar hidden" id="t-energy" data-lt="6" style="--bc:#aa77ff">
+    <h2 data-t="energy">Energie</h2>
+    <div class="big" id="e-w">--</div>
+    <dl class="kv" id="e-kv"></dl>
+  </section>
+
+  <section class="card bar hidden" id="t-waste" data-lt="10" style="--bc:#88dd66">
+    <h2 data-t="waste">Afval</h2>
+    <ul class="list" id="w-list"></ul>
+  </section>
+
+  <section class="card bar hidden" id="t-cal" data-lt="5" style="--bc:#4477cc">
+    <h2 data-t="cal">Agenda</h2>
+    <ul class="list" id="c-list"></ul>
+  </section>
+
+  <section class="card bar hidden" id="t-vent" data-lt="8" style="--bc:#55bbdd">
+    <h2><span data-t="vent">Ventilatie</span><span class="v" id="v-info"></span></h2>
+    <div class="mid" id="v-pct">--</div>
+    <div class="sub" id="v-sub"></div>
+    <div class="btns">
+      <button data-v="low" data-t="vlow">Laag</button>
+      <button data-v="high" data-t="vhigh">Hoog</button>
+      <button data-v="auto" data-t="vauto">Auto</button>
+      <button data-v="timer1" data-t="vtimer">Timer</button>
+    </div>
+  </section>
+
+  <section class="card bar hidden" id="t-water" data-lt="7" style="--bc:#44aaff">
+    <h2 data-t="water">Water</h2>
+    <div class="big" id="wa-now">--</div>
+    <dl class="kv" id="wa-kv"></dl>
+  </section>
+
+  <section class="card bar hidden" id="t-fam" data-lt="9" style="--bc:#ff8866">
+    <h2 data-t="fam">Familie</h2>
+    <dl class="kv" id="f-kv"></dl>
+  </section>
+
+  <section class="card bar hidden" id="t-curtain" style="--bc:#ddaa55">
+    <h2><span data-t="curtain">Gordijn</span><span class="v" id="cu-st"></span></h2>
+    <div class="btns">
+      <button data-c="open" data-t="copen">Open</button>
+      <button data-c="stop" data-t="cstop">Stop</button>
+      <button data-c="close" data-t="cclose">Dicht</button>
+    </div>
+  </section>
+
+  <section class="card bar hidden" id="t-inbox" style="--bc:#ffaa44">
+    <h2><span data-t="inbox">Berichten</span><span class="v" id="i-n"></span></h2>
+    <ul class="list" id="i-list"></ul>
+  </section>
+
+  <section class="card bar radar" id="t-radar" data-lt="15" style="--bc:#5a9bd3">
+    <h2 data-t="radar">Buienradar</h2>
+    <img id="radar" alt="">
+    <div class="sub hidden" id="radar-none"></div>
+  </section>
+
+  <section class="card wx" id="t-wx" data-lt="2">
+    <div class="head"><span class="mid" id="wx-now">--</span><span class="sub" id="wx-desc"></span></div>
+    <div class="strip" id="wx-strip"></div>
+    <div class="days" id="wx-days"></div>
+  </section>
+
+  <section class="card bar hidden" id="t-news" data-lt="3" style="--bc:#99aabb">
+    <div class="ticker" id="n-tick"></div>
+    <ul class="list" id="n-list"></ul>
+  </section>
+
+  <section class="card bar hidden" id="t-lights" data-lt="11" style="--bc:#ffcc44">
+    <h2 data-t="lights">Lampen</h2>
+    <ul class="list" id="l-list"></ul>
+  </section>
+</main>
+
+<script>
+(function () {
+"use strict";
+var S = {};                 /* latest /api/state frame */
+var lang = 0;               /* 0 = NL, 1 = EN (Toon setting) */
+var $ = function (id) { return document.getElementById(id); };
+
+var T = {
+  room:["Binnen","Indoor"], setp:["Ingesteld","Set to"],
+  p0:["Comfort","Comfort"], p1:["Thuis","Home"], p2:["Slapen","Sleep"], p3:["Weg","Away"],
+  mprog:["Programma","Schedule"], mman:["Handmatig","Manual"],
+  energy:["Energie","Energy"], waste:["Afval","Waste"], cal:["Agenda","Calendar"],
+  vent:["Ventilatie","Ventilation"], vlow:["Laag","Low"], vhigh:["Hoog","High"],
+  vauto:["Auto","Auto"], vtimer:["Timer","Timer"], water:["Water","Water"],
+  fam:["Familie","Family"], curtain:["Gordijn","Curtain"], copen:["Open","Open"],
+  cstop:["Stop","Stop"], cclose:["Dicht","Close"], inbox:["Berichten","Messages"],
+  radar:["Buienradar","Rain radar"], lights:["Lampen","Lights"], nodata:["geen gegevens","no data"],
+  on:["aan","on"], off:["uit","off"],
+  live:["verbonden","connected"], offline:["geen verbinding","disconnected"],
+  noToon:["De Toon meldt geen verbinding met de thermostaat.","The Toon reports no connection to the thermostat."],
+  lost:["Verbinding met de Toon verbroken — opnieuw verbinden…","Lost the connection to the Toon — reconnecting…"],
+  fail:["Opdracht niet gelukt","Command failed"],
+  burner:["brander aan","burner on"], dhw:["warm water","hot water"], hum:["vocht","humidity"],
+  prog1:["volgt programma","following schedule"], prog0:["handmatig","manual"],
+  prog2:["tijdelijk","temporary"], prog8:["vast","held"],
+  today:["vandaag","today"], tomorrow:["morgen","tomorrow"], inDays:["over %d dagen","in %d days"],
+  power:["Nu","Now"], tariff:["Tarief","Tariff"], imp:["Afname","Import"], exp:["Teruglevering","Export"],
+  gas:["Gas (dit uur)","Gas (this hour)"], flow:["Stroomt","Flowing"], session:["Deze tapbeurt","This draw"],
+  total:["Meterstand","Meter"], notap:["Geen water","No flow"],
+  nocal:["Geen afspraken","No events"], nowaste:["Niets gepland","Nothing planned"],
+  unknown:["onbekend","unknown"], theme:["Licht / donker","Light / dark"], logout:["Uitloggen","Sign out"]
+};
+function t(k) { var e = T[k]; return e ? e[lang] : k; }
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+  });
+}
+function num(v, d) { return (typeof v === "number" && isFinite(v)) ? v.toFixed(d) : "--"; }
+function dec(v, d) { return num(v, d).replace(".", lang ? "." : ","); }
+
+/* ---------- home-screen layout ----------
+   The Toon sends its custom layout (visible tiles: type t, page p, grid cell
+   c/r, span w/h; slot tiles also the bound integration id). Without a custom
+   layout it uses its built-in arrangement: DEFAULT_LAYOUT (layout.c DEFAULTS,
+   page 0). Tile type numbers = layout_tile_type_t; each card carries data-lt.
+   A layout tile is shown even without data (like on the Toon); cards that are
+   not in the layout (radar unless placed, curtain, inbox) follow the data and
+   go below the layout. */
+var DEFAULT_LAYOUT = [
+  {t:14,p:0,c:0,r:0,w:4,h:2}, {t:1,p:0,c:0,r:2,w:4,h:3}, {t:5,p:0,c:4,r:0,w:3,h:5},
+  {t:10,p:0,c:7,r:0,w:2,h:3}, {t:8,p:0,c:7,r:3,w:2,h:3}, {t:6,p:0,c:9,r:0,w:3,h:2},
+  {t:9,p:0,c:9,r:2,w:3,h:2}, {t:7,p:0,c:9,r:4,w:3,h:2}, {t:3,p:0,c:0,r:5,w:7,h:1},
+  {t:2,p:0,c:0,r:6,w:12,h:2}
+];
+var inLayout = null;        /* card id -> layout tile; null = no layout from the Toon */
+var EXTRA = {};             /* cards placed below the layout */
+var layoutKey = "";
+function show(id, hasData) {
+  var el = $(id);
+  var on = (inLayout && el.hasAttribute("data-lt") && !EXTRA[id]) ? !!inLayout[id] : hasData;
+  el.classList.toggle("hidden", !on);
+}
+function makeSlot(id, i) {
+  var el = document.createElement("section");
+  el.className = "card bar slotcard";
+  el.id = "slot-" + i;
+  el.setAttribute("data-slot", id);
+  el.innerHTML = '<h2></h2><div class="big"></div><div class="sub"></div>';
+  $("grid").appendChild(el);
+  return el;
+}
+function applyLayout() {
+  if (typeof S.layout_custom !== "number") return;     /* older Toon: data-driven */
+  var L = S.layout_custom ? (S.layout || []) : DEFAULT_LAYOUT;
+  var key = JSON.stringify(L);
+  if (key === layoutKey) return;
+  layoutKey = key;
+  var grid = $("grid");
+  grid.classList.add("lay");
+  inLayout = {}; EXTRA = {};
+  Array.prototype.forEach.call(grid.querySelectorAll(".slotcard"), function (e) { grid.removeChild(e); });
+  Array.prototype.forEach.call(grid.children, function (el) {
+    el.style.gridColumn = ""; el.style.gridRow = ""; el.style.order = "";
+  });
+  var next = 1, si = 0;
+  L.forEach(function (tl) {
+    var el;
+    if (tl.t === 12) { if (!tl.id) return; el = makeSlot(tl.id, si++); }
+    else el = grid.querySelector('[data-lt="' + (tl.t === 4 ? 3 : tl.t) + '"]');
+    if (!el || inLayout[el.id]) return;
+    inLayout[el.id] = tl;
+    var row = (tl.p || 0) * 8 + tl.r + 1;
+    el.style.gridColumn = (tl.c + 1) + " / span " + tl.w;
+    el.style.gridRow = row + " / span " + tl.h;
+    /* order = reading order for narrow screens (wide ones use the cell); there
+       the clock and thermostat come first, like the Toon's left column. */
+    el.style.order = String(tl.t === 14 && !tl.p ? -2 : tl.t === 1 && !tl.p ? -1 : row * 100 + tl.c);
+    next = Math.max(next, row + tl.h);
+  });
+  ["t-radar", "t-curtain", "t-inbox"].filter(function (id) { return !inLayout[id]; })
+    .forEach(function (id, i) {
+      var el = $(id);
+      EXTRA[id] = true;
+      el.style.gridColumn = (1 + (i % 3) * 4) + " / span 4";
+      el.style.gridRow = (next + Math.floor(i / 3) * 3) + " / span 3";
+      el.style.order = String(100000 + i);
+    });
+}
+
+/* ---------- theme: follows the Toon unless the viewer picked one ---------- */
+var themePick = null;
+try { themePick = localStorage.getItem("ft-theme"); } catch (e) {}
+function applyTheme() {
+  var light = themePick ? themePick === "light" : !!S.ui_light;
+  document.documentElement.setAttribute("data-theme", light ? "light" : "dark");
+  var m = document.querySelector("meta[name=theme-color]");
+  if (m) m.setAttribute("content", light ? "#e4eaf2" : "#0f1a2a");
+}
+$("btn-theme").onclick = function () {
+  var light = document.documentElement.getAttribute("data-theme") === "light";
+  themePick = light ? "dark" : "light";
+  try { localStorage.setItem("ft-theme", themePick); } catch (e) {}
+  applyTheme();
+};
+$("btn-logout").onclick = function () { location.href = "/logout"; };
+
+/* ---------- weather icons: Buienradar letters, doubled = night ---------- */
+var WX = {
+  a:"sun", b:"part", j:"part", o:"part", r:"part", c:"cloud", p:"cloud",
+  d:"fog", n:"fog", f:"rainl", k:"rainl", m:"rainl", h:"rainh", l:"rainh", q:"rainh",
+  g:"thunder", s:"thunder", i:"snow", t:"snow", u:"snow", v:"snow", w:"snow"
+};
+var WXC = { sun:"#ffd24a", part:"#f2c66a", cloud:"#c8d4e0", fog:"#9aa6b3",
+            rainl:"#6aa8ff", rainh:"#3a78d6", thunder:"#ffb938", snow:"#e8f0ff" };
+function wxIcon(code) {
+  code = code || "";
+  var kind = WX[code.charAt(0)] || "cloud";
+  var night = code.length > 1 && code.charAt(0) === code.charAt(1);
+  var light = document.documentElement.getAttribute("data-theme") === "light";
+  var col = WXC[kind];
+  if (light && (kind === "cloud" || kind === "snow" || kind === "fog")) col = "#7a8aa0";
+  if (light && kind === "sun") col = "#e08a00";
+  var cloudCol = light ? "#9aaabd" : "#c8d4e0";
+  var g = "";
+  var u = function (id, c, tr) {
+    return '<g transform="' + (tr || "") + '" style="color:' + c + '"><use href="#i-' + id + '"/></g>';
+  };
+  var drops = function (n, c) {
+    var s = "";
+    for (var i = 0; i < n; i++) {
+      var x = 8 + i * (8 / Math.max(1, n - 1));
+      s += '<path d="M' + x + ' 18.5l-1.3 3" stroke="' + c + '" stroke-width="1.8" stroke-linecap="round"/>';
+    }
+    return s;
+  };
+  if (kind === "sun") g = night ? u("moon", light ? "#5a6a80" : "#e8edf2") : u("sun", col);
+  else if (kind === "part") g = (night ? u("moon", light ? "#5a6a80" : "#e8edf2", "translate(-1.5,-1.5) scale(.7)")
+                                       : u("sun", WXC.sun, "translate(-1.5,-1.5) scale(.7)")) +
+                                 u("cloud", cloudCol, "translate(3,2) scale(.85)");
+  else if (kind === "cloud") g = u("cloud", col);
+  else if (kind === "fog") g = '<path d="M4 9h16M6 13h12M4 17h16" stroke="' + col + '" stroke-width="2" stroke-linecap="round"/>';
+  else if (kind === "rainl") g = u("cloud-s", cloudCol) + drops(2, col);
+  else if (kind === "rainh") g = u("cloud-s", cloudCol) + drops(4, col);
+  else if (kind === "thunder") g = u("cloud-s", cloudCol) + '<path d="M12.5 15l-2.5 4h3l-2 4" stroke="' + col + '" stroke-width="1.8" fill="none" stroke-linejoin="round"/>';
+  else if (kind === "snow") g = u("cloud-s", cloudCol) + '<g fill="' + col + '"><circle cx="8" cy="19.5" r="1.2"/><circle cx="12" cy="21" r="1.2"/><circle cx="16" cy="19.5" r="1.2"/></g>';
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">' + g + "</svg>";
+}
+
+/* ---------- clock ---------- */
+var DOW = [["zo","ma","di","wo","do","vr","za"],["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]];
+var MON = [["jan","feb","mrt","apr","mei","jun","jul","aug","sep","okt","nov","dec"],
+           ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]];
+function pad(n) { return (n < 10 ? "0" : "") + n; }
+function tickClock() {
+  var d = new Date();
+  $("clock").textContent = d.getHours() + ":" + pad(d.getMinutes());
+  $("date").textContent = DOW[lang][d.getDay()] + " " + d.getDate() + " " + MON[lang][d.getMonth()];
+}
+setInterval(tickClock, 5000);
+tickClock();
+
+/* "2026-11-14" -> "vandaag" / "morgen" / "za 14 nov" */
+function dayLabel(iso, daysAway) {
+  if (daysAway === 0) return t("today");
+  if (daysAway === 1) return t("tomorrow");
+  var p = String(iso || "").split("-");
+  if (p.length < 3) return esc(iso);
+  var d = new Date(+p[0], +p[1] - 1, +p[2]);
+  return DOW[lang][d.getDay()] + " " + d.getDate() + " " + MON[lang][d.getMonth()];
+}
+function daysUntil(iso) {
+  var p = String(iso || "").split("-");
+  if (p.length < 3) return null;
+  var a = new Date(+p[0], +p[1] - 1, +p[2]), n = new Date();
+  var b = new Date(n.getFullYear(), n.getMonth(), n.getDate());
+  return Math.round((a - b) / 86400000);
+}
+
+/* ---------- actions ---------- */
+function post(path, body) {
+  return fetch(path, {
+    method: "POST", credentials: "same-origin",
+    headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)
+  }).then(function (r) {
+    if (r.redirected && /\/(login|set-password)/.test(r.url)) { location.href = r.url; return; }
+    if (!r.ok) throw new Error(r.status);
+  }).catch(function () { flash(t("fail")); });
+}
+var flashTimer = null;
+function flash(msg) {
+  var b = $("banner");
+  b.textContent = msg; b.classList.add("show");
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(function () { if (!lost) b.classList.remove("show"); }, 4000);
+}
+
+/* Setpoint: the buttons move a local value; it is sent 700 ms after the last
+   tap, and incoming frames don't overwrite it until the Toon has caught up. */
+var spPending = null, spTimer = null, spSentAt = 0;
+function nudge(d) {
+  var base = spPending != null ? spPending : (typeof S.setpoint === "number" ? S.setpoint : 20);
+  spPending = Math.min(30, Math.max(6, Math.round((base + d) * 2) / 2));
+  renderSetpoint();
+  clearTimeout(spTimer);
+  spTimer = setTimeout(function () {
+    spSentAt = Date.now();
+    post("/api/setpoint", {value: spPending});
+  }, 700);
+}
+$("sp-up").onclick = function () { nudge(0.5); };
+$("sp-dn").onclick = function () { nudge(-0.5); };
+Array.prototype.forEach.call(document.querySelectorAll("#presets button"), function (b) {
+  b.onclick = function () { post("/api/program", {preset: +b.getAttribute("data-p")}); };
+});
+$("m-prog").onclick = function () { post("/api/program", {resume: 1}); };
+$("m-man").onclick = function () { post("/api/program", {state: -1}); };
+Array.prototype.forEach.call(document.querySelectorAll("[data-v]"), function (b) {
+  b.onclick = function () { post("/api/vent", {cmd: b.getAttribute("data-v")}); };
+});
+Array.prototype.forEach.call(document.querySelectorAll("[data-c]"), function (b) {
+  b.onclick = function () { post("/api/curtain", {action: b.getAttribute("data-c")}); };
+});
+
+/* ---------- render ---------- */
+function renderSetpoint() {
+  var el = $("setp");
+  if (spPending != null) {
+    var caughtUp = typeof S.setpoint === "number" && Math.abs(S.setpoint - spPending) < 0.05;
+    if (caughtUp || (spSentAt && Date.now() - spSentAt > 8000)) { spPending = null; spSentAt = 0; }
+  }
+  var v = spPending != null ? spPending : S.setpoint;
+  el.textContent = dec(v, 1) + "°";
+  el.classList.toggle("pending", spPending != null);
+}
+
+function renderThermo() {
+  $("room").textContent = dec(S.indoor_temp, 1) + "°C";
+  renderSetpoint();
+  var ps = S.program_state, as = S.active_state;
+  Array.prototype.forEach.call(document.querySelectorAll("#presets button"), function (b) {
+    b.classList.toggle("on", +b.getAttribute("data-p") === as);
+  });
+  var manual = ps === 0 || as === -1;
+  $("m-man").classList.toggle("on", manual);
+  $("m-prog").classList.toggle("on", !manual && ps >= 1);
+  var m = [];
+  if (ps === 1 || ps === 0 || ps === 2 || ps === 8) m.push(esc(t("prog" + ps)));
+  if (S.burner_on) m.push('<span style="color:#ff8844"><svg viewBox="0 0 24 24"><use href="#i-flame"/></svg> ' + esc(t("burner")) + "</span>");
+  if (S.dhw_on) m.push('<span style="color:var(--accent)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><use href="#i-tap"/></svg> ' + esc(t("dhw")) + "</span>");
+  if (S.humidity > 0) m.push(esc(t("hum")) + " " + num(S.humidity, 0) + "%");
+  $("tmeta").innerHTML = m.join(" · ");
+}
+
+function kv(rows) {
+  return rows.filter(function (r) { return r; }).map(function (r) {
+    return "<dt>" + esc(r[0]) + "</dt><dd>" + esc(r[1]) + "</dd>";
+  }).join("");
+}
+
+function renderTiles() {
+  /* Energy */
+  var p1 = !!S.p1_connected, meter = !!S.meter_connected;
+  show("t-energy", p1 || meter);
+  if (p1 || meter) {
+    var w = p1 ? S.p1_power_w : S.meter_power_w;
+    $("e-w").textContent = (typeof w === "number" ? Math.round(w) : "--") + " W";
+    $("e-kv").innerHTML = kv([
+      p1 && S.p1_tariff ? [t("tariff"), S.p1_tariff === 1 ? (lang ? "low" : "laag") : (lang ? "normal" : "normaal")] : null,
+      p1 && S.p1_kwh_import > 0 ? [t("imp"), dec(S.p1_kwh_import, 1) + " kWh"] : null,
+      p1 && S.p1_kwh_export > 0 ? [t("exp"), dec(S.p1_kwh_export, 1) + " kWh"] : null,
+      S.gas_hour_m3 > 0 ? [t("gas"), dec(S.gas_hour_m3, 3) + " m³"] : null
+    ]);
+  }
+
+  /* Waste */
+  var wt = S.wt_next || [];
+  show("t-waste", !!S.waste_connected || wt.length > 0);
+  $("w-list").innerHTML = wt.length ? wt.map(function (x) {
+    return '<li><span class="when">' + esc(dayLabel(x.date, x.days)) + "</span><span>" + esc(x.labels) + "</span></li>";
+  }).join("") : '<li class="muted">' + esc(t("nowaste")) + "</li>";
+
+  /* Calendar */
+  var cal = S.cal || [];
+  show("t-cal", !!S.cal_connected || cal.length > 0);
+  $("c-list").innerHTML = cal.length ? cal.slice(0, 5).map(function (e) {
+    var when = dayLabel(e.date, daysUntil(e.date)) + (e.time ? " " + e.time : "");
+    return '<li><span class="when">' + esc(when) + "</span><span>" + esc(e.sum) + "</span></li>";
+  }).join("") : '<li class="muted">' + esc(t("nocal")) + "</li>";
+
+  /* Ventilation */
+  show("t-vent", !!S.vent_connected);
+  if (S.vent_connected) {
+    $("v-pct").textContent = (typeof S.vent_speed_pct === "number" ? S.vent_speed_pct : "--") + "%";
+    $("v-info").textContent = S.vent_fan_info || "";
+    var vs = [];
+    if (S.vent_fan_rpm > 0) vs.push(S.vent_fan_rpm + " rpm");
+    if (S.vent_remaining_min > 0) vs.push(S.vent_remaining_min + " min");
+    if (S.vent_filter_dirty) vs.push(lang ? "filter dirty" : "filter vervuild");
+    $("v-sub").textContent = vs.join(" · ");
+  }
+
+  /* Water */
+  show("t-water", !!S.water_connected);
+  if (S.water_connected) {
+    var flowing = S.water_lpm > 0.05;
+    $("wa-now").textContent = flowing ? dec(S.water_lpm, 1) + " L/min" : t("notap");
+    $("wa-kv").innerHTML = kv([
+      S.water_session_active || S.water_session_l > 0 ? [t("session"), dec(S.water_session_l, 1) + " L"] : null,
+      S.water_total_m3 > 0 ? [t("total"), dec(S.water_total_m3, 3) + " m³"] : null
+    ]);
+  }
+
+  /* Family */
+  var fa = S.fam_a_name || (S.fam_a_ent ? "A" : ""), fb = S.fam_b_name || (S.fam_b_ent ? "B" : "");
+  show("t-fam", !!(fa || fb));
+  $("f-kv").innerHTML = kv([
+    fa ? [fa, S.fam_loc_a || t("unknown")] : null,
+    fb ? [fb, S.fam_loc_b || t("unknown")] : null
+  ]) || ('<dt class="muted">' + esc(t("nodata")) + "</dt><dd></dd>");
+
+  /* Curtain */
+  var cOn = !!S.ha_connected && !!S.curtain_state;
+  show("t-curtain", cOn);
+  if (cOn) $("cu-st").textContent = S.curtain_state + (S.curtain_pos >= 0 ? " · " + S.curtain_pos + "%" : "");
+
+  /* Inbox */
+  var ib = (S.inbox || []).filter(function (m) { return !m.read; });
+  show("t-inbox", ib.length > 0);
+  $("i-n").textContent = ib.length || "";
+  $("i-list").innerHTML = ib.slice(0, 4).map(function (m) {
+    return "<li><span>" + esc(m.text) + "</span></li>";
+  }).join("");
+}
+
+function renderWeather() {
+  var on = !!S.wx_connected;
+  show("t-wx", on);
+  show("t-radar", on);
+  /* A 2-row forecast tile on the Toon is the hourly strip only. */
+  var tl = inLayout && inLayout["t-wx"];
+  $("wx-days").classList.toggle("hidden", !!(tl && tl.h < 3));
+  if (!on) return;
+  $("wx-now").textContent = dec(S.wx_current_temp, 1) + "°C";
+  $("wx-desc").textContent = (S.wx_current_desc || "") +
+    (typeof S.wx_feel_temp === "number" ? " · " + (lang ? "feels like " : "voelt als ") + dec(S.wx_feel_temp, 1) + "°" : "");
+  var hrs = (S.wx_hours || []).slice(1, 6);      /* slot 0 is "now" (shown above) */
+  $("wx-strip").innerHTML = hrs.map(function (h) {
+    return '<div><div class="h">' + esc(h.label) + '</div><div class="tp">' + Math.round(h.temp) + "°</div>" +
+           wxIcon(h.icon) + '<div class="w">' + esc(h.dir) + " " + h.bft + "</div></div>";
+  }).join("");
+  $("wx-days").innerHTML = (S.wx_days || []).slice(0, 5).map(function (d) {
+    return '<div><div class="n">' + esc(d.day) + "</div>" + wxIcon(d.icon) +
+           '<div class="r">' + Math.round(d.min) + "° <b>" + Math.round(d.max) + "°</b></div>" +
+           (d.rain > 0 ? '<div class="n">' + d.rain + "%</div>" : "") + "</div>";
+  }).join("");
+}
+
+/* News: a ticker tile shows one headline at a time, a summary tile a list. */
+var newsIdx = 0;
+function renderNews() {
+  var items = S.news || [];
+  show("t-news", items.length > 0);
+  var tl = inLayout && inLayout["t-news"];
+  var summary = !tl || tl.t === 4;
+  var link = function (n) {
+    var u = String(n.u || "");
+    var title = esc(n.t);
+    return /^https?:\/\//.test(u) ? '<a href="' + esc(u) + '" target="_blank" rel="noopener">' + title + "</a>" : title;
+  };
+  $("n-tick").classList.toggle("hidden", summary);
+  $("n-list").classList.toggle("hidden", !summary);
+  if (!items.length) {
+    $("n-tick").textContent = t("nodata");
+    $("n-list").innerHTML = '<li class="muted">' + esc(t("nodata")) + "</li>";
+    return;
+  }
+  if (summary) $("n-list").innerHTML = items.slice(0, 6).map(function (n) { return "<li>" + link(n) + "</li>"; }).join("");
+  else $("n-tick").innerHTML = link(items[newsIdx % items.length]);
+}
+setInterval(function () { newsIdx++; if (S.news && S.news.length) renderNews(); }, 8000);
+
+/* Lights: Home Assistant lights and Domoticz switches, state only. */
+function renderLights() {
+  var rows = [];
+  (S.ha_lights || []).forEach(function (l) { if (l.av !== 0) rows.push([l.name || l.id, l.on]); });
+  (S.dz || []).forEach(function (d) { rows.push([d.name, d.on]); });
+  show("t-lights", rows.length > 0);
+  $("l-list").innerHTML = rows.length ? rows.slice(0, 8).map(function (r) {
+    return "<li><span>" + esc(r[0]) + '</span><span class="onoff' + (r[1] ? " on" : "") + '">' +
+           esc(r[1] ? t("on") : t("off")) + "</span></li>";
+  }).join("") : '<li class="muted">' + esc(t("nodata")) + "</li>";
+}
+
+/* Slot tiles: the bound marketplace integration's title and latest values. */
+function renderSlots() {
+  var byId = {};
+  (S.integrations || []).forEach(function (m) { byId[m.id] = m; });
+  Array.prototype.forEach.call(document.querySelectorAll(".slotcard"), function (el) {
+    var m = byId[el.getAttribute("data-slot")];
+    var h = el.querySelector("h2"), v = el.querySelector(".big"), s = el.querySelector(".sub");
+    if (!m) { h.textContent = el.getAttribute("data-slot"); v.textContent = "--"; s.textContent = ""; return; }
+    if (/^#?[0-9a-fA-F]{6}$/.test(m.tcolor || "")) el.style.setProperty("--bc", m.tcolor.charAt(0) === "#" ? m.tcolor : "#" + m.tcolor);
+    h.textContent = m.ttitle || m.name || m.id;
+    v.textContent = m.lval ? m.lval + (m.vunit ? " " + m.vunit : "") : "--";
+    s.textContent = (m.lalrt ? m.lalrt + " · " : "") + (m.lsub ? m.lsub + (m.sunit ? " " + m.sunit : "") : "");
+  });
+}
+
+function render() {
+  if (typeof S.ui_language === "number" && S.ui_language !== lang) {
+    lang = S.ui_language ? 1 : 0;
+    document.documentElement.lang = lang ? "en" : "nl";
+    Array.prototype.forEach.call(document.querySelectorAll("[data-t]"), function (el) {
+      el.textContent = t(el.getAttribute("data-t"));
+    });
+    $("btn-theme").title = t("theme");
+    $("btn-logout").title = t("logout");
+    tickClock();
+  }
+  applyTheme();
+  applyLayout();
+  show("t-clock", true);
+  show("thermo", true);
+  renderThermo();
+  renderTiles();
+  renderWeather();
+  renderNews();
+  renderLights();
+  renderSlots();
+  var ok = !!S.connected;
+  $("dot").className = "dot " + (ok ? "ok" : "bad");
+  $("conn").textContent = ok ? t("live") : t("offline");
+  if (!lost) {
+    var b = $("banner");
+    if (!ok) { b.textContent = t("noToon"); b.classList.add("show"); }
+    else if (b.textContent === t("noToon")) b.classList.remove("show");
+  }
+}
+
+/* Radar: the Toon refreshes its copy every 5 minutes. */
+function loadRadar() { $("radar").src = "/api/radar.gif?t=" + Date.now(); }
+$("radar").onerror = function () {
+  this.classList.add("hidden");
+  $("radar-none").textContent = t("nodata");
+  $("radar-none").classList.remove("hidden");
+};
+$("radar").onload = function () {
+  this.classList.remove("hidden");
+  $("radar-none").classList.add("hidden");
+};
+loadRadar();
+setInterval(loadRadar, 5 * 60 * 1000);
+
+/* ---------- live data: SSE, with a session check when it drops ---------- */
+var lost = false, es = null;
+function setLost(v) {
+  lost = v;
+  var b = $("banner");
+  if (v) { b.textContent = t("lost"); b.classList.add("show"); $("dot").className = "dot bad"; $("conn").textContent = t("offline"); }
+  else if (b.textContent === t("lost")) b.classList.remove("show");
+}
+function connect() {
+  if (es) es.close();
+  es = new EventSource("/api/state/stream");
+  es.onmessage = function (ev) {
+    try { S = JSON.parse(ev.data); } catch (e) { return; }
+    if (lost) setLost(false);
+    render();
+  };
+  es.onerror = function () {
+    /* The stream also fails when the session expired (the server answers with
+       a redirect to /login): check, and go there instead of retrying forever. */
+    fetch("/api/state", {credentials: "same-origin"}).then(function (r) {
+      if (r.redirected && /\/(login|set-password)/.test(r.url)) { location.href = r.url; return; }
+      setLost(true);
+    }).catch(function () { setLost(true); });
+  };
+}
+/* First paint from a plain fetch (the stream follows); ?nolive skips the
+   stream — a static snapshot, e.g. for screenshots. */
+fetch("/api/state", {credentials: "same-origin"}).then(function (r) {
+  if (r.redirected && /\/(login|set-password)/.test(r.url)) { location.href = r.url; return null; }
+  return r.ok ? r.json() : null;
+}).then(function (j) { if (j && !S.indoor_temp) { S = j; render(); } }).catch(function () {});
+if (!/[?&]nolive\b/.test(location.search)) connect();
+/* Phones suspend background tabs; reconnect when the page comes back. */
+document.addEventListener("visibilitychange", function () {
+  if (!document.hidden && (!es || es.readyState === 2) && !/[?&]nolive\b/.test(location.search)) connect();
+});
+})();
+</script>
+</body>
+</html>

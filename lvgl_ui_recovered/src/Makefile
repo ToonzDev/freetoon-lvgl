@@ -197,6 +197,19 @@ all: $(BUILDDIR)/$(OUT) $(EXTRA)
 lvgl-patches:
 	@echo "LVGL patches applied: $(notdir $(LVGL_PATCHES))"
 
+# The remote-control web page (remote/index.html, served on :10081) is built
+# into the binary as a byte array, so there is nothing extra to install. `od`
+# instead of a C-string conversion: no escaping of quotes/backslashes needed.
+REMOTE_PAGE_H := $(BUILDDIR)/remote_page.h
+CFLAGS += -I$(BUILDDIR)
+$(REMOTE_PAGE_H): remote/index.html
+	@mkdir -p $(dir $@)
+	@{ echo '/* generated from remote/index.html by the Makefile - do not edit */'; \
+	  echo 'static const char REMOTE_PAGE[] = {'; \
+	  od -An -v -tx1 $< | sed 's/ \([0-9a-f][0-9a-f]\)/0x\1,/g'; \
+	  echo '0x00};'; } > $@.tmp && mv $@.tmp $@
+$(BUILDDIR)/pwa_server.o: $(REMOTE_PAGE_H)
+
 # Recompile the version-bearing objects whenever BUILD_VERSION changes
 # (placed after `all` so it doesn't hijack the default goal).
 $(BUILDDIR)/update_check.o $(BUILDDIR)/screen_home.o $(BUILDDIR)/update_modal.o $(BUILDDIR)/canonical_state.o $(BUILDDIR)/pwa_server.o: $(VERFILE)

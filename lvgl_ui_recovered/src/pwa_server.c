@@ -37,6 +37,7 @@
 #include "domoticz.h"
 #include "news.h"
 #include "tile_slots.h"
+#include "layout.h"
 #include "packages.h"
 #include "screen_zwave.h"
 #include "notify.h"
@@ -92,7 +93,32 @@ static int send_status(int fd, int code, const char * status, const char * body)
     return sock_send_all(fd, body, strlen(body));
 }
 
-/* Static UI disabled per CR5 (use Toon's native web interface) */
+/* The remote-control page (remote/index.html), compiled in by the Makefile.
+ * Builds without the generated header (the WASM bundle) get a stub. */
+#if defined(__has_include)
+#  if __has_include("remote_page.h")
+#    include "remote_page.h"
+#    define HAVE_REMOTE_PAGE 1
+#  endif
+#endif
+#ifndef HAVE_REMOTE_PAGE
+static const char REMOTE_PAGE[] =
+    "<!doctype html><meta charset=utf-8><title>FreeToon</title>"
+    "<p>The remote page is not built into this binary.";
+#endif
+
+static int handle_remote_page(int fd) {
+    size_t len = sizeof(REMOTE_PAGE) - 1;
+    char hdr[256];
+    int n = snprintf(hdr, sizeof hdr,
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n"
+        "Content-Length: %u\r\nCache-Control: no-cache\r\n"
+        "X-Frame-Options: DENY\r\nConnection: close\r\n\r\n", (unsigned)len);
+    if (sock_send_all(fd, hdr, n) < 0) return -1;
+    return sock_send_all(fd, REMOTE_PAGE, len);
+}
+
+/* Other static files: none (the old /mnt/data/pwa web UI was removed). */
 static int serve_static(int fd, const char * path) {
     (void)path;
     return send_status(fd, 404, "Not Found", "Not Found");
@@ -166,6 +192,36 @@ static int render_state_json(char * body, size_t sz) {
     #undef STATE_NUM
     #undef STATE_INT
     #undef STATE_STR
+
+    /* ---- UI language (0 = NL, 1 = EN) and light tiles, for the remote page.
+     * Not in state_fields.def: client_link applies every field there to the
+     * client Toon, which must keep its own language and theme. */
+    if (p < end) p += snprintf(p, end-p, "\"ui_language\":%d,\"ui_light\":%d,",
+        settings.language, settings.home_light_mode);
+
+    /* ---- home-screen layout, so the remote page mirrors it live: the visible
+     * tiles of the custom layout (type, page, grid cell, span; a slot tile also
+     * carries its bound integration id). Without a custom layout the home
+     * screen uses its built-in arrangement, which the page knows itself. */
+    if (p < end) p += snprintf(p, end-p, "\"layout_custom\":%d,\"layout\":[",
+        settings.custom_layout_enabled ? 1 : 0);
+    if (settings.custom_layout_enabled) {
+        int first = 1;
+        for (int i = 0; i < g_layout.count && i < LAYOUT_MAX_TILES; i++) {
+            const layout_tile_t * L = &g_layout.tiles[i];
+            if (!L->visible) continue;
+            char id[INTEG_ID_MAX] = "";
+            if (L->type == LT_SLOT) {
+                const char * b = tile_slots_binding(L->slot);
+                if (b) json_strcpy(id, b, sizeof id);
+            }
+            if (p < end) p += snprintf(p, end-p,
+                "%s{\"t\":%d,\"p\":%d,\"c\":%d,\"r\":%d,\"w\":%d,\"h\":%d,\"id\":\"%s\"}",
+                first ? "" : ",", L->type, L->page, L->col, L->row, L->w, L->h, id);
+            first = 0;
+        }
+    }
+    if (p < end) p += snprintf(p, end-p, "],");
 
     /* ---- weather forecast: hourly array ---- */
     if (p < end) p += snprintf(p, end-p, "\"wx_hours\":[");
@@ -793,6 +849,25 @@ static int handle_schedule_post(int fd, const char * body) {
 
 static int handle_program(int fd, const char * body) {
     float v;
+    /* {"resume":1}: back to the weekly program (the home tile's "Programma"). */
+    if (extract_float(body, "resume", &v) && v != 0.0f) {
+        boxtalk_resume_schedule();
+        return send_status(fd, 200, "OK", "{\"ok\":1}");
+    }
+    /* {"preset":0-3}: a preset button, with the home tile's semantics — while
+     * the program runs it switches until the next program point, in manual
+     * mode it sets the preset's temperature and stays manual. */
+    if (extract_float(body, "preset", &v)) {
+        int s = (int)v;
+        if (s < 0 || s > 3)
+            return send_status(fd, 400, "Bad Request", "{\"err\":\"preset must be 0-3\"}");
+        int ps = toon_state.program_state;
+        int on_program = (ps == 1 || ps == 2 || ps == 3 || ps == 8) ||
+                         (boxtalk_temp_override_origin() >= 0);
+        if (!on_program || ps == 0) boxtalk_set_manual_preset(s);
+        else                        boxtalk_set_program(s);
+        return send_status(fd, 200, "OK", "{\"ok\":1}");
+    }
     if (!extract_float(body, "state", &v)) {
         return send_status(fd, 400, "Bad Request",
             "{\"err\":\"need {\\\"state\\\":0-3 or -1}\"}");
@@ -1520,8 +1595,10 @@ static int handle_animation_post(int fd, const char * body) {
  *      cookie. Subsequent requests carry it; dispatch() verifies before
  *      handing off to the normal route handlers.
  *
- * One session token in memory (the Toon is a single-user device — no
- * point in a hash table). 24 h expiry. /logout clears it.
+ * A few session tokens in memory (one per browser — phone, tablet, PC — so
+ * signing in on one doesn't sign out another; the oldest is dropped when all
+ * slots are used). 30-day expiry: the remote page is meant to stay usable on
+ * a phone. /logout ends only the session of the browser that asks.
  *
  * Login body is application/x-www-form-urlencoded (so the login page
  * works in any browser without JS), not the JSON the rest of the API
@@ -1530,10 +1607,13 @@ static int handle_animation_post(int fd, const char * body) {
 #include <pthread.h>
 
 static pthread_mutex_t g_sess_mu = PTHREAD_MUTEX_INITIALIZER;
-static char  g_sess_token[33]    = "";       /* 32 hex chars + NUL, "" = no session */
-static time_t g_sess_expires     = 0;
+#define SESS_SLOTS 8
+static struct {
+    char   token[33];                        /* 32 hex chars + NUL, "" = free */
+    time_t expires;
+} g_sess[SESS_SLOTS];
 
-#define SESS_TTL_SECONDS (24 * 3600)
+#define SESS_TTL_SECONDS (30 * 24 * 3600)
 #define SESS_COOKIE_NAME "ft_sess"
 
 /* URL-decode a single byte sequence in-place (length adjusts). */
@@ -1625,13 +1705,50 @@ static void mint_session_token(char out[33]) {
 /* True if the request carries a valid, unexpired session cookie. */
 static int request_is_authed(const char * req) {
     char tok[33] = "";
-    if (!extract_cookie(req, SESS_COOKIE_NAME, tok, sizeof tok)) return 0;
-    int ok;
+    if (!extract_cookie(req, SESS_COOKIE_NAME, tok, sizeof tok) || strlen(tok) != 32) return 0;
+    int ok = 0;
+    time_t now = time(NULL);
     pthread_mutex_lock(&g_sess_mu);
-    ok = (g_sess_token[0] && strcmp(tok, g_sess_token) == 0
-          && time(NULL) < g_sess_expires);
+    for (int i = 0; i < SESS_SLOTS && !ok; i++)
+        ok = (g_sess[i].token[0] && strcmp(tok, g_sess[i].token) == 0 && now < g_sess[i].expires);
     pthread_mutex_unlock(&g_sess_mu);
     return ok;
+}
+
+/* New session in a free or expired slot, else the one expiring first.
+ * Copies the token to out. */
+static void session_create(char out[33]) {
+    time_t now = time(NULL);
+    pthread_mutex_lock(&g_sess_mu);
+    int pick = 0;
+    for (int i = 0; i < SESS_SLOTS; i++) {
+        if (!g_sess[i].token[0] || g_sess[i].expires <= now) { pick = i; break; }
+        if (g_sess[i].expires < g_sess[pick].expires) pick = i;
+    }
+    mint_session_token(g_sess[pick].token);
+    g_sess[pick].expires = now + SESS_TTL_SECONDS;
+    memcpy(out, g_sess[pick].token, 33);
+    pthread_mutex_unlock(&g_sess_mu);
+}
+
+/* Ends the session named by the request's cookie (if any). */
+static void session_end(const char * req) {
+    char tok[33] = "";
+    if (!extract_cookie(req, SESS_COOKIE_NAME, tok, sizeof tok) || strlen(tok) != 32) return;
+    pthread_mutex_lock(&g_sess_mu);
+    for (int i = 0; i < SESS_SLOTS; i++)
+        if (g_sess[i].token[0] && strcmp(tok, g_sess[i].token) == 0) {
+            g_sess[i].token[0] = 0;
+            g_sess[i].expires = 0;
+        }
+    pthread_mutex_unlock(&g_sess_mu);
+}
+
+/* All sessions end — the password was changed or reset on the Toon. */
+void pwa_sessions_clear(void) {
+    pthread_mutex_lock(&g_sess_mu);
+    memset(g_sess, 0, sizeof g_sess);
+    pthread_mutex_unlock(&g_sess_mu);
 }
 
 /* Per-path allowlist — these routes never require auth (the login form
@@ -1731,11 +1848,8 @@ static int handle_login_post(int fd, const char * body) {
         return handle_login_get(fd, 1);
     }
     /* Auth OK — mint session, set cookie, redirect home. */
-    pthread_mutex_lock(&g_sess_mu);
-    mint_session_token(g_sess_token);
-    g_sess_expires = time(NULL) + SESS_TTL_SECONDS;
-    char tok[33]; memcpy(tok, g_sess_token, sizeof tok);
-    pthread_mutex_unlock(&g_sess_mu);
+    char tok[33];
+    session_create(tok);
     char cookie[128];
     snprintf(cookie, sizeof cookie,
              "%s=%s; Path=/; Max-Age=%d; HttpOnly; SameSite=Lax",
@@ -1743,11 +1857,8 @@ static int handle_login_post(int fd, const char * body) {
     return send_redirect(fd, "/", cookie);
 }
 
-static int handle_logout(int fd) {
-    pthread_mutex_lock(&g_sess_mu);
-    g_sess_token[0] = 0;
-    g_sess_expires = 0;
-    pthread_mutex_unlock(&g_sess_mu);
+static int handle_logout(int fd, const char * req) {
+    session_end(req);
     char cookie[128];
     snprintf(cookie, sizeof cookie,
              "%s=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax", SESS_COOKIE_NAME);
@@ -2056,7 +2167,7 @@ static int dispatch(int fd, char * req) {
     if (!strcmp(method, "GET")) {
         if (!strcmp(path, "/login"))         return handle_login_get(fd, 0);
         if (!strcmp(path, "/set-password"))  return handle_setpass_get(fd, NULL);
-        if (!strcmp(path, "/logout"))        return handle_logout(fd);
+        if (!strcmp(path, "/logout"))        return handle_logout(fd, req);
     }
     if (!strcmp(method, "POST")) {
         if (!strcmp(path, "/login"))         return handle_login_post(fd, body);
@@ -2075,7 +2186,8 @@ static int dispatch(int fd, char * req) {
         /* ---- Legacy / PWA endpoints ---- */
         if (!strcmp(path, "/api/state"))         return handle_state(fd);
         if (!strcmp(path, "/api/state/stream"))  return handle_state_stream(fd);
-        if (!strcmp(path, "/api/radar.gif"))     return handle_radar_gif(fd);
+        if (!strcmp(path, "/api/radar.gif") || !strncmp(path, "/api/radar.gif?", 15))
+            return handle_radar_gif(fd);          /* ?t=… = cache-buster */
         if (!strncmp(path, "/api/rrd", 8)) {
             const char * q = strchr(path, '?');
             return handle_rrd_proxy(fd, q ? q + 1 : "");
@@ -2089,6 +2201,8 @@ static int dispatch(int fd, char * req) {
         if (!strcmp(path, "/api/schedule"))      return handle_schedule_get(fd);
         if (!strcmp(path, "/api/settings"))      return handle_settings_get(fd);
         if (!strcmp(path, "/api/update/status")) return handle_update_status(fd);
+        if (!strcmp(path, "/") || !strcmp(path, "/index.html") || !strncmp(path, "/?", 2))
+            return handle_remote_page(fd);
         return serve_static(fd, path);
     }
     if (!strcmp(method, "POST")) {

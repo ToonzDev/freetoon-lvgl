@@ -35,6 +35,7 @@
 #include "update_modal.h"
 #include "anim_overlay.h"
 #include "telegram.h"
+#include "pwa_server.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -4872,9 +4873,11 @@ static void on_pwa_apply_click(lv_event_t * e) {
     /* Password may legitimately be empty — that flips the PWA into the
      * /set-password forced-onboarding state, which is the right behaviour
      * after the user clears the field. */
+    int changed = strcmp(settings.pwa_login_pass, p ? p : "") != 0;
     snprintf(settings.pwa_login_pass, sizeof settings.pwa_login_pass,
              "%s", p ? p : "");
     settings_save();
+    if (changed) pwa_sessions_clear();   /* browsers sign in with the new one */
 }
 /* One-tap "I forgot the web password" recovery — clear pwa_login_pass and
  * persist, so the next browser visit hits /set-password and the user can
@@ -4892,6 +4895,7 @@ static void on_pwa_reset_click(lv_event_t * e) {
     settings.pwa_login_pass[0] = 0;
     if (ta_pwa_pass) lv_textarea_set_text(ta_pwa_pass, "");
     settings_save();
+    pwa_sessions_clear();
 #ifdef WASM_BUILD
     /* Defer the navigation a tick so the POST in settings_save() has time
      * to actually flush over the wire before the page reloads and tears
@@ -5574,6 +5578,8 @@ lv_obj_t * screen_settings_create(void) {
               tr("correctie, keteltype", "offset, boiler type"), open_heating_modal); n++;
     make_tile(GX(n), GY(n), &icon_radiator, NULL, tr("Voorkeuren", "Presets"),
               tr("schema-streefwaarden", "scheme setpoints"), open_presets_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_WIFI, tr("Webtoegang", "Web Access"),
+              tr("bediening via browser", "remote via browser"), open_web_modal); n++;
     make_tile(GX(n), GY(n), &icon_wx_cloud, NULL, tr("Weer", "Weather"),
               tr("weer op dimscherm", "weather on dim"), open_weather_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_WIFI, "WiFi",
