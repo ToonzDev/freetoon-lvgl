@@ -414,7 +414,7 @@
   - Marketplace: Sonos Player 1.0.9 (TuneIn favourites start again).
 
 ### 35. Daily Check for Marketplace App Updates
-- **Status**: Implemented (2026-11-12): app_updates.c checks the catalog once a day alongside the FreeToon check (and on "Controleer"). The home banner shows "N app-updates" when there's no FreeToon update (tap = Marketplace; stays hidden until the set of updates changes), the Settings Marketplace tile shows the count, and the Update modal has an opt-in "Apps ook automatisch" at the auto-update hour (UI restart afterwards). Optional catalog field `min_toonui` gates updates/installs for the plugin ABI. Not built: an "update all" button in the Marketplace screen.
+- **Status**: Implemented (2026-11-12): app_updates.c checks the catalog once a day alongside the FreeToon check (and on "Controleer"). The home banner shows "N app-updates" when there's no FreeToon update (tap = Marketplace; stays hidden until the set of updates changes), the Settings Marketplace tile shows the count, and the Update modal has an opt-in "Apps ook automatisch" at the auto-update hour (UI restart afterwards). Optional catalog field `min_toonui` gates updates/installs for the plugin ABI. The Marketplace screen has an "Alles updaten (N)" button (one UI restart at the end).
 - **Description**:
   - FreeToon checks for its own updates (update_check.c: GitHub releases every 6 h, update banner, optional nightly auto-update), but marketplace apps are only compared with the catalog when the Marketplace screen is opened. A user never hears that e.g. Sonos 1.0.9 is out unless they go looking.
 - **Approach**:
@@ -444,7 +444,7 @@
   - kWh meter: `abs(active_power_w)` feeds the Solar tile (`energy_solar_w()`), ahead of the HA solar sensor.
   - Energy Sockets: a "Stekkers (HomeWizard)" section on the Devices screen (the HA lights page, also shown when HA is off) with on/off (PUT `/api/v1/state`) and watts. Every device is polled once per ~10 s, on separate ticks.
   - v2 API: not needed. HomeWizard's docs (2026-11) list v1 for P1, Socket, water meter and kWh meters; v2 is "planned" for the Socket and water meter, and no end date for v1 is given. v2 only matters for v2-only devices (Plug-In Battery HWE-BAT).
-  - Not done: the hw_* fields in the web settings API (pwa_server.c); sockets on the Domoticz/Hue lights screens (those users reach the HA Devices screen only when neither is configured); a client Toon doesn't mirror sockets.
+  - Follow-up (2026-11-12): the hw_* fields are in the web settings API (GET + POST); Hue and Domoticz screens get a "Stekkers" button to the Devices screen; a client Toon mirrors the master's sockets (state "hws") and switches them via POST /api/hw/socket. Entering a P1 IP offers to switch Energiebron to "HomeWizard P1".
 - **Description**:
   - A user reports that the HomeWizard water meter, socket plugs, P1 meter and kWh meters don't work. P1 (HWE-P1) and water meter (HWE-WTR) are supported, but their IP addresses (`p1_elec_host` / `p1_water_host`) can only be set in `/mnt/data/toonui.cfg` over SSH: there is no field on the Toon. Energy Sockets (HWE-SKT) and kWh meters (HWE-KWH1/3, SDM230/630) are not supported at all.
   - Workaround until then: "Lokale API" on per meter in the HomeWizard Energy app + a fixed IP in the router; the two hosts in toonui.cfg; Settings > Integraties: energy source "HomeWizard P1", switch on HomeWizard P1 and Watermeter, restart the UI.
@@ -470,7 +470,7 @@
   - If no meter-register source is available, hide the pop-up or label the values as "counted by Toon" rather than showing them as meter readings.
 
 ### 39. Suppress the TSC "Resource File Update" Inbox Message
-- **Status**: Open (user request, 2026-11-12).
+- **Status**: Fixed (2026-11-12): inbox.c drops notifications whose text mentions "resource file" / "TSC menu" (sent by /usr/bin/tsc for the stock TSC menu).
 - **Description**:
   - The inbox shows "Er is een TSC resource file update beschikbaar. Update via TSC menu aub". The TSC script sends it for the stock QML UI's TSC menu, which FreeToon doesn't have, so the user can't act on it.
 - **Approach**:

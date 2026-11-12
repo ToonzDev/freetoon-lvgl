@@ -10,6 +10,7 @@
 #include "settings.h"
 #include "theme.h"
 #include "hue.h"
+#include "homewizard.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
@@ -89,6 +90,10 @@ static void on_all_off_click(lv_event_t * e) {
 static void on_all_on_click(lv_event_t * e) {
     (void)e;
     hue_all_on_async();
+}
+static void on_sockets_click(lv_event_t * e) {
+    (void)e;
+    ui_push(screen_lights_create());   /* Devices screen: the HomeWizard sockets */
 }
 
 /* ---- rooms & zones ---------------------------------------------------- */
@@ -484,11 +489,16 @@ lv_obj_t * screen_hue_create(void) {
     lv_obj_set_style_text_color(b_lbl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_center(b_lbl);
 
+    /* HomeWizard Energy Sockets live on the Devices screen; with Hue as the
+     * lights screen, this is the way there (#37). Built per open, so a
+     * plain "only when configured" is enough. */
     const struct { const char * txt; lv_event_cb_t cb; int slot; } qa[] = {
         { tr("Alles uit", "All off"), on_all_off_click, 0 },
         { tr("Alles aan", "All on"),  on_all_on_click,  1 },
+        { tr("Stekkers", "Sockets"),  on_sockets_click, 2 },
     };
-    for (int i = 0; i < 2; i++) {
+    int n_qa = homewizard_socket_count() > 0 ? 3 : 2;
+    for (int i = 0; i < n_qa; i++) {
         lv_obj_t * b = lv_btn_create(scr_root);
         lv_obj_set_size(b, SX(140), x_h);
         lv_obj_align(b, LV_ALIGN_TOP_RIGHT,

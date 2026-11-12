@@ -288,7 +288,16 @@ static void * socket_set_thread(void * arg) {
 }
 
 void homewizard_socket_set_async(int i, int on) {
-    if (i < 0 || i >= HW_SOCKET_MAX || !settings.hw_socket_host[i][0]) return;
+    if (i < 0 || i >= HW_SOCKET_MAX) return;
+    if (settings.client_mode) {
+        /* A client switches through its master (POST /api/hw/socket). */
+        extern int client_link_socket_set(int i, int on);
+        if (!hw_sockets[i].remote_present) return;
+        hw_sockets[i].on = on ? 1 : 0;           /* optimistic; next state frame confirms */
+        client_link_socket_set(i, on);
+        return;
+    }
+    if (!settings.hw_socket_host[i][0]) return;
     if (s_socket_pending[i]) return;
     sock_cmd_t * c = malloc(sizeof *c);
     if (!c) return;
@@ -304,9 +313,20 @@ void homewizard_socket_set_async(int i, int on) {
     pthread_detach(t);
 }
 
+int homewizard_socket_present(int i) {
+    if (i < 0 || i >= HW_SOCKET_MAX) return 0;
+    return settings.client_mode ? hw_sockets[i].remote_present : settings.hw_socket_host[i][0] != 0;
+}
+
+const char * homewizard_socket_name(int i) {
+    if (i < 0 || i >= HW_SOCKET_MAX) return "";
+    if (settings.client_mode) return hw_sockets[i].remote_name;
+    return settings.hw_socket_name[i][0] ? settings.hw_socket_name[i] : settings.hw_socket_host[i];
+}
+
 int homewizard_socket_count(void) {
     int n = 0;
-    for (int i = 0; i < HW_SOCKET_MAX; i++) if (settings.hw_socket_host[i][0]) n++;
+    for (int i = 0; i < HW_SOCKET_MAX; i++) if (homewizard_socket_present(i)) n++;
     return n;
 }
 

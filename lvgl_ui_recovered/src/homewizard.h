@@ -48,6 +48,9 @@ typedef struct {
     volatile int   connected;
     volatile int   on;          /* power_on */
     volatile float power_w;     /* active_power_w */
+    /* Client mode: mirrored from the master's state ("hws"), see client_link.c */
+    volatile int   remote_present;
+    char           remote_name[24];
 } hw_socket_t;
 extern hw_socket_t hw_sockets[];   /* HW_SOCKET_MAX entries (settings.h) */
 
@@ -55,8 +58,12 @@ extern hw_socket_t hw_sockets[];   /* HW_SOCKET_MAX entries (settings.h) */
  * state is shown at once; the next poll confirms it. */
 void homewizard_socket_set_async(int i, int on);
 
-/* Number of sockets with a host configured. */
+/* Number of sockets with a host configured (client mode: on the master). */
 int  homewizard_socket_count(void);
+/* Slot i in use / its display name (name, else IP) — works on a master and
+ * on a client Toon that mirrors the master's sockets. */
+int  homewizard_socket_present(int i);
+const char * homewizard_socket_name(int i);
 
 /* Start the poller if anything HomeWizard is configured and it isn't running
  * yet. Safe to call repeatedly (Settings calls it after a change, so a newly

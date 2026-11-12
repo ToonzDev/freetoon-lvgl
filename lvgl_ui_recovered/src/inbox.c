@@ -119,6 +119,16 @@ void inbox_parse_dataset(const char * xml) {
             continue;
         }
 
+        /* Suppress the TSC "resource file update" notice ("Er is een TSC
+         * resource file update beschikbaar. Update via TSC menu aub"): it is
+         * acted on in the stock UI's TSC menu, which FreeToon doesn't have (#39). */
+        if (strstr(m->text, "resource file") || strstr(m->text, "Resource file") ||
+            strstr(m->text, "resourcefile") || strstr(m->text, "TSC menu")) {
+            memset(m, 0, sizeof(*m));
+            p = stop + strlen("</notification>");
+            continue;
+        }
+
         /* Suppress TSC root certificate notification (FreeToon uses curl directly and needs no restart) */
         if ((strstr(m->text, "vertrouwde") && strstr(m->text, "certificaten")) ||
             strstr(m->text, "webserver certificaten") ||

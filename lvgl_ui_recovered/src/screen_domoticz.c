@@ -11,6 +11,7 @@
 #include "settings.h"
 #include "theme.h"
 #include "domoticz.h"
+#include "homewizard.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
@@ -168,8 +169,18 @@ static void refresh_cb(lv_timer_t * t) {
 /* ---- screen ---- */
 static void back_async(void * u) { (void)u; ui_pop(); }
 static void on_back(lv_event_t * e) { (void)e; lv_async_call(back_async, NULL); }
+/* HomeWizard Energy Sockets live on the Devices screen; with Domoticz as the
+ * lights screen, this button is the way there (#37). The screen is cached,
+ * so its visibility is decided on every load. */
+static lv_obj_t * btn_sockets = NULL;
+static void on_sockets_click(lv_event_t * e) { (void)e; ui_push(screen_lights_create()); }
+
 static void on_scr_event(lv_event_t * e) {
     lv_event_code_t c = lv_event_get_code(e);
+    if (c == LV_EVENT_SCREEN_LOADED && btn_sockets) {
+        if (homewizard_socket_count() > 0) lv_obj_clear_flag(btn_sockets, LV_OBJ_FLAG_HIDDEN);
+        else                               lv_obj_add_flag(btn_sockets, LV_OBJ_FLAG_HIDDEN);
+    }
     if (c == LV_EVENT_SCREEN_LOADED) { if (refresh_timer) lv_timer_resume(refresh_timer); g_built_count = -1; }
     else if (c == LV_EVENT_SCREEN_UNLOADED) { if (refresh_timer) lv_timer_pause(refresh_timer); }
 }
@@ -204,6 +215,20 @@ lv_obj_t * screen_domoticz_create(void) {
     lv_obj_set_style_text_color(bl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(bl, SF(22), 0);
     lv_obj_center(bl);
+
+    btn_sockets = lv_btn_create(scr_root);
+    lv_obj_set_size(btn_sockets, SX(140), x_h);
+    lv_obj_align(btn_sockets, LV_ALIGN_TOP_RIGHT, SX(-12) - x_w - SX(12), SY(12));
+    lv_obj_set_style_bg_color(btn_sockets, lv_color_hex(THEME_BTN_BG), 0);
+    lv_obj_set_style_radius(btn_sockets, 12, 0);
+    lv_obj_set_ext_click_area(btn_sockets, 8);
+    lv_obj_add_event_cb(btn_sockets, on_sockets_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * sl = lv_label_create(btn_sockets);
+    lv_label_set_text(sl, tr("Stekkers", "Sockets"));
+    lv_obj_set_style_text_color(sl, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(sl, SF(18), 0);
+    lv_obj_center(sl);
+    if (homewizard_socket_count() == 0) lv_obj_add_flag(btn_sockets, LV_OBJ_FLAG_HIDDEN);
 
     lv_obj_t * title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(title, lv_color_hex(COL_TEXT_HI), 0);

@@ -860,6 +860,15 @@ int main(int argc, char ** argv) {
                 printf("t=%2ds connected=%d setpoint=%.2f indoor=%.2f\n", s,
                        toon_state.connected, toon_state.setpoint, toon_state.indoor_temp);
             if (s == 15) printf("setpoint 22.5 -> %s\n", client_link_setpoint(22.5f) == 0 ? "ok" : "FAILED");
+            if (s % 5 == 0)
+                for (int i = 0; i < HW_SOCKET_MAX; i++)
+                    if (homewizard_socket_present(i))
+                        printf("  socket %d '%s' conn=%d on=%d %.0f W\n", i, homewizard_socket_name(i),
+                               hw_sockets[i].connected, hw_sockets[i].on, (double)hw_sockets[i].power_w);
+            if (s == 12 && homewizard_socket_present(0)) {   /* switch via the master (#37) */
+                printf("switching socket 0 on via master\n");
+                homewizard_socket_set_async(0, 1);
+            }
             fflush(stdout);
         }
         return 0;
@@ -893,6 +902,7 @@ int main(int argc, char ** argv) {
             "<notification><uuid>b</uuid><type>telegram</type><subType>pending</subType><text>Nieuwe chat wacht</text></notification>"
             "<notification><uuid>c</uuid><type>error</type><subType>boiler</subType></notification>"
             "<notification><uuid>d</uuid><type>system</type><subType>x</subType><plainText>Oude tekst</plainText></notification>"
+            "<notification><uuid>e</uuid><type>tsc</type><subType>update</subType><text>Er is een TSC resource file update beschikbaar. Update via TSC menu aub</text></notification>"
             "</notifications></u:UpdateDataSet></action>");
         printf("inbox_count=%d\n", inbox_count);
         for (int i = 0; i < inbox_count; i++)
@@ -1140,6 +1150,11 @@ int main(int argc, char ** argv) {
             continue;
         }
         if (!strncmp(argv[a], "shot:", 5)) { pump(30); dump_ppm(argv[a] + 5); continue; }
+        /* "wait:<ms>": keep the UI running that long (background fetches) */
+        if (!strncmp(argv[a], "wait:", 5)) {
+            for (int ms = atoi(argv[a] + 5); ms > 0; ms -= 20) { lv_timer_handler(); lv_tick_inc(20); usleep(20000); }
+            continue;
+        }
     }
     pump(60);
     dump_ppm(out);

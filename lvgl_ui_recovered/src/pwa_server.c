@@ -462,6 +462,23 @@ static int render_state_json(char * body, size_t sz) {
     if (p < end) p += snprintf(p, end-p, "],\"dz_connected\":%d,",
         domoticz_state.connected);
 
+    /* ---- HomeWizard Energy Sockets (#37), for client Toons */
+    if (p < end) p += snprintf(p, end-p, "\"hws\":[");
+    {
+        int first = 1;
+        for (int i = 0; i < HW_SOCKET_MAX; i++) {
+            if (!settings.hw_socket_host[i][0]) continue;
+            char name[48];
+            json_strcpy(name, homewizard_socket_name(i), sizeof name);
+            if (!first && p < end) *p++ = ',';
+            first = 0;
+            if (p < end) p += snprintf(p, end-p,
+                "{\"i\":%d,\"n\":\"%s\",\"c\":%d,\"on\":%d,\"w\":%.0f}",
+                i, name, hw_sockets[i].connected, hw_sockets[i].on, (double)hw_sockets[i].power_w);
+        }
+    }
+    if (p < end) p += snprintf(p, end-p, "],");
+
     /* snprintf returns the length it *wanted*, so after a truncated write p
      * points past `end`. Then p[-1] and the returned length would both be out
      * of bounds (the SSE path memcpy'd n+1 bytes into a buffer of sz) —
@@ -1276,6 +1293,19 @@ static int handle_curtain(int fd, const char * body) {
     return send_status(fd, 200, "OK", "{\"ok\":1}");
 }
 
+static int extract_int(const char * body, const char * key, int * out);
+
+/* POST /api/hw/socket {"i":0,"on":1} — switch a HomeWizard Energy Socket
+ * (used by client Toons, which have no direct access to the device). */
+static int handle_hw_socket(int fd, const char * body) {
+    int i, on;
+    if (!extract_int(body, "i", &i) || !extract_int(body, "on", &on) ||
+        i < 0 || i >= HW_SOCKET_MAX || !settings.hw_socket_host[i][0])
+        return send_status(fd, 400, "Bad Request", "{\"err\":\"need {\\\"i\\\":slot,\\\"on\\\":0|1}\"}");
+    homewizard_socket_set_async(i, on);
+    return send_status(fd, 200, "OK", "{\"ok\":1}");
+}
+
 /* -------- full settings page (web mirror of Settings screen) ---------- */
 static int extract_int(const char * body, const char * key, int * out) {
     float v;
@@ -1285,7 +1315,7 @@ static int extract_int(const char * body, const char * key, int * out) {
 }
 
 static int handle_settings_get(int fd) {
-    char body[4096];
+    char body[6144];   /* ~3.5 KB of settings + the HomeWizard block */
     int n = snprintf(body, sizeof body,
         "{"
         "\"auto_dim_enabled\":%d,\"auto_dim_seconds\":%d,"
@@ -1345,6 +1375,23 @@ static int handle_settings_get(int fd) {
         settings.tile_rotate_enabled, settings.tile_rotate_seconds, settings.tile_rotate_members,
         settings.client_mode, settings.master_host,
         settings.home_theme);
+    /* HomeWizard kWh meter + Energy Sockets (#37): appended in place of the
+     * closing brace, JSON-escaped. */
+    if (n > 1 && n < (int)sizeof body && body[n - 1] == '}') {
+        char kwh[48];
+        json_strcpy(kwh, settings.hw_kwh_host, sizeof kwh);
+        n--;
+        n += snprintf(body + n, sizeof body - (size_t)n, ",\"hw_kwh_host\":\"%s\"", kwh);
+        for (int i = 0; i < HW_SOCKET_MAX && n < (int)sizeof body; i++) {
+            char nm[48], ip[48];
+            json_strcpy(nm, settings.hw_socket_name[i], sizeof nm);
+            json_strcpy(ip, settings.hw_socket_host[i], sizeof ip);
+            n += snprintf(body + n, sizeof body - (size_t)n,
+                          ",\"hw_socket_name_%d\":\"%s\",\"hw_socket_host_%d\":\"%s\"", i, nm, i, ip);
+        }
+        if (n < (int)sizeof body - 1) { body[n++] = '}'; body[n] = 0; }
+    }
+    if (n >= (int)sizeof body) n = (int)sizeof body - 1;
     char hdr[160];
     int hn = snprintf(hdr, sizeof hdr,
         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
@@ -1529,6 +1576,25 @@ static int handle_settings_post(int fd, const char * body) {
     if (extract_int(body, "tile_rotate_seconds", &iv))settings.tile_rotate_seconds = iv < 3 ? 3 : (iv > 120 ? 120 : iv);
     if (extract_str(body, "tile_rotate_members", sv, sizeof sv))
         snprintf(settings.tile_rotate_members, sizeof settings.tile_rotate_members, "%s", sv);
+    /* HomeWizard kWh meter + Energy Sockets (#37). IPs: digits and dots only,
+     * like the device field (homewizard.c connects by IPv4 address). */
+    #define HW_IP_COPY(dst) do { size_t o_ = 0; \
+        for (const char * c_ = sv; *c_ && o_ + 1 < sizeof(dst); c_++) \
+            if ((*c_ >= '0' && *c_ <= '9') || *c_ == '.') (dst)[o_++] = *c_; \
+        (dst)[o_] = 0; } while (0)
+    int hw_touched = 0;
+    if (extract_str(body, "hw_kwh_host", sv, sizeof sv)) { HW_IP_COPY(settings.hw_kwh_host); hw_touched = 1; }
+    for (int i = 0; i < HW_SOCKET_MAX; i++) {
+        char key[24];
+        snprintf(key, sizeof key, "hw_socket_name_%d", i);
+        if (extract_str(body, key, sv, sizeof sv)) {
+            snprintf(settings.hw_socket_name[i], sizeof settings.hw_socket_name[i], "%s", sv);
+            hw_touched = 1;
+        }
+        snprintf(key, sizeof key, "hw_socket_host_%d", i);
+        if (extract_str(body, key, sv, sizeof sv)) { HW_IP_COPY(settings.hw_socket_host[i]); hw_touched = 1; }
+    }
+    #undef HW_IP_COPY
     settings_save();
 
     /* Apply what changed now, like the device's own Settings screens do —
@@ -1540,7 +1606,8 @@ static int handle_settings_post(int fd, const char * body) {
     if (strstr(body, "\"news_"))
         news_wake_fetch();
     if (!settings.client_mode) {
-        if (strstr(body, "\"enable_p1_") || strstr(body, "\"p1_elec_host\"") || strstr(body, "\"p1_water_host\""))
+        if (hw_touched || strstr(body, "\"enable_p1_") || strstr(body, "\"p1_elec_host\"") ||
+            strstr(body, "\"p1_water_host\""))
             homewizard_ensure_started();
         if (strstr(body, "\"otgw_host\""))
             otgw_start();
@@ -2281,6 +2348,7 @@ static int dispatch(int fd, char * req) {
         if (!strcmp(path, "/api/program"))  return handle_program(fd, body);
         if (!strcmp(path, "/api/schedule")) return handle_schedule_post(fd, body);
         if (!strcmp(path, "/api/curtain"))  return handle_curtain(fd, body);
+        if (!strcmp(path, "/api/hw/socket")) return handle_hw_socket(fd, body);
         if (!strcmp(path, "/api/settings")) return handle_settings_post(fd, body);
         if (!strcmp(path, "/api/update"))   return handle_update_post(fd);
         if (!strcmp(path, "/api/packages")) return handle_packages_post(fd, body);

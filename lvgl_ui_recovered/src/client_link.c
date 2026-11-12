@@ -458,6 +458,28 @@ void client_link_apply_state(const char * j) {
         if (jint(j, "dz_connected", &v)) domoticz_state.connected = v;
     }
 
+    /* ---- HomeWizard Energy Sockets on the master (#37) ---- */
+    {
+        const char * p = find_array(j, "hws");
+        if (p) {
+            int seen[HW_SOCKET_MAX] = {0};
+            char obj[160];
+            while (walk_object(&p, obj, sizeof obj)) {
+                int i, vv;
+                if (!jint(obj, "i", &i) || i < 0 || i >= HW_SOCKET_MAX) continue;
+                hw_socket_t * S = &hw_sockets[i];
+                jstr(obj, "n", S->remote_name, sizeof S->remote_name);
+                if (jint(obj, "c",  &vv)) S->connected = vv;
+                if (jint(obj, "on", &vv)) S->on = vv;
+                if (jint(obj, "w",  &vv)) S->power_w = (float)vv;
+                S->polled = 1;
+                S->remote_present = 1;
+                seen[i] = 1;
+            }
+            for (int i = 0; i < HW_SOCKET_MAX; i++) if (!seen[i]) hw_sockets[i].remote_present = 0;
+        }
+    }
+
     toon_state.connected = 1;
 }
 
@@ -925,6 +947,28 @@ int client_link_resume_schedule(void) {
     char b[32];
     snprintf(b, sizeof b, "{\"state\":-2}");
     return post_json("/api/program", b);
+}
+
+/* HomeWizard Energy Socket on the master (#37). post_json blocks on curl, and
+ * this is called from the Devices screen (UI thread) — so off-thread. */
+typedef struct { int i, on; } sock_req_t;
+static void * socket_set_thread(void * arg) {
+    sock_req_t r = *(sock_req_t *)arg;
+    free(arg);
+    char b[48];
+    snprintf(b, sizeof b, "{\"i\":%d,\"on\":%d}", r.i, r.on ? 1 : 0);
+    if (post_json("/api/hw/socket", b) != 0)
+        fprintf(stderr, "[client] socket %d switch via master failed\n", r.i);
+    return NULL;
+}
+int client_link_socket_set(int i, int on) {
+    sock_req_t * r = malloc(sizeof *r);
+    if (!r) return -1;
+    r->i = i; r->on = on;
+    pthread_t t;
+    if (pthread_create(&t, NULL, socket_set_thread, r) != 0) { free(r); return -1; }
+    pthread_detach(t);
+    return 0;
 }
 
 int client_link_curtain(const char * action) {

@@ -206,14 +206,11 @@ static void build_socket_rows(void) {
     if (homewizard_socket_count() == 0) return;
     add_header(tr("Stekkers (HomeWizard)", "Sockets (HomeWizard)"));
     for (int i = 0; i < HW_SOCKET_MAX; i++) {
-        if (!settings.hw_socket_host[i][0]) continue;
+        if (!homewizard_socket_present(i)) continue;   /* client: mirrored from the master */
         sock_row_t * R = &sock_rows[sock_row_count++];
         R->idx = i;
         lv_obj_t * c = make_card(56);
-        char name[48];
-        snprintf(name, sizeof name, "%s", settings.hw_socket_name[i][0] ? settings.hw_socket_name[i]
-                                                                       : settings.hw_socket_host[i]);
-        card_name(c, name, LV_ALIGN_LEFT_MID, 4, -8);
+        card_name(c, homewizard_socket_name(i), LV_ALIGN_LEFT_MID, 4, -8);
         R->lbl_state = mk_state(c, LV_ALIGN_LEFT_MID, 4, 12);
         R->btn = mk_btn(c, tr("Uit", "Off"), COL_OFF, 64, 36, LV_ALIGN_RIGHT_MID, -2, 0, on_sock_toggle, i);
         R->btn_lbl = lv_obj_get_child(R->btn, 0);

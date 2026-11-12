@@ -13,6 +13,7 @@ int client_link_program(int state);      /* POST /api/program  {"state":n}      
 int client_link_manual_preset(int preset);/* manual hold at preset temperature   */
 int client_link_resume_schedule(void);   /* resume schedule on master Toon      */
 int client_link_curtain(const char * action); /* POST /api/curtain {"action":..} */
+int client_link_socket_set(int i, int on);    /* POST /api/hw/socket, off-thread */
 
 /* Parse one /api/state JSON snapshot and merge it into toon_state + ha_state.
  * Same implementation the reader thread uses on each SSE frame, exposed so the

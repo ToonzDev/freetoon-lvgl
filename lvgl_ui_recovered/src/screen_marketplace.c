@@ -72,6 +72,9 @@ static volatile int  g_fetch_dirty = 0;
 static volatile int  s_fetch_active = 0;
 static lv_timer_t *  s_refresh_timer = NULL;
 static int           s_prev_count = -1;
+static lv_obj_t *    s_btn_upd_all = NULL;       /* "Alles updaten (N)" */
+static lv_obj_t *    s_btn_upd_all_lbl = NULL;
+static volatile int  s_update_all_active = 0;
 
 static void start_catalog_fetch(void);
 
@@ -482,7 +485,9 @@ static void update_row_state(integration_t * ent) {
     if (ent->action_status == 1) {
         if (ent->btn_update) lv_obj_add_flag(ent->btn_update, LV_OBJ_FLAG_HIDDEN);
         if (ent->badge_lbl) lv_label_set_text(ent->badge_lbl, "");
-        if (ent->btn_action_lbl) lv_label_set_text(ent->btn_action_lbl, tr("Installeren...", "Installing..."));
+        if (ent->btn_action_lbl)
+            lv_label_set_text(ent->btn_action_lbl, ent->is_updating ? tr("Updaten...", "Updating...")
+                                                                    : tr("Installeren...", "Installing..."));
         if (ent->btn_action) lv_obj_set_style_bg_color(ent->btn_action, lv_color_hex(COL_BUSY), 0);
         return;
     }
@@ -695,9 +700,72 @@ static void refresh_cb(lv_timer_t * t) {
         build_rows();
         s_prev_count = entry_count;
     }
+    int n_upd = 0;
     for (int i = 0; i < entry_count; i++) {
         update_row_state(&entries[i]);
+        if (entry_has_update(&entries[i])) n_upd++;
     }
+    /* "Alles updaten (N)" — only while there is something to update and no
+     * update-all run is in progress. Compare-before-set: this runs 2x/s. */
+    if (s_btn_upd_all && s_btn_upd_all_lbl) {
+        if (n_upd > 0 && !s_update_all_active) {
+            char t[48];
+            snprintf(t, sizeof t, tr("Alles updaten (%d)", "Update all (%d)"), n_upd);
+            if (strcmp(lv_label_get_text(s_btn_upd_all_lbl), t) != 0) lv_label_set_text(s_btn_upd_all_lbl, t);
+            lv_obj_clear_flag(s_btn_upd_all, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(s_btn_upd_all, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+}
+
+/* ---- Update all (#35) ----------------------------------------------------
+ * Runs the install helper for every app with a compatible update, one after
+ * the other on a background thread (each row shows "Updaten..."), then
+ * restarts the UI once so the new plugins are loaded. */
+static void * update_all_thread(void * arg) {
+    (void)arg;
+#ifndef WASM_BUILD
+    int ok = 0;
+    for (int i = 0; i < entry_count && i < MAX_INTEGRATIONS; i++) {
+        integration_t * e = &entries[i];
+        if (!e->is_updating) continue;            /* marked on the UI thread */
+        if (!sh_is_ident(e->id, 32)) { e->action_status = 3; continue; }
+        char cmd[256];
+        snprintf(cmd, sizeof cmd, "%s %s", INSTALL_HELPER, e->id);
+        if (system(cmd) == 0) { ok++; e->action_status = 5; }
+        else                  e->action_status = 3;
+    }
+    tile_slots_init();
+    app_updates_recompute();
+    if (ok > 0) {
+        fprintf(stderr, "[marketplace] update all: %d app(s) updated — restarting UI\n", ok);
+        usleep(700000);
+        ui_request_restart();
+    }
+#endif
+    s_update_all_active = 0;
+    return NULL;
+}
+
+static void on_update_all(lv_event_t * e) {
+    (void)e;
+    if (s_update_all_active || s_fetch_active) return;
+    if (!install_helper_ok()) return;
+    int n = 0;
+    for (int i = 0; i < entry_count; i++) {
+        integration_t * ent = &entries[i];
+        ent->is_updating = 0;
+        if (ent->action_status != 0 || !entry_has_update(ent)) continue;
+        ent->is_updating = 1;
+        ent->action_status = 1;                    /* row: "Updaten..." */
+        n++;
+    }
+    if (n == 0) return;
+    s_update_all_active = 1;
+    pthread_t t;
+    if (pthread_create(&t, NULL, update_all_thread, NULL) == 0) pthread_detach(t);
+    else s_update_all_active = 0;
 }
 
 static void on_scr_deleted(lv_event_t * e) {
@@ -709,10 +777,13 @@ static void on_scr_deleted(lv_event_t * e) {
     scr_root = NULL;
     list_box = NULL;
     status_lbl = NULL;
+    s_btn_upd_all = NULL;
+    s_btn_upd_all_lbl = NULL;
 }
 
 static void on_marketplace_refresh(lv_event_t * e) {
     (void)e;
+    if (s_update_all_active) return;   /* don't rebuild entries[] under the update-all thread */
     tile_slots_init();
     s_prev_count = -1;
     start_catalog_fetch();
@@ -758,6 +829,21 @@ lv_obj_t * screen_marketplace_create(void) {
     lv_obj_set_style_text_color(rl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(rl, SF(22), 0);
     lv_obj_center(rl);
+
+    /* Header: "Alles updaten (N)" left of refresh — shown by refresh_cb */
+    s_btn_upd_all = lv_btn_create(scr_root);
+    lv_obj_set_size(s_btn_upd_all, SX(230), x_h);
+    lv_obj_align(s_btn_upd_all, LV_ALIGN_TOP_RIGHT, SX(-12) - x_w - SX(10) - (x_w - SX(6)) - SX(10), SY(12));
+    lv_obj_set_style_bg_color(s_btn_upd_all, lv_color_hex(settings.home_light_mode ? 0x2563eb : 0x2a5d96), 0);
+    lv_obj_set_style_radius(s_btn_upd_all, 12, 0);
+    lv_obj_set_ext_click_area(s_btn_upd_all, 10);
+    lv_obj_add_event_cb(s_btn_upd_all, on_update_all, LV_EVENT_CLICKED, NULL);
+    s_btn_upd_all_lbl = lv_label_create(s_btn_upd_all);
+    lv_label_set_text(s_btn_upd_all_lbl, "");
+    lv_obj_set_style_text_color(s_btn_upd_all_lbl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(s_btn_upd_all_lbl, SF(18), 0);
+    lv_obj_center(s_btn_upd_all_lbl);
+    lv_obj_add_flag(s_btn_upd_all, LV_OBJ_FLAG_HIDDEN);
 
     lv_obj_t * title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(title, lv_color_hex(COL_TEXT_HI), 0);

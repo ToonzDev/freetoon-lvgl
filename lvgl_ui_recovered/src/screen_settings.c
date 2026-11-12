@@ -3460,6 +3460,80 @@ typedef struct { char * dst; size_t sz; int ip; int * enable; } hw_field_t;
 static hw_field_t s_hw_fields[3 + 2 * HW_SOCKET_MAX];
 static lv_obj_t * s_hw_enable_sw[2];   /* P1 / water switch, flipped on by an IP */
 
+/* A HomeWizard P1 is a full replacement for the Toon's meter adapter: when
+ * a P1 IP is entered while the energy source is something else, offer to
+ * switch Energiebron to "HomeWizard P1". Live — the HomeWizard poller and
+ * energy.c follow the setting without a restart. */
+static lv_obj_t * s_p1src_dlg = NULL;
+static lv_obj_t * dd_energy_src;   /* defined with the energy-source row below */
+
+static void p1src_close(void) {
+    if (s_p1src_dlg) { lv_obj_del_async(s_p1src_dlg); s_p1src_dlg = NULL; }
+}
+static void on_p1src_yes(lv_event_t * e) {
+    (void)e;
+    settings.energy_source = 1;
+    settings_save();
+    homewizard_ensure_started();
+    /* the Integraties modal may have been closed meanwhile */
+    if (dd_energy_src && lv_obj_is_valid(dd_energy_src)) lv_dropdown_set_selected(dd_energy_src, 1);
+    p1src_close();
+}
+static void on_p1src_no(lv_event_t * e) { (void)e; p1src_close(); }
+
+static lv_obj_t * p1src_btn(lv_obj_t * card, const char * txt, uint32_t col, lv_align_t a,
+                            lv_event_cb_t cb) {
+    lv_obj_t * b = lv_btn_create(card);
+    lv_obj_set_size(b, SX(200), SY(54));
+    lv_obj_align(b, a, 0, 0);
+    lv_obj_set_style_bg_color(b, lv_color_hex(col), 0);
+    lv_obj_set_style_radius(b, 12, 0);
+    lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * l = lv_label_create(b);
+    lv_label_set_text(l, txt);
+    lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(l, SF(20), 0);
+    lv_obj_center(l);
+    return b;
+}
+
+static void offer_p1_energy_source(void) {
+    if (s_p1src_dlg || settings.energy_source == 1) return;
+    s_p1src_dlg = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(s_p1src_dlg, LV_HOR_RES, LV_VER_RES);
+    lv_obj_set_pos(s_p1src_dlg, 0, 0);
+    lv_obj_set_style_bg_color(s_p1src_dlg, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(s_p1src_dlg, LV_OPA_60, 0);
+    lv_obj_set_style_border_width(s_p1src_dlg, 0, 0);
+    lv_obj_clear_flag(s_p1src_dlg, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t * card = lv_obj_create(s_p1src_dlg);
+    lv_obj_set_size(card, SX(620), SY(290));
+    lv_obj_center(card);
+    lv_obj_set_style_bg_color(card, lv_color_hex(THEME_CARD_BG), 0);
+    lv_obj_set_style_border_color(card, lv_color_hex(THEME_BORDER), 0);
+    lv_obj_set_style_border_width(card, 1, 0);
+    lv_obj_set_style_radius(card, 16, 0);
+    lv_obj_set_style_pad_all(card, SX(20), 0);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t * t = lv_label_create(card);
+    lv_obj_set_width(t, SX(570));
+    lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_color(t, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(t, SF(20), 0);
+    lv_label_set_text(t, tr("HomeWizard P1 als energiebron gebruiken?\n\n"
+                            "Dan komen stroom, gas, de grafieken en de meterstanden van de "
+                            "P1-meter in plaats van de Toon-meteradapter.",
+                            "Use the HomeWizard P1 as energy source?\n\n"
+                            "Electricity, gas, the charts and the meter readings then come from "
+                            "the P1 meter instead of the Toon's meter adapter."));
+    lv_obj_align(t, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    p1src_btn(card, tr("Nee", "No"), 0x4a5a6a, LV_ALIGN_BOTTOM_LEFT, on_p1src_no);
+    p1src_btn(card, tr("Ja, gebruiken", "Yes, use it"), 0x2e6e3a, LV_ALIGN_BOTTOM_RIGHT, on_p1src_yes);
+}
+
 static void on_int_hw_field(lv_event_t * e) {
     lv_event_code_t c = lv_event_get_code(e);
     if (c != LV_EVENT_DEFOCUSED && c != LV_EVENT_DELETE) return;
@@ -3480,6 +3554,8 @@ static void on_int_hw_field(lv_event_t * e) {
     if (c == LV_EVENT_DEFOCUSED && h[0] && F->enable) {
         lv_obj_t * sw = (F->enable == &settings.enable_p1_elec) ? s_hw_enable_sw[0] : s_hw_enable_sw[1];
         if (sw) lv_obj_add_state(sw, LV_STATE_CHECKED);
+        /* not on DELETE: the modal is being torn down then */
+        if (F->enable == &settings.enable_p1_elec) offer_p1_energy_source();
     }
 }
 
@@ -3520,7 +3596,8 @@ static lv_obj_t * dd_energy_src = NULL;
 static void on_int_energy_src(lv_event_t * e) {
     settings.energy_source = (int)lv_dropdown_get_selected(lv_event_get_target(e));
     settings_save();
-    integ_dirty_hint();
+    if (settings.energy_source == 1) homewizard_ensure_started();   /* live */
+    if (settings.energy_source == 2) integ_dirty_hint();             /* ESPHome poller: restart */
 }
 /* Unlike the HA modal, Integrations has no Save button to collect textareas on
  * the way out — it's otherwise all switches, which persist as they're flipped.
@@ -3694,9 +3771,9 @@ static void open_integrations_modal(lv_event_t * e) {
     lv_obj_set_width(lbl_integ_hint, SX(800));
     lv_label_set_long_mode(lbl_integ_hint, LV_LABEL_LONG_WRAP);
     lv_label_set_text(lbl_integ_hint,
-        tr("Itho-ventilatie, Home Assistant, de energiebron en de ESPHome-P1 "
+        tr("Itho-ventilatie, Home Assistant aan/uit en de ESPHome-P1 "
            "werken pas na een herstart van toonui.",
-           "Itho ventilation, Home Assistant, the energy source and the ESPHome P1 "
+           "Itho ventilation, Home Assistant on/off and the ESPHome P1 "
            "take effect after a toonui restart."));
     lv_obj_align(lbl_integ_hint, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
 
