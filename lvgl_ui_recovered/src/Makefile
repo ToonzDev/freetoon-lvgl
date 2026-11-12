@@ -150,7 +150,7 @@ APP_SRC       := $(ENTRY) $(GLIBC_SRC) boxtalk.c ui_stack.c screen_home.c screen
                  stats.c airhist.c homewizard.c p1esphome.c energy.c meteradapter.c domoticz.c hue.c weather.c buienradar_rain.c otgw.c http.c inbox.c rrd_push.c templogger.c \
                  wastecollection.c ventilation.c homeassistant.c ha_mqtt.c efanlamp.c monocypher.c sha2.c \
                  notify.c healthcheck.c pwa_server.c canonical_state.c packages.c mqtt_client.c \
-                 schedule.c icons.c backlight.c settings.c bootpick.c update_check.c telegram.c \
+                 schedule.c icons.c backlight.c settings.c bootpick.c update_check.c app_updates.c telegram.c \
                  tile_slots.c client_link.c news.c doorbell.c calendar.c layout.c \
                  toon1_touch.c pin_modal.c update_modal.c video.c ui_cmd.c anim_overlay.c \
                  lv_font_montserrat_96_custom.c lv_font_montserrat_64_custom.c \
@@ -212,7 +212,7 @@ $(BUILDDIR)/pwa_server.o: $(REMOTE_PAGE_H)
 
 # Recompile the version-bearing objects whenever BUILD_VERSION changes
 # (placed after `all` so it doesn't hijack the default goal).
-$(BUILDDIR)/update_check.o $(BUILDDIR)/screen_home.o $(BUILDDIR)/update_modal.o $(BUILDDIR)/canonical_state.o $(BUILDDIR)/pwa_server.o: $(VERFILE)
+$(BUILDDIR)/update_check.o $(BUILDDIR)/app_updates.o $(BUILDDIR)/screen_home.o $(BUILDDIR)/update_modal.o $(BUILDDIR)/canonical_state.o $(BUILDDIR)/pwa_server.o: $(VERFILE)
 
 # The libc-replacement wrappers must NOT be built with builtins: at -O2 GCC
 # would fold __wrap_fputc's fwrite(&c,1,1,f) straight back into fputc — the very

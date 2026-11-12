@@ -33,6 +33,7 @@
 #include "wastecollection.h"
 #include "update_check.h"
 #include "update_modal.h"
+#include "app_updates.h"
 #include "anim_overlay.h"
 #include "telegram.h"
 #include "pwa_server.h"
@@ -5626,8 +5627,15 @@ lv_obj_t * screen_settings_create(void) {
               tr("tegelindeling bewerken", "tile layout editor"), open_layout_editor); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_PLUS, tr("Integraties", "Integrations"),
               tr("P1 / water / vent / HA", "P1 / water / vent / HA"), open_integrations_modal); n++;
-    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_DOWNLOAD, "Marketplace",
-              tr("integraties installeren", "install integrations"), open_marketplace); n++;
+    {
+        static char mp_sub[48];
+        int mp_upd = app_updates_get(NULL, 0);
+        if (mp_upd > 0)
+            snprintf(mp_sub, sizeof mp_sub, tr("%d app-update(s) beschikbaar", "%d app update(s) available"), mp_upd);
+        else
+            snprintf(mp_sub, sizeof mp_sub, "%s", tr("integraties installeren", "install integrations"));
+        make_tile(GX(n), GY(n), NULL, LV_SYMBOL_DOWNLOAD, "Marketplace", mp_sub, open_marketplace); n++;
+    }
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_WIFI, "MQTT",
               tr("broker + topics", "broker + topics"), open_mqtt_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, tr("Nieuwslezer", "Newsreader"),

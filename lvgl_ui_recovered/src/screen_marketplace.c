@@ -21,6 +21,7 @@
 #include "theme.h"
 #include "icons.h"
 #include "tile_slots.h"
+#include "app_updates.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,6 +52,7 @@ typedef struct {
     char name[64];
     char description[256];
     char version[32];
+    char min_toonui[24];        /* catalog "min_toonui"; "" = any toonui */
     lv_obj_t * row;
     lv_obj_t * badge_lbl;
     lv_obj_t * btn_update;
@@ -170,9 +172,20 @@ static void parse_catalog(void) {
             scan = after_id;
             continue;
         }
-        find_json_str(next, "name",        e->name,        sizeof e->name);
-        find_json_str(next, "description", e->description, sizeof e->description);
-        find_json_str(next, "version",     e->version,     sizeof e->version);
+        /* Search only within this entry's object so a field it lacks (e.g.
+         * the optional min_toonui) is not taken from the next entry. */
+        char obj[1024];
+        const char * open = next;
+        while (open > scan && *open != '{') open--;
+        const char * end = (*open == '{') ? app_json_obj_end(open) : NULL;
+        size_t ol = end ? (size_t)(end - next) : strlen(next);
+        if (ol >= sizeof obj) ol = sizeof obj - 1;
+        memcpy(obj, next, ol);
+        obj[ol] = 0;
+        find_json_str(obj, "name",        e->name,        sizeof e->name);
+        find_json_str(obj, "description", e->description, sizeof e->description);
+        find_json_str(obj, "version",     e->version,     sizeof e->version);
+        find_json_str(obj, "min_toonui",  e->min_toonui,  sizeof e->min_toonui);
         sanitize_unicode_to_ascii(e->name);
         sanitize_unicode_to_ascii(e->description);
         entry_count++;
@@ -297,6 +310,7 @@ static void * install_thread(void * arg) {
     snprintf(cmd, sizeof cmd, "%s %s", INSTALL_HELPER, e->id);
     int rc = system(cmd);
     tile_slots_init();
+    app_updates_recompute();   /* home banner / Settings tile follow */
     if (rc == 0) {
         if (is_upd) {
             e->action_status = 5;
@@ -341,6 +355,7 @@ static void * uninstall_thread(void * arg) {
 
     /* Rescan installed integrations so tile_slots drops it */
     tile_slots_init();
+    app_updates_recompute();
 
     if (rc == 0 || tile_slots_integration_by_id(e->id) == NULL) {
         e->action_status = 0;
@@ -381,6 +396,8 @@ static void on_action_clicked(lv_event_t * e) {
             ent->action_status = 4;
 #endif
     } else {
+        /* Plugin ABI gate: the loader would refuse this build's plugin. */
+        if (!app_catalog_compatible(ent->min_toonui)) return;
 #ifdef WASM_BUILD
         char payload[96];
         snprintf(payload, sizeof payload, "{\"id\":\"%s\"}", ent->id);
@@ -425,6 +442,7 @@ static void on_update_clicked(lv_event_t * e) {
     integration_t * ent = (integration_t *)lv_event_get_user_data(e);
     if (!ent) return;
     if (ent->action_status != 0) return; /* busy */
+    if (!app_catalog_compatible(ent->min_toonui)) return;
 #ifndef WASM_BUILD
     if (!install_helper_ok()) {
         if (ent->btn_action_lbl)
@@ -487,15 +505,27 @@ static void update_row_state(integration_t * ent) {
     int is_inst = (meta != NULL);
     ent->is_installed = is_inst;
 
-    int update_available = 0;
+    int compatible = app_catalog_compatible(ent->min_toonui);
+    int newer = 0;
     if (is_inst && meta && ent->version[0] && meta->version[0]) {
         if (semver_cmp(ent->version, meta->version) > 0) {
-            update_available = 1;
+            newer = 1;
         }
     }
+    int update_available = newer && compatible;
 
     if (is_inst) {
-        if (update_available) {
+        if (newer && !compatible) {
+            /* An update exists but needs a newer FreeToon: say so instead of
+             * offering a plugin the loader would refuse. */
+            if (ent->btn_update) lv_obj_add_flag(ent->btn_update, LV_OBJ_FLAG_HIDDEN);
+            if (ent->badge_lbl) {
+                lv_obj_clear_flag(ent->badge_lbl, LV_OBJ_FLAG_HIDDEN);
+                lv_label_set_text_fmt(ent->badge_lbl, tr("Update vereist\nFreeToon %s", "Update needs\nFreeToon %s"),
+                                      ent->min_toonui);
+                lv_obj_set_style_text_color(ent->badge_lbl, lv_color_hex(COL_TEXT_DIM), 0);
+            }
+        } else if (update_available) {
             if (ent->badge_lbl) lv_obj_add_flag(ent->badge_lbl, LV_OBJ_FLAG_HIDDEN);
             if (ent->btn_update) {
                 lv_obj_clear_flag(ent->btn_update, LV_OBJ_FLAG_HIDDEN);
@@ -522,6 +552,13 @@ static void update_row_state(integration_t * ent) {
             lv_label_set_text(ent->badge_lbl, "");
             lv_obj_add_flag(ent->badge_lbl, LV_OBJ_FLAG_HIDDEN);
         }
+        if (!compatible) {
+            if (ent->btn_action_lbl)
+                lv_label_set_text_fmt(ent->btn_action_lbl, tr("Vereist %s", "Needs %s"), ent->min_toonui);
+            if (ent->btn_action)
+                lv_obj_set_style_bg_color(ent->btn_action, lv_color_hex(THEME_BTN_BG), 0);
+            return;
+        }
         if (ent->btn_action_lbl) {
             lv_label_set_text(ent->btn_action_lbl,
                               install_helper_ok() ? tr("Installeren", "Install")
@@ -542,6 +579,7 @@ static int entry_has_update(const integration_t * ent) {
     if (!ent) return 0;
     const integration_meta_t * meta = tile_slots_integration_by_id(ent->id);
     if (!meta) return 0;
+    if (!app_catalog_compatible(ent->min_toonui)) return 0;
     if (ent->version[0] && meta->version[0] && semver_cmp(ent->version, meta->version) > 0) {
         return 1;
     }

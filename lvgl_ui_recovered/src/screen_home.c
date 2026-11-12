@@ -33,6 +33,7 @@
 #include "update_check.h"
 #include "pin_modal.h"
 #include "update_modal.h"
+#include "app_updates.h"
 #include "efanlamp.h"
 #include "domoticz.h"
 #include "hue.h"
@@ -613,8 +614,15 @@ static void on_update_modal_open_cb(lv_event_t * e) {
     (void)e;
     update_modal_open(scr_root);
 }
+static int s_banner_is_apps = 0;   /* banner currently shows app updates */
+
 static void on_update_banner_click(lv_event_t * e) {
     (void)e;
+    if (s_banner_is_apps) {
+        app_updates_dismiss_banner();
+        ui_push(screen_marketplace_create());
+        return;
+    }
     update_modal_open(scr_root);
 }
 
@@ -2266,12 +2274,26 @@ static void refresh_cb(lv_timer_t * t) {
             update_modal_open(scr_root);
         }
 
-        /* Banner when relevant + not minimized; envelope when minimized. */
+        /* Banner when relevant + not minimized; envelope when minimized.
+         * With no FreeToon update to show, the same banner announces
+         * marketplace app updates (tap = Marketplace, hides it until the set
+         * of updates changes). */
+        s_banner_is_apps = 0;
         if (relevant && !update_modal_is_minimized()) {
             ui_label_set_text_fmt(update_banner_lbl,
                                   tr("%s beschikbaar  -  tik voor details",
                                      "%s available  -  tap for details"),
                                   g_update_state.latest_version);
+            ui_obj_clear_flag(update_banner, LV_OBJ_FLAG_HIDDEN);
+        } else if (!relevant && app_updates_banner_wanted()) {
+            int n = app_updates_get(NULL, 0);
+            s_banner_is_apps = 1;
+            if (n == 1)
+                ui_label_set_text(update_banner_lbl, tr("1 app-update  -  tik voor Marktplaats",
+                                                        "1 app update  -  tap for Marketplace"));
+            else
+                ui_label_set_text_fmt(update_banner_lbl, tr("%d app-updates  -  tik voor Marktplaats",
+                                                            "%d app updates  -  tap for Marketplace"), n);
             ui_obj_clear_flag(update_banner, LV_OBJ_FLAG_HIDDEN);
         } else {
             ui_obj_add_flag(update_banner, LV_OBJ_FLAG_HIDDEN);

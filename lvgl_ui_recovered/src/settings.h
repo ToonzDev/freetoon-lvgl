@@ -369,6 +369,10 @@ typedef struct {
      * /water.html). When set, the water meter (enable_p1_water) reads it
      * instead of the HomeWizard HWE-WTR. */
     char  toonwater_host[64];
+
+    /* Opt-in: install marketplace app updates at auto_update_hour (needs
+     * update_check_enabled; app_updates.c). */
+    int   auto_update_apps;
 } settings_t;
 
 #define FORECAST_AUTO   0

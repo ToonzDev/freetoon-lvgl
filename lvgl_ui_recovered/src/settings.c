@@ -127,6 +127,7 @@ settings_t settings = {
     .custom_layout_enabled = 1,
     .auto_update_enabled = 0,
     .auto_update_hour    = 2,
+    .auto_update_apps    = 0,
     .ha_host             = "",
     .life360_a_entity    = "",
     .life360_a_name      = "",
@@ -412,6 +413,7 @@ void settings_load(void) {
         else if (strcmp(k, "active_layout")       == 0) snprintf(settings.active_layout, sizeof settings.active_layout, "%s", v);
         else if (strcmp(k, "auto_update_enabled") == 0) settings.auto_update_enabled = iv;
         else if (strcmp(k, "auto_update_hour")    == 0) settings.auto_update_hour = (iv < 0 || iv > 23) ? 2 : iv;
+        else if (strcmp(k, "auto_update_apps")    == 0) settings.auto_update_apps = !!iv;
         else if (strcmp(k, "ha_host")          == 0) snprintf(settings.ha_host, sizeof settings.ha_host, "%s", v);
         else if (strcmp(k, "life360_a_entity") == 0) snprintf(settings.life360_a_entity, sizeof settings.life360_a_entity, "%s", v);
         else if (strcmp(k, "life360_a_name")   == 0) snprintf(settings.life360_a_name, sizeof settings.life360_a_name, "%s", v);
@@ -1063,6 +1065,7 @@ static void settings_write_file(void) {
     fprintf(f, "news_scroll_speed=%d\n", settings.news_scroll_speed);
     fprintf(f, "auto_update_enabled=%d\n", settings.auto_update_enabled);
     fprintf(f, "auto_update_hour=%d\n", settings.auto_update_hour);
+    fprintf(f, "auto_update_apps=%d\n", settings.auto_update_apps);
     fprintf(f, "ha_host=%s\n", settings.ha_host);
     fprintf(f, "life360_a_entity=%s\n", settings.life360_a_entity);
     fprintf(f, "life360_a_name=%s\n", settings.life360_a_name);

@@ -414,7 +414,7 @@
   - Marketplace: Sonos Player 1.0.9 (TuneIn favourites start again).
 
 ### 35. Daily Check for Marketplace App Updates
-- **Status**: Open (idea, 2026-11-11).
+- **Status**: Implemented (2026-11-12): app_updates.c checks the catalog once a day alongside the FreeToon check (and on "Controleer"). The home banner shows "N app-updates" when there's no FreeToon update (tap = Marketplace; stays hidden until the set of updates changes), the Settings Marketplace tile shows the count, and the Update modal has an opt-in "Apps ook automatisch" at the auto-update hour (UI restart afterwards). Optional catalog field `min_toonui` gates updates/installs for the plugin ABI. Not built: an "update all" button in the Marketplace screen.
 - **Description**:
   - FreeToon checks for its own updates (update_check.c: GitHub releases every 6 h, update banner, optional nightly auto-update), but marketplace apps are only compared with the catalog when the Marketplace screen is opened. A user never hears that e.g. Sonos 1.0.9 is out unless they go looking.
 - **Approach**:
@@ -438,3 +438,32 @@
   - Settings > Integraties: IP fields for the P1 and the water meter, like the ToonWater field (commit-on-defocus, host characters only), plus a short hint about "Lokale API".
   - Energy Sockets: power on a tile, on/off via the local API (`/api/v1/state`, PUT `{"power_on":…}`); kWh meters: power like the P1. Mind the ESP socket-table limit (poll slowly, see hw_thread).
   - HomeWizard v2 API: newer firmware has a local API v2 (HTTPS + bearer token, obtained by pressing the device button; README already mentions a v2 `P1_TOKEN` for p1bridge). Check whether v1 keeps working on current firmware or whether v2 should become the default, and how a user pairs on the Toon.
+
+### 38. Meterstanden Pop-up Shows Readings That Match Neither the Old Nor the New Meter (User Report)
+- **Status**: Open (user report, 2026-11-12).
+- **Description**:
+  - A user's "Meterstanden" pop-up (#29) shows ~17,000 and ~14,000 kWh for electricity and ~13,000 m3 for gas. Their meter was replaced a week ago; the old meter read ~47,000 / ~40,000 kWh and ~41,000 m3, and the new meter is still close to zero. So the pop-up shows neither.
+- **Cause (hypothesis)**:
+  - `on_meter_open()` in `screen_stats.c` shows the latest sample of the hcb_rrd cumulative loggers (`elec_quantity_nt` / `elec_quantity_lt` / `gas_quantity`). These are hcb_rrd's own running totals, not the meter's register. They probably started counting when the Toon (or the logger) was set up, so they never matched the meter. After a meter swap they keep going instead of dropping to the new meter's value.
+- **Investigation Points**:
+  - Where the stock QML UI gets its Meterstanden: probably the live P1 dataset from meteradapter / `hdrv_p1` (the raw DSMR registers 1.8.1 / 1.8.2 / gas). If so, read that instead of the rrd loggers.
+  - Compare on a test Toon: rrd latest sample vs the P1 telegram / meteradapter values vs the physical meter.
+  - With HomeWizard / ESPHome P1 as the energy source, use that device's `total_power_import_t1/t2_kwh` / `total_gas_m3` (actual meter registers).
+  - If no meter-register source is available, hide the pop-up or label the values as "counted by Toon" rather than showing them as meter readings.
+
+### 39. Suppress the TSC "Resource File Update" Inbox Message
+- **Status**: Open (user request, 2026-11-12).
+- **Description**:
+  - The inbox shows "Er is een TSC resource file update beschikbaar. Update via TSC menu aub". The TSC script sends it for the stock QML UI's TSC menu, which FreeToon doesn't have, so the user can't act on it.
+- **Approach**:
+  - `inbox.c` already drops the "Service Center" notifications in `inbox_parse_dataset()` (CR2 filter). Add the TSC resource-file message there, matching on its type/subType if it has a stable one, otherwise on "TSC resource file". Also consider sending a DeleteNotification so it doesn't stay in happ_usermsg.
+
+### 40. Empty Inbox Message "telegram / imported" on Both Toons
+- **Status**: Open (user report, 2026-11-12).
+- **Description**:
+  - Both Toons show an inbox message with the header "telegram / imported" and no text. It comes from `telegram.c` (ToonBot settings import, `notify_show("telegram", "imported", ...)`).
+- **Cause (hypothesis)**:
+  - `notify_show()` (notify.c) sends the message as `<plainText>`, but `inbox_parse_dataset()` reads `<text>`. happ_usermsg probably fills `<text>` only for types it knows, so our own notifications arrive without a body. Check the other `notify_show` users too ("update"/"freetoon", "telegram"/"pending").
+- **Approach**:
+  - Dump the happ_usermsg dataset for this notification to see which field carries the text; fall back to `plainText` in the inbox parser when `text` is empty.
+  - Decide whether a one-time "settings imported" note should go to the inbox at all, or only be a banner/log line.

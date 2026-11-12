@@ -244,9 +244,18 @@ Scripts work too: a `#!/bin/sh` or Python file the Toon can run is a valid
        "version": "1.0.0",
        "url": "https://github.com/ToonSoftwareCollective/freetoon-integrations/raw/main/examples/hello-solar/hello-solar.tar.gz",
        "manifest_url": "https://raw.githubusercontent.com/ToonSoftwareCollective/freetoon-integrations/main/examples/hello-solar/manifest.json",
-       "tile": { "title": "Solar", "color": "0xffcc44", "icon": "sun", "service": "solarProduction" }
+       "tile": { "title": "Solar", "color": "0xffcc44", "icon": "sun", "service": "solarProduction" },
+       "min_toonui": "1.0.8"
      }
      ```
+   - `min_toonui` (optional): the oldest FreeToon release this version works
+     with. Set it when a UI plugin (.so) is rebuilt against settings fields or
+     an ABI that older toonui builds don't have. Older Toons then show "Needs
+     1.0.8" instead of offering the install, and the daily app-update check
+     doesn't announce or auto-install it.
+   - Bump `version` for every new package: installed Toons compare it with
+     their `manifest.json` once a day and show "N app updates" on the home
+     screen.
 
 Once merged it appears in **Settings → Marketplace** for every freetoon user.
 

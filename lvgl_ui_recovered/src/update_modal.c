@@ -10,6 +10,7 @@
 #include "settings.h"
 #include "theme.h"
 #include "screens.h"
+#include "app_updates.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,6 +45,7 @@ static const char * const UPD_STEPS_EN[UPD_STEP_COUNT] = {
 /* Modal state */
 static lv_obj_t *  s_update_modal            = NULL;
 static lv_obj_t *  s_about_status_lbl        = NULL;
+static lv_obj_t *  s_apps_status_lbl         = NULL;   /* marketplace app updates */
 static lv_timer_t *s_modal_timer             = NULL;
 static int         s_update_modal_has_install = 0;
 static int         s_install_pinned          = 0;
@@ -270,9 +272,29 @@ static void on_auto_update_toggle(lv_event_t * e) {
     settings_save();
 }
 
+static void on_auto_update_apps_toggle(lv_event_t * e) {
+    lv_obj_t * sw = lv_event_get_target(e);
+    settings.auto_update_apps = lv_obj_has_state(sw, LV_STATE_CHECKED) ? 1 : 0;
+    settings_save();
+}
+
+static void apps_status_refresh(void) {
+    if (!s_apps_status_lbl) return;
+    char names[160], txt[200];
+    int n = app_updates_get(names, sizeof names);
+    if (n > 0)
+        snprintf(txt, sizeof txt, tr("%d app-update(s): %s", "%d app update(s): %s"), n, names);
+    else
+        snprintf(txt, sizeof txt, "%s", tr("Apps zijn up-to-date", "Apps are up to date"));
+    /* only on change: this runs every tick, a re-set label redraws */
+    if (strcmp(lv_label_get_text(s_apps_status_lbl), txt) != 0)
+        lv_label_set_text(s_apps_status_lbl, txt);
+}
+
 static void * check_thread(void * arg) {
     (void)arg;
     update_check_now();
+    app_updates_check_now();
     return NULL;
 }
 
@@ -310,6 +332,7 @@ static void on_channel_toggle(lv_event_t * e) {
  * ------------------------------------------------------------------------- */
 
 void update_modal_tick(void) {
+    apps_status_refresh();
     if (s_about_status_lbl && !s_install_pinned) {
         if (g_update_state.available) {
             lv_obj_set_style_text_color(s_about_status_lbl, lv_color_hex(settings.home_light_mode ? 0x188a38 : 0x66dd88), 0);
@@ -346,6 +369,7 @@ static void modal_timer_cb(lv_timer_t * t) {
 
 void update_modal_close(void) {
     s_about_status_lbl = NULL;
+    s_apps_status_lbl = NULL;
     s_install_pinned = 0;
     if (s_modal_timer) {
         lv_timer_del(s_modal_timer);
@@ -490,6 +514,25 @@ void update_modal_open(lv_obj_t * parent) {
     lv_obj_align(ch_sw, LV_ALIGN_TOP_LEFT, SX(600), SY(290));
     if (settings.update_channel) lv_obj_add_state(ch_sw, LV_STATE_CHECKED);
     lv_obj_add_event_cb(ch_sw, on_channel_toggle, LV_EVENT_VALUE_CHANGED, NULL);
+
+    /* Marketplace apps: nightly auto-update toggle + what's pending */
+    lv_obj_t * aa_lbl = lv_label_create(panel);
+    lv_obj_set_style_text_font(aa_lbl, SF(18), 0);
+    lv_obj_set_style_text_color(aa_lbl, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_label_set_text(aa_lbl, tr("Apps ook automatisch", "Apps automatically too"));
+    lv_obj_align(aa_lbl, LV_ALIGN_TOP_LEFT, 0, SY(350));
+    lv_obj_t * aa_sw = lv_switch_create(panel);
+    lv_obj_align(aa_sw, LV_ALIGN_TOP_LEFT, SX(320), SY(344));
+    if (settings.auto_update_apps) lv_obj_add_state(aa_sw, LV_STATE_CHECKED);
+    lv_obj_add_event_cb(aa_sw, on_auto_update_apps_toggle, LV_EVENT_VALUE_CHANGED, NULL);
+
+    s_apps_status_lbl = lv_label_create(panel);
+    lv_obj_set_style_text_font(s_apps_status_lbl, SF(16), 0);
+    lv_obj_set_style_text_color(s_apps_status_lbl, lv_color_hex(THEME_TEXT_DIM), 0);
+    lv_obj_set_width(s_apps_status_lbl, SX(286));
+    lv_label_set_long_mode(s_apps_status_lbl, LV_LABEL_LONG_DOT);
+    lv_obj_align(s_apps_status_lbl, LV_ALIGN_TOP_LEFT, SX(430), SY(352));
+    apps_status_refresh();
 
     /* Button row */
     lv_obj_t * b_check = lv_btn_create(panel);

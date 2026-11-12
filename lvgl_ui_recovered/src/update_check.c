@@ -10,6 +10,8 @@
 #include "http.h"
 #include "settings.h"
 #include "notify.h"
+#include "app_updates.h"
+void ui_request_restart(void);   /* ui_stack.c (screens.h pulls in LVGL) */
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -276,6 +278,7 @@ static void * update_thread(void * arg) {
      * network setup on the Toon (wifi association can take a moment). */
     sleep(30);
     update_check_now();
+    app_updates_check_now();      /* marketplace apps, same daily cadence */
     long last_check = (long)time(NULL);
     int  last_auto_yday = -1;     /* so a manual reboot at the hour doesn't double-fire */
     while (1) {
@@ -283,16 +286,31 @@ static void * update_thread(void * arg) {
         long now = (long)time(NULL);
         if (now - last_check >= UPDATE_CHECK_INTERVAL_S) {
             update_check_now();
+            app_updates_check_now();
             last_check = now;
         }
-        /* Nightly auto-update: once per day, at the configured hour, if a
-         * newer release is available, install it (with a banner). */
-        if (settings.auto_update_enabled && g_update_state.available) {
+        /* Nightly auto-update: once per day, at the configured hour. Apps
+         * first (the helper runs synchronously), then FreeToon itself — its
+         * installer is detached and restarts the UI on its own. A new plugin
+         * .so is only loaded at start-up, so restart when only apps changed. */
+        int want_ft   = settings.auto_update_enabled && g_update_state.available;
+        int want_apps = settings.auto_update_apps && app_updates_get(NULL, 0) > 0;
+        if (want_ft || want_apps) {
             time_t t = time(NULL); struct tm tm;
             localtime_r(&t, &tm);
             if (tm.tm_hour == settings.auto_update_hour && tm.tm_yday != last_auto_yday) {
                 last_auto_yday = tm.tm_yday;
-                update_install_now();
+                int apps_done = want_apps ? app_updates_install_all() : 0;
+                if (want_ft) {
+                    update_install_now();
+                } else if (apps_done > 0) {
+                    char msg[64];
+                    snprintf(msg, sizeof msg, "%d app-update(s) geinstalleerd", apps_done);
+                    notify_show("update", "freetoon", msg);
+                    fprintf(stderr, "[apps] %d app(s) updated — restarting UI\n", apps_done);
+                    sleep(3);
+                    ui_request_restart();
+                }
             }
         }
     }
