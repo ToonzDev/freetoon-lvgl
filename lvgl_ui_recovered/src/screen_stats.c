@@ -178,11 +178,10 @@ static double meter_latest(const char * logger) {
     return NAN;
 }
 
-/* "7.384,031" — Dutch grouping, 3 decimals. */
+/* "7.384" — Dutch grouping, whole units without decimals. */
 static void fmt_reading(char * out, size_t n, double v) {
-    long long milli = (long long)(v * 1000.0 + 0.5);   /* readings are positive */
-    long long whole = milli / 1000;
-    int frac = (int)(milli % 1000);
+    if (v < 0) v = 0;
+    long long whole = (long long)(v + 0.5);   /* round to nearest whole unit */
     char digits[32];
     snprintf(digits, sizeof digits, "%lld", whole);
     char grouped[48];
@@ -192,7 +191,7 @@ static void fmt_reading(char * out, size_t n, double v) {
         grouped[o++] = digits[i];
     }
     grouped[o] = 0;
-    snprintf(out, n, "%s,%03d", grouped, frac);
+    snprintf(out, n, "%s", grouped);
 }
 
 static void meter_row(lv_obj_t * card, int row, const char * name, double v,
