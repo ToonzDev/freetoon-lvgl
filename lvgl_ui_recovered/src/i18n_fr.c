@@ -17,7 +17,6 @@
  */
 #include "i18n.h"
 #include "lvgl/lvgl.h"   /* LV_SYMBOL_* */
-#include <pthread.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -1949,7 +1948,7 @@ typedef char tr_fr_slots_too_small[(TR_FR_COUNT * 2 < TR_FR_SLOTS) ? 1 : -1];
 
 /* Open-addressing index on the English text: slot = entry index + 1. */
 static uint16_t        tr_fr_slot[TR_FR_SLOTS];
-static pthread_once_t  tr_fr_once = PTHREAD_ONCE_INIT;
+static volatile int    tr_fr_state;     /* 0 = empty, 1 = building, 2 = ready */
 
 static uint32_t tr_fr_hash(const char * s) {
     uint32_t h = 2166136261u;                    /* FNV-1a */
@@ -1967,7 +1966,18 @@ static void tr_fr_build(void) {
 
 const char * tr_fr(const char * nl, const char * en) {
     if (!en) return nl;
-    pthread_once(&tr_fr_once, tr_fr_build);
+    /* Lock-free one-time init (no pthread_once: keeps the on-device glibc
+       import list unchanged, see abi-check). */
+    if (__atomic_load_n(&tr_fr_state, __ATOMIC_ACQUIRE) != 2) {
+        int expect = 0;
+        if (__atomic_compare_exchange_n(&tr_fr_state, &expect, 1, 0,
+                                        __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+            tr_fr_build();
+            __atomic_store_n(&tr_fr_state, 2, __ATOMIC_RELEASE);
+        } else {
+            while (__atomic_load_n(&tr_fr_state, __ATOMIC_ACQUIRE) != 2) { }
+        }
+    }
     uint32_t k = tr_fr_hash(en) & (TR_FR_SLOTS - 1);
     for (uint16_t s; (s = tr_fr_slot[k]) != 0; k = (k + 1) & (TR_FR_SLOTS - 1)) {
         const tr_fr_entry_t * e = &TR_FR[s - 1];
