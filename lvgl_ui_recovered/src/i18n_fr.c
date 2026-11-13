@@ -460,6 +460,8 @@ static const tr_fr_entry_t TR_FR[] = {
     { "laden...", "loading...",
       "chargement..." },
     /* screen_home.c */
+    { "Gas vandaag %.2f m3", "Gas today %.2f m3",
+      "Gaz aujourd'hui %.2f m3" },
     { "Programma kiezen", "Select program",
       "Choisir un programme" },
     { "Annuleren", "Cancel",
