@@ -2698,9 +2698,19 @@ static void refresh_cb(lv_timer_t * t) {
             else
                 ui_label_set_text(lbl_energy_w, energy_offline_label());
         }
+        /* Gas used today, under the watts. Was removed (CR10) when it showed
+         * the meter total; users missed seeing their gas use here. */
         if (lbl_energy_gas) {
-            ui_label_set_text(lbl_energy_gas, "");
-            ui_obj_add_flag(lbl_energy_gas, LV_OBJ_FLAG_HIDDEN);
+            float g = energy_gas_today_m3();
+            if (g >= 0) {
+                char gb[40];
+                snprintf(gb, sizeof gb, tr("Gas vandaag %.2f m3", "Gas today %.2f m3"), g);
+                if (settings.language != LANG_EN) { char * d = strchr(gb, '.'); if (d) *d = ','; }
+                ui_label_set_text(lbl_energy_gas, gb);
+                ui_obj_clear_flag(lbl_energy_gas, LV_OBJ_FLAG_HIDDEN);
+            } else {
+                ui_obj_add_flag(lbl_energy_gas, LV_OBJ_FLAG_HIDDEN);
+            }
         }
     }
     /* NILM transient device label — visible for 10 s after a step-change event */

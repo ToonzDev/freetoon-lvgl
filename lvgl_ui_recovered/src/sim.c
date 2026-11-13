@@ -483,6 +483,15 @@ static void mock_state(void) {
     ha_state.connected = 1;
     /* Solar production, so the Zonnepanelen tile has something to draw.
      * SIM_NO_SOLAR=1 renders the unconfigured state instead. */
+    /* SIM_GAS_M3=<m3>: a HomeWizard P1 as energy source with this gas
+     * reading (Energie tile "Gas vandaag"; the 00:00 baseline then comes
+     * from hcb_rrd if one answers on 127.0.0.1:10080). */
+    if (getenv("SIM_GAS_M3")) {
+        settings.energy_source = 1;
+        hw_state.connected_p1 = 1;
+        hw_state.power_w = 412.0f;
+        hw_state.gas_m3 = (float)atof(getenv("SIM_GAS_M3"));
+    }
     /* SIM_METER=1: meter registers as happ_pwrusage publishes them (#38). */
     if (getenv("SIM_METER")) {
         meter_state.reading_elec_normal_wh = 2384117; meter_state.reading_elec_low_wh = 3051950;
@@ -1122,6 +1131,8 @@ int main(int argc, char ** argv) {
         for (int a = 3; a < argc; a++) {
             int x, y;
             if (sscanf(argv[a], "%d,%d", &x, &y) == 2) sim_tap(x, y);
+            else if (!strncmp(argv[a], "wait:", 5))   /* let background fetches land */
+                for (int ms = atoi(argv[a] + 5); ms > 0; ms -= 20) { lv_timer_handler(); lv_tick_inc(20); usleep(20000); }
         }
         pump(60);
         dump_ppm(out);
