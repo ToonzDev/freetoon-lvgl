@@ -150,14 +150,15 @@ APP_SRC       := $(ENTRY) $(GLIBC_SRC) boxtalk.c ui_stack.c screen_home.c screen
                  stats.c airhist.c homewizard.c p1esphome.c energy.c meteradapter.c domoticz.c hue.c weather.c buienradar_rain.c otgw.c http.c inbox.c rrd_push.c templogger.c \
                  wastecollection.c ventilation.c homeassistant.c ha_mqtt.c efanlamp.c monocypher.c sha2.c \
                  notify.c healthcheck.c pwa_server.c canonical_state.c packages.c mqtt_client.c \
-                 schedule.c icons.c backlight.c settings.c bootpick.c update_check.c app_updates.c telegram.c \
+                 schedule.c icons.c backlight.c settings.c i18n_fr.c bootpick.c update_check.c app_updates.c telegram.c \
                  tile_slots.c client_link.c news.c doorbell.c calendar.c layout.c \
                  toon1_touch.c pin_modal.c update_modal.c video.c ui_cmd.c anim_overlay.c \
                  lv_font_montserrat_96_custom.c lv_font_montserrat_64_custom.c lv_font_montserrat_76_bold.c \
                  lv_font_os_light_30.c lv_font_os_light_40.c lv_font_os_light_50.c lv_font_os_light_90.c \
                  lv_font_os_reg_13.c lv_font_os_reg_14.c lv_font_os_reg_15.c \
                  lv_font_os_reg_16.c lv_font_os_reg_18.c lv_font_os_reg_20.c \
-                 lv_font_os_reg_24.c lv_font_os_reg_30.c lv_font_os_semi_28.c
+                 lv_font_os_reg_24.c lv_font_os_reg_30.c lv_font_os_semi_28.c \
+                 lv_font_ft_12.c lv_font_ft_14.c lv_font_ft_18.c lv_font_ft_20.c lv_font_ft_22.c lv_font_ft_24.c lv_font_ft_28.c lv_font_ft_36.c lv_font_ft_48.c
 ALL_SRC       := $(APP_SRC) $(LVGL_SRC) $(LVDRV_SRC)
 OBJ           := $(patsubst %.c,$(BUILDDIR)/%.o,$(ALL_SRC))
 

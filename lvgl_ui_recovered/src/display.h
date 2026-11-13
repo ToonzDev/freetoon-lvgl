@@ -60,15 +60,15 @@ static inline const lv_font_t * disp_font(int design_px) {
      * the Toon 1 dim clock/temperature visibly thinner than on Toon 2. */
     if (px >= 70) return &lv_font_montserrat_76_bold;
     if (px >= 56) return &lv_font_montserrat_64_custom;
-    if (px >= 42) return &lv_font_montserrat_48;
-    if (px >= 32) return &lv_font_montserrat_36;
-    if (px >= 26) return &lv_font_montserrat_28;
-    if (px >= 23) return &lv_font_montserrat_24;
-    if (px >= 21) return &lv_font_montserrat_22;
-    if (px >= 19) return &lv_font_montserrat_20;
-    if (px >= 16) return &lv_font_montserrat_18;
-    if (px >= 13) return &lv_font_montserrat_14;
-    return &lv_font_montserrat_12;
+    if (px >= 42) return &lv_font_ft_48;
+    if (px >= 32) return &lv_font_ft_36;
+    if (px >= 26) return &lv_font_ft_28;
+    if (px >= 23) return &lv_font_ft_24;
+    if (px >= 21) return &lv_font_ft_22;
+    if (px >= 19) return &lv_font_ft_20;
+    if (px >= 16) return &lv_font_ft_18;
+    if (px >= 13) return &lv_font_ft_14;
+    return &lv_font_ft_12;
 }
 #define SF(px) disp_font(px)
 

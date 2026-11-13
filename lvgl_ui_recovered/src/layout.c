@@ -6,6 +6,7 @@
  */
 #define _GNU_SOURCE
 #include "layout.h"
+#include "i18n.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -390,21 +391,21 @@ void layout_type_min(int type, int * min_w, int * min_h) {
 
 const char * layout_type_name(int type) {
     switch (type) {
-        case LT_CLOCK:       return "Klok / Datum";
-        case LT_THERMOSTAT:  return "Thermostaat";
-        case LT_FORECAST:    return "Weer";
-        case LT_NEWS_TICKER: return "Nieuws (ticker)";
-        case LT_NEWS_SUMMARY:return "Nieuws (overzicht)";
-        case LT_CALENDAR:    return "Agenda";
-        case LT_ENERGY:      return "Energie";
-        case LT_WATER:       return "Water";
-        case LT_VENT:        return "Ventilatie";
-        case LT_FAMILY:      return "Familie";
-        case LT_WASTE:       return "Afval";
-        case LT_LIGHTS:      return "Verlichting";
-        case LT_SLOT:        return "Integratie";
-        case LT_SONOS:       return "Sonos";
-        case LT_RAINFALL:    return "Neerslag";
+        case LT_CLOCK:       return tr("Klok / Datum", "Clock / Date");
+        case LT_THERMOSTAT:  return tr("Thermostaat", "Thermostat");
+        case LT_FORECAST:    return tr("Weer", "Forecast");
+        case LT_NEWS_TICKER: return tr("Nieuws (ticker)", "News (ticker)");
+        case LT_NEWS_SUMMARY:return tr("Nieuws (overzicht)", "News (summary)");
+        case LT_CALENDAR:    return tr("Agenda", "Calendar");
+        case LT_ENERGY:      return tr("Energie", "Energy");
+        case LT_WATER:       return tr("Water", "Water");
+        case LT_VENT:        return tr("Ventilatie", "Ventilation");
+        case LT_FAMILY:      return tr("Familie", "Family");
+        case LT_WASTE:       return tr("Afval", "Waste");
+        case LT_LIGHTS:      return tr("Verlichting", "Lighting");
+        case LT_SLOT:        return tr("Integratie", "Integration");
+        case LT_SONOS:       return tr("Sonos", "Sonos");
+        case LT_RAINFALL:    return tr("Neerslag", "Rainfall");
         default:             return "?";
     }
 }
@@ -491,19 +492,19 @@ void dim_layout_save(void) {
 
 const char * dim_block_name(int id) {
     switch (id) {
-        case DB_THERMO:   return "Thermostaat";
-        case DB_WEATHER:  return "Weer nu";
-        case DB_FORECAST: return "Weer strip";
-        case DB_WASTE:    return "Afval";
-        case DB_FAMILY:   return "Familie";
-        case DB_VENT:     return "Ventilatie";
-        case DB_ENERGY:   return "Stroom";
-        case DB_GAS:      return "Gas";
-        case DB_CLOCK:    return "Klok";
-        case DB_DATE:     return "Datum";
-        case DB_AGENDA:   return "Agenda";
-        case DB_RAINFALL: return "Neerslag";
-        case DB_SOLAR:    return "Zon";
+        case DB_THERMO:   return tr("Thermostaat", "Thermostat");
+        case DB_WEATHER:  return tr("Weer nu", "Weather now");
+        case DB_FORECAST: return tr("Weer strip", "Forecast strip");
+        case DB_WASTE:    return tr("Afval", "Waste");
+        case DB_FAMILY:   return tr("Familie", "Family");
+        case DB_VENT:     return tr("Ventilatie", "Ventilation");
+        case DB_ENERGY:   return tr("Stroom", "Power");
+        case DB_GAS:      return tr("Gas", "Gas");
+        case DB_CLOCK:    return tr("Klok", "Clock");
+        case DB_DATE:     return tr("Datum", "Date");
+        case DB_AGENDA:   return tr("Agenda", "Calendar");
+        case DB_RAINFALL: return tr("Neerslag", "Rainfall");
+        case DB_SOLAR:    return tr("Zon", "Solar");
     }
     return "?";
 }

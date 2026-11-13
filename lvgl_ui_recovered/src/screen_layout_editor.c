@@ -967,7 +967,7 @@ static lv_obj_t * tb_btn(lv_obj_t * bar, int x, int w, const char * txt,
 #ifdef TOON1
     /* Toolbar buttons are width-tightened for 800px; use a smaller label so
      * long words ("Indelingen", "Verwijder") fit without clipping. */
-    lv_obj_set_style_text_font(l, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(l, &lv_font_ft_12, 0);
 #endif
     lv_obj_center(l);
     return b;

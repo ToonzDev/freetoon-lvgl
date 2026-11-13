@@ -156,9 +156,7 @@ static void d_refresh(lv_timer_t * t) {
 
     snprintf(b, sizeof b, "%02d:%02d", tm.tm_hour, tm.tm_min);
     ui_label_set_text(d_clock, b);
-    static const char * mnd[12] = {"januari","februari","maart","april","mei","juni",
-        "juli","augustus","september","oktober","november","december"};
-    snprintf(b, sizeof b, "%d %s", tm.tm_mday, mnd[tm.tm_mon]);
+    snprintf(b, sizeof b, "%d %s", tm.tm_mday, i18n_month_long(tm.tm_mon));
     ui_label_set_text(d_date, b);
 
     /* water pressure + low alert — wp<=0 means no reading (boxtalk swallows

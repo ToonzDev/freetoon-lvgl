@@ -659,7 +659,7 @@ static lv_obj_t * tb_btn(lv_obj_t * bar, int x, int w, const char * txt,
     lv_obj_t * l = lv_label_create(b);
     lv_label_set_text(l, txt);
 #ifdef TOON1
-    lv_obj_set_style_text_font(l, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(l, &lv_font_ft_12, 0);
 #endif
     lv_obj_center(l);
     return b;

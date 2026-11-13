@@ -69,8 +69,9 @@ const char * schedule_state_name(int state) {
 const char * schedule_day_short(int day) {
     static const char * names_nl[] = {"Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"};
     static const char * names_en[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
+    static const char * names_fr[] = {"Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"};
     if (day < 0 || day > 6) return "--";
-    return settings.language == LANG_EN ? names_en[day] : names_nl[day];
+    return i18n_pick(names_nl[day], names_en[day], names_fr[day]);
 }
 
 /* Returns the index (0..schedule_count-1) of the entry active right now

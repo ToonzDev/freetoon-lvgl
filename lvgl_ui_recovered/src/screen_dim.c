@@ -167,7 +167,7 @@ static void dim_make_bar(int side, lv_obj_t ** env, lv_obj_t ** fill,
 
     *cap = lv_label_create(scr_root);
     ui_obj_set_style_text_color(*cap, lv_color_hex(0xffffff), 0);
-    ui_obj_set_style_text_font(*cap, &lv_font_montserrat_22, 0);
+    ui_obj_set_style_text_font(*cap, &lv_font_ft_22, 0);
     lv_obj_set_style_text_align(*cap, LV_TEXT_ALIGN_CENTER, 0);
     ui_label_set_text(*cap, "");
     lv_obj_align_to(*cap, *env,
@@ -191,7 +191,7 @@ static void dim_bar_set(lv_obj_t * env, lv_obj_t * fill, lv_obj_t * cap,
         if (cap) {
             ui_label_set_text(cap, txt);
             ui_obj_set_style_text_color(cap, lv_color_hex(0xffffff), 0);
-            ui_obj_set_style_text_font(cap, &lv_font_montserrat_22, 0);
+            ui_obj_set_style_text_font(cap, &lv_font_ft_22, 0);
             lv_obj_align_to(cap, env,
                 (side < 0) ? LV_ALIGN_OUT_RIGHT_MID : LV_ALIGN_OUT_LEFT_MID,
                 (side < 0) ? SX(6) : -SX(6), 0);
@@ -230,7 +230,7 @@ static void dim_bar_set(lv_obj_t * env, lv_obj_t * fill, lv_obj_t * cap,
     if (cap) {
         ui_label_set_text(cap, txt);
         ui_obj_set_style_text_color(cap, lv_color_hex(0xffffff), 0);
-        ui_obj_set_style_text_font(cap, &lv_font_montserrat_22, 0);
+        ui_obj_set_style_text_font(cap, &lv_font_ft_22, 0);
         lv_obj_align_to(cap, env,
             (side < 0) ? LV_ALIGN_OUT_BOTTOM_LEFT : LV_ALIGN_OUT_BOTTOM_RIGHT,
             0, SY(14));
@@ -245,16 +245,16 @@ static void on_wake_tap(lv_event_t * e) {
 
 static const lv_font_t * pick_date_font(const char * txt, lv_coord_t max_w, lv_coord_t max_h) {
     static const lv_font_t * const fonts[] = {
-        &lv_font_montserrat_48,
-        &lv_font_montserrat_36,
-        &lv_font_montserrat_28,
-        &lv_font_montserrat_24,
-        &lv_font_montserrat_22,
-        &lv_font_montserrat_20,
-        &lv_font_montserrat_18,
-        &lv_font_montserrat_14,
+        &lv_font_ft_48,
+        &lv_font_ft_36,
+        &lv_font_ft_28,
+        &lv_font_ft_24,
+        &lv_font_ft_22,
+        &lv_font_ft_20,
+        &lv_font_ft_18,
+        &lv_font_ft_14,
     };
-    if (!txt || !txt[0]) return &lv_font_montserrat_22;
+    if (!txt || !txt[0]) return &lv_font_ft_22;
     for (size_t i = 0; i < sizeof(fonts)/sizeof(fonts[0]); i++) {
         const lv_font_t * f = fonts[i];
         if (!f) continue;
@@ -264,7 +264,7 @@ static const lv_font_t * pick_date_font(const char * txt, lv_coord_t max_w, lv_c
             return f;
         }
     }
-    return &lv_font_montserrat_14;
+    return &lv_font_ft_14;
 }
 
 static void refresh_cb(lv_timer_t * t) {
@@ -846,7 +846,7 @@ lv_obj_t * screen_dim_create(void) {
 
     dim_lbl_water = lv_label_create(scr_root);
     ui_obj_set_style_text_color(dim_lbl_water, lv_color_hex(0x66bbff), 0);
-    ui_obj_set_style_text_font(dim_lbl_water, &lv_font_montserrat_22, 0);
+    ui_obj_set_style_text_font(dim_lbl_water, &lv_font_ft_22, 0);
     ui_label_set_text(dim_lbl_water, "");
     ui_obj_align(dim_lbl_water, LV_ALIGN_CENTER, SX(175), SY(80));
     ui_obj_add_flag(dim_lbl_water, LV_OBJ_FLAG_HIDDEN);
@@ -874,7 +874,7 @@ lv_obj_t * screen_dim_create(void) {
 
     dim_vent_lbl = lv_label_create(scr_root);
     ui_obj_set_style_text_color(dim_vent_lbl, lv_color_hex(0xbbbbbb), 0);
-    ui_obj_set_style_text_font(dim_vent_lbl, &lv_font_montserrat_18, 0);
+    ui_obj_set_style_text_font(dim_vent_lbl, &lv_font_ft_18, 0);
     ui_label_set_text(dim_vent_lbl, "-- %");
     lv_obj_set_style_text_align(dim_vent_lbl, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(dim_vent_lbl, SX(120));
@@ -886,7 +886,7 @@ lv_obj_t * screen_dim_create(void) {
        when text widths change. */
     lbl_outside_temp = lv_label_create(scr_root);
     ui_obj_set_style_text_color(lbl_outside_temp, lv_color_hex(0xffffff), 0);
-    ui_obj_set_style_text_font(lbl_outside_temp, &lv_font_montserrat_28, 0);
+    ui_obj_set_style_text_font(lbl_outside_temp, &lv_font_ft_28, 0);
     ui_label_set_text(lbl_outside_temp, "");
     lv_obj_set_width(lbl_outside_temp, SX(180));
     lv_obj_set_style_text_align(lbl_outside_temp, LV_TEXT_ALIGN_RIGHT, 0);
@@ -900,7 +900,7 @@ lv_obj_t * screen_dim_create(void) {
 
     lbl_outside = lv_label_create(scr_root);
     ui_obj_set_style_text_color(lbl_outside, lv_color_hex(0xbbbbbb), 0);
-    ui_obj_set_style_text_font(lbl_outside, &lv_font_montserrat_22, 0);
+    ui_obj_set_style_text_font(lbl_outside, &lv_font_ft_22, 0);
     ui_label_set_text(lbl_outside, tr("Buiten", "Outside"));
     /* "Buiten" sits directly UNDER the temperature (same right edge + width), as
      * in the custom dim — not centred low under the whole icon+temp cluster. */
@@ -913,7 +913,7 @@ lv_obj_t * screen_dim_create(void) {
      * names extend to the LEFT instead of clipping the bezel. */
     dim_lbl_life360_a = lv_label_create(scr_root);
     ui_obj_set_style_text_color(dim_lbl_life360_a, lv_color_hex(0x88aaff), 0);
-    ui_obj_set_style_text_font(dim_lbl_life360_a, &lv_font_montserrat_18, 0);
+    ui_obj_set_style_text_font(dim_lbl_life360_a, &lv_font_ft_18, 0);
     lv_obj_set_width(dim_lbl_life360_a, SX(340));
     lv_obj_set_style_text_align(dim_lbl_life360_a, LV_TEXT_ALIGN_RIGHT, 0);
     lv_label_set_long_mode(dim_lbl_life360_a, LV_LABEL_LONG_DOT);
@@ -923,7 +923,7 @@ lv_obj_t * screen_dim_create(void) {
 
     dim_lbl_life360_b = lv_label_create(scr_root);
     ui_obj_set_style_text_color(dim_lbl_life360_b, lv_color_hex(0xff88cc), 0);
-    ui_obj_set_style_text_font(dim_lbl_life360_b, &lv_font_montserrat_18, 0);
+    ui_obj_set_style_text_font(dim_lbl_life360_b, &lv_font_ft_18, 0);
     lv_obj_set_width(dim_lbl_life360_b, SX(340));
     lv_obj_set_style_text_align(dim_lbl_life360_b, LV_TEXT_ALIGN_RIGHT, 0);
     lv_label_set_long_mode(dim_lbl_life360_b, LV_LABEL_LONG_DOT);
@@ -951,7 +951,7 @@ lv_obj_t * screen_dim_create(void) {
 
     lbl_waste = lv_label_create(scr_root);
     ui_obj_set_style_text_color(lbl_waste, lv_color_hex(0xbbbbbb), 0);
-    const lv_font_t * waste_font = (DISP_VER < 600) ? &lv_font_montserrat_14 : &lv_font_montserrat_18;
+    const lv_font_t * waste_font = (DISP_VER < 600) ? &lv_font_ft_14 : &lv_font_ft_18;
     int waste_lbl_y = (DISP_VER < 600) ? 128 : SY(138);
     ui_obj_set_style_text_font(lbl_waste, waste_font, 0);
     lv_obj_set_width(lbl_waste, SX(260));
@@ -973,7 +973,7 @@ lv_obj_t * screen_dim_create(void) {
        nudge clears the bottom edge for the temp row's 18-px font (unscaled). */
     int strip_y = (DISP_VER < 600) ? 398 : SY(508);
     int col_w   = DISP_HOR / WEATHER_FORECAST_DAYS;
-    const lv_font_t * fc_font = (DISP_VER < 600) ? &lv_font_montserrat_14 : &lv_font_montserrat_18;
+    const lv_font_t * fc_font = (DISP_VER < 600) ? &lv_font_ft_14 : &lv_font_ft_18;
     int day_dy  = (DISP_VER < 600) ? 42 : SY(44);
     int temp_dy = (DISP_VER < 600) ? 60 : SY(64);
 
