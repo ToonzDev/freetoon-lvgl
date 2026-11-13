@@ -575,6 +575,97 @@ static void on_nav_next(lv_event_t * e) {
     }
 }
 
+/* hcb_rrd keeps water_quantity in ONE archive, "10yrhours" (checked on two
+ * Toons): there is no "5yrhours" and no "10yrdays" for it, unlike
+ * electricity and gas. Asking for those gave "unknown rra", so every water
+ * chart except "Nu" showed "geen data". */
+static int metric_is_water(void) { return selected_metric == 3; }
+static const char * cum_rra_hours(void) { return metric_is_water() ? "10yrhours" : "5yrhours"; }
+
+/* hcb_rrd stamps a daily sample at 00:00 UTC, shown in local time: "01:00"
+ * in winter (CET), "02:00" in summer (CEST). Local hour of 00:00 UTC on the
+ * given local date. */
+/* 00:00 UTC of a civil date as epoch seconds (Howard Hinnant's
+ * days-from-civil; no timegm(): it is not in the Toon ABI baseline). */
+static long utc_midnight_epoch(int mday, int mon, int yy) {
+    int y = 2000 + yy - (mon <= 2);
+    int era = (y >= 0 ? y : y - 399) / 400;
+    int yoe = y - era * 400;
+    int doy = (153 * (mon + (mon > 2 ? -3 : 9)) + 2) / 5 + mday - 1;
+    int doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return ((long)era * 146097 + doe - 719468) * 86400L;
+}
+static int utc_midnight_local_hour(int mday, int mon, int yy) {
+    time_t t = (time_t)utc_midnight_epoch(mday, mon, yy);
+    struct tm lt;
+    localtime_r(&t, &lt);
+    return lt.tm_hour;
+}
+
+/* Daily samples for a logger that only has an hourly archive: the hourly
+ * sample at 00:00 UTC of each day, which is exactly what the "10yrdays"
+ * archive of the other meters holds (verified against elec/gas on a Toon).
+ * Fetched in 20-day chunks (480 hourly samples, under STATS_MAX_SAMPLES). */
+static int fetch_daily_from_hourly(const char * logger, const char * rra,
+                                   long from, long to, stats_series_t * out) {
+    static stats_series_t chunk;
+    out->n = 0;
+    out->min = +1e30; out->max = -1e30;
+    int any_ok = 0;
+    double last_val = NAN;             /* newest real hourly sample */
+    for (long cf = from; cf < to && out->n < STATS_MAX_SAMPLES; cf += 20 * 86400L) {
+        long ct = cf + 20 * 86400L;
+        if (ct > to) ct = to;
+        if (stats_fetch_range(logger, rra, cf, ct, 500, &chunk) != 0) continue;
+        any_ok = 1;
+        for (int i = 0; i < chunk.n; i++)
+            if (!isnan(chunk.samples[i])) last_val = chunk.samples[i];
+        for (int i = 0; i < chunk.n && out->n < STATS_MAX_SAMPLES; i++) {
+            const char * lab = chunk.labels[i];             /* "DD-MM HH:MM" */
+            if (strlen(lab) < 11 || lab[9] != '0' || lab[10] != '0') continue;   /* on the hour */
+            int hh = atoi(lab + 6);
+            if (hh != utc_midnight_local_hour(atoi(lab), atoi(lab + 3), atoi(chunk.year2[i]))) continue;
+            /* a daily value is stamped at the END of its day (00:00 UTC); hcb_rrd
+             * only returns days that start at or after `from`. Match that, or one
+             * extra day makes 32 values and two bars merge in the Dagen view. */
+            if (utc_midnight_epoch(atoi(lab), atoi(lab + 3), atoi(chunk.year2[i])) - 86400L < from) continue;
+            /* chunk edges overlap by one sample: skip a repeated day */
+            if (out->n > 0 && strcmp(out->labels[out->n - 1], lab) == 0 &&
+                strcmp(out->year2[out->n - 1], chunk.year2[i]) == 0) continue;
+            out->samples[out->n] = chunk.samples[i];
+            memcpy(out->labels[out->n], chunk.labels[i], sizeof out->labels[0]);
+            memcpy(out->year2[out->n],  chunk.year2[i],  sizeof out->year2[0]);
+            if (!isnan(chunk.samples[i])) {
+                if (chunk.samples[i] < out->min) out->min = chunk.samples[i];
+                if (chunk.samples[i] > out->max) out->max = chunk.samples[i];
+            }
+            out->n++;
+        }
+    }
+    /* The running day: the daily archives stamp it at the next 00:00 UTC
+     * with the meter's current value. Mimic that with the newest hourly
+     * sample, so today's bar is there too. */
+    long now = (long)time(NULL);
+    if (to >= now - 3600 && !isnan(last_val) && out->n < STATS_MAX_SAMPLES) {
+        time_t tm1 = (time_t)((now / 86400 + 1) * 86400);   /* the next 00:00 UTC */
+        struct tm lt;
+        localtime_r(&tm1, &lt);
+        char lab[sizeof out->labels[0]], yy[sizeof out->year2[0]];
+        snprintf(lab, sizeof lab, "%02d-%02d %02d:00", lt.tm_mday, lt.tm_mon + 1, lt.tm_hour);
+        snprintf(yy, sizeof yy, "%02d", lt.tm_year % 100);
+        if (out->n == 0 || strcmp(out->labels[out->n - 1], lab) != 0) {
+            out->samples[out->n] = last_val;
+            memcpy(out->labels[out->n], lab, sizeof lab);
+            memcpy(out->year2[out->n], yy, sizeof yy);
+            if (last_val < out->min) out->min = last_val;
+            if (last_val > out->max) out->max = last_val;
+            out->n++;
+        }
+    }
+    if (out->min > out->max) { out->min = 0; out->max = 0; }
+    return any_ok ? 0 : -1;
+}
+
 /* Per-period data fetching. Supports stepping backward/forward in time via g_time_offset. */
 static int load_for_period(void) {
     const metric_t * m = &metrics[selected_metric];
@@ -704,7 +795,7 @@ static int load_for_period(void) {
                 series2.n = 0;
             }
             {
-                int rc = stats_fetch_range(m->cum_logger, "5yrhours", from - 3600, to, 26, &series);
+                int rc = stats_fetch_range(m->cum_logger, cum_rra_hours(), from - 3600, to, 26, &series);
                 if ((rc != 0 || series.n == 0) && is_solar) {
                     series2.n = 0;
                     rc = stats_fetch_range("solar_quantity", "5yrhours", from - 3600, to, 26, &series);
@@ -720,7 +811,9 @@ static int load_for_period(void) {
                 series2.n = 0;
             }
             {
-                int rc = stats_fetch_range(m->cum_logger, "10yrdays", from - DAY, to, 34, &series);
+                int rc = metric_is_water()
+                       ? fetch_daily_from_hourly(m->cum_logger, "10yrhours", from - DAY, to, &series)
+                       : stats_fetch_range(m->cum_logger, "10yrdays", from - DAY, to, 34, &series);
                 if ((rc != 0 || series.n == 0) && is_solar) {
                     series2.n = 0;
                     rc = stats_fetch_range("solar_quantity", "10yrdays", from - DAY, to, 34, &series);
@@ -737,7 +830,9 @@ static int load_for_period(void) {
                 series2.n = 0;
             }
             {
-                int rc = stats_fetch_range(m->cum_logger, "10yrdays", from - DAY, to, 88, &series);
+                int rc = metric_is_water()
+                       ? fetch_daily_from_hourly(m->cum_logger, "10yrhours", from - DAY, to, &series)
+                       : stats_fetch_range(m->cum_logger, "10yrdays", from - DAY, to, 88, &series);
                 if ((rc != 0 || series.n == 0) && is_solar) {
                     series2.n = 0;
                     rc = stats_fetch_range("solar_quantity", "10yrdays", from - DAY, to, 88, &series);
@@ -754,7 +849,9 @@ static int load_for_period(void) {
                 series2.n = 0;
             }
             {
-                int rc = stats_fetch_range(m->cum_logger, "10yrdays", from - DAY, to, 370, &series);
+                int rc = metric_is_water()
+                       ? fetch_daily_from_hourly(m->cum_logger, "10yrhours", from - DAY, to, &series)
+                       : stats_fetch_range(m->cum_logger, "10yrdays", from - DAY, to, 370, &series);
                 if ((rc != 0 || series.n == 0) && is_solar) {
                     series2.n = 0;
                     rc = stats_fetch_range("solar_quantity", "10yrdays", from - DAY, to, 370, &series);
@@ -770,7 +867,7 @@ static int load_for_period(void) {
                 series2.n = 0;
             }
             {
-                int rc = stats_fetch_range(m->cum_logger, "10yrdays", 0, 0, 120, &series);
+                int rc = stats_fetch_range(m->cum_logger, metric_is_water() ? "10yrhours" : "10yrdays", 0, 0, 120, &series);
                 if ((rc != 0 || series.n == 0) && is_solar) {
                     series2.n = 0;
                     rc = stats_fetch_range("solar_quantity", "10yrdays", 0, 0, 120, &series);
@@ -1639,3 +1736,41 @@ lv_obj_t * screen_stats_create(void) {
     reload_and_render();
     return scr_root;
 }
+
+#ifdef SIM
+/* Sim/test: daily samples derived from an hourly archive must equal the
+ * logger's own daily archive. Run against a real hcb_rrd on 127.0.0.1:10080
+ * (e.g. an ssh tunnel to a Toon): `toonui-sim rrddaily <logger> <hourly-rra>`. */
+int stats_sim_daily_check(const char * logger, const char * hourly_rra) {
+    static stats_series_t daily, derived;
+    long now = (long)time(NULL);
+    long from = now - 40 * 86400L;
+    if (stats_fetch_range(logger, "10yrdays", from, now, 60, &daily) != 0) {
+        /* no daily archive (water): just list what we derive */
+        if (fetch_daily_from_hourly(logger, hourly_rra, now - 6 * 86400L, now, &derived) != 0) { printf("hourly fetch failed\n"); return 1; }
+        for (int j = 0; j < derived.n; j++) printf("  %s/%s %.0f\n", derived.labels[j], derived.year2[j], derived.samples[j]);
+        return 0;
+    }
+    if (fetch_daily_from_hourly(logger, hourly_rra, from, now, &derived) != 0) { printf("hourly fetch failed\n"); return 1; }
+    int match = 0, diff = 0, missing = 0;
+    for (int i = 0; i < daily.n; i++) {
+        int found = 0;
+        for (int j = 0; j < derived.n; j++) {
+            if (strcmp(daily.labels[i], derived.labels[j]) != 0) continue;
+            found = 1;
+            if ((isnan(daily.samples[i]) && isnan(derived.samples[j])) ||
+                fabs(daily.samples[i] - derived.samples[j]) < 0.5) match++;
+            else { diff++; printf("  DIFF %s: daily %.0f derived %.0f\n", daily.labels[i], daily.samples[i], derived.samples[j]); }
+            break;
+        }
+        if (!found) { missing++; printf("  MISSING in derived: %s (%.0f)\n", daily.labels[i], daily.samples[i]); }
+    }
+    if (daily.n && derived.n)
+        printf("  first daily %s, first derived %s\n", daily.labels[0], derived.labels[0]);
+    printf("daily archive %d samples, derived %d: %d equal, %d different, %d missing\n",
+           daily.n, derived.n, match, diff, missing);
+    if (daily.n)   printf("  last daily   %s = %.0f\n", daily.labels[daily.n - 1], daily.samples[daily.n - 1]);
+    if (derived.n) printf("  last derived %s = %.0f\n", derived.labels[derived.n - 1], derived.samples[derived.n - 1]);
+    return diff || missing;
+}
+#endif

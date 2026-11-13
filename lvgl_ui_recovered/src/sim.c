@@ -878,6 +878,10 @@ int main(int argc, char ** argv) {
      * happ_usermsg notifications set (#40). */
     /* HA entity picker lookup: `toonui-sim hadiscover <host:port> <domains>`
      * (HA_SIM_TOKEN=<token>); domains comma-separated, as the picker passes. */
+    if (!strcmp(mode, "rrddaily") && argc > 3) {
+        extern int stats_sim_daily_check(const char * logger, const char * hourly_rra);
+        return stats_sim_daily_check(argv[2], argv[3]);
+    }
     if (!strcmp(mode, "hadiscover") && argc > 3) {
         static ha_discovered_t ents[HA_DISCOVERED_MAX];
         int n = 0;
