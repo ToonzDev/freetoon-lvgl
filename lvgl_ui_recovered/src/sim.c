@@ -948,7 +948,8 @@ int main(int argc, char ** argv) {
                 homewizard_socket_set_async(0, !hw_sockets[0].on);
             }
             if (s % 4 == 0) {
-                printf("t=%2ds solar have=%d %.0f W |", s, energy_have_solar(), energy_solar_w());
+                printf("t=%2ds p1 conn=%d %.0f W gas=%.3f m3 | solar have=%d %.0f W |", s, hw_state.connected_p1,
+                       (double)hw_state.power_w, (double)hw_state.gas_m3, energy_have_solar(), energy_solar_w());
                 for (int i = 0; i < HW_SOCKET_MAX; i++)
                     if (settings.hw_socket_host[i][0])
                         printf(" sock%d conn=%d on=%d %.0f W", i, hw_sockets[i].connected,

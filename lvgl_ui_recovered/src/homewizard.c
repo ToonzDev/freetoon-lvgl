@@ -135,6 +135,37 @@ static void gas_hour_update(float gas_now) {
     hw_state.gas_hour_m3 = delta;
 }
 
+/* Gas from the P1's "external" device list:
+ *   "external":[{"unique_id":"..","type":"gas_meter","timestamp":251113101500,
+ *                "value":2569.646,"unit":"m3"}, {...water_meter...}]
+ * HomeWizard calls the flat total_gas_m3 deprecated in favour of this list,
+ * and it can be null while the list has the reading. Returns the gas meter
+ * with the newest timestamp (a replaced meter can leave an old entry), or
+ * -1 when there is none. */
+static double parse_external_gas(const char * json) {
+    double best = -1, best_ts = -1;
+    const char * p = json;
+    while ((p = strstr(p, "\"gas_meter\"")) != NULL) {
+        /* the enclosing {...} of this entry (entries are flat objects) */
+        const char * obj = p;
+        while (obj > json && *obj != '{') obj--;
+        const char * end = strchr(p, '}');
+        p += 11;
+        if (*obj != '{' || !end) continue;
+        char entry[320];
+        size_t n = (size_t)(end - obj);
+        if (n >= sizeof entry) continue;
+        memcpy(entry, obj, n);
+        entry[n] = 0;
+        /* must be the type field, not e.g. a unique_id that happens to match */
+        if (!strstr(entry, "\"type\":\"gas_meter\"") && !strstr(entry, "\"type\": \"gas_meter\"")) continue;
+        double v  = parse_num(entry, "value", -1);
+        double ts = parse_num(entry, "timestamp", 0);
+        if (v > 0 && ts >= best_ts) { best = v; best_ts = ts; }
+    }
+    return best;
+}
+
 static void poll_p1(void) {
     if (!settings.enable_p1_elec || !settings.p1_elec_host[0]) { hw_state.connected_p1 = 0; return; }
     hw_state.polled_p1 = 1;             /* a poll is being attempted */
@@ -158,7 +189,12 @@ static void poll_p1(void) {
     hw_state.kwh_export_t1    = (float)parse_num(j, "total_power_export_t1_kwh", 0);
     hw_state.kwh_export_t2    = (float)parse_num(j, "total_power_export_t2_kwh", 0);
     hw_state.tariff           = (int)  parse_num(j, "active_tariff",          1);
-    hw_state.gas_m3           = (float)parse_num(j, "total_gas_m3",           0);
+    double gas_m3 = parse_num(j, "total_gas_m3", 0);
+    if (gas_m3 <= 0) {                       /* missing / null: use the external list */
+        double ext = parse_external_gas(j);
+        if (ext > 0) gas_m3 = ext;
+    }
+    hw_state.gas_m3           = (float)gas_m3;
     gas_hour_update(hw_state.gas_m3);
     hw_state.voltage_l1_v     = (float)parse_num(j, "active_voltage_l1_v",    0);
     hw_state.current_l1_a     = (float)parse_num(j, "active_current_a",       0);
