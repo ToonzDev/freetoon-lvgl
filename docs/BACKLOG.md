@@ -497,3 +497,22 @@
   - Water statistics from hcb_rrd's 10yrhours archive (was 0.01 m3 instead of 1.84 m3).
   - HomeWizard P1 gas from the "external" list; Meterstanden subscribe on happ_pwrusage's ssdp:alive (#38).
   - Apparaten beheren in front of the HA modal; tracker picker lists person entities; waste tile on a low tile; Toon 1 bold dim font.
+
+### 43. Energy Use per HomeWizard Socket (History in Statistics)
+- **Status**: Parked (2026-11-13), user report.
+- **Description**:
+  - A user wants to see the energy use per HomeWizard Energy Socket. Today the Devices screen ("Stekkers (HomeWizard)") shows only the live watts; no history is kept.
+- **Options**:
+  - Small: kWh today + total per socket on the Devices screen, from the socket's `total_power_import_kwh` (today = now minus the 00:00 value, as for gas).
+  - Larger: a Stekkers tab in Statistics. hcb_rrd has no API to create a logger (only get/set data, ChangeRrdProperties, RemoveRrd, SetRrdDeviceUuid, RevertToFactoryDefaults), but loggers are `<rrdLogger>` blocks in `/qmf/config/config_hcb_rrd.xml`; adding blocks + restarting hcb_rrd creates the .rra files, after which `setRrdData` works as for the P1/water. Risks: a malformed file stops hcb_rrd (all graphs); Eneco config updates / factory reset can drop the extra loggers. Needs backup, atomic replace, check after restart with automatic rollback. First step: one test logger on the test Toon 1 (.52), only with the user's go-ahead. Alternative: FreeToon keeps its own history file (as airhist does).
+
+### 44. Dynamic Energy Tariffs for Costs in Statistics
+- **Status**: Open (user request, 2026-11-13).
+- **Description**:
+  - The Euro view in Statistics uses one fixed price per kWh and per m3 (Settings: Stroom / Gas tariff). With a dynamic contract the price changes every hour (electricity) or every day (gas), so the costs shown are not real.
+- **Approach**:
+  - Fetch hourly day-ahead prices (EPEX NL) from a free source (e.g. EnergyZero or Frank Energie public API: all-in or market price), plus the user's own surcharge (energy tax, supplier mark-up, VAT) as settings.
+  - Keep the prices per hour for as far back as the statistics go (own file on /mnt/data, or hcb_rrd logger as in #43), and compute costs per hour bar as usage x that hour's price; days/weeks/months as the sum of their hours.
+  - Gas: daily price (gas day 06:00-06:00) the same way.
+  - Show the current price (and cheapest hours ahead) on the Energie tile or dim screen as an option; fixed tariffs remain the default.
+  - Feed-in (solar export) at the same hourly price, minus the supplier's feed-in fee.
