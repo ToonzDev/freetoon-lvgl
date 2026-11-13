@@ -50,10 +50,15 @@
  * The 64/96 readout fonts ship as custom glyph subsets (digits/°), declared here.
  */
 LV_FONT_DECLARE(lv_font_montserrat_64_custom)
+LV_FONT_DECLARE(lv_font_montserrat_76_bold)
 LV_FONT_DECLARE(lv_font_montserrat_96_custom)
 static inline const lv_font_t * disp_font(int design_px) {
     int px = (design_px * DISP_HOR) / DESIGN_HOR;
     if (px >= 80) return &lv_font_montserrat_96_custom;
+    /* SF(96) on Toon 1 (75 px): the 96 px readout font is Montserrat Bold,
+     * so its scaled stand-in must be Bold too — the regular 64 px font made
+     * the Toon 1 dim clock/temperature visibly thinner than on Toon 2. */
+    if (px >= 70) return &lv_font_montserrat_76_bold;
     if (px >= 56) return &lv_font_montserrat_64_custom;
     if (px >= 42) return &lv_font_montserrat_48;
     if (px >= 32) return &lv_font_montserrat_36;
