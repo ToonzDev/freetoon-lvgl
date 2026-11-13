@@ -14,6 +14,7 @@
 #include "settings.h"
 #include "theme.h"
 #include "homeassistant.h"
+#include "layout.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
@@ -82,6 +83,9 @@ static void rebuild(void) {
         else       lv_obj_add_flag(empty_hint, LV_OBJ_FLAG_HIDDEN);
     }
 
+    const layout_tile_t * lt_tile = settings.custom_layout_enabled ? layout_find(LT_LIGHTS) : NULL;
+    int lights_tile = (lt_tile && lt_tile->visible);
+    int tile_rank = 0;
     for (int i = 0; i < ha_device_count; i++) {
         ha_device_t * D = &ha_devices[i];
         lv_obj_t * c = lv_obj_create(list);
@@ -105,8 +109,17 @@ static void rebuild(void) {
         lv_label_set_text_fmt(tp, "%s  -  %s", hadev_type_str(D->type), D->entity_id);
         lv_obj_align(tp, LV_ALIGN_LEFT_MID, 4, 12);
 
-        /* Home-pin toggle + remove. */
-        lv_obj_t * pinb = small_btn(c, D->pin_home ? tr("Home " LV_SYMBOL_OK, "Home " LV_SYMBOL_OK) : tr("Home", "Home"),
+        /* Home-pin toggle + remove. With a Verlichting tile in the custom
+         * layout, the first two pinned lights/switches are that tile's two
+         * buttons: label them T1 / T2 (as the Domoticz screen does) so it is
+         * clear which devices the tile shows. */
+        const char * pin_txt = D->pin_home ? "Home " LV_SYMBOL_OK : "Home";
+        if (D->pin_home && lights_tile && (D->type == HADEV_LIGHT || D->type == HADEV_SWITCH)) {
+            if (tile_rank == 0)      pin_txt = "T1 " LV_SYMBOL_OK;
+            else if (tile_rank == 1) pin_txt = "T2 " LV_SYMBOL_OK;
+            tile_rank++;
+        }
+        lv_obj_t * pinb = small_btn(c, pin_txt,
                                     D->pin_home ? COL_PIN_ON : COL_PIN_OFF,
                                     86, 36, on_pin, i);
         lv_obj_align(pinb, LV_ALIGN_RIGHT_MID, -76, 0);

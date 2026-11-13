@@ -1921,18 +1921,40 @@ static int rotate_member_at(int n, char * out, size_t sz) {
     return 0;
 }
 
-static void on_tile_light_btn1(lv_event_t * e) {
-    (void)e;
-    if (settings.domoticz_tile_idx1 >= 0) {
-        domoticz_switch_async(settings.domoticz_tile_idx1, "Toggle");
+
+/* What button n (0/1) on the Verlichting tile controls.
+ *  - Domoticz enabled: the two switches chosen in Settings > Domoticz.
+ *  - otherwise: the first two Home Assistant lights/switches flagged "Home"
+ *    in the device manager (Settings > Home Assistant > Apparaten beheren).
+ * Before, the tile only knew Domoticz and kept showing "Dev #2" buttons
+ * after Domoticz was switched off; HA devices could not be put on it.
+ * Resolved on every use: ha_devices[] shifts when a device is removed. */
+typedef struct { int kind; int dz_idx; int ha_i; } tile_light_src_t;   /* kind: 0 none, 1 Domoticz, 2 HA */
+
+static tile_light_src_t tile_light_src(int n) {
+    tile_light_src_t s = { 0, -1, -1 };
+    if (settings.enable_domoticz || (settings.client_mode && domoticz_state.count > 0)) {
+        int idx = n == 0 ? settings.domoticz_tile_idx1 : settings.domoticz_tile_idx2;
+        if (idx >= 0) { s.kind = 1; s.dz_idx = idx; }
+        return s;
     }
-}
-static void on_tile_light_btn2(lv_event_t * e) {
-    (void)e;
-    if (settings.domoticz_tile_idx2 >= 0) {
-        domoticz_switch_async(settings.domoticz_tile_idx2, "Toggle");
+    if (!settings.enable_ha) return s;
+    int seen = 0;
+    for (int i = 0; i < ha_device_count; i++) {
+        if (!ha_devices[i].pin_home) continue;
+        if (ha_devices[i].type != HADEV_LIGHT && ha_devices[i].type != HADEV_SWITCH) continue;
+        if (seen++ == n) { s.kind = 2; s.ha_i = i; return s; }
     }
+    return s;
 }
+
+static void tile_light_toggle(int n) {
+    tile_light_src_t s = tile_light_src(n);
+    if (s.kind == 1) domoticz_switch_async(s.dz_idx, "Toggle");
+    else if (s.kind == 2) ha_device_toggle_async(ha_devices[s.ha_i].type, ha_devices[s.ha_i].entity_id);
+}
+static void on_tile_light_btn1(lv_event_t * e) { (void)e; tile_light_toggle(0); }
+static void on_tile_light_btn2(lv_event_t * e) { (void)e; tile_light_toggle(1); }
 
 static const domoticz_dev_t * find_domoticz_dev(int idx) {
     if (idx < 0) return NULL;
@@ -1943,37 +1965,37 @@ static const domoticz_dev_t * find_domoticz_dev(int idx) {
     return NULL;
 }
 
-static void update_tile_light_btn(lv_obj_t * btn, lv_obj_t * lbl_name, lv_obj_t * sw_btn, lv_obj_t * lbl_st, int idx) {
+static void update_tile_light_btn(lv_obj_t * btn, lv_obj_t * lbl_name, lv_obj_t * sw_btn, lv_obj_t * lbl_st, tile_light_src_t s) {
     if (!btn) return;
-    if (idx < 0) {
+    if (s.kind == 0) {
         ui_obj_add_flag(btn, LV_OBJ_FLAG_HIDDEN);
         return;
     }
     ui_obj_clear_flag(btn, LV_OBJ_FLAG_HIDDEN);
-    const domoticz_dev_t * d = find_domoticz_dev(idx);
-    if (d) {
-        if (lbl_name) ui_label_set_text(lbl_name, d->name);
-        if (lbl_st) ui_label_set_text(lbl_st, d->on ? tr("AAN", "ON") : tr("UIT", "OFF"));
-        ui_obj_set_style_bg_color(btn, lv_color_hex(settings.home_light_mode ? 0xedf2f7 : 0x1e2838), 0);
-        if (sw_btn) ui_obj_set_style_bg_color(sw_btn, lv_color_hex(d->on ? 0x2e6e3a : (settings.home_light_mode ? 0xd0d8e2 : 0x283848)), 0);
-        if (lbl_name) ui_obj_set_style_text_color(lbl_name, lv_color_hex(COL_TEXT_HI), 0);
-        if (lbl_st) ui_obj_set_style_text_color(lbl_st, lv_color_hex(d->on ? 0xffffff : (settings.home_light_mode ? 0x485868 : 0x88aabb)), 0);
+    /* name + state from the source; known = 0 while the device isn't there */
+    int known = 0, on = 0;
+    if (s.kind == 1) {
+        const domoticz_dev_t * d = find_domoticz_dev(s.dz_idx);
+        if (d) { known = 1; on = d->on; if (lbl_name) ui_label_set_text(lbl_name, d->name); }
+        else if (lbl_name) ui_label_set_text_fmt(lbl_name, "Dev #%d", s.dz_idx);
     } else {
-        if (lbl_name) ui_label_set_text_fmt(lbl_name, "Dev #%d", idx);
-        if (lbl_st) ui_label_set_text(lbl_st, "--");
-        ui_obj_set_style_bg_color(btn, lv_color_hex(settings.home_light_mode ? 0xedf2f7 : 0x1e2838), 0);
-        if (sw_btn) ui_obj_set_style_bg_color(sw_btn, lv_color_hex(settings.home_light_mode ? 0xd0d8e2 : 0x283848), 0);
-        if (lbl_name) ui_obj_set_style_text_color(lbl_name, lv_color_hex(COL_TEXT_HI), 0);
-        if (lbl_st) ui_obj_set_style_text_color(lbl_st, lv_color_hex(settings.home_light_mode ? 0x485868 : 0x88aabb), 0);
+        const ha_device_t * d = &ha_devices[s.ha_i];
+        known = d->available; on = d->on;
+        if (lbl_name) ui_label_set_text(lbl_name, d->name);
     }
+    if (lbl_st) ui_label_set_text(lbl_st, !known ? "--" : on ? tr("AAN", "ON") : tr("UIT", "OFF"));
+    ui_obj_set_style_bg_color(btn, lv_color_hex(settings.home_light_mode ? 0xedf2f7 : 0x1e2838), 0);
+    if (sw_btn) ui_obj_set_style_bg_color(sw_btn, lv_color_hex((known && on) ? 0x2e6e3a : (settings.home_light_mode ? 0xd0d8e2 : 0x283848)), 0);
+    if (lbl_name) ui_obj_set_style_text_color(lbl_name, lv_color_hex(COL_TEXT_HI), 0);
+    if (lbl_st) ui_obj_set_style_text_color(lbl_st, lv_color_hex((known && on) ? 0xffffff : (settings.home_light_mode ? 0x485868 : 0x88aabb)), 0);
 }
 
 static void update_tile_lights(void) {
     if (!tile_lights_lbl_default && !tile_lights_btn1) return;
-    int idx1 = settings.domoticz_tile_idx1;
-    int idx2 = settings.domoticz_tile_idx2;
-    int has1 = (idx1 >= 0);
-    int has2 = (idx2 >= 0);
+    tile_light_src_t idx1 = tile_light_src(0);
+    tile_light_src_t idx2 = tile_light_src(1);
+    int has1 = (idx1.kind != 0);
+    int has2 = (idx2.kind != 0);
 
     if (!has1 && !has2) {
         if (tile_lights_lbl_default) ui_obj_clear_flag(tile_lights_lbl_default, LV_OBJ_FLAG_HIDDEN);
