@@ -4066,11 +4066,11 @@ static void open_ha_entities_modal(lv_event_t * e) {
     lv_label_set_text(lsec, tr("Trackers", "Trackers"));
     lv_obj_align(lsec, LV_ALIGN_TOP_LEFT, SX(4), y);
     y += 36;
-    y = ha_field_row(p, y, tr("Tracker A entiteit:", "Tracker A entity:"), settings.life360_a_entity, "device_tracker.auto", tw, &ta_life360_a_entity, "device_tracker");
+    y = ha_field_row(p, y, tr("Tracker A entiteit:", "Tracker A entity:"), settings.life360_a_entity, "device_tracker.auto", tw, &ta_life360_a_entity, "device_tracker,person");
     y = ha_field_row(p, y, tr("Tracker A naam:", "Tracker A name:"), settings.life360_a_name, "Auto", tw, &ta_life360_a_name, NULL);
-    y = ha_field_row(p, y, tr("Tracker B entiteit:", "Tracker B entity:"), settings.life360_b_entity, "device_tracker.google_pixel_6a", tw, &ta_life360_b_entity, "device_tracker");
+    y = ha_field_row(p, y, tr("Tracker B entiteit:", "Tracker B entity:"), settings.life360_b_entity, "device_tracker.google_pixel_6a", tw, &ta_life360_b_entity, "device_tracker,person");
     y = ha_field_row(p, y, tr("Tracker B naam:", "Tracker B name:"), settings.life360_b_name, "Telefoon", tw, &ta_life360_b_name, NULL);
-    y = ha_field_row(p, y, tr("Tracker C entiteit:", "Tracker C entity:"), settings.life360_c_entity, "device_tracker.life360_member", tw, &ta_life360_c_entity, "device_tracker");
+    y = ha_field_row(p, y, tr("Tracker C entiteit:", "Tracker C entity:"), settings.life360_c_entity, "device_tracker.life360_member", tw, &ta_life360_c_entity, "device_tracker,person");
     y = ha_field_row(p, y, tr("Tracker C naam:", "Tracker C name:"), settings.life360_c_name, "Persoon", tw, &ta_life360_c_name, NULL);
     y += 8;
 

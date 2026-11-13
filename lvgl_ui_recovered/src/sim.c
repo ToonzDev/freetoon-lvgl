@@ -876,6 +876,17 @@ int main(int argc, char ** argv) {
     /* BoxTalk datasets through the real dispatcher (`toonui-sim bxtfeed`):
      * happ_pwrusage powerUsage/gasUsage (meter readings, #38) and a
      * happ_usermsg notifications set (#40). */
+    /* HA entity picker lookup: `toonui-sim hadiscover <host:port> <domains>`
+     * (HA_SIM_TOKEN=<token>); domains comma-separated, as the picker passes. */
+    if (!strcmp(mode, "hadiscover") && argc > 3) {
+        static ha_discovered_t ents[HA_DISCOVERED_MAX];
+        int n = 0;
+        snprintf(settings.ha_host, sizeof settings.ha_host, "%s", argv[2]);
+        int rc = ha_discover_entities(argv[3], ents, &n, HA_DISCOVERED_MAX);
+        printf("rc=%d count=%d\n", rc, n);
+        for (int i = 0; i < n; i++) printf("  %s (%s)\n", ents[i].entity_id, ents[i].friendly_name);
+        return 0;
+    }
     if (!strcmp(mode, "bxtfeed")) {
         extern void boxtalk_sim_feed(const char * xml);
         /* ssdp:alive: happ_pwrusage itself -> subscribe (stderr log line);

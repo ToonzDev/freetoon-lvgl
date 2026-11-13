@@ -109,6 +109,10 @@ static char g_token[256] = "";
 static volatile int g_ha_reconnect = 0;   /* ha_start() on a running client: drop the WS and reconnect */
 
 static void load_token(void) {
+#ifdef SIM
+    { const char * t = getenv("HA_SIM_TOKEN");   /* sim/tests: no /mnt/data/ha.cfg */
+      if (t && *t) { snprintf(g_token, sizeof g_token, "%s", t); return; } }
+#endif
     FILE * f = fopen(HA_TOKEN_PATH, "r");
     if (!f) return;
     if (fgets(g_token, sizeof(g_token), f)) {
@@ -1563,53 +1567,67 @@ int ha_discover_entities(const char * domain_prefix,
         return -1;
     }
 
-    /* Build a match needle: "entity_id":"<prefix>." — the dot guarantees we
-     * match e.g. "cover.living" but NOT "cover_long_entity". */
-    char needle[80];
-    int nlen = snprintf(needle, sizeof(needle), "\"entity_id\":\"%s.", domain_prefix);
-    size_t ndlen = strlen(needle);
-
+    /* domain_prefix may list several domains, comma-separated (the tracker
+     * pickers ask for "device_tracker,person"). Per domain, the match needle
+     * is "entity_id":"<domain>." — the dot guarantees we match e.g.
+     * "cover.living" but NOT "cover_long_entity". */
     int found = 0;
-    const char * pos = body;
-    while (found < max) {
-        const char * hit = strstr(pos, needle);
-        if (!hit) break;
-        hit += ndlen;   /* skip to start of entity_id value (after the dot) */
-        pos = hit;
+    const char * dom = domain_prefix;
+    while (*dom && found < max) {
+        char domain[40];
+        size_t dl = strcspn(dom, ",");
+        snprintf(domain, sizeof domain, "%.*s", (int)(dl < sizeof domain - 1 ? dl : sizeof domain - 1), dom);
+        dom += dl;
+        if (*dom == ',') dom++;
+        if (!domain[0]) continue;
 
-        /* Extract entity_id — it's the full "domain_prefix.entity_name" */
-        char ent[64];
-        snprintf(ent, sizeof(ent), "%s.", domain_prefix);
-        size_t elen = strlen(ent);
-        const char * ep = hit;
-        while (*ep && *ep != '"' && elen < sizeof(ent) - 1)
-            ent[elen++] = *ep++;
-        ent[elen] = 0;
+        char needle[80];
+        snprintf(needle, sizeof(needle), "\"entity_id\":\"%s.", domain);
+        size_t ndlen = strlen(needle);
 
-        /* Walk forward to find "friendly_name":" */
-        char fn[64] = "";
-        const char * fnp = strstr(pos, "\"friendly_name\":\"");
-        if (fnp) {
-            fnp += 17;   /* skip "friendly_name":" */
-            size_t fni = 0;
-            while (*fnp && *fnp != '"' && fni < sizeof(fn) - 1)
-                fn[fni++] = *fnp++;
-            fn[fni] = 0;
-        }
+        const char * pos = body;
+        while (found < max) {
+            const char * hit = strstr(pos, needle);
+            if (!hit) break;
+            hit += ndlen;   /* skip to start of entity_id value (after the dot) */
+            pos = hit;
 
-        if (ent[0] && ha_id_safe(ent)) {
-            snprintf(out[found].entity_id, sizeof(out[found].entity_id), "%s", ent);
-            if (fn[0])
-                snprintf(out[found].friendly_name, sizeof(out[found].friendly_name),
-                         "%s", fn);
-            else
-                snprintf(out[found].friendly_name, sizeof(out[found].friendly_name),
-                         "%s", ent);
-            found++;
+            /* Extract entity_id — it's the full "domain.entity_name" */
+            char ent[64];
+            snprintf(ent, sizeof(ent), "%s.", domain);
+            size_t elen = strlen(ent);
+            const char * ep = hit;
+            while (*ep && *ep != '"' && elen < sizeof(ent) - 1)
+                ent[elen++] = *ep++;
+            ent[elen] = 0;
+
+            /* Walk forward to find "friendly_name":" */
+            char fn[64] = "";
+            const char * fnp = strstr(pos, "\"friendly_name\":\"");
+            if (fnp) {
+                fnp += 17;   /* skip "friendly_name":" */
+                size_t fni = 0;
+                while (*fnp && *fnp != '"' && fni < sizeof(fn) - 1)
+                    fn[fni++] = *fnp++;
+                fn[fni] = 0;
+            }
+
+            if (ent[0] && ha_id_safe(ent)) {
+                snprintf(out[found].entity_id, sizeof(out[found].entity_id), "%s", ent);
+                if (fn[0])
+                    snprintf(out[found].friendly_name, sizeof(out[found].friendly_name),
+                             "%s", fn);
+                else
+                    snprintf(out[found].friendly_name, sizeof(out[found].friendly_name),
+                             "%s", ent);
+                found++;
+            }
         }
     }
     *count = found;
-    return (found > 0) ? 0 : -1;
+    /* 0 = HA answered (count may be 0: no such entities there); -1 = no
+     * answer / bad token. The picker words its message on the difference. */
+    return 0;
 }
 
 int ha_start(void) {

@@ -74,11 +74,18 @@ static void load_entities(void) {
     lv_obj_add_flag(spinner, LV_OBJ_FLAG_HIDDEN);
 
     if (ok != 0 || count == 0) {
-        char msg[80];
-        snprintf(msg, sizeof(msg),
-                 tr("Geen %s-entiteiten gevonden - controleer HA-verbinding",
-                    "No %s entities found - check HA connection"),
-                 g_domain);
+        /* Two different problems: HA didn't answer (host / token), or it
+         * answered and simply has no entity of this kind. */
+        char msg[160];
+        if (ok != 0)
+            snprintf(msg, sizeof(msg), "%s",
+                     tr("Geen antwoord van Home Assistant - controleer host en token",
+                        "No answer from Home Assistant - check host and token"));
+        else
+            snprintf(msg, sizeof(msg),
+                     tr("Home Assistant heeft geen entiteiten van het type %s",
+                        "Home Assistant has no entities of type %s"),
+                     g_domain);
         lv_obj_t * t = lv_list_add_text(lst_results, msg);
         if (t) lv_obj_set_style_text_color(t, lv_color_hex(THEME_TEXT_MUTED), 0);
         return;
