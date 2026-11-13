@@ -160,15 +160,6 @@
 
 ## Open / Backlog
 
-### 12. Doorbell Live Snapshot/Feed Investigation ('feed unavailable')
-- **Status**: Open / Investigation needed.
-- **Description**:
-  - After pressing the physical doorbell, the Toon correctly opens the doorbell popup via WebSocket trigger, but displays *"Doorbell: snapshot unavailable"*.
-- **Investigation Points**:
-  - **Camera Proxy vs. Event Image**: Battery-powered Eufy doorbells remain in sleep mode; check if `camera.doorbell` provides a snapshot immediately or if `image.doorbell_event_image` holds the captured doorbell press frame.
-  - **HTTP Response Verification**: Check what `/usr/bin/curl` actually downloads from `http://<ha>:8123/api/camera_proxy/camera.doorbell` to `/tmp/doorbell.jpg` (HTTP status code, 401/404/500 JSON vs valid JPEG header `FF D8 FF`).
-  - **Stream/Snapshot Wake-up Latency**: Determine if a short delay or wake-up call (or MJPEG stream via go2rtc/RTSP) is needed for battery-powered cameras.
-
 ### 13. Settings Cleanup: Remove Redundant Options from 'Scherm'
 - **Status**: Implemented.
 - **Description**:
