@@ -64,6 +64,10 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .ticker a:hover,.list a:hover{text-decoration:underline}
 .onoff{margin-left:auto;font-size:13px;color:var(--muted)}
 .onoff.on{color:var(--warm)}
+.sw{margin-left:auto;min-width:58px;padding:5px 10px;border-radius:8px;background:var(--btn);font-size:13px;color:var(--dim)}
+.sw.on{background:var(--active);color:#fff}
+.sw:disabled{opacity:.5;cursor:default}
+.list li:has(.sw){align-items:center}
 .big{font-size:42px;font-weight:300;line-height:1.1}
 .mid{font-size:26px;font-weight:300}
 .sub{font-size:13px;color:var(--dim)}
@@ -666,17 +670,42 @@ function renderNews() {
 }
 setInterval(function () { newsIdx++; if (S.news && S.news.length) renderNews(); }, 8000);
 
-/* Lights: Home Assistant lights and Domoticz switches, state only. */
+/* Lights: the Home Assistant lights/switches from the Toon's device manager
+ * (the ones on its Verlichting tile first) and the Domoticz switches. Each is
+ * a button that toggles it; blinds and the legacy HA light list show state only. */
+var lightRows = [];
 function renderLights() {
-  var rows = [];
-  (S.ha_lights || []).forEach(function (l) { if (l.av !== 0) rows.push([l.name || l.id, l.on]); });
-  (S.dz || []).forEach(function (d) { rows.push([d.name, d.on]); });
+  var rows = [], seen = {};
+  (S.ha_devs || []).slice().sort(function (a, b) { return (b.pin || 0) - (a.pin || 0); }).forEach(function (d) {
+    seen[d.id] = 1;
+    rows.push({n: d.name || d.id, on: d.on, av: d.av !== 0, src: d, path: "/api/ha/toggle", body: {id: d.id}});
+  });
+  (S.ha_lights || []).forEach(function (l) {
+    if (l.av !== 0 && !seen[l.id]) rows.push({n: l.name || l.id, on: l.on, av: true});
+  });
+  (S.dz || []).forEach(function (d) {
+    var r = {n: d.name, on: d.on, av: true, src: d};
+    if (d.kind !== 2) { r.path = "/api/dz/toggle"; r.body = {idx: d.idx}; }   /* 2 = blind */
+    rows.push(r);
+  });
+  lightRows = rows.slice(0, 12);
   show("t-lights", rows.length > 0);
-  $("l-list").innerHTML = rows.length ? rows.slice(0, 8).map(function (r) {
-    return "<li><span>" + esc(r[0]) + '</span><span class="onoff' + (r[1] ? " on" : "") + '">' +
-           esc(r[1] ? t("on") : t("off")) + "</span></li>";
+  $("l-list").innerHTML = rows.length ? lightRows.map(function (r, i) {
+    var txt = esc(!r.av ? t("offline") : r.on ? t("on") : t("off"));
+    return "<li><span>" + esc(r.n) + "</span>" + (r.path
+      ? '<button class="sw' + (r.on && r.av ? " on" : "") + '" data-i="' + i + '"' + (r.av ? "" : " disabled") + ">" + txt + "</button>"
+      : '<span class="onoff' + (r.on ? " on" : "") + '">' + txt + "</span>") + "</li>";
   }).join("") : '<li class="muted">' + esc(t("nodata")) + "</li>";
 }
+$("l-list").addEventListener("click", function (e) {
+  var b = e.target.closest ? e.target.closest("button.sw") : null;
+  if (!b) return;
+  var r = lightRows[+b.getAttribute("data-i")];
+  if (!r || !r.path) return;
+  if (r.src) r.src.on = r.on ? 0 : 1;      /* show it at once; the live stream confirms */
+  renderLights();
+  post(r.path, r.body);
+});
 
 /* Slot tiles: the bound marketplace integration's title and latest values. */
 function renderSlots() {

@@ -293,6 +293,27 @@ static int render_state_json(char * body, size_t sz) {
     }
     if (p < end) p += snprintf(p, end-p, "],");
 
+    /* ---- HA devices from the device manager (Settings > Home Assistant >
+     * Apparaten beheren): the lights and switches, for the remote page's
+     * Lampen tile (shown + switchable there; POST /api/ha/toggle). */
+    if (p < end) p += snprintf(p, end-p, "\"ha_devs\":[");
+    if (settings.enable_ha) {
+        int first = 1;
+        for (int i = 0; i < ha_device_count && i < HA_DEVICE_MAX; i++) {
+            const ha_device_t * D = &ha_devices[i];
+            if (D->type != HADEV_LIGHT && D->type != HADEV_SWITCH) continue;
+            char name[72], eid[136];
+            json_strcpy(name, D->name,      sizeof name);
+            json_strcpy(eid,  D->entity_id, sizeof eid);
+            if (!first && p < end) *p++ = ',';
+            first = 0;
+            if (p < end) p += snprintf(p, end-p,
+                "{\"id\":\"%s\",\"name\":\"%s\",\"on\":%d,\"av\":%d,\"pin\":%d}",
+                eid, name, D->on, D->available, D->pin_home);
+        }
+    }
+    if (p < end) p += snprintf(p, end-p, "],");
+
     /* ---- schedule entries (target_state + day/hh:mm window) */
     if (p < end) p += snprintf(p, end-p, "\"schedule\":[");
     for (int i = 0; i < schedule_count && i < SCHEDULE_MAX; i++) {
@@ -448,9 +469,12 @@ static int render_state_json(char * body, size_t sz) {
     }
     if (p < end) p += snprintf(p, end-p, "],");
 
-    /* ---- domoticz devices (current on/level state) */
+    /* ---- domoticz devices (current on/level state). Only while Domoticz
+     * is in use: the list survives switching Domoticz off at runtime, and the
+     * remote page would keep showing those devices. */
+    int dz_n = (settings.enable_domoticz || settings.client_mode) ? domoticz_state.count : 0;
     if (p < end) p += snprintf(p, end-p, "\"dz\":[");
-    for (int i = 0; i < domoticz_state.count && i < DOMOTICZ_MAX_DEV; i++) {
+    for (int i = 0; i < dz_n && i < DOMOTICZ_MAX_DEV; i++) {
         const domoticz_dev_t * d = &domoticz_state.dev[i];
         char name[40];
         json_strcpy(name, d->name, sizeof name);
@@ -1304,6 +1328,38 @@ static int handle_hw_socket(int fd, const char * body) {
         return send_status(fd, 400, "Bad Request", "{\"err\":\"need {\\\"i\\\":slot,\\\"on\\\":0|1}\"}");
     homewizard_socket_set_async(i, on);
     return send_status(fd, 200, "OK", "{\"ok\":1}");
+}
+
+/* POST /api/ha/toggle {"id":"switch.x"} — toggle a Home Assistant light or
+ * switch from the remote page. Only entities the user added in the device
+ * manager can be switched: the id is looked up there, never passed on as-is. */
+static int handle_ha_toggle(int fd, const char * body) {
+    char id[64];
+    if (!settings.enable_ha || !extract_str(body, "id", id, sizeof id) || !id[0])
+        return send_status(fd, 400, "Bad Request", "{\"err\":\"need {\\\"id\\\":\\\"entity_id\\\"}\"}");
+    for (int i = 0; i < ha_device_count && i < HA_DEVICE_MAX; i++) {
+        const ha_device_t * D = &ha_devices[i];
+        if ((D->type == HADEV_LIGHT || D->type == HADEV_SWITCH) && strcmp(D->entity_id, id) == 0) {
+            ha_device_toggle_async(D->type, D->entity_id);
+            return send_status(fd, 200, "OK", "{\"ok\":1}");
+        }
+    }
+    return send_status(fd, 404, "Not Found", "{\"err\":\"not a managed light or switch\"}");
+}
+
+/* POST /api/dz/toggle {"idx":N} — toggle a Domoticz switch that is in the
+ * current device list. */
+static int handle_dz_toggle(int fd, const char * body) {
+    int idx;
+    if (!settings.enable_domoticz || !extract_int(body, "idx", &idx))
+        return send_status(fd, 400, "Bad Request", "{\"err\":\"need {\\\"idx\\\":N}\"}");
+    for (int i = 0; i < domoticz_state.count && i < DOMOTICZ_MAX_DEV; i++) {
+        if (domoticz_state.dev[i].idx == idx) {
+            domoticz_switch_async(idx, "Toggle");
+            return send_status(fd, 200, "OK", "{\"ok\":1}");
+        }
+    }
+    return send_status(fd, 404, "Not Found", "{\"err\":\"unknown Domoticz device\"}");
 }
 
 /* -------- full settings page (web mirror of Settings screen) ---------- */
@@ -2349,6 +2405,8 @@ static int dispatch(int fd, char * req) {
         if (!strcmp(path, "/api/schedule")) return handle_schedule_post(fd, body);
         if (!strcmp(path, "/api/curtain"))  return handle_curtain(fd, body);
         if (!strcmp(path, "/api/hw/socket")) return handle_hw_socket(fd, body);
+        if (!strcmp(path, "/api/ha/toggle")) return handle_ha_toggle(fd, body);
+        if (!strcmp(path, "/api/dz/toggle")) return handle_dz_toggle(fd, body);
         if (!strcmp(path, "/api/settings")) return handle_settings_post(fd, body);
         if (!strcmp(path, "/api/update"))   return handle_update_post(fd);
         if (!strcmp(path, "/api/packages")) return handle_packages_post(fd, body);
