@@ -14,6 +14,7 @@
 #include "shell_util.h"
 #include "http.h"
 #include "settings.h"
+#include "i18n.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -145,7 +146,8 @@ static int js_str(const char * begin, const char * end, const char * key,
 }
 
 /* Compute Dutch short-day label "ma 13-5" from a "2026-05-14T00:00:00" string. */
-static const char * dutch_dow[] = {"zo","ma","di","wo","do","vr","za"};
+static const char * dutch_dow[]  = {"zo","ma","di","wo","do","vr","za"};
+static const char * french_dow[] = {"di","lu","ma","me","je","ve","sa"};   /* FR; EN keeps Dutch, as before */
 static void format_day_label(const char * iso_date, char * out, size_t outsz) {
     if (strlen(iso_date) < 10) { snprintf(out, outsz, "?"); return; }
     int y = atoi(iso_date);
@@ -157,7 +159,8 @@ static void format_day_label(const char * iso_date, char * out, size_t outsz) {
     int K = yy % 100, J = yy / 100;
     int h = (d + (13*(mm+1))/5 + K + K/4 + J/4 + 5*J) % 7;  /* 0=Sat,1=Sun,2=Mon */
     int dow = (h + 6) % 7;  /* 0=Sun..6=Sat */
-    snprintf(out, outsz, "%s %d-%d", dutch_dow[dow], d, mo);
+    snprintf(out, outsz, "%s %d-%d",
+             settings.language == LANG_FR ? french_dow[dow] : dutch_dow[dow], d, mo);
 }
 
 /* ---- Buienradar forecast: current + 5-day + hourly by location id ----------
@@ -212,8 +215,8 @@ static const char * br_desc(const char * icon) {
     char l = (icon && icon[0]) ? icon[0] : 'c';
     for (size_t i = 0; i < sizeof(BR_COND)/sizeof(BR_COND[0]); i++)
         if (BR_COND[i].letter == l)
-            return settings.language ? BR_COND[i].en : BR_COND[i].nl;
-    return settings.language ? "Cloudy" : "Bewolkt";
+            return tr(BR_COND[i].nl, BR_COND[i].en);   /* FR via i18n_fr.c */
+    return tr("Bewolkt", "Cloudy");
 }
 
 /* p at '{' or '[': returns the char after the matching close (strings skipped),

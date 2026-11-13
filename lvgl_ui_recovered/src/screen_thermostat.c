@@ -87,7 +87,9 @@ static void refresh_cb(lv_timer_t * t) {
     strftime(clk, sizeof(clk), "%H:%M", &tm);
     lv_label_set_text(lbl_clock, clk);
     char dt[48];
-    strftime(dt, sizeof(dt), "%A %d %B %Y", &tm);
+    /* strftime %A/%B follow the C locale (always English on the Toon). */
+    snprintf(dt, sizeof(dt), "%s %d %s %d", i18n_day_long(tm.tm_wday), tm.tm_mday,
+             i18n_month_long(tm.tm_mon), tm.tm_year + 1900);
     lv_label_set_text(lbl_date, dt);
 
     if (toon_state.connected) {

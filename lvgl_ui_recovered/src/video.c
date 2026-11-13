@@ -317,7 +317,7 @@ void video_install_button(lv_obj_t * parent, lv_obj_t * anchor)
     lv_obj_t * glyph = lv_label_create(btn);
     lv_label_set_text(glyph, LV_SYMBOL_VIDEO);
     lv_obj_set_style_text_color(glyph, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(glyph, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(glyph, &lv_font_ft_28, 0);
     lv_obj_center(glyph);
 }
 #endif  /*TOON1*/

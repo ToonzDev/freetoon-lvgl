@@ -115,8 +115,6 @@ extern toon_state_t  toon_state;
 extern meter_state_t meter_state;
 extern hw_state_t    hw_state;
 
-static const char * MND[12] = {"januari","februari","maart","april","mei","juni",
-    "juli","augustus","september","oktober","november","december"};
 
 static float cur_power_w(void) { return energy_power_w(); }
 static void  comma(char * s) { for (; *s; s++) if (*s == '.') *s = ','; }
@@ -392,7 +390,7 @@ static void refresh_slot(slot_t * s) {
     case TT_CLOCK: {
         time_t n = time(NULL); struct tm tm; localtime_r(&n, &tm);
         snprintf(b, sizeof b, "%02d:%02d", tm.tm_hour, tm.tm_min); lv_label_set_text(s->val, b);
-        snprintf(b, sizeof b, "%d %s %d", tm.tm_mday, MND[tm.tm_mon], tm.tm_year + 1900); lv_label_set_text(s->sub, b);
+        snprintf(b, sizeof b, "%d %s %d", tm.tm_mday, i18n_month_long(tm.tm_mon), tm.tm_year + 1900); lv_label_set_text(s->sub, b);
         break; }
     case TT_HUMID:
         if (toon_state.humidity > 0) { snprintf(b, sizeof b, "%.0f%%", toon_state.humidity); lv_label_set_text(s->val, b); }

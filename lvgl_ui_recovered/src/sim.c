@@ -737,6 +737,8 @@ int main(int argc, char ** argv) {
      * without a /mnt/data/toonui.cfg. */
     { const char * st = getenv("TOONUI_SIM_STOCK_TILES");
       if (st) snprintf(settings.stock_tiles, sizeof settings.stock_tiles, "%s", st); }
+    /* Sim-only: $SIM_LANG = 0 (nl) / 1 (en) / 2 (fr) renders in that UI language. */
+    if (getenv("SIM_LANG")) settings.language = atoi(getenv("SIM_LANG"));
 
     const char * mode = (argc > 1) ? argv[1] : "home";
 
