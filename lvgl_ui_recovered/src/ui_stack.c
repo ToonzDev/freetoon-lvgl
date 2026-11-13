@@ -314,6 +314,11 @@ void ui_idle_tick(void) {
             screen_home_dismiss_modals();
             screen_settings_close_modals();
             screen_home_reset_to_main();
+            /* A sub-screen that hid the top layer (HA entity picker, HA
+             * device manager) never got to restore it — do it here, or later
+             * modals stay invisible. While dimmed the layer must stay hidden;
+             * waking un-hides it. */
+            if (!is_dimmed) lv_obj_clear_flag(lv_layer_top(), LV_OBJ_FLAG_HIDDEN);
         }
     }
 

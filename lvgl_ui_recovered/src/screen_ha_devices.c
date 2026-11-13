@@ -30,7 +30,11 @@ static lv_obj_t * scr_root = NULL;
 static lv_obj_t * list     = NULL;
 static lv_obj_t * empty_hint = NULL;
 
-static void back_async(void * u) { (void)u; ui_pop(); }
+static void back_async(void * u) {
+    (void)u;
+    lv_obj_clear_flag(lv_layer_top(), LV_OBJ_FLAG_HIDDEN);   /* the settings modal underneath */
+    ui_pop();
+}
 static void on_back(lv_event_t * e) { (void)e; lv_async_call(back_async, NULL); }
 
 static void rebuild(void);
@@ -112,8 +116,25 @@ static void rebuild(void) {
     }
 }
 
+/* This screen is opened from the Home Assistant settings modal, which lives
+ * on lv_layer_top() and is therefore drawn ABOVE every screen: without hiding
+ * that layer the modal stayed in front and this screen was invisible behind
+ * it. Hide it while we are the active screen (as the entity picker does) and
+ * show it again when leaving (back_async).
+ * Async: when waking from dim, ui_stack pops back to us and only then
+ * un-hides the top layer — hiding it one tick later wins that order too. */
+static void hide_top_async(void * u) {
+    (void)u;
+    if (scr_root && lv_scr_act() == scr_root)
+        lv_obj_add_flag(lv_layer_top(), LV_OBJ_FLAG_HIDDEN);
+}
+
 static void on_scr_event(lv_event_t * e) {
-    if (lv_event_get_code(e) == LV_EVENT_SCREEN_LOADED) rebuild();
+    if (lv_event_get_code(e) == LV_EVENT_SCREEN_LOADED) {
+        rebuild();
+        lv_obj_add_flag(lv_layer_top(), LV_OBJ_FLAG_HIDDEN);
+        lv_async_call(hide_top_async, NULL);
+    }
 }
 
 static int scr_light_mode = -1;
