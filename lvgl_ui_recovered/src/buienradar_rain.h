@@ -5,7 +5,7 @@
 #include <time.h>
 
 #define RAIN_MAX_POINTS_3H  48
-#define RAIN_MAX_POINTS_24H 48
+#define RAIN_MAX_POINTS_24H 25
 
 typedef struct {
     char time_str[8];   /* "HH:MM" */

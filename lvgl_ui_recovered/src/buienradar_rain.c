@@ -159,14 +159,17 @@ static int parse_24h(const char * body, buienradar_rain_snapshot_t * snap) {
             pt.mm = (float)atof(pr_p + 12);
         }
 
-        if (pt.value > max_val) max_val = pt.value;
-        if (pt.mm > max_mm) max_mm = pt.mm;
+        /* Only calculate statistics over the 24-hour forecast window (first 24 bars) */
+        if (count < 24) {
+            if (pt.value > max_val) max_val = pt.value;
+            if (pt.mm > max_mm) max_mm = pt.mm;
+        }
 
         snap->points_24h[count++] = pt;
         p = end + 1;
     }
 
-    snap->count_24h = count;
+    snap->count_24h = (count > 24) ? 24 : count;
     snap->max_mm_24h = max_mm;
     snap->has_rain_24h = (max_val > 0);
 

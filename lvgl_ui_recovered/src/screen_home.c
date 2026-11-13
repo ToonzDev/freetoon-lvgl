@@ -259,7 +259,7 @@ static lv_obj_t * rain_btn_3h       = NULL;
 static lv_obj_t * rain_btn_24h      = NULL;
 static lv_obj_t * rain_chart        = NULL;
 static lv_chart_series_t * rain_ser = NULL;
-static lv_obj_t * rain_lbl_times[4] = {0};
+static lv_obj_t * rain_lbl_times[5] = {0};
 static int rain_mode_24h            = 0;
 static int s_rain_compact           = 0;
 static lv_obj_t * lights_handle     = NULL;
@@ -931,7 +931,7 @@ static void update_rain_tile_ui(void) {
             for (int i = 0; i < 3; i++) {
                 if (rain_thresh_lbl[i]) ui_obj_add_flag(rain_thresh_lbl[i], LV_OBJ_FLAG_HIDDEN);
             }
-            for (int i = 0; i < 4; i++) {
+            for (int i = 0; i < 5; i++) {
                 if (rain_lbl_times[i]) ui_obj_add_flag(rain_lbl_times[i], LV_OBJ_FLAG_HIDDEN);
             }
         } else {
@@ -944,13 +944,16 @@ static void update_rain_tile_ui(void) {
             for (int i = 0; i < 3; i++) {
                 if (rain_thresh_lbl[i]) ui_obj_clear_flag(rain_thresh_lbl[i], LV_OBJ_FLAG_HIDDEN);
             }
-            for (int i = 0; i < 4; i++) {
+            for (int i = 0; i < 5; i++) {
                 if (rain_lbl_times[i]) ui_obj_clear_flag(rain_lbl_times[i], LV_OBJ_FLAG_HIDDEN);
             }
         }
     }
 
     if (!rain_mode_24h) {
+        if (rain_chart) {
+            lv_chart_set_div_line_count(rain_chart, 4, 4);
+        }
         if (rain_lbl_summary) {
             ui_label_set_text(rain_lbl_summary, snap.summary_3h[0] ? snap.summary_3h : tr("Laden...", "Loading..."));
         }
@@ -969,12 +972,30 @@ static void update_rain_tile_ui(void) {
             if (rain_lbl_times[0]) ui_label_set_text(rain_lbl_times[0], tr("Nu", "Now"));
             if (rain_lbl_times[1]) ui_label_set_text(rain_lbl_times[1], snap.points_3h[n / 3].time_str);
             if (rain_lbl_times[2]) ui_label_set_text(rain_lbl_times[2], snap.points_3h[2 * n / 3].time_str);
-            if (rain_lbl_times[3]) {
-                ui_label_set_text(rain_lbl_times[3], snap.points_3h[n - 1].time_str);
-                if (rain_chart) lv_obj_align_to(rain_lbl_times[3], rain_chart, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, 2);
+            if (rain_lbl_times[3]) ui_label_set_text(rain_lbl_times[3], snap.points_3h[n - 1].time_str);
+            if (rain_lbl_times[4]) ui_obj_add_flag(rain_lbl_times[4], LV_OBJ_FLAG_HIDDEN);
+
+            if (rain_chart) {
+                int chart_w = lv_obj_get_width(rain_chart);
+                for (int i = 0; i < 4; i++) {
+                    if (!rain_lbl_times[i]) continue;
+                    ui_obj_clear_flag(rain_lbl_times[i], LV_OBJ_FLAG_HIDDEN);
+                    lv_obj_update_layout(rain_lbl_times[i]);
+                    if (i == 0) {
+                        lv_obj_align_to(rain_lbl_times[i], rain_chart, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 2);
+                    } else if (i == 3) {
+                        lv_obj_align_to(rain_lbl_times[i], rain_chart, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, 2);
+                    } else {
+                        lv_coord_t w = lv_obj_get_width(rain_lbl_times[i]);
+                        lv_obj_align_to(rain_lbl_times[i], rain_chart, LV_ALIGN_OUT_BOTTOM_LEFT, (chart_w * i) / 3 - w / 2, 2);
+                    }
+                }
             }
         }
     } else {
+        if (rain_chart) {
+            lv_chart_set_div_line_count(rain_chart, 4, 5);
+        }
         if (rain_lbl_summary) {
             ui_label_set_text(rain_lbl_summary, snap.summary_24h[0] ? snap.summary_24h : tr("Laden...", "Loading..."));
         }
@@ -990,23 +1011,41 @@ static void update_rain_tile_ui(void) {
         }
         if (snap.count_24h > 0) {
             int n = snap.count_24h;
-            int idxs[4] = { 0, n / 3, (2 * n) / 3, n - 1 };
-            for (int i = 0; i < 4; i++) {
+            int idxs[5] = { 0, 6, 12, 18, 24 };
+            int chart_w = rain_chart ? lv_obj_get_width(rain_chart) : 0;
+
+            for (int i = 0; i < 5; i++) {
                 if (!rain_lbl_times[i]) continue;
+                ui_obj_clear_flag(rain_lbl_times[i], LV_OBJ_FLAG_HIDDEN);
                 int idx = idxs[i];
-                if (idx < 0) idx = 0;
-                if (idx >= n) idx = n - 1;
                 char hbuf[8] = "";
-                const char * ts = snap.points_24h[idx].time_str;
+                const char * ts = "";
+                if (idx < n) {
+                    ts = snap.points_24h[idx].time_str;
+                } else if (idx == 24 && snap.points_24h[24].time_str[0]) {
+                    ts = snap.points_24h[24].time_str;
+                } else {
+                    ts = snap.points_24h[0].time_str;
+                }
+
                 if (ts[0]) {
                     snprintf(hbuf, sizeof(hbuf), "%.2s", ts);
                 } else {
-                    snprintf(hbuf, sizeof(hbuf), "%02d", (i * 24) / 3);
+                    snprintf(hbuf, sizeof(hbuf), "%02d", (i * 6) % 24);
                 }
                 ui_label_set_text(rain_lbl_times[i], hbuf);
-            }
-            if (rain_chart && rain_lbl_times[3]) {
-                lv_obj_align_to(rain_lbl_times[3], rain_chart, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, 2);
+                lv_obj_update_layout(rain_lbl_times[i]);
+
+                if (rain_chart) {
+                    if (i == 0) {
+                        lv_obj_align_to(rain_lbl_times[i], rain_chart, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 2);
+                    } else if (i == 4) {
+                        lv_obj_align_to(rain_lbl_times[i], rain_chart, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, 2);
+                    } else {
+                        lv_coord_t w = lv_obj_get_width(rain_lbl_times[i]);
+                        lv_obj_align_to(rain_lbl_times[i], rain_chart, LV_ALIGN_OUT_BOTTOM_LEFT, (chart_w * i) / 4 - w / 2, 2);
+                    }
+                }
             }
         }
     }
@@ -5428,17 +5467,17 @@ lv_obj_t * screen_home_create(void) {
     }
 
     /* Time markers under chart */
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 5; i++) {
         rain_lbl_times[i] = lv_label_create(tile_rain);
         ui_obj_set_style_text_color(rain_lbl_times[i], lv_color_hex(COL_TEXT_DIM), 0);
         ui_obj_set_style_text_font(rain_lbl_times[i], SF(12), 0);
-        ui_label_set_text(rain_lbl_times[i], (i == 3) ? "24" : (i == 0) ? "00" : "");
+        ui_label_set_text(rain_lbl_times[i], "");
         if (i == 0) {
             lv_obj_align_to(rain_lbl_times[i], rain_chart, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 2);
-        } else if (i == 3) {
+        } else if (i == 4) {
             lv_obj_align_to(rain_lbl_times[i], rain_chart, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, 2);
         } else {
-            lv_obj_align_to(rain_lbl_times[i], rain_chart, LV_ALIGN_OUT_BOTTOM_LEFT, (chart_w * i) / 3 - 6, 2);
+            lv_obj_align_to(rain_lbl_times[i], rain_chart, LV_ALIGN_OUT_BOTTOM_LEFT, (chart_w * i) / 4 - 6, 2);
         }
     }
 
@@ -5604,7 +5643,7 @@ void screen_home_destroy(void) {
         rain_ser = NULL;
         rain_lbl_empty = NULL;
         for (int i = 0; i < 3; i++) rain_thresh_lbl[i] = NULL;
-        for (int i = 0; i < 4; i++) rain_lbl_times[i] = NULL;
+        for (int i = 0; i < 5; i++) rain_lbl_times[i] = NULL;
         s_rain_compact = 0;
         if (s == lv_scr_act()) {
             /* Park on one reusable blank screen while home is rebuilt (a new
