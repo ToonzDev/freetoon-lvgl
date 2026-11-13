@@ -276,7 +276,7 @@ static void on_meter_open(lv_event_t * e) {
 
     int rows = 3 + (has_prod ? 2 : 0);
     lv_obj_t * card = lv_obj_create(s_meter_modal);
-    lv_obj_set_size(card, SX(560), SY(150 + rows * 52 + (from_rrd ? 40 : 0)));
+    lv_obj_set_size(card, SX(560), SY(150 + rows * 52));
     lv_obj_center(card);
     lv_obj_set_style_bg_color(card, lv_color_hex(THEME_CARD_BG), 0);
     lv_obj_set_style_border_color(card, lv_color_hex(THEME_BORDER), 0);
@@ -299,16 +299,6 @@ static void on_meter_open(lv_event_t * e) {
     if (has_prod) {
         meter_row(card, row++, tr("Teruglevering normaal", "Export normal"), p_nt, 1000.0, "kWh");
         meter_row(card, row++, tr("Teruglevering laag", "Export low"),       p_lt, 1000.0, "kWh");
-    }
-    if (from_rrd) {
-        lv_obj_t * n = lv_label_create(card);
-        lv_obj_set_style_text_color(n, lv_color_hex(THEME_TEXT_DIM), 0);
-        lv_obj_set_style_text_font(n, SF(16), 0);
-        lv_obj_set_width(n, SX(512));
-        lv_label_set_long_mode(n, LV_LABEL_LONG_WRAP);
-        lv_label_set_text(n, tr("Geteld door de Toon - kan afwijken van de meter.",
-                                "Counted by the Toon - may differ from the meter."));
-        lv_obj_align(n, LV_ALIGN_TOP_LEFT, SX(24), SY(78 + row * 52));
     }
 
     lv_obj_t * b = lv_btn_create(card);
