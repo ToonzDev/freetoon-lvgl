@@ -488,3 +488,12 @@
   - Daily marketplace app-update check with home banner, "Alles updaten" and optional nightly app updates (#35).
   - Weather from Buienradar only; radar buttons off the timestamp.
   - Settings that apply without a restart (#36); Meterstanden from the meter's registers (#38); FreeToon notifications with text, TSC notice hidden (#39, #40).
+
+### 42. Release 1.0.9: HA Lights on Tile and Web Page, Gas Today, Water Statistics, Meter Readings After Restart
+- **Status**: Prepared (2026-11-13); tag 1.0.9 to be created on GitHub.
+- **Contents**:
+  - Home Assistant lights/switches on the Verlichting tile (T1/T2 in Apparaten beheren) and switchable on the :10081 web page.
+  - "Gas vandaag" on the Energie tile; gas today since 00:00 for HomeWizard/ESPHome P1 and Home Assistant.
+  - Water statistics from hcb_rrd's 10yrhours archive (was 0.01 m3 instead of 1.84 m3).
+  - HomeWizard P1 gas from the "external" list; Meterstanden subscribe on happ_pwrusage's ssdp:alive (#38).
+  - Apparaten beheren in front of the HA modal; tracker picker lists person entities; waste tile on a low tile; Toon 1 bold dim font.
