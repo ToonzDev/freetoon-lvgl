@@ -253,11 +253,17 @@ static void on_meter_open(lv_event_t * e) {
         e_nt = meter_latest("elec_quantity_nt");
         e_lt = meter_latest("elec_quantity_lt");
         gas  = meter_latest("gas_quantity");
-        p_nt = meter_latest("elec_quantity_nt_prod");
-        p_lt = meter_latest("elec_quantity_lt_prod");
+        p_nt = meter_latest("elec_quantity_nt_produ");
+        p_lt = meter_latest("elec_quantity_lt_produ");
         from_rrd = !isnan(e_nt) || !isnan(e_lt) || !isnan(gas);
     }
     #undef POS_OR_NAN
+    fprintf(stderr, "[meter] Meterstanden source: %s (normal %.0f, low %.0f, gas %.0f)\n",
+            (settings.energy_source == 1 && hw_state.connected_p1) ? "HomeWizard P1"
+            : (settings.energy_source == 2 && p1esp_state.connected) ? "ESPHome P1"
+            : from_rrd ? "hcb_rrd fallback (no happ_pwrusage dataset)"
+            : (meter_state.reading_elec_normal_wh > 0 || meter_state.reading_gas_l > 0) ? "happ_pwrusage dataset" : "none",
+            e_nt, e_lt, gas);
     int has_prod = !isnan(p_nt) || !isnan(p_lt);
 
     s_meter_modal = lv_obj_create(scr_root);

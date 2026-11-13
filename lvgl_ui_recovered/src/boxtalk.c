@@ -300,6 +300,19 @@ static void pwrusage_parse_dataset(const char * xml) {
     const char * gu = strstr(xml, "<gasUsage>");
     if (gu && elem_text_double(gu, "meterReading", &v) && v > 0)
         meter_state.reading_gas_l = v;
+    /* Log the first of each, so a "wrong Meterstanden" report can be checked
+     * against the log (the dataset arrives every few seconds: once only). */
+    static int logged_pu = 0, logged_gu = 0;
+    if (pu && !logged_pu) {
+        logged_pu = 1;
+        fprintf(stderr, "[bxt-meter] powerUsage: meterReading=%.0f Wh low=%.0f produ=%.0f/%.0f\n",
+                meter_state.reading_elec_normal_wh, meter_state.reading_elec_low_wh,
+                meter_state.reading_prod_normal_wh, meter_state.reading_prod_low_wh);
+    }
+    if (gu && !logged_gu) {
+        logged_gu = 1;
+        fprintf(stderr, "[bxt-meter] gasUsage: meterReading=%.0f L\n", meter_state.reading_gas_l);
+    }
 }
 
 static time_t s_burner_last_active_ts = 0;
@@ -608,6 +621,34 @@ static void handle_query_response(const char* xml) {
     fprintf(stderr, "[bxt] query response (unhandled): %.300s\n", xml);
 }
 
+/* happ_pwrusage's powerUsage + gasUsage datasets: the meter's own registers
+ * (meterReading/meterReadingLow/...Produ, gas meterReading), which is what the
+ * stock graph app's "Meterstanden" pop-up shows (GraphApp.qml
+ * BxtDatasetHandler "powerUsage"/"gasUsage") — backlog #38.
+ *
+ * Subscribed whenever happ_pwrusage announces itself (ssdp:alive), as the
+ * stock BxtDatasetHandler does via its discoHandler. 1.0.8 subscribed once at
+ * connect: after a Toon reboot toonui can be up before happ_pwrusage, the
+ * subscription went nowhere, and the pop-up fell back to the hcb_rrd totals.
+ * Verified on a Toon with a meter adapter: the datasets arrive at
+ * "<hostname>:happ_pwrusage" and carry exactly the stock pop-up's values. */
+static void bt_subscribe_pwrusage(void) {
+    static const char * const pwr_ds[] = { "powerUsage", "gasUsage" };
+    char buf[1024];
+    for (int i = 0; i < 2; i++) {
+        snprintf(buf, sizeof(buf),
+            "<action class=\"invoke\" uuid=\"%s\" destuuid=\"%s\" "
+            "serviceid=\"urn:hcb-hae-com:serviceId:specific1\">"
+            "<u:UpdateDataSetSubscription xmlns:u=\"urn:hcb-hae-com:service:specific1:1\">"
+            "<updateAction>add</updateAction><dataSet>%s</dataSet>"
+            "<autoExpire>0</autoExpire><supportsNaN>1</supportsNaN><supportsPartial>0</supportsPartial>"
+            "<requestFullSet>1</requestFullSet></u:UpdateDataSetSubscription></action>",
+            OUR_UUID, PWRUSAGE_UUID, pwr_ds[i]);
+        send_msg(buf);
+    }
+    fprintf(stderr, "[bxt-meter] happ_pwrusage alive -> subscribed powerUsage/gasUsage\n");
+}
+
 static void handle_msg(const char* xml) {
     const char* p = xml;
     while (*p && isspace((unsigned char)*p)) p++;
@@ -626,7 +667,14 @@ static void handle_msg(const char* xml) {
             }
         }
     }
-    if (strncmp(p, "notify", 6) == 0) {
+    if (strncmp(p, "discovery", 9) == 0) {
+        /* <discovery nts="ssdp:alive" uuid="<host>:happ_pwrusage" ...> — match
+         * the top-level uuid attribute only (the body lists sub-devices). */
+        char u[96];
+        if (!settings.client_mode && strstr(xml, "ssdp:alive") &&
+            attr_value(xml, "uuid", u, sizeof u) && strcmp(u, PWRUSAGE_UUID) == 0)
+            bt_subscribe_pwrusage();
+    } else if (strncmp(p, "notify", 6) == 0) {
         handle_notify(xml);
     } else if (strncmp(p, "query", 5) == 0) {
         if (strstr(xml, "class=\"response\"")) {
@@ -1074,24 +1122,10 @@ static void send_initial_handshake(void) {
         OUR_UUID, THERMD_UUID);
     send_msg(buf);
 
-    /* happ_pwrusage's powerUsage + gasUsage datasets: the meter's own
-     * registers (meterReading/meterReadingLow/...Produ, gas meterReading),
-     * which is what the stock graph app's "Meterstanden" pop-up shows
-     * (GraphApp.qml BxtDatasetHandler "powerUsage"/"gasUsage"). The hcb_rrd
-     * elec_quantity_* loggers are hcb_rrd's own running totals and drift
-     * from the meter (e.g. after a meter swap) — backlog #38. */
-    static const char * const pwr_ds[] = { "powerUsage", "gasUsage" };
-    for (int i = 0; i < 2; i++) {
-        snprintf(buf, sizeof(buf),
-            "<action class=\"invoke\" uuid=\"%s\" destuuid=\"%s\" "
-            "serviceid=\"urn:hcb-hae-com:serviceId:specific1\">"
-            "<u:UpdateDataSetSubscription xmlns:u=\"urn:hcb-hae-com:service:specific1:1\">"
-            "<updateAction>add</updateAction><dataSet>%s</dataSet>"
-            "<autoExpire>0</autoExpire><supportsNaN>1</supportsNaN><supportsPartial>0</supportsPartial>"
-            "<requestFullSet>1</requestFullSet></u:UpdateDataSetSubscription></action>",
-            OUR_UUID, PWRUSAGE_UUID, pwr_ds[i]);
-        send_msg(buf);
-    }
+    /* happ_pwrusage's powerUsage/gasUsage datasets are NOT subscribed here
+     * but on its ssdp:alive (bt_subscribe_pwrusage, from handle_msg) — see
+     * there. The hub sends every daemon's ssdp:alive right after our
+     * ssdp:connect, so a running happ_pwrusage is covered too. */
 
     /* Subscribe to happ_usermsg notifications dataset (Inbox). */
     snprintf(buf, sizeof(buf),

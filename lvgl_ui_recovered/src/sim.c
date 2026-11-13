@@ -878,6 +878,20 @@ int main(int argc, char ** argv) {
      * happ_usermsg notifications set (#40). */
     if (!strcmp(mode, "bxtfeed")) {
         extern void boxtalk_sim_feed(const char * xml);
+        /* ssdp:alive: happ_pwrusage itself -> subscribe (stderr log line);
+         * another device mentioning it in the body -> nothing. */
+        fprintf(stderr, "-- alive happ_pwrusage (expect a subscribe line):\n");
+        boxtalk_sim_feed(
+            "<discovery nts=\"ssdp:alive\" uuid=\"qb-000000000000-0000000000:happ_pwrusage\" "
+            "type=\"urn:schemas-hcb-hae-com:device:happ_pwrusage\" version=\"v\">"
+            "<device uuid=\"7a29cf6e\" type=\"urn:schemas-hcb-hae-com:device:elec\" intAddr=\"ElecUsage\" version=\"1\"></device>"
+            "</discovery>");
+        fprintf(stderr, "-- alive hcb_rrd mentioning happ_pwrusage (expect nothing):\n");
+        boxtalk_sim_feed(
+            "<discovery nts=\"ssdp:alive\" uuid=\"qb-000000000000-0000000000:hcb_rrd\" "
+            "type=\"urn:schemas-hcb-hae-com:device:hcb_rrd\" version=\"v\">"
+            "<device uuid=\"x\" intAddr=\"qb-000000000000-0000000000:happ_pwrusage\"></device></discovery>");
+        fprintf(stderr, "-- end alive tests\n");
 
         boxtalk_sim_feed(
             "<action class=\"invoke\" uuid=\"qb-1:happ_pwrusage\" destuuid=\"qb-1:toonui\" "
