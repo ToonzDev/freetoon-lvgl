@@ -64,9 +64,12 @@ static int parse_3h(const char * body, buienradar_rain_snapshot_t * snap) {
         /* Extract time */
         const char * dt = ci_strstr(p, "\"datetime\":");
         if (dt && dt < end) {
-            const char * t = strchr(dt, 'T');
-            if (t && t < end && strlen(t) >= 6) {
-                snprintf(pt.time_str, sizeof(pt.time_str), "%.5s", t + 1);
+            const char * colon = strchr(dt, ':');
+            if (colon && colon < end) {
+                const char * t = strchr(colon, 'T');
+                if (t && t < end && strlen(t) >= 6) {
+                    snprintf(pt.time_str, sizeof(pt.time_str), "%.5s", t + 1);
+                }
             }
         }
 
@@ -141,9 +144,12 @@ static int parse_24h(const char * body, buienradar_rain_snapshot_t * snap) {
         /* Extract dateTime */
         const char * dt = ci_strstr(p, "\"dateTime\":");
         if (dt && dt < end) {
-            const char * t = strchr(dt, 'T');
-            if (t && t < end && strlen(t) >= 6) {
-                snprintf(pt.time_str, sizeof(pt.time_str), "%.5s", t + 1);
+            const char * colon = strchr(dt, ':');
+            if (colon && colon < end) {
+                const char * t = strchr(colon, 'T');
+                if (t && t < end && strlen(t) >= 6) {
+                    snprintf(pt.time_str, sizeof(pt.time_str), "%.5s", t + 1);
+                }
             }
         }
 
