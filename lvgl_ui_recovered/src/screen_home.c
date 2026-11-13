@@ -2563,83 +2563,54 @@ static void refresh_cb(lv_timer_t * t) {
         }
         waste_pickup_t p1 = pickups[0];
         waste_pickup_t p2 = pickups[1];
-        waste_pickup_t p3 = pickups[2];
 
         lv_coord_t th = tile_waste ? lv_obj_get_height(tile_waste) : 0;
+        /* Stacked rows — icon + date + type per row, evenly spaced, small
+         * print: three rows on a tall tile, and two rows on a short one (e.g.
+         * 3x2 in the custom layout), where the roomy two-row layout below
+         * (row 1 from the top, row 2 from the bottom) ran into itself. */
         int show_3 = (n >= 3 && lbl_waste_date_3 && th >= 180);
+        int stacked = show_3 ? 3
+                    : (n >= 2 && th > 0 && th < 170 && lbl_waste_date_2 && lbl_waste_type_2) ? 2 : 0;
 
-        if (show_3) {
-            /* 3 rows evenly spaced: usable area y=36 to th-8 */
-            int usable = th - 36 - 8;
-            int r0_y = 36;
-            int r1_y = 36 + usable / 3;
-            int r2_y = 36 + (2 * usable) / 3;
-
-            /* Row 1 */
-            if (waste_icon_1) {
-                ui_obj_align(waste_icon_1, LV_ALIGN_TOP_LEFT, 6, r0_y + 2);
-                ui_img_set_src(waste_icon_1, waste_icon_for_label(p1.labels));
-                ui_obj_set_style_img_recolor(waste_icon_1, lv_color_hex(waste_accent_for_label(p1.labels)), 0);
-                ui_obj_clear_flag(waste_icon_1, LV_OBJ_FLAG_HIDDEN);
+        if (stacked) {
+            lv_obj_t * icons[3] = { waste_icon_1, waste_icon_2, waste_icon_3 };
+            lv_obj_t * dates[3] = { lbl_waste_date, lbl_waste_date_2, lbl_waste_date_3 };
+            lv_obj_t * types[3] = { lbl_waste_type, lbl_waste_type_2, lbl_waste_type_3 };
+            int usable = th - 36 - 8;                 /* below the title, above the padding */
+            int rh = usable / stacked;
+            int tight = rh < 44;                      /* very low tile (Toon 1): tighter rows */
+            for (int r = 0; r < stacked; r++) {
+                const waste_pickup_t * pk = &pickups[r];
+                int ry = 36 + (r * usable) / stacked;
+                int tx = icons[r] ? 54 : 4;           /* Toon 1 has no waste icons */
+                if (icons[r]) {
+                    lv_img_set_zoom(icons[r], tight ? 176 : 256);
+                    ui_obj_align(icons[r], LV_ALIGN_TOP_LEFT, 6, ry + (tight ? -4 : 2));
+                    ui_img_set_src(icons[r], waste_icon_for_label(pk->labels));
+                    ui_obj_set_style_img_recolor(icons[r], lv_color_hex(waste_accent_for_label(pk->labels)), 0);
+                    ui_obj_clear_flag(icons[r], LV_OBJ_FLAG_HIDDEN);
+                }
+                if (dates[r]) {
+                    int mo = atoi(pk->date + 5), d = atoi(pk->date + 8);
+                    ui_label_set_text_fmt(dates[r], "%d-%d", d, mo);
+                    ui_obj_set_style_text_color(dates[r], lv_color_hex(COL_TEXT_HI), 0);
+                    ui_obj_set_style_text_font(dates[r], SF(tight ? 16 : 18), 0);
+                    ui_obj_align(dates[r], LV_ALIGN_TOP_LEFT, tx, ry);
+                    ui_obj_clear_flag(dates[r], LV_OBJ_FLAG_HIDDEN);
+                }
+                if (types[r]) {
+                    ui_label_set_text(types[r], pk->labels);
+                    ui_obj_set_style_text_color(types[r], lv_color_hex(waste_accent_for_label(pk->labels)), 0);
+                    fit_font(types[r], pk->labels, lv_obj_get_content_width(tile_waste) - tx - 4, 13);
+                    ui_obj_align(types[r], LV_ALIGN_TOP_LEFT, tx, ry + (tight ? 17 : 22));
+                    ui_obj_clear_flag(types[r], LV_OBJ_FLAG_HIDDEN);
+                }
             }
-            if (lbl_waste_date) {
-                int mo = atoi(p1.date + 5), d = atoi(p1.date + 8);
-                ui_label_set_text_fmt(lbl_waste_date, "%d-%d", d, mo);
-                ui_obj_set_style_text_color(lbl_waste_date, lv_color_hex(COL_TEXT_HI), 0);
-                ui_obj_set_style_text_font(lbl_waste_date, SF(18), 0);
-                ui_obj_align(lbl_waste_date, LV_ALIGN_TOP_LEFT, 54, r0_y);
-            }
-            if (lbl_waste_type) {
-                ui_label_set_text(lbl_waste_type, p1.labels);
-                ui_obj_set_style_text_color(lbl_waste_type, lv_color_hex(waste_accent_for_label(p1.labels)), 0);
-                fit_font(lbl_waste_type, p1.labels, lv_obj_get_content_width(tile_waste) - 58, 13);
-                ui_obj_align(lbl_waste_type, LV_ALIGN_TOP_LEFT, 54, r0_y + 22);
-            }
-
-            /* Row 2 */
-            if (waste_icon_2) {
-                ui_obj_align(waste_icon_2, LV_ALIGN_TOP_LEFT, 6, r1_y + 2);
-                ui_img_set_src(waste_icon_2, waste_icon_for_label(p2.labels));
-                ui_obj_set_style_img_recolor(waste_icon_2, lv_color_hex(waste_accent_for_label(p2.labels)), 0);
-                ui_obj_clear_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
-            }
-            if (lbl_waste_date_2) {
-                int mo = atoi(p2.date + 5), d = atoi(p2.date + 8);
-                ui_label_set_text_fmt(lbl_waste_date_2, "%d-%d", d, mo);
-                ui_obj_set_style_text_color(lbl_waste_date_2, lv_color_hex(COL_TEXT_HI), 0);
-                ui_obj_set_style_text_font(lbl_waste_date_2, SF(18), 0);
-                ui_obj_align(lbl_waste_date_2, LV_ALIGN_TOP_LEFT, 54, r1_y);
-                ui_obj_clear_flag(lbl_waste_date_2, LV_OBJ_FLAG_HIDDEN);
-            }
-            if (lbl_waste_type_2) {
-                ui_label_set_text(lbl_waste_type_2, p2.labels);
-                ui_obj_set_style_text_color(lbl_waste_type_2, lv_color_hex(waste_accent_for_label(p2.labels)), 0);
-                fit_font(lbl_waste_type_2, p2.labels, lv_obj_get_content_width(tile_waste) - 58, 13);
-                ui_obj_align(lbl_waste_type_2, LV_ALIGN_TOP_LEFT, 54, r1_y + 22);
-                ui_obj_clear_flag(lbl_waste_type_2, LV_OBJ_FLAG_HIDDEN);
-            }
-
-            /* Row 3 */
-            if (waste_icon_3) {
-                ui_obj_align(waste_icon_3, LV_ALIGN_TOP_LEFT, 6, r2_y + 2);
-                ui_img_set_src(waste_icon_3, waste_icon_for_label(p3.labels));
-                ui_obj_set_style_img_recolor(waste_icon_3, lv_color_hex(waste_accent_for_label(p3.labels)), 0);
-                ui_obj_clear_flag(waste_icon_3, LV_OBJ_FLAG_HIDDEN);
-            }
-            if (lbl_waste_date_3) {
-                int mo = atoi(p3.date + 5), d = atoi(p3.date + 8);
-                ui_label_set_text_fmt(lbl_waste_date_3, "%d-%d", d, mo);
-                ui_obj_set_style_text_color(lbl_waste_date_3, lv_color_hex(COL_TEXT_HI), 0);
-                ui_obj_set_style_text_font(lbl_waste_date_3, SF(18), 0);
-                ui_obj_align(lbl_waste_date_3, LV_ALIGN_TOP_LEFT, 54, r2_y);
-                ui_obj_clear_flag(lbl_waste_date_3, LV_OBJ_FLAG_HIDDEN);
-            }
-            if (lbl_waste_type_3) {
-                ui_label_set_text(lbl_waste_type_3, p3.labels);
-                ui_obj_set_style_text_color(lbl_waste_type_3, lv_color_hex(waste_accent_for_label(p3.labels)), 0);
-                fit_font(lbl_waste_type_3, p3.labels, lv_obj_get_content_width(tile_waste) - 58, 13);
-                ui_obj_align(lbl_waste_type_3, LV_ALIGN_TOP_LEFT, 54, r2_y + 22);
-                ui_obj_clear_flag(lbl_waste_type_3, LV_OBJ_FLAG_HIDDEN);
+            if (stacked < 3) {
+                if (waste_icon_3) ui_obj_add_flag(waste_icon_3, LV_OBJ_FLAG_HIDDEN);
+                if (lbl_waste_date_3) ui_obj_add_flag(lbl_waste_date_3, LV_OBJ_FLAG_HIDDEN);
+                if (lbl_waste_type_3) ui_obj_add_flag(lbl_waste_type_3, LV_OBJ_FLAG_HIDDEN);
             }
         } else {
             /* 1 or 2 rows */
