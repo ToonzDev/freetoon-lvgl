@@ -21,6 +21,7 @@
 #include "settings.h"
 #include "theme.h"
 #include "boxtalk.h"
+#include "plugs.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -92,14 +93,28 @@ typedef struct {
        (instantaneous ppm/ppb, never diffed). which = metric index - 3. */
     int local_hist;
 } metric_t;
-static const metric_t metrics[5] = {
+static const metric_t metrics[6] = {
     {"Electricity", "W",     "kWh",  "elec_flow",                  "elec_quantity_nt",      "elec_quantity_lt",      0xaa77ff, 0},
     {"Solar",       "W",     "kWh",  "elec_flow_prod",             "elec_quantity_nt_prod", "elec_quantity_lt_prod", 0xeeaa22, 0},
     {"Gas",         "m3/h",  "m3",   "gas_flow",                   "gas_quantity",          NULL,                    0xffaa44, 0},
     {"Water",       "l/min", "m3",   "water_flow",                 "water_quantity",        NULL,                    0x44aaff, 0},
     {"CV bar",      "bar",   "bar",  "thermstat_boilerChPressure", "thermstat_boilerChPressure", NULL,          0x5fb3ff, 0},
+    /* Z-Wave smart plugs: logger chosen at run time (plugs.c) */
+    {"Plugs",       "W",     "kWh",  NULL,                         NULL,                    NULL,                    0x3fbf7f, 0},
 };
 #define N_METRIC ((int)(sizeof metrics / sizeof metrics[0]))
+#define M_PLUG   5
+
+/* Z-Wave smart plugs found in the hcb_rrd config (tab hidden when none). */
+static plug_t g_plugs[PLUG_MAX];
+static int    g_plug_n = 0;
+static int    g_plug_sel = 0;
+static lv_obj_t * btn_plug_next = NULL;
+static int selected_metric;   /* defined below */
+
+static int is_plug(void) { return selected_metric == M_PLUG && g_plug_n > 0; }
+/* Euro view: electricity, solar, gas and the plugs (electricity tariff). */
+static int metric_has_euro(void) { return selected_metric <= 2 || is_plug(); }
 
 static const char * metric_title(int i) {
     switch (i) {
@@ -108,6 +123,7 @@ static const char * metric_title(int i) {
         case 2: return tr("Gas", "Gas");
         case 3: return tr("Water", "Water");
         case 4: return tr("CV bar", "CH bar");
+        case 5: return tr("Stekkers", "Plugs");
         default: return "";
     }
 }
@@ -148,6 +164,8 @@ static void on_scr_delete(lv_event_t * e) {
     s_tooltip_box = NULL;
     s_tooltip_lbl = NULL;
     s_tooltip_last_id = -1;
+    btn_plug_next = NULL;
+    for (int i = 0; i < N_METRIC; i++) tab_metric_btns[i] = NULL;
     scr_root = NULL;
 }
 
@@ -327,6 +345,7 @@ static void reload_and_render(void);
 /* Final bar values + labels, produced by render_chart's bucketing step.
  * The chart shows these directly (one bar per bucket). */
 static double g_bar_val[64];
+static int    g_unit_wh = 0;   /* plug bars shown in Wh (tiny kWh values) */
 static char   g_bar_label[64][8];
 static int    g_bar_count = 0;
 static int    g_y_scale = 1;
@@ -367,7 +386,7 @@ static void show_tooltip(int b, int bar_screen_x, int bar_screen_y) {
     if (b < 0 || b >= g_bar_count || !scr_root || !chart) return;
 
     const metric_t * m = &metrics[selected_metric];
-    int show_euro = settings.stats_show_euro && (selected_metric <= 2);
+    int show_euro = settings.stats_show_euro && metric_has_euro();
     char buf[64];
     double val = g_bar_val[b];
 
@@ -377,7 +396,7 @@ static void show_tooltip(int b, int bar_screen_x, int bar_screen_y) {
         } else {
             snprintf(buf, sizeof buf, "%s • € %.2f", g_bar_label[b], val);
         }
-    } else if (selected_period == PERIOD_NOW) {
+    } else if (selected_period == PERIOD_NOW && !is_plug()) {   /* plugs: hourly kWh */
         if (strcmp(m->unit_flow, "W") == 0) {
             snprintf(buf, sizeof buf, "%s • %.0f W", g_bar_label[b], val);
         } else if (strcmp(m->unit_flow, "m3/h") == 0) {
@@ -390,6 +409,8 @@ static void show_tooltip(int b, int bar_screen_x, int bar_screen_y) {
     } else {
         if (strcmp(m->label, "CV bar") == 0) {
             snprintf(buf, sizeof buf, "%s • %.2f bar", g_bar_label[b], val);
+        } else if (g_unit_wh) {
+            snprintf(buf, sizeof buf, "%s • %.0f Wh", g_bar_label[b], val);
         } else if (val < 10.0 && val > 0.0) {
             snprintf(buf, sizeof buf, "%s • %.3f %s", g_bar_label[b], val, m->unit_cum);
         } else if (val < 100.0) {
@@ -507,7 +528,8 @@ static void update_nav_range_label(long start_t, long end_t) {
     switch (selected_period) {
         case PERIOD_NOW:
             if (g_time_offset == 0) {
-                snprintf(buf, sizeof(buf), "%s", tr("Afgelopen uur (5-min)", "Past hour (5-min)"));
+                snprintf(buf, sizeof(buf), "%s", is_plug() ? tr("Afgelopen 12 uur", "Past 12 hours")
+                                                     : tr("Afgelopen uur (5-min)", "Past hour (5-min)"));
             } else {
                 snprintf(buf, sizeof(buf), "%d %s %02d:%02d - %02d:%02d",
                          tm_end.tm_mday, i18n_month_short(tm_end.tm_mon),
@@ -751,6 +773,34 @@ static int load_for_period(void) {
         return airhist_pres_series_range(from, to, 365, &series);
     }
 
+    /* Z-Wave smart plug: hcb_rrd keeps its kWh counter in "1monthhour"
+     * (hourly, one month) and "1yearday" (daily, one year). No 5-minute
+     * archive, so "Nu" shows the last 12 hours. Diffed like the meters. */
+    if (selected_metric == M_PLUG) {
+        series2.n = 0;
+        if (!is_plug()) { series.n = 0; return -1; }
+        const char * lg = g_plugs[g_plug_sel].logger_q;
+        switch (selected_period) {
+            case PERIOD_NOW: {          /* 12-hour window, arrows step 12 h */
+                long pto = now + (long)g_time_offset * 12 * HOUR;
+                g_current_start_t = pto - 12 * HOUR;
+                g_current_end_t = pto;
+                return stats_fetch_range(lg, "1monthhour", pto - 13 * HOUR, pto, 14, &series);
+            }
+            case PERIOD_HOURS:
+                return stats_fetch_range(lg, "1monthhour", from - HOUR, to, 26, &series);
+            case PERIOD_DAYS:
+                return stats_fetch_range(lg, "1yearday", from - DAY, to, 34, &series);
+            case PERIOD_WEEKS:
+                return stats_fetch_range(lg, "1yearday", from - DAY, to, 88, &series);
+            case PERIOD_MONTHS:
+                return stats_fetch_range(lg, "1yearday", from - DAY, to, 370, &series);
+            case PERIOD_YEARS:
+                return stats_fetch_range(lg, "1yearday", 0, 0, 370, &series);
+        }
+        return -1;
+    }
+
     int is_solar = (selected_metric == 1);
 
     switch (selected_period) {
@@ -931,7 +981,7 @@ static void chart_draw_event_cb(lv_event_t * e) {
     if (!dsc) return;
     if (dsc->part == LV_PART_TICKS && dsc->type == LV_CHART_DRAW_PART_TICK_LABEL && dsc->id == LV_CHART_AXIS_PRIMARY_Y) {
         if (dsc->text) {
-            int show_euro = settings.stats_show_euro && (selected_metric <= 2);
+            int show_euro = settings.stats_show_euro && metric_has_euro();
             if (show_euro) {
                 if (dsc->value == 0) {
                     lv_snprintf(dsc->text, dsc->text_length, "€0");
@@ -1012,7 +1062,8 @@ static void render_chart(void) {
     int n = series.n > STATS_MAX_SAMPLES ? STATS_MAX_SAMPLES : series.n;
     if (n < 0) n = 0;
 
-    int is_cum = (selected_period != PERIOD_NOW) && (strcmp(m->label, "CV bar") != 0) && !m->local_hist;
+    int is_cum = ((selected_period != PERIOD_NOW) || is_plug())   /* plugs: "Nu" = hourly kWh */
+              && (strcmp(m->label, "CV bar") != 0) && !m->local_hist;
 
     /* Cumulative meters → per-sample usage deltas. The elec / solar NT/LT split is
      * diffed separately then summed. */
@@ -1157,10 +1208,10 @@ static void render_chart(void) {
     }
 
     /* If Euro mode is enabled, convert bar values for Electricity, Solar and Gas */
-    if (settings.stats_show_euro && selected_metric <= 2) {
+    if (settings.stats_show_euro && metric_has_euro()) {
         float rate = (selected_metric == 2) ? settings.rate_gas_m3 : settings.rate_elec_kwh;
         for (int i = 0; i < g_bar_count; i++) {
-            if (selected_period == PERIOD_NOW) {
+            if (selected_period == PERIOD_NOW && !is_plug()) {   /* plugs: kWh bars */
                 if (selected_metric == 0 || selected_metric == 1) {
                     g_bar_val[i] = (g_bar_val[i] / 1000.0) * rate; /* W -> kW * rate = €/h */
                 } else if (selected_metric == 2) {
@@ -1169,6 +1220,18 @@ static void render_chart(void) {
             } else {
                 g_bar_val[i] = g_bar_val[i] * rate;                /* kWh or m3 * rate = € */
             }
+        }
+    }
+
+    /* A smart plug often uses only a few Wh per hour; in kWh the axis would
+     * read 0.01 / 0.01 / 0. Show such small bars in Wh. */
+    g_unit_wh = 0;
+    if (is_plug() && is_cum && !settings.stats_show_euro) {
+        double mx = 0;
+        for (int i = 0; i < g_bar_count; i++) if (g_bar_val[i] > mx) mx = g_bar_val[i];
+        if (mx < 0.1) {
+            for (int i = 0; i < g_bar_count; i++) g_bar_val[i] *= 1000.0;
+            g_unit_wh = 1;
         }
     }
 
@@ -1234,7 +1297,19 @@ static void render_chart(void) {
     }
 
     /* Caption + headline value. */
-    int show_euro = settings.stats_show_euro && (selected_metric <= 2);
+    int show_euro = settings.stats_show_euro && metric_has_euro();
+    /* Plug, "Nu": the live power from hdrv_zwave rather than the 12 h total. */
+    if (is_plug() && selected_period == PERIOD_NOW && g_time_offset == 0 && g_plugs[g_plug_sel].have_power) {
+        double w = g_plugs[g_plug_sel].power_w;
+        lv_label_set_text(lbl_unit, tr("Huidig", "Current"));
+        if (show_euro)
+            lv_label_set_text_fmt(lbl_value, "€ %.2f/u", (w / 1000.0) * settings.rate_elec_kwh);
+        else if (w < 100.0)
+            lv_label_set_text_fmt(lbl_value, "%.1f W", w);
+        else
+            lv_label_set_text_fmt(lbl_value, "%.0f W", w);
+        return;
+    }
     if (!is_cum) {
         if (g_time_offset == 0)
             lv_label_set_text(lbl_unit, tr("Huidig", "Current"));
@@ -1294,6 +1369,8 @@ static void render_chart(void) {
             for (int i = 0; i < g_bar_count; i++) total += g_bar_val[i];
             if (show_euro) {
                 lv_label_set_text_fmt(lbl_value, "€ %.2f", total);
+            } else if (g_unit_wh) {
+                lv_label_set_text_fmt(lbl_value, "%.0f Wh", total);
             } else if (total < 10.0 && total > 0.0) {
                 lv_label_set_text_fmt(lbl_value, "%.2f %s", total, m->unit_cum);
             } else {
@@ -1306,7 +1383,16 @@ static void render_chart(void) {
 static void reload_and_render(void) {
     hide_tooltip();
     lv_chart_set_series_color(chart, cs, lv_color_hex(metrics[selected_metric].color));
-    lv_label_set_text(lbl_metric_name, metric_title(selected_metric));
+    if (is_plug()) {
+        plugs_refresh_power(&g_plugs[g_plug_sel], 1);       /* live watts + name */
+        lv_label_set_text(lbl_metric_name, g_plugs[g_plug_sel].name);
+    } else {
+        lv_label_set_text(lbl_metric_name, metric_title(selected_metric));
+    }
+    if (btn_plug_next) {
+        if (is_plug() && g_plug_n > 1) lv_obj_clear_flag(btn_plug_next, LV_OBJ_FLAG_HIDDEN);
+        else                           lv_obj_add_flag(btn_plug_next, LV_OBJ_FLAG_HIDDEN);
+    }
     load_for_period();
     render_chart();
 
@@ -1328,9 +1414,17 @@ static void reload_and_render(void) {
 static void on_metric_tap(lv_event_t * e) {
     int idx = (int)(long)lv_event_get_user_data(e);
     if (idx < 0 || idx >= N_METRIC) return;
+    if (idx == M_PLUG && g_plug_n == 0) return;
     selected_metric = idx;
     g_time_offset = 0;
     for (int i = 0; i < N_METRIC; i++) style_metric_tab(i, i == idx);
+    reload_and_render();
+}
+/* Next smart plug (button next to the plug name). */
+static void on_plug_next(lv_event_t * e) {
+    (void)e;
+    if (g_plug_n < 2) return;
+    g_plug_sel = (g_plug_sel + 1) % g_plug_n;
     reload_and_render();
 }
 static void on_period_tap(lv_event_t * e) {
@@ -1527,11 +1621,19 @@ lv_obj_t * screen_stats_create(void) {
     lv_label_set_text(title, tr("Statistieken", "Statistics"));
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, SX(24), SY(18));
 
-    /* Metric tabs row (5 metrics: Electricity, Solar, Gas, Water, CV bar) */
+    /* Metric tabs row: Electricity, Solar, Gas, Water, CV bar, and "Stekkers"
+     * when hcb_rrd logs Z-Wave smart plugs (narrower tabs then). */
+    g_plug_n = plugs_scan(g_plugs, PLUG_MAX);
+    if (g_plug_sel >= g_plug_n) g_plug_sel = 0;
+    if (selected_metric == M_PLUG && g_plug_n == 0) selected_metric = 0;
+    int n_tabs = g_plug_n > 0 ? N_METRIC : N_METRIC - 1;
+    int tab_w = n_tabs == 6 ? 152 : 180, tab_step = n_tabs == 6 ? 165 : 198;
     for (int i = 0; i < N_METRIC; i++) {
+        tab_metric_btns[i] = NULL;
+        if (i >= n_tabs) continue;
         lv_obj_t * t = lv_obj_create(scr_root);
-        lv_obj_set_size(t, SX(180), SY(54));
-        lv_obj_set_pos(t, SX(26 + i * 198), SY(100));
+        lv_obj_set_size(t, SX(tab_w), SY(54));
+        lv_obj_set_pos(t, SX(26 + i * tab_step), SY(100));
         lv_obj_set_style_radius(t, 12, 0);
         lv_obj_set_style_pad_all(t, 0, 0);
         lv_obj_clear_flag(t, LV_OBJ_FLAG_SCROLLABLE);
@@ -1539,7 +1641,7 @@ lv_obj_t * screen_stats_create(void) {
         lv_obj_add_event_cb(t, on_metric_tap, LV_EVENT_CLICKED, (void *)(long)i);
         lv_obj_t * lbl = lv_label_create(t);
         lv_label_set_text(lbl, metric_title(i));
-        lv_obj_set_style_text_font(lbl, SF(20), 0);
+        lv_obj_set_style_text_font(lbl, SF(n_tabs == 6 ? 18 : 20), 0);
         lv_obj_center(lbl);
         tab_metric_btns[i] = t;
         style_metric_tab(i, i == selected_metric);
@@ -1616,6 +1718,25 @@ lv_obj_t * screen_stats_create(void) {
     lv_obj_set_style_text_font(lbl_metric_name, SF(22), 0);
     lv_label_set_text(lbl_metric_name, metric_title(0));
     lv_obj_align(lbl_metric_name, LV_ALIGN_TOP_LEFT, SX(30), SY(245));
+    lv_label_set_long_mode(lbl_metric_name, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(lbl_metric_name, SX(170));
+
+    /* Stekkers: step to the next smart plug (only with 2+ plugs). */
+    btn_plug_next = lv_btn_create(scr_root);
+    lv_obj_set_size(btn_plug_next, SX(56), SY(34));
+    lv_obj_set_pos(btn_plug_next, SX(205), SY(240));
+    lv_obj_set_style_bg_color(btn_plug_next, lv_color_hex(THEME_BTN_BG), 0);
+    lv_obj_set_style_border_color(btn_plug_next, lv_color_hex(THEME_BORDER), 0);
+    lv_obj_set_style_border_width(btn_plug_next, 1, 0);
+    lv_obj_set_style_radius(btn_plug_next, 6, 0);
+    lv_obj_set_ext_click_area(btn_plug_next, 10);
+    lv_obj_add_event_cb(btn_plug_next, on_plug_next, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * lbl_pn = lv_label_create(btn_plug_next);
+    lv_label_set_text(lbl_pn, LV_SYMBOL_RIGHT);
+    lv_obj_set_style_text_color(lbl_pn, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(lbl_pn, SF(16), 0);
+    lv_obj_center(lbl_pn);
+    lv_obj_add_flag(btn_plug_next, LV_OBJ_FLAG_HIDDEN);
 
     /* Repurposed as the "Current" / "Period total" caption above the
      * value. Was rendering a duplicated unit ("W" under "369.0 W"). */

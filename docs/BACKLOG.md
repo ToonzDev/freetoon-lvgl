@@ -538,7 +538,8 @@
 - **Possible later change**: show "Beheerd door Master" on the slave's Domoticz/HA switches, or add a per-slave "show master lights" setting.
 
 ### 47. Energy History of Z-Wave Smart Plugs (Already Logged by the Toon)
-- **Status**: Open (user request, 2026-11-14). Related: #43 (HomeWizard sockets).
+- **Status**: Implemented (2026-11-14): Statistics tab "Stekkers" (plugs.c + screen_stats.c), verified in the sim against the production Toon's hcb_rrd; on-device test pending. Related: #43 (HomeWizard sockets).
+- **Implementation**: plugs.c reads `config_hcb_rrd.xml` (/mnt/data/qmf/config, fallback /qmf/config) for `<rrdLogger>` blocks with deviceSvc ElectricityQuantityMeter + deviceVar CurrentElectricityQuantity + an rra `1monthhour`; logger `<name>` is used with getRrdData loggerName=, names and live W from `hdrv_zwave?action=getDevices.json`. Tab only shown when plugs exist (not on a slave). Nu = last 12 h hourly, Uren from 1monthhour, Dagen/Weken/Maanden/Jaren from 1yearday; small values in Wh; Euro with the electricity tariff. hcb_rrd also accepts `logger=<logger-uuid>` (the .rra/.dat file name), used by the sim hook TOONUI_PLUG_LOGGERS.
 - **Finding (production Toon 2, read-only, 2026-11-14)**: when a Z-Wave smart plug is added in the stock UI, hcb_rrd creates a logger for it by itself, although the stock UI never shows that data. On the production Toon two NAS_WR01Z plugs ("Tuin", node 10, uuid `482195c7-f27e-4958-8c43-600996d7be5f`; "Kerstboom", node 11, uuid `6f78136e-c3f9-429f-bb8d-834bec7dfba9`) each have a logger in `/mnt/data/qmf/var/hcb_rrd/<logger-uuid>.*`:
   - variable `CurrentElectricityQuantity` (cumulative, Wh) of service `ElectricityQuantityMeter`, integer
   - archives `1monthhour` (3600 s steps, one month) and `1yearday` (86400 s steps, one year), consolidation "last"

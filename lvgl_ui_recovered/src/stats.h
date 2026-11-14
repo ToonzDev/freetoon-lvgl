@@ -33,6 +33,11 @@ int stats_fetch(const char * logger_name, const char * rra,
                 long window_seconds, int max_samples,
                 stats_series_t * out);
 
+/* Raw GET of a local HCB web path (e.g. "hdrv_zwave?action=getDevices.json"),
+ * same transport as the rrd fetches (master in client mode). out holds the
+ * HTTP response incl. headers. 0 on success. */
+int stats_http_get(const char * path_qs, char * out, size_t outsz);
+
 /* Fetch raw history JSON for an explicit [from_ts, to_ts] time range. */
 int stats_fetch_range(const char * logger_name, const char * rra,
                       long from_ts, long to_ts, int max_samples,

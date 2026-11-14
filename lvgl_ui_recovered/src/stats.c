@@ -145,15 +145,19 @@ int stats_fetch_range(const char * logger_name, const char * rra,
     series->min = +1e30; series->max = -1e30;
     if (max_samples <= 0 || max_samples > STATS_MAX_SAMPLES)
         max_samples = STATS_MAX_SAMPLES;
-    char qs[320];
+    char qs[400];
+    /* "@<uuid>": address the logger by its uuid (hcb_rrd "logger=") instead of
+     * its name ("loggerName="). */
+    const char * key = "loggerName";
+    if (logger_name[0] == '@') { key = "logger"; logger_name++; }
     if (from_ts > 0 && to_ts > from_ts) {
         snprintf(qs, sizeof(qs),
-            "hcb_rrd?action=getRrdData&loggerName=%s&rra=%s&from=%ld&to=%ld&readableTime=1&nullForNaN=1&samples=%d",
-            logger_name, rra, from_ts, to_ts, max_samples);
+            "hcb_rrd?action=getRrdData&%s=%s&rra=%s&from=%ld&to=%ld&readableTime=1&nullForNaN=1&samples=%d",
+            key, logger_name, rra, from_ts, to_ts, max_samples);
     } else {
         snprintf(qs, sizeof(qs),
-            "hcb_rrd?action=getRrdData&loggerName=%s&rra=%s&readableTime=1&nullForNaN=1&samples=%d",
-            logger_name, rra, max_samples);
+            "hcb_rrd?action=getRrdData&%s=%s&rra=%s&readableTime=1&nullForNaN=1&samples=%d",
+            key, logger_name, rra, max_samples);
     }
     static char body[256 * 1024];
     if (http_get_body(qs, body, sizeof(body)) != 0) return -1;
@@ -253,3 +257,9 @@ int stats_fetch(const char * logger_name, const char * rra,
 int stats_elec_flow_5min(stats_series_t * out)  { return stats_fetch("elec_flow",  "5min", 0, STATS_MAX_SAMPLES, out); }
 int stats_gas_flow_5min(stats_series_t * out)   { return stats_fetch("gas_flow",   "5min", 0, STATS_MAX_SAMPLES, out); }
 int stats_water_flow_5min(stats_series_t * out) { return stats_fetch("water_flow", "5min", 0, STATS_MAX_SAMPLES, out); }
+
+int stats_http_get(const char * path_qs, char * out, size_t outsz) {
+    if (!out || outsz < 2) return -1;
+    out[0] = 0;
+    return http_get_body(path_qs, out, outsz);
+}
