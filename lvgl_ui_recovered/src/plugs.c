@@ -99,8 +99,8 @@ int plugs_scan(plug_t * out, int max) {
         plugs_refresh_power(out, n);
         return n;
     }
-    if (settings.client_mode) return 0;              /* the plugs live on the master */
     const char * env = getenv("TOONUI_RRD_XML");     /* sim / tests */
+    if (settings.client_mode && !env) return 0;      /* the plugs live on the master */
     char * xml = env ? read_file(env) : read_file("/mnt/data/qmf/config/config_hcb_rrd.xml");
     if (!xml) xml = read_file("/qmf/config/config_hcb_rrd.xml");
     if (!xml) return 0;
