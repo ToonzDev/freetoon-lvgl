@@ -1541,29 +1541,51 @@ int ha_discover_entities(const char * domain_prefix,
 
     char cmd[512], hp[192];
     snprintf(cmd, sizeof(cmd),
-        "/usr/bin/curl -s %s--max-time 10 --connect-timeout 4 "
+        "/usr/bin/curl -s %s--max-time 25 --connect-timeout 4 "
         "-H 'Authorization: Bearer %s' "
         "'%s://%s/api/states' 2>/dev/null",
         ha_tls_opt(), g_token, ha_scheme(), ha_hostport(hp, sizeof hp));
     FILE * p = popen(cmd, "r");
     if (!p) return -1;
 
-    /* Read the full JSON array. HA instances can have hundreds of entities so
-     * we need a large buffer — but still cap it to keep the stack safe. */
-    static char body[131072];    /* 128 KB — enough for ~500 entities */
-    size_t n = fread(body, 1, sizeof(body) - 1, p);
+    /* Read the full JSON array into a growing heap buffer. /api/states of a
+     * big install (many entities, long attribute lists) runs to megabytes;
+     * the old fixed 128 KB buffer silently cut it off, so entities after the
+     * cut (e.g. all scripts) never showed in the picker. Capped at 8 MB. */
+    #define HA_DISCOVER_MAX_BYTES (8u * 1024u * 1024u)
+    size_t cap = 256 * 1024, n = 0;
+    char * body = malloc(cap);
+    if (!body) { pclose(p); return -1; }
+    for (;;) {
+        if (n + 1 >= cap) {
+            if (cap >= HA_DISCOVER_MAX_BYTES) {
+                fprintf(stderr, "[ha] discover: /api/states larger than %u bytes, "
+                                "list truncated\n", HA_DISCOVER_MAX_BYTES);
+                break;
+            }
+            char * nb = realloc(body, cap * 2);
+            if (!nb) break;              /* keep what we have */
+            body = nb; cap *= 2;
+        }
+        size_t r = fread(body + n, 1, cap - 1 - n, p);
+        if (r == 0) break;
+        n += r;
+    }
     pclose(p);
     if (n == 0) {
         fprintf(stderr, "[ha] discover: no response from %s://%s/api/states\n",
                 ha_scheme(), hp);
+        free(body);
         return -1;
     }
     body[n] = 0;
+    fprintf(stderr, "[ha] discover %s: /api/states is %zu bytes\n", domain_prefix, n);
     /* HA answers 401 with a JSON body, so an empty entity list after this point
      * is indistinguishable from a bad token unless we say so here. */
     if (strstr(body, "401: Unauthorized") || strstr(body, "Invalid access token")) {
         fprintf(stderr, "[ha] discover: token rejected (401) — regenerate the "
                         "Long-Lived Access Token\n");
+        free(body);
         return -1;
     }
 
@@ -1624,6 +1646,7 @@ int ha_discover_entities(const char * domain_prefix,
             }
         }
     }
+    free(body);
     *count = found;
     /* 0 = HA answered (count may be 0: no such entities there); -1 = no
      * answer / bad token. The picker words its message on the difference. */
