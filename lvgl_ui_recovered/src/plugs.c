@@ -70,11 +70,33 @@ static void zwave_info(const char * json, plug_t * p) {
     }
 }
 
+/* A name given in FreeToon's Z-Wave screen (toonui_zwave_names.cfg,
+ * "<zw-uuid>=<name>") wins over the Z-Wave device name, which for a plug
+ * paired through FreeToon is just its type ("NAS_WR01Z"). */
+static void custom_name(plug_t * p) {
+    const char * d = getenv("TOONUI_DATA_DIR");
+    char path[256];
+    snprintf(path, sizeof path, "%s/toonui_zwave_names.cfg", (d && *d) ? d : "/mnt/data");
+    FILE * f = fopen(path, "r");
+    if (!f) return;
+    char line[160];
+    size_t ul = strlen(p->dev_uuid);
+    while (ul && fgets(line, sizeof line, f)) {
+        if (strncmp(line, p->dev_uuid, ul) != 0 || line[ul] != '=') continue;
+        char * v = line + ul + 1;
+        v[strcspn(v, "\r\n")] = 0;
+        if (*v) snprintf(p->name, sizeof p->name, "%s", v);
+        break;
+    }
+    fclose(f);
+}
+
 void plugs_refresh_power(plug_t * p, int n) {
     if (n <= 0) return;
     static char body[64 * 1024];
-    if (stats_http_get("hdrv_zwave?action=getDevices.json", body, sizeof body) != 0) return;
-    for (int i = 0; i < n; i++) zwave_info(body, &p[i]);
+    if (stats_http_get("hdrv_zwave?action=getDevices.json", body, sizeof body) == 0)
+        for (int i = 0; i < n; i++) zwave_info(body, &p[i]);
+    for (int i = 0; i < n; i++) custom_name(&p[i]);
 }
 
 int plugs_scan(plug_t * out, int max) {

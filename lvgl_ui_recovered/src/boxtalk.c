@@ -904,7 +904,19 @@ int boxtalk_zwave_basic_set(const char * uuid, int state) {
 int boxtalk_zwave_set_name(const char * uuid, const char * name) {
     char inner[320];
     snprintf(inner, sizeof inner, "<uuid>%s</uuid><deviceName>%s</deviceName><name>%s</name>", uuid, name, name);
-    return zwave_action("SetDeviceName", inner, "zwn");
+    int rc = zwave_action("SetDeviceName", inner, "zwn");
+    /* The stock UI (ControlPanelApp.qml) renames by sending SetDeviceName
+     * with <Name> to the device's OWN uuid; send that form too so the name
+     * lands in the Toon (getDevices.json / stock UI), not only in FreeToon. */
+    char xml[768];
+    snprintf(xml, sizeof xml,
+        "<action class=\"invoke\" uuid=\"%s\" destuuid=\"%s\" "
+        "serviceid=\"urn:hcb-hae-com:serviceId:specific1\" requestid=\"%d-zwn2\">"
+        "<u:SetDeviceName xmlns:u=\"urn:hcb-hae-com:service:specific1:1\">"
+        "<Name>%s</Name></u:SetDeviceName></action>",
+        OUR_UUID, uuid, getpid(), name);
+    send_msg(xml);
+    return rc;
 }
 
 int boxtalk_send_raw_xml(const char * xml) {
