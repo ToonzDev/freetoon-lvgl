@@ -375,6 +375,9 @@ typedef struct {
     /* HomeWizard kWh meter (HWE-KWH1/3, SDM230/630-wifi), IPv4 address. Meant
      * for the PV inverter: when set it feeds the Solar tile (energy.c). */
     char  hw_kwh_host[24];
+    /* Second kWh meter, for a second PV system (e.g. east + west on separate
+     * inverters). Its production is added to the first one. */
+    char  hw_kwh2_host[24];
     /* HomeWizard Energy Sockets (HWE-SKT): name + IPv4 each, shown with
      * on/off + watts on the Devices screen. Empty host = slot unused. */
 #define HW_SOCKET_MAX 4

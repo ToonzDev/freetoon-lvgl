@@ -261,19 +261,31 @@ static void poll_water(void) {
 /* kWh meter (HWE-KWH1/3, SDM230/630) on the PV inverter. Its active_power_w
  * sign depends on how it is wired (production is usually negative), so the
  * Solar tile gets the magnitude. */
-static void poll_kwh(void) {
-    if (!settings.hw_kwh_host[0]) { hw_state.connected_kwh = 0; hw_state.polled_kwh = 0; return; }
-    hw_state.polled_kwh = 1;
+/* One meter: 1 = read, *w = |active_power_w|. */
+static int read_kwh_meter(const char * host, float * w) {
     static char body[2048];
-    if (http_get(settings.hw_kwh_host, "/api/v1/data", body, sizeof(body)) != 0) {
-        hw_state.connected_kwh = 0;
-        return;
-    }
+    if (http_get(host, "/api/v1/data", body, sizeof(body)) != 0) return 0;
     const char * j = strstr(body, "\r\n\r\n");
     j = j ? j + 4 : body;
-    if (!strstr(j, "active_power_w")) { hw_state.connected_kwh = 0; return; }
-    double w = parse_num(j, "active_power_w", 0);
-    hw_state.kwh_power_w   = (float)(w < 0 ? -w : w);
+    if (!strstr(j, "active_power_w")) return 0;
+    double v = parse_num(j, "active_power_w", 0);
+    *w = (float)(v < 0 ? -v : v);
+    return 1;
+}
+
+/* Up to two kWh meters (two PV systems): the Solar tile gets the sum. A
+ * meter that doesn't answer counts as 0 W as long as the other one does. */
+static void poll_kwh(void) {
+    const char * h1 = settings.hw_kwh_host, * h2 = settings.hw_kwh2_host;
+    if (!h1[0] && !h2[0]) { hw_state.connected_kwh = 0; hw_state.polled_kwh = 0; return; }
+    hw_state.polled_kwh = 1;
+    float w1 = 0, w2 = 0;
+    int ok1 = h1[0] && read_kwh_meter(h1, &w1);
+    int ok2 = h2[0] && read_kwh_meter(h2, &w2);
+    hw_state.kwh1_power_w  = ok1 ? w1 : 0;
+    hw_state.kwh2_power_w  = ok2 ? w2 : 0;
+    if (!ok1 && !ok2) { hw_state.connected_kwh = 0; return; }
+    hw_state.kwh_power_w   = (ok1 ? w1 : 0) + (ok2 ? w2 : 0);
     hw_state.connected_kwh = 1;
     canonical_state_notify(CSTATE_EVT_ENERGY);
 }
@@ -595,7 +607,7 @@ static void toonwater_adopt_config(void) {
 
 static int hw_anything_configured(void) {
     return settings.enable_p1_elec || settings.enable_p1_water ||
-           settings.hw_kwh_host[0] || homewizard_socket_count() > 0;
+           settings.hw_kwh_host[0] || settings.hw_kwh2_host[0] || homewizard_socket_count() > 0;
 }
 
 static pthread_mutex_t s_start_mtx = PTHREAD_MUTEX_INITIALIZER;
@@ -613,7 +625,7 @@ static int start_locked(void) {
     s_started = 1;
     fprintf(stderr, "[hw] poller started (elec=%d water=%d kwh=%d sockets=%d)\n",
             settings.enable_p1_elec, settings.enable_p1_water,
-            settings.hw_kwh_host[0] != 0, homewizard_socket_count());
+            (settings.hw_kwh_host[0] != 0) + (settings.hw_kwh2_host[0] != 0), homewizard_socket_count());
     return 0;
 }
 

@@ -34,10 +34,12 @@ typedef struct {
     volatile int    water_session_active;  /* 1 while pouring, 0 between */
     volatile int    water_session_age_s;   /* seconds since session ended (for fade) */
 
-    /* kWh meter on the PV inverter (settings.hw_kwh_host) */
-    volatile int    connected_kwh;
+    /* kWh meter(s) on the PV inverter(s) (settings.hw_kwh_host, hw_kwh2_host) */
+    volatile int    connected_kwh;    /* at least one meter answers */
     volatile int    polled_kwh;
-    volatile float  kwh_power_w;      /* production, always >= 0 (abs of active_power_w) */
+    volatile float  kwh_power_w;      /* total production, always >= 0 */
+    volatile float  kwh1_power_w;     /* per meter (0 when not answering) */
+    volatile float  kwh2_power_w;
 } hw_state_t;
 
 extern hw_state_t hw_state;

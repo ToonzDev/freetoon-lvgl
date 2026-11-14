@@ -3495,7 +3495,7 @@ static void on_int_p1_water(lv_event_t * e) {
  * on_int_p1esp_host. user_data = the hw_field_t below. IP fields keep only
  * digits and dots: the local API is reached by IPv4 address (homewizard.c). */
 typedef struct { char * dst; size_t sz; int ip; int * enable; } hw_field_t;
-static hw_field_t s_hw_fields[3 + 2 * HW_SOCKET_MAX];
+static hw_field_t s_hw_fields[4 + 2 * HW_SOCKET_MAX];   /* last one: 2nd kWh meter */
 static lv_obj_t * s_hw_enable_sw[2];   /* P1 / water switch, flipped on by an IP */
 
 /* A HomeWizard P1 is a full replacement for the Toon's meter adapter: when
@@ -3757,6 +3757,14 @@ static void open_integrations_modal(lv_event_t * e) {
 
     r = panel_row(p, y, tr("HomeWizard kWh-meter (zon)", "HomeWizard kWh meter (solar)"), NULL);
     hw_textarea(r, 300, -12, &s_hw_fields[2], tr("IP, leeg = HA-sensor", "IP, empty = HA sensor"));
+    y += 84;
+
+    /* Second PV system (e.g. east + west on two inverters): added to the first. */
+    s_hw_fields[3 + 2 * HW_SOCKET_MAX] =
+        (hw_field_t){ settings.hw_kwh2_host, sizeof settings.hw_kwh2_host, 1, NULL };
+    r = panel_row(p, y, tr("HomeWizard kWh-meter 2 (zon)", "HomeWizard kWh meter 2 (solar)"), NULL);
+    hw_textarea(r, 300, -12, &s_hw_fields[3 + 2 * HW_SOCKET_MAX],
+                tr("IP, leeg = niet in gebruik", "IP, empty = not used"));
     y += 84;
 
     for (int i = 0; i < HW_SOCKET_MAX; i++) {

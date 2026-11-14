@@ -406,6 +406,7 @@ void settings_load(void) {
         else if (strcmp(k, "auto_update_hour")    == 0) settings.auto_update_hour = (iv < 0 || iv > 23) ? 2 : iv;
         else if (strcmp(k, "auto_update_apps")    == 0) settings.auto_update_apps = !!iv;
         else if (strcmp(k, "hw_kwh_host")         == 0) snprintf(settings.hw_kwh_host, sizeof settings.hw_kwh_host, "%s", v);
+        else if (strcmp(k, "hw_kwh2_host")        == 0) snprintf(settings.hw_kwh2_host, sizeof settings.hw_kwh2_host, "%s", v);
         else if (strncmp(k, "hw_socket_name_", 15) == 0 || strncmp(k, "hw_socket_host_", 15) == 0) {
             int idx = atoi(k + 15);
             if (idx >= 0 && idx < HW_SOCKET_MAX) {
@@ -838,6 +839,7 @@ static void sanitize_all_strings(void) {
     for (size_t i = 0; i < sizeof fields / sizeof fields[0]; i++)
         settings_sanitize_str(fields[i]);
     settings_sanitize_str(settings.hw_kwh_host);
+    settings_sanitize_str(settings.hw_kwh2_host);
     for (int i = 0; i < HW_SOCKET_MAX; i++) {
         settings_sanitize_str(settings.hw_socket_name[i]);
         settings_sanitize_str(settings.hw_socket_host[i]);
@@ -1070,6 +1072,7 @@ static void settings_write_file(void) {
     fprintf(f, "auto_update_hour=%d\n", settings.auto_update_hour);
     fprintf(f, "auto_update_apps=%d\n", settings.auto_update_apps);
     fprintf(f, "hw_kwh_host=%s\n", settings.hw_kwh_host);
+    fprintf(f, "hw_kwh2_host=%s\n", settings.hw_kwh2_host);
     for (int i = 0; i < HW_SOCKET_MAX; i++) {
         fprintf(f, "hw_socket_name_%d=%s\n", i, settings.hw_socket_name[i]);
         fprintf(f, "hw_socket_host_%d=%s\n", i, settings.hw_socket_host[i]);

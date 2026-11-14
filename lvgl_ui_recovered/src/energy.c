@@ -188,10 +188,10 @@ const char * energy_offline_label(void) {
 /* Solar: a HomeWizard kWh meter on the inverter wins when its IP is set;
  * otherwise the HA production sensor. */
 int   energy_have_solar(void) {
-    if (settings.hw_kwh_host[0]) return hw_state.connected_kwh;
+    if (settings.hw_kwh_host[0] || settings.hw_kwh2_host[0]) return hw_state.connected_kwh;
     return settings.enable_ha && ha_state.have_solar;
 }
 float energy_solar_w(void) {
-    if (settings.hw_kwh_host[0]) return hw_state.kwh_power_w;
+    if (settings.hw_kwh_host[0] || settings.hw_kwh2_host[0]) return hw_state.kwh_power_w;
     return ha_state.solar_w;
 }

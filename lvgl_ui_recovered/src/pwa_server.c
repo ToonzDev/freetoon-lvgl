@@ -1434,10 +1434,11 @@ static int handle_settings_get(int fd) {
     /* HomeWizard kWh meter + Energy Sockets (#37): appended in place of the
      * closing brace, JSON-escaped. */
     if (n > 1 && n < (int)sizeof body && body[n - 1] == '}') {
-        char kwh[48];
+        char kwh[48], kwh2[48];
         json_strcpy(kwh, settings.hw_kwh_host, sizeof kwh);
+        json_strcpy(kwh2, settings.hw_kwh2_host, sizeof kwh2);
         n--;
-        n += snprintf(body + n, sizeof body - (size_t)n, ",\"hw_kwh_host\":\"%s\"", kwh);
+        n += snprintf(body + n, sizeof body - (size_t)n, ",\"hw_kwh_host\":\"%s\",\"hw_kwh2_host\":\"%s\"", kwh, kwh2);
         for (int i = 0; i < HW_SOCKET_MAX && n < (int)sizeof body; i++) {
             char nm[48], ip[48];
             json_strcpy(nm, settings.hw_socket_name[i], sizeof nm);
@@ -1647,6 +1648,7 @@ static int handle_settings_post(int fd, const char * body) {
         (dst)[o_] = 0; } while (0)
     int hw_touched = 0;
     if (extract_str(body, "hw_kwh_host", sv, sizeof sv)) { HW_IP_COPY(settings.hw_kwh_host); hw_touched = 1; }
+    if (extract_str(body, "hw_kwh2_host", sv, sizeof sv)) { HW_IP_COPY(settings.hw_kwh2_host); hw_touched = 1; }
     for (int i = 0; i < HW_SOCKET_MAX; i++) {
         char key[24];
         snprintf(key, sizeof key, "hw_socket_name_%d", i);
