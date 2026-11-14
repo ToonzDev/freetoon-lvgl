@@ -173,6 +173,8 @@ int boxtalk_zwave_set_name(const char * uuid, const char * name);
 /* Runtime device UUIDs (derived from the Toon's hostname/serial) for inbox +
  * notify, so the serial isn't hardcoded in the binary. */
 const char * boxtalk_our_uuid(void);
+const char * boxtalk_zwave_uuid(void);   /* <host>:hdrv_zwave */
+const char * boxtalk_dev_base(void);     /* <host> part of every daemon uuid */
 const char * boxtalk_usermsg_uuid(void);
 
 /* hcb_netcon (WiFi) — native BoxTalk path. Scan/status responses land in

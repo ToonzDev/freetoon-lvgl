@@ -350,7 +350,36 @@ static void sim_boiler_tick(void) {
 }
 
 /* Representative data so the screens render like a live Toon. */
+/* SIM_MA=1: meter-adapter management (screen_meteradapters) with the payloads
+ * hdrv_p1 sends on a real Toon 2; the config/caps replies are re-sent every
+ * second so a "Meters" request in the sim gets an answer. */
+#include "ma_admin.h"
+static void sim_ma_replies(lv_timer_t * t) {
+    (void)t;
+    ma_handle_action("<action class=\"response\"><u:GetSensorConfigurationResponse><devices>"
+        "<device><sensors><sensor>p1Elec</sensor><sensor>p1Gas</sensor></sensors>"
+        "<deviceUuid>a0835b8f-9b1e-439c-9f59-c96019142247</deviceUuid></device>"
+        "</devices></u:GetSensorConfigurationResponse></action>");
+    ma_handle_action("<action class=\"response\"><u:GetMeasureCapabilitiesResponse>"
+        "<device><deviceUuid>a0835b8f-9b1e-439c-9f59-c96019142247</deviceUuid><capabilities>"
+        "<capability>p1Elec</capability><capability>analogElec</capability><capability>laserElec</capability>"
+        "<capability>p1Gas</capability><capability>analogGas</capability><capability>analogHeat</capability>"
+        "<capability>analogSolar</capability><capability>analogWater</capability>"
+        "</capabilities></device></u:GetMeasureCapabilitiesResponse></action>");
+}
+static void sim_ma_mock(void) {
+    ma_handle_action("<action class=\"invoke\"><u:UpdateDataSet><usageDevicesInfo><usageDeviceInfo>"
+        "<usage><type>elec</type><measureType>1</measureType><status>1</status></usage>"
+        "<usage><type>gas</type><measureType>1</measureType><status>1</status></usage>"
+        "<deviceUuid>a0835b8f-9b1e-439c-9f59-c96019142247</deviceUuid><deviceIdentifier>Meetmodule 1</deviceIdentifier>"
+        "<deviceStatus>2</deviceStatus><showErrorIndicator>0</showErrorIndicator><statusString>Verbonden</statusString>"
+        "</usageDeviceInfo><statusString>Verbonden</statusString><showErrorIndicator>0</showErrorIndicator>"
+        "</usageDevicesInfo></u:UpdateDataSet></action>");
+    lv_timer_create(sim_ma_replies, 1000, NULL);
+}
+
 static void mock_state(void) {
+    if (getenv("SIM_MA")) sim_ma_mock();
     /* Hue: a few lamps so the Hue screen has rows to render. */
     {
         static const struct { const char * id, * name; int on, pct, dim; } H[] = {
@@ -560,6 +589,7 @@ static const struct { const char * name; create_fn fn; } SCREENS[] = {
     { "zwave",       screen_zwave_create },
     { "wifi",        screen_wifi_create },
     { "adapters",    screen_adapters_create },
+    { "meteradapters", screen_meteradapters_create },
     { "domoticz",    screen_domoticz_create },
     { "ha_devices",  screen_ha_devices_create },
     { "layout",      screen_layout_editor_create },

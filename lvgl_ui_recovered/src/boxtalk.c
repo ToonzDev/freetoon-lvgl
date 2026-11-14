@@ -16,6 +16,7 @@
 #include "settings.h"
 #include "tile_slots.h"
 #include "meteradapter.h"
+#include "ma_admin.h"
 #include "client_link.h"
 #include "http.h"
 #include "canonical_state.h"
@@ -198,6 +199,8 @@ static void bt_init_dev_uuids(void) {
  * connect); before that they hold the generic placeholder. */
 const char * boxtalk_our_uuid(void)     { return OUR_UUID; }
 const char * boxtalk_usermsg_uuid(void) { return USERMSG_UUID; }
+const char * boxtalk_zwave_uuid(void)   { return ZWAVE_UUID; }
+const char * boxtalk_dev_base(void)     { return dev_base; }
 
 #define BUFCAP (64 * 1024)
 static char rxbuf[BUFCAP];
@@ -672,8 +675,10 @@ static void handle_msg(const char* xml) {
          * the top-level uuid attribute only (the body lists sub-devices). */
         char u[96];
         if (!settings.client_mode && strstr(xml, "ssdp:alive") &&
-            attr_value(xml, "uuid", u, sizeof u) && strcmp(u, PWRUSAGE_UUID) == 0)
-            bt_subscribe_pwrusage();
+            attr_value(xml, "uuid", u, sizeof u)) {
+            if (strcmp(u, PWRUSAGE_UUID) == 0) bt_subscribe_pwrusage();
+            else if (ma_is_p1_uuid(u))         ma_subscribe();   /* hdrv_p1 (re)started */
+        }
     } else if (strncmp(p, "notify", 6) == 0) {
         handle_notify(xml);
     } else if (strncmp(p, "query", 5) == 0) {
@@ -690,6 +695,9 @@ static void handle_msg(const char* xml) {
         /* happ_pwrusage powerUsage / gasUsage datasets — meter readings */
         if (!settings.client_mode && strstr(xml, "happ_pwrusage") && strstr(xml, "UpdateDataSet"))
             pwrusage_parse_dataset(xml);
+        /* Meter-adapter management: hdrv_p1 usageDevicesInfo + config
+           responses, Z-Wave Include/Exclude results (ma_admin.c). */
+        if (!settings.client_mode) ma_handle_action(xml);
         /* happ_thermstat thermostatInfo dataset — the native source for the
          * calibrated room temp + humidity (the same push qt-gui consumes).
          * currentTemp/currentSetpoint are centi-°C; currentHumidity is %. */
@@ -1216,6 +1224,8 @@ static void send_initial_handshake(void) {
        and the http poll keeps it fresh). */
     send_query("b822de89-ecbd-4f6f-9fd2-5cac18fc06c4", "ThermostatInfo", "BoilerChPressure");
 
+    /* hdrv_p1 meter-adapter status (also re-done on its ssdp:alive). */
+    if (!settings.client_mode) ma_subscribe();
     /* Seed the boiler control type (OpenTherm vs On/Off) for the Settings UI. */
     boxtalk_get_boiler_type();
     /* Seed the room-temp correction (shared with qt-gui) for the Settings UI. */

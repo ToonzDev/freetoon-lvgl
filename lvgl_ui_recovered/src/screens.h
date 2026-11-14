@@ -87,6 +87,7 @@ lv_obj_t * screen_marketplace_create(void);
 lv_obj_t * screen_zwave_create(void);
 lv_obj_t * screen_wifi_create(void);
 lv_obj_t * screen_adapters_create(void);
+lv_obj_t * screen_meteradapters_create(void);   /* add / configure / remove meter adapters */
 lv_obj_t * screen_domoticz_create(void);
 lv_obj_t * screen_hue_create(void);
 lv_obj_t * screen_efanlamp_create(void);  /* BLE ceiling fan+light control */

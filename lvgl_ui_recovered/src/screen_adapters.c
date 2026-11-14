@@ -45,11 +45,9 @@ static lv_obj_t * lbl_met_state = NULL;
 static lv_obj_t * lbl_met_sub   = NULL;
 static lv_obj_t * lbl_ket_state = NULL;
 static lv_obj_t * lbl_ket_sub   = NULL;
-static lv_obj_t * btn_pair_lbl  = NULL;
 static lv_timer_t * refresh_timer = NULL;
 
 static int  g_met_found  = 0;     /* HAE_METER node present in Z-Wave list */
-static int  g_pair_active = 0;    /* Z-Wave inclusion window open */
 static int  g_query_ticks = 0;
 
 /* probe_happ_pwrusage is provided by meteradapter.c (declared in meteradapter.h) */
@@ -94,16 +92,12 @@ static void update_meter_labels(void) {
     else
         lv_label_set_text(lbl_met_state, tr("Niet gevonden", "Not found"));
 
-    if (g_pair_active)
-        lv_label_set_text(lbl_met_sub,
-            tr("Z-Wave koppelen actief - druk op de knop van de meter (stopt vanzelf na 60 s).",
-               "Z-Wave inclusion active - press the button on the meter (auto-stops in 60 s)."));
-    else if (online)
+    if (online)
         lv_label_set_text(lbl_met_sub, tr("Z-Wave slimme meter - publiceert op ElectricityFlowMeter.", "Z-Wave smart meter - publishing on ElectricityFlowMeter."));
     else if (g_met_found)
         lv_label_set_text(lbl_met_sub, tr("Meter is gekoppeld maar meet geen verbruik. Controleer P1-kabel of pulssensor.", "Meter is paired but not measuring. Check P1 cable or pulse sensor."));
     else
-        lv_label_set_text(lbl_met_sub, tr("Geen HAE_METER node gekoppeld. Tik op \"Koppel via Z-Wave\" om toe te voegen.", "No HAE_METER node paired. Tap \"Pair via Z-Wave\" to add it."));
+        lv_label_set_text(lbl_met_sub, tr("Geen meetadapter gekoppeld. Tik op \"Beheren\" om er een toe te voegen.", "No meter adapter paired. Tap \"Manage\" to add one."));
 }
 
 static void update_ket_labels(void) {
@@ -137,68 +131,10 @@ static void on_ket_test(lv_event_t * e) {
     lv_label_set_text(lbl_ket_sub, tr("Ketel opnieuw opvragen (happ_thermstat)...", "Re-querying boiler (happ_thermstat)..."));
 }
 
-/* --- pair (Z-Wave inclusion) with confirm ---------------------------- */
-static lv_obj_t * g_confirm = NULL;
-static void confirm_close(void) { if (g_confirm) { lv_obj_del(g_confirm); g_confirm = NULL; } }
-static void on_confirm_cancel(lv_event_t * e) { (void)e; confirm_close(); }
-static void on_confirm_pair(lv_event_t * e) {
+/* --- manage: add / configure / remove meter adapters (screen_meteradapters.c) */
+static void on_manage_clicked(lv_event_t * e) {
     (void)e;
-    confirm_close();
-    g_pair_active = 1;
-    boxtalk_zwave_include(1);     /* begin add mode (auto-stops in 60 s) */
-    g_query_ticks = 1;
-}
-static void on_pair_clicked(lv_event_t * e) {
-    (void)e;
-    if (g_pair_active) {          /* already running -> stop */
-        boxtalk_zwave_include(0);
-        g_pair_active = 0;
-        return;
-    }
-    /* Confirm before starting a mutating Z-Wave action. */
-    g_confirm = lv_obj_create(scr_root);
-    lv_obj_set_size(g_confirm, DISP_HOR, DISP_VER);
-    lv_obj_set_pos(g_confirm, 0, 0);
-    lv_obj_set_style_bg_color(g_confirm, lv_color_hex(0x000000), 0);
-    lv_obj_set_style_bg_opa(g_confirm, LV_OPA_70, 0);
-    lv_obj_set_style_border_width(g_confirm, 0, 0);
-    lv_obj_clear_flag(g_confirm, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t * card = lv_obj_create(g_confirm);
-    lv_obj_set_size(card, 640, 280);
-    lv_obj_center(card);
-    lv_obj_set_style_bg_color(card, lv_color_hex(COL_CARD), 0);
-    lv_obj_set_style_border_width(card, 0, 0);
-    lv_obj_set_style_radius(card, 14, 0);
-    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t * t = lv_label_create(card);
-    lv_obj_set_style_text_color(t, lv_color_hex(COL_TEXT_HI), 0);
-    lv_obj_set_style_text_font(t, SF(22), 0);
-    lv_obj_set_width(t, 600);
-    lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP);
-    lv_label_set_text(t,
-        tr("Z-Wave koppelen starten?\n\n"
-           "Dit opent een venster van 60 s om de slimme meter te koppelen. Start "
-           "koppelen op de meter zelf. Bestaande apparaten blijven ongewijzigd.",
-           "Start Z-Wave inclusion?\n\n"
-           "This opens a 60 s window to pair the smart meter. Trigger inclusion on "
-           "the meter itself. Existing devices are not affected."));
-    lv_obj_align(t, LV_ALIGN_TOP_LEFT, 16, 14);
-
-    lv_obj_t * go = lv_btn_create(card);
-    lv_obj_set_size(go, 180, 52);
-    lv_obj_align(go, LV_ALIGN_BOTTOM_RIGHT, -12, -12);
-    lv_obj_set_style_bg_color(go, lv_color_hex(COL_OK), 0);
-    lv_obj_add_event_cb(go, on_confirm_pair, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * gl = lv_label_create(go); lv_label_set_text(gl, tr("Start", "Start")); lv_obj_center(gl);
-
-    lv_obj_t * ca = lv_btn_create(card);
-    lv_obj_set_size(ca, 180, 52);
-    lv_obj_align(ca, LV_ALIGN_BOTTOM_LEFT, 12, -12);
-    lv_obj_set_style_bg_color(ca, lv_color_hex(COL_OFF), 0);
-    lv_obj_add_event_cb(ca, on_confirm_cancel, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * cl = lv_label_create(ca); lv_label_set_text(cl, tr("Annuleer", "Cancel")); lv_obj_center(cl);
+    ui_push(screen_meteradapters_create());
 }
 
 /* ===================================================================== */
@@ -220,8 +156,6 @@ static void refresh_cb(lv_timer_t * t) {
         g_query_ticks--;
     }
 
-    if (btn_pair_lbl)
-        lv_label_set_text(btn_pair_lbl, g_pair_active ? tr("Stop koppelen", "Stop pairing") : tr("Koppel via Z-Wave", "Pair via Z-Wave"));
     update_meter_labels();
     update_ket_labels();
 }
@@ -232,7 +166,6 @@ static void refresh_cb(lv_timer_t * t) {
 static void back_async(void * u) { (void)u; ui_pop(); }
 static void on_back(lv_event_t * e) {
     (void)e;
-    if (g_pair_active) { boxtalk_zwave_include(0); g_pair_active = 0; }
     lv_async_call(back_async, NULL);
 }
 
@@ -351,7 +284,7 @@ lv_obj_t * screen_adapters_create(void) {
     mk_btn(mcard, tr("Test", "Test"), 0x2a4060, on_met_test, NULL);
     lv_obj_t * met_test = lv_obj_get_child(mcard, lv_obj_get_child_cnt(mcard) - 1);
     lv_obj_align(met_test, LV_ALIGN_TOP_RIGHT, 0, 0);
-    mk_btn(mcard, tr("Koppel via Z-Wave", "Pair via Z-Wave"), COL_OK, on_pair_clicked, &btn_pair_lbl);
+    mk_btn(mcard, tr("Beheren", "Manage"), COL_OK, on_manage_clicked, NULL);
     lv_obj_t * met_pair = lv_obj_get_child(mcard, lv_obj_get_child_cnt(mcard) - 1);
     lv_obj_align(met_pair, LV_ALIGN_TOP_RIGHT, 0, SY(64));
 
