@@ -97,6 +97,14 @@ void ma_admin_timeout(void);               /* UI gave up waiting */
 void ma_get_admin(ma_admin_t * out);
 int  ma_is_meter_type(const char * dev_type);
 
+/* Smart plugs (Z-Wave screen). After pairing, a plug must be adopted by
+ * happ_smartplug with EnableDevice(ZwUuid) — as the stock "add plug" flow
+ * does — or it gets no hcb_rrd loggers (no history in Stekkers).
+ * ma_zwave_is_plug: 1 = the device reports an electricity counter
+ * (hdrv_zwave getDevices.json), 0 = not (yet), -1 = no answer. */
+int  ma_zwave_is_plug(const char * zw_uuid);
+int  ma_enable_plug(const char * zw_uuid);
+
 /* meter selection */
 int  ma_request_sensor_config(void);
 int  ma_request_caps(const char * dev_uuid);

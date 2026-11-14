@@ -6,6 +6,7 @@
  */
 #include "ma_admin.h"
 #include "boxtalk.h"
+#include "stats.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -325,6 +326,8 @@ void ma_handle_action(const char * xml) {
     else if (strstr(xml, "ExcludeDeviceResponse"))          parse_admin_reply(xml, 0);
     else if (strstr(xml, "GetSensorConfigurationResponse")) parse_sensor_config(xml);
     else if (strstr(xml, "GetMeasureCapabilitiesResponse")) parse_caps(xml);
+    else if (strstr(xml, "EnableDeviceResponse"))
+        fprintf(stderr, "[ma] EnableDevice reply: %.300s\n", xml);   /* <Success>1|0 */
     else if (strstr(xml, "SetSensorConfigurationResponse")) {
         int ok = !strstr(xml, "false") && !strstr(xml, "rror");
         pthread_mutex_lock(&g_mtx);
@@ -401,6 +404,35 @@ int ma_is_meter_type(const char * t) {
     for (size_t i = 0; i < sizeof ok / sizeof ok[0]; i++)
         if (strstr(t, ok[i])) return 1;
     return 0;
+}
+
+int ma_zwave_is_plug(const char * zw_uuid) {
+    if (!safe_token(zw_uuid)) return -1;
+    static char body[64 * 1024];
+    if (stats_http_get("hdrv_zwave?action=getDevices.json", body, sizeof body) != 0) return -1;
+    char key[64];
+    snprintf(key, sizeof key, "\"%s\"", zw_uuid);
+    const char * u = strstr(body, key);
+    if (!u) return 0;                                /* not listed (yet) */
+    const char * end = strchr(u, '}');               /* device objects are flat */
+    if (!end) return 0;
+    const char * t = strstr(u, "\"type\": \"");
+    if (t && t < end && strncmp(t + 9, "HAE_METER", 9) == 0) return 0;   /* meter adapter */
+    const char * q = strstr(u, "\"CurrentElectricityQuantity\"");
+    return (q && q < end) ? 1 : 0;
+}
+
+int ma_enable_plug(const char * zw_uuid) {
+    if (!safe_token(zw_uuid)) return -1;
+    char xml[768];
+    snprintf(xml, sizeof xml,
+        "<action class=\"invoke\" uuid=\"%s\" destuuid=\"%s:happ_smartplug\" "
+        "serviceid=\"urn:hcb-hae-com:serviceId:specific1\" requestid=\"%d-maen\">"
+        "<u:EnableDevice xmlns:u=\"urn:hcb-hae-com:service:specific1:1\">"
+        "<ZwUuid>%s</ZwUuid></u:EnableDevice></action>",
+        boxtalk_our_uuid(), boxtalk_dev_base(), getpid(), zw_uuid);
+    fprintf(stderr, "[ma] EnableDevice %s (happ_smartplug)\n", zw_uuid);
+    return boxtalk_send_raw_xml(xml);
 }
 
 int ma_request_sensor_config(void) { return send_p1("GetSensorConfiguration", NULL, "magsc"); }

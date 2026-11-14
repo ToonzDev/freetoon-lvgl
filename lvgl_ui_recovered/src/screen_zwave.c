@@ -23,6 +23,8 @@
 #include "settings.h"
 #include "theme.h"
 #include "boxtalk.h"
+#include "ma_admin.h"
+#include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -60,6 +62,25 @@ static int      g_inc_active = 0;
 static int      g_exc_active = 0;
 static char     g_status[192] = "";
 static int      g_poll_ticks = 0;
+
+/* Add / remove go through ma_admin (stock Administration IncludeDevice /
+ * ExcludeDevice with a result), so we learn what was added. A new smart plug
+ * is then adopted by happ_smartplug (EnableDevice), as the stock "add plug"
+ * flow does — otherwise it gets no hcb_rrd loggers and no Stekkers history. */
+static int    g_admin_seq0 = -1;
+static char   g_plug_uuid[48] = "";   /* added device being checked for a plug */
+static time_t g_plug_deadline = 0;
+static int    g_plug_tick = 0;
+static time_t g_admin_t0 = 0;        /* start of the running add/remove */
+
+static void zw_inc(int start) {
+    ma_admin_t a; ma_get_admin(&a); g_admin_seq0 = a.seq; g_admin_t0 = time(NULL);
+    if (start) ma_include_start(); else ma_include_stop();
+}
+static void zw_exc(int start) {
+    ma_admin_t a; ma_get_admin(&a); g_admin_seq0 = a.seq; g_admin_t0 = time(NULL);
+    if (start) ma_exclude_start(); else ma_exclude_stop();
+}
 
 /* ===================================================================== */
 /* Persistent custom device name overrides                                */
@@ -349,20 +370,20 @@ static void on_row_rename(lv_event_t * e) {
 
 static void on_include(lv_event_t * e) {
     (void)e;
-    if (g_exc_active) { boxtalk_zwave_exclude(0); g_exc_active = 0; }
+    if (g_exc_active) { zw_exc(0); g_exc_active = 0; }
     g_inc_active = !g_inc_active;
-    boxtalk_zwave_include(g_inc_active);
+    zw_inc(g_inc_active);
     snprintf(g_status, sizeof g_status, "%s", g_inc_active
-        ? tr("Toevoegen actief - start koppelen op het apparaat (stopt vanzelf na 60 s).",
-             "Inclusion active - trigger pairing on the device (auto-stops in 60 s).")
+        ? tr("Toevoegen actief - start koppelen op het apparaat (stopt vanzelf na 2 min).",
+             "Inclusion active - trigger pairing on the device (auto-stops in 2 min).")
         : tr("Toevoegen gestopt.", "Inclusion stopped."));
     g_poll_ticks = 0;
 }
 static void on_exclude(lv_event_t * e) {
     (void)e;
-    if (g_inc_active) { boxtalk_zwave_include(0); g_inc_active = 0; }
+    if (g_inc_active) { zw_inc(0); g_inc_active = 0; }
     g_exc_active = !g_exc_active;
-    boxtalk_zwave_exclude(g_exc_active);
+    zw_exc(g_exc_active);
     snprintf(g_status, sizeof g_status, "%s", g_exc_active
         ? tr("Verwijderen actief - start ontkoppelen op het apparaat (stopt vanzelf na 30 s).",
              "Removal active - trigger exclusion on the device (auto-stops in 30 s).")
@@ -380,8 +401,8 @@ static void on_enable_toggled(lv_event_t * e) {
     settings.enable_zwave = lv_obj_has_state(sw, LV_STATE_CHECKED) ? 1 : 0;
     settings_save();
     if (!settings.enable_zwave && (g_inc_active || g_exc_active)) {
-        if (g_inc_active) boxtalk_zwave_include(0);
-        if (g_exc_active) boxtalk_zwave_exclude(0);
+        if (g_inc_active) zw_inc(0);
+        if (g_exc_active) zw_exc(0);
         g_inc_active = g_exc_active = 0;
     }
     snprintf(g_status, sizeof g_status, "%s", settings.enable_zwave
@@ -463,6 +484,49 @@ static void refresh_cb(lv_timer_t * t) {
                 g_dev_count == 1 ? tr("apparaat", "device") : tr("apparaten", "devices"));
     }
 
+    /* Result of add / remove (ma_admin). */
+    {
+        ma_admin_t a; ma_get_admin(&a);
+        if (g_admin_seq0 >= 0 && a.busy && time(NULL) - g_admin_t0 > 150)
+            ma_admin_timeout();                 /* driver never answered */
+        if (g_admin_seq0 >= 0 && a.seq != g_admin_seq0 && !a.busy) {
+            g_admin_seq0 = -1;
+            int was_inc = g_inc_active, was_exc = g_exc_active;
+            g_inc_active = g_exc_active = 0;
+            g_poll_ticks = 0;
+            if (was_inc && !strcmp(a.status, "added")) {
+                snprintf(g_status, sizeof g_status, tr("Toegevoegd: %s. Controleren of het een stekker is...",
+                                                       "Added: %s. Checking whether it is a plug..."), a.dev_type);
+                snprintf(g_plug_uuid, sizeof g_plug_uuid, "%s", a.uuid);
+                g_plug_deadline = time(NULL) + 45;
+                g_plug_tick = 0;
+            } else if (was_exc && !strcmp(a.status, "deleted") && a.uuid[0]) {
+                snprintf(g_status, sizeof g_status, tr("Verwijderd: %s.", "Removed: %s."), a.dev_type);
+            } else if (was_exc && !strcmp(a.status, "deleted")) {
+                snprintf(g_status, sizeof g_status, "%s", tr("Er is geen apparaat verwijderd.", "No device was removed."));
+            } else if (was_inc || was_exc) {
+                snprintf(g_status, sizeof g_status, tr("Niet gelukt (%s).", "Did not work (%s)."), a.status);
+            }
+        }
+    }
+    /* A just-added device: once hdrv_zwave lists its electricity counter it
+     * is a smart plug -> EnableDevice, so happ_smartplug creates its loggers. */
+    if (g_plug_uuid[0] && g_plug_tick-- <= 0) {
+        g_plug_tick = 3;
+        int r = ma_zwave_is_plug(g_plug_uuid);
+        if (r == 1) {
+            ma_enable_plug(g_plug_uuid);
+            snprintf(g_status, sizeof g_status, "%s",
+                     tr("Stekker toegevoegd. Het verbruik verschijnt binnen een uur onder Statistieken > Stekkers.",
+                        "Plug added. Its usage shows up under Statistics > Plugs within an hour."));
+            g_plug_uuid[0] = 0;
+        } else if (time(NULL) > g_plug_deadline) {
+            fprintf(stderr, "[zwave] %s: no electricity counter, not a smart plug\n", g_plug_uuid);
+            snprintf(g_status, sizeof g_status, "%s", tr("Apparaat toegevoegd.", "Device added."));
+            g_plug_uuid[0] = 0;
+        }
+    }
+
     /* Periodically ask for the device list (every ~3 s, faster right after an
      * action sets g_poll_ticks = 0). */
     if (g_poll_ticks <= 0) {
@@ -498,8 +562,8 @@ static void back_async(void * u) { (void)u; ui_pop(); }
 static void on_back(lv_event_t * e) {
     (void)e;
     /* Leave no inclusion/exclusion window open behind us. */
-    if (g_inc_active) { boxtalk_zwave_include(0); g_inc_active = 0; }
-    if (g_exc_active) { boxtalk_zwave_exclude(0); g_exc_active = 0; }
+    if (g_inc_active) { zw_inc(0); g_inc_active = 0; }
+    if (g_exc_active) { zw_exc(0); g_exc_active = 0; }
     lv_async_call(back_async, NULL);
 }
 
