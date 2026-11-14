@@ -322,7 +322,9 @@ static time_t s_burner_last_active_ts = 0;
 
 static void update_burner_state(int bi) {
     time_t now = time(NULL);
-    if (bi == 1) {
+    /* 0 off, 1 heating, 2 hot water, 3 preheat, 4 error (stock
+     * ThermostatSidePanelButton.qml shows the flame for 1 and 3). */
+    if (bi == 1 || bi == 3) {
         s_burner_last_active_ts = now;
         toon_state.burner_on = 1;
         toon_state.dhw_on    = 0;
@@ -446,10 +448,12 @@ static void handle_notify(const char* xml) {
             toon_state.setpoint = v / 100.0f;  /* setpoint is centidegrees */
             toon_state.msg_count++;
         }
-        if (elem_text_float(xml, "burnerInfo", &v)) {
-            update_burner_state((int)v);
-            toon_state.msg_count++;
-        }
+        /* burnerInfo is NOT taken from ThermostatInfo notifies: other
+         * publishers (quby_bridge's raw OpenTherm flame bit) send it too, and
+         * at low modulation that bit drops for a moment while happ_thermstat
+         * still says "heating" — the icon flickered. Like the stock GUI, the
+         * burner state comes only from happ_thermstat's thermostatInfo
+         * (dataset + HTTP poll). */
         if (elem_text_float(xml, "BoilerChPressure", &v)) {
             /* Auto-detect bar, decibar, or centibar by magnitude. */
             if (v > 0.05f)
@@ -712,6 +716,11 @@ static void handle_msg(const char* xml) {
             }
             if (elem_text_float(xml, "currentHumidity", &v) && v > 0)
                 toon_state.humidity = v;
+            /* Burner state + modulation: the stock flame icon's source. */
+            if (elem_text_float(xml, "burnerInfo", &v))
+                update_burner_state((int)v);
+            if (elem_text_float(xml, "currentModulationLevel", &v) && v >= 0 && v <= 100)
+                toon_state.modulation_level = v;
             if (elem_text_float(xml, "currentSetpoint", &v) && v > 0)
                 toon_state.setpoint = v / 100.0f;
         }
