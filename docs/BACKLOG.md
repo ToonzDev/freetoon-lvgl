@@ -536,3 +536,15 @@
 - **Description**: On a slave Toon (client mode) switching Domoticz or Home Assistant off in Settings does not change the Verlichting tile; it keeps showing the Domoticz lights. Earlier report: after enabling Domoticz the tile showed nothing until a GUI restart.
 - **Explanation**: In client mode the slave takes its Domoticz devices from the master (`/api/state` "dz" list) and the tile uses them whenever that list is non-empty (`client_mode && domoticz_state.count > 0`); the slave's own `enable_domoticz` / `enable_ha` are not consulted. The two tile switches are still the slave's own choice (`domoticz_tile_idx1/2`) from the master's list. Switching Domoticz off on the master removes them on the slave too.
 - **Possible later change**: show "Beheerd door Master" on the slave's Domoticz/HA switches, or add a per-slave "show master lights" setting.
+
+### 47. Energy History of Z-Wave Smart Plugs (Already Logged by the Toon)
+- **Status**: Open (user request, 2026-11-14). Related: #43 (HomeWizard sockets).
+- **Finding (production Toon 2, read-only, 2026-11-14)**: when a Z-Wave smart plug is added in the stock UI, hcb_rrd creates a logger for it by itself, although the stock UI never shows that data. On the production Toon two NAS_WR01Z plugs ("Tuin", node 10, uuid `482195c7-f27e-4958-8c43-600996d7be5f`; "Kerstboom", node 11, uuid `6f78136e-c3f9-429f-bb8d-834bec7dfba9`) each have a logger in `/mnt/data/qmf/var/hcb_rrd/<logger-uuid>.*`:
+  - variable `CurrentElectricityQuantity` (cumulative, Wh) of service `ElectricityQuantityMeter`, integer
+  - archives `1monthhour` (3600 s steps, one month) and `1yearday` (86400 s steps, one year), consolidation "last"
+  - the `.dat` header names the device uuid; the archive files are `<logger-uuid>-1monthhour.rra` / `-1yearday.rra`.
+  - live values in `hdrv_zwave?action=getDevices.json`: `CurrentElectricityFlow` (W) and `CurrentElectricityQuantity` (Wh).
+- **Approach**:
+  - Z-Wave plugs need no config editing: read the history with the existing `boxtalk_get_rra_data(<device uuid>, "1monthhour" / "1yearday")` (hcb_rrd GetRraData, as the meter history), turn the cumulative counter into usage per hour/day.
+  - Show it per plug: an "Stekkers" tab in Statistics (hours for the last month, days for the year), and/or a history view on the Devices screen.
+  - Only HomeWizard sockets (#43) would need extra `<rrdLogger>` blocks in `config_hcb_rrd.xml`; the Z-Wave loggers above show the exact block shape to copy.
