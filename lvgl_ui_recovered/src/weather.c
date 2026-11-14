@@ -384,7 +384,14 @@ static int parse_br_forecast(const char * body, double * lat, double * lon) {
     int now_min = lt.tm_hour * 60 + lt.tm_min, cur = 0, best = 1 << 30;
     for (int i = 0; i < weather_state.days[0].hour_count; i++) {
         const char * l = weather_state.days[0].hours[i].label;
-        int diff = abs(atoi(l) * 60 + atoi(l + 3) - now_min);
+        /* Clock-time distance across midnight: at 23:34 the 00:00 slot is 26
+         * minutes away, not 23 h 34 min. Without the wrap, a first "day"
+         * that already holds the next day's hours made tomorrow's 23:00 slot
+         * "now" (user saw 9.1 °C instead of 1.8 °C just before midnight). */
+        int diff = atoi(l) * 60 + atoi(l + 3) - now_min;
+        if (diff < -720) diff += 1440;
+        if (diff >  720) diff -= 1440;
+        if (diff < 0) diff = -diff;
         if (diff < best) { best = diff; cur = i; }
     }
     const weather_hourly_slot_t * C = flat[cur];
