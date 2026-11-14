@@ -716,6 +716,17 @@ static void handle_msg(const char* xml) {
                 fprintf(stderr, "[bxt] action response setpoint=%.2f\n", toon_state.setpoint);
             }
         }
+        /* GetTempOffset response: happ_thermstat's room-temp correction in °C
+           (shared with qt-gui). measuredTemp (raw, centi-°C) is not needed:
+           indoor_temp already has the offset applied. */
+        if (!settings.client_mode && strstr(xml, "GetTempOffsetResponse")) {
+            float v;
+            if (elem_text_float(xml, "offset", &v) && v >= -20.0f && v <= 20.0f) {
+                toon_state.temp_offset = v;
+                toon_state.temp_offset_valid = 1;
+                fprintf(stderr, "[bxt] temp offset = %+.1f\n", v);
+            }
+        }
         /* GetBoilerType / SetBoilerType response — both echo the boiler type
            back in an <ot> element (0=OpenTherm, 1=On/Off). Log raw the first
            few times so the verb/serviceid can be confirmed on-device. */
@@ -984,6 +995,43 @@ int boxtalk_set_boiler_type(int type) {
     return rc;
 }
 
+/* ---- Room-temperature correction (shared with qt-gui) ----
+ * Same calls as qt-gui's ThermostatSettingsApp.qml: service "Thermostat" on
+ * happ_thermstat, GetTempOffset -> <offset>-1.0</offset><measuredTemp>2265
+ * </measuredTemp>, AdjustTempOffset(<offset>) sets the absolute offset. */
+int boxtalk_get_temp_offset(void) {
+    char buf[512];
+    snprintf(buf, sizeof(buf),
+        "<action class=\"invoke\" uuid=\"%s\" destuuid=\"%s\" "
+        "serviceid=\"urn:hcb-hae-com:serviceId:Thermostat\" requestid=\"%d-gto\">"
+        "<u:GetTempOffset xmlns:u=\"urn:hcb-hae-com:service:Thermostat:1\">"
+        "</u:GetTempOffset></action>",
+        OUR_UUID, THERMD_UUID, getpid());
+    return send_msg(buf);
+}
+
+int boxtalk_set_temp_offset(float deg) {
+    if (deg < -6.0f) deg = -6.0f;
+    if (deg >  6.0f) deg =  6.0f;
+    /* Snap to 0.1 so "-0.0" can't happen and the value matches what
+     * happ_thermstat persists (%0.1f). */
+    int tenths = (int)(deg * 10.0f + (deg < 0 ? -0.5f : 0.5f));
+    char val[16];
+    snprintf(val, sizeof val, "%s%d.%d", tenths < 0 ? "-" : "", abs(tenths) / 10, abs(tenths) % 10);
+    char buf[512];
+    snprintf(buf, sizeof(buf),
+        "<action class=\"invoke\" uuid=\"%s\" destuuid=\"%s\" "
+        "serviceid=\"urn:hcb-hae-com:serviceId:Thermostat\" requestid=\"%d-ato\">"
+        "<u:AdjustTempOffset xmlns:u=\"urn:hcb-hae-com:service:Thermostat:1\">"
+        "<offset>%s</offset></u:AdjustTempOffset></action>",
+        OUR_UUID, THERMD_UUID, getpid(), val);
+    int rc = send_msg(buf);
+    fprintf(stderr, "[bxt] AdjustTempOffset offset=%s rc=%d\n", val, rc);
+    if (rc == 0) { toon_state.temp_offset = tenths / 10.0f; toon_state.temp_offset_valid = 1; }
+    boxtalk_get_temp_offset();   /* no response to Adjust: read it back */
+    return rc;
+}
+
 int boxtalk_get_rra_data(const char * uuid, const char * rra_name) {
     char buf[1024];
     snprintf(buf, sizeof(buf),
@@ -1170,6 +1218,8 @@ static void send_initial_handshake(void) {
 
     /* Seed the boiler control type (OpenTherm vs On/Off) for the Settings UI. */
     boxtalk_get_boiler_type();
+    /* Seed the room-temp correction (shared with qt-gui) for the Settings UI. */
+    boxtalk_get_temp_offset();
     /* Boiler flow/return temps — BoilerInfo is query-only (no notifies). */
     boxtalk_request_boiler_refresh();
 

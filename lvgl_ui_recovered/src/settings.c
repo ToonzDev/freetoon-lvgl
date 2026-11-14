@@ -35,7 +35,6 @@ settings_t settings = {
     .active_brightness = 800,
     .dim_brightness    = 80,
     .dim_sleep_away_black = 1,
-    .temp_offset_centi = 0,
     .show_dim_weather  = 1,
     .show_dim_waste    = 1,
     .show_dim_bars     = 1,
@@ -197,12 +196,6 @@ settings_t settings = {
     .pin_code            = "",
 };
 
-float display_indoor_temp(float raw) {
-    if (raw <= 0) return raw;
-    /* In client mode, the master Toon already applies its own calibration */
-    if (settings.client_mode) return raw;
-    return raw + (float)settings.temp_offset_centi / 100.0f;
-}
 
 /* True if a /mnt/data/<name> file exists and is non-empty. */
 static int file_has_content(const char * path) {
@@ -251,7 +244,6 @@ void settings_load(void) {
         else if (strcmp(k, "touch_swap_xy")     == 0) settings.touch_swap_xy     = iv;
         else if (strcmp(k, "touch_invert_x")    == 0) settings.touch_invert_x    = iv;
         else if (strcmp(k, "touch_invert_y")    == 0) settings.touch_invert_y    = iv;
-        else if (strcmp(k, "temp_offset_centi") == 0) settings.temp_offset_centi = iv;
         else if (strcmp(k, "show_dim_weather")  == 0) settings.show_dim_weather  = iv;
         else if (strcmp(k, "show_dim_waste")    == 0) settings.show_dim_waste    = iv;
         else if (strcmp(k, "show_dim_bars")     == 0) settings.show_dim_bars     = iv;
@@ -278,7 +270,6 @@ void settings_load(void) {
         else if (strcmp(k, "waste_city")        == 0)
             snprintf(settings.waste_city, sizeof settings.waste_city, "%s", v);
         else if (strcmp(k, "show_dim_weather")  == 0) settings.show_dim_weather  = iv;
-        else if (strcmp(k, "temp_offset_centi") == 0) settings.temp_offset_centi = iv;
         else if (strcmp(k, "weather_location_id") == 0) settings.weather_location_id = iv;
         else if (strcmp(k, "forecast_mode")     == 0) settings.forecast_mode       = iv;
         else if (strcmp(k, "weather_use_feel")  == 0) settings.weather_use_feel    = iv;
@@ -973,7 +964,6 @@ static void settings_write_file(void) {
     fprintf(f, "touch_swap_xy=%d\n",     settings.touch_swap_xy);
     fprintf(f, "touch_invert_x=%d\n",    settings.touch_invert_x);
     fprintf(f, "touch_invert_y=%d\n",    settings.touch_invert_y);
-    fprintf(f, "temp_offset_centi=%d\n", settings.temp_offset_centi);
     fprintf(f, "show_dim_weather=%d\n",  settings.show_dim_weather);
     fprintf(f, "show_dim_waste=%d\n",    settings.show_dim_waste);
     fprintf(f, "show_dim_bars=%d\n",     settings.show_dim_bars);

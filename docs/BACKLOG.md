@@ -517,3 +517,16 @@
   - Gas: daily price (gas day 06:00-06:00) the same way.
   - Show the current price (and cheapest hours ahead) on the Energie tile or dim screen as an option; fixed tariffs remain the default.
   - Feed-in (solar export) at the same hourly price, minus the supplier's feed-in fee.
+
+### 45. Room-Temperature Correction Not Shared With the Stock GUI and Not Used by the Boiler (User Report)
+- **Status**: Resolved (2026-11-14), tested on the test Toon 1 (.52).
+- **Description**:
+  - FreeToon had its own correction (`temp_offset_centi` in toonui.cfg, slider under Heating). It was only added to the displayed temperature: the boiler, the web page and the stock GUI ignored it. On top of that, happ_thermstat already applies the stock GUI's correction, so with both set the screen was corrected twice (production: qt-gui -1.0 plus FreeToon -2.0 showed 19.7 while the room was 21.6).
+  - The slider worked in 0.01 C steps, so it rarely landed on exactly 0 ("-0.0" / "+0.0" still shifted the value 0.1).
+- **Findings**:
+  - The correction lives in happ_thermstat (config key `i2cTempError` in config_happ_thermstat.xml). It is added to every sensor reading, so `currentTemp` (HTTP, thermostatInfo dataset, ThermostatInfo notify) is already corrected and the thermostat regulates on it.
+  - Stock qt-gui (`apps/thermostatSettings/ThermostatSettingsApp.qml`, `TemperatureCorrectionScreen.qml`): BoxTalk service `Thermostat` on happ_thermstat, `GetTempOffset` -> `<offset>-1.0</offset><measuredTemp>2265</measuredTemp>` (offset in C, measuredTemp raw in centi-C), `AdjustTempOffset(<offset>)` sets the absolute offset (no response). Range +-6.0 in 0.1 steps. There is no `SetTempOffset` (toonsim's model is wrong).
+  - Binary detail: Get reports `i2cTempError - E`, Adjust stores `new - E`, where E is the factory `i2cTempError` from `/HCBv2/etc/qmf_release.xml` (0 on the checked Toons), so Adjust is a clean absolute set.
+- **Fix**:
+  - FreeToon reads the offset with GetTempOffset at startup and when the Heating modal opens, and writes it with AdjustTempOffset when the slider is released (0.1 steps, +-6.0), then reads it back. No local offset is added anymore; `temp_offset_centi` is gone from toonui.cfg. The PWA settings API keeps the `temp_offset_centi` key, now backed by happ_thermstat, and only writes on an actual change.
+  - Client mode: slider stays disabled ("Beheerd door Master"); the slave shows the master's corrected temperature.

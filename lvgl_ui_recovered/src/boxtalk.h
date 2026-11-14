@@ -17,6 +17,10 @@ typedef struct {
     volatile float  modulation_level;/* %, boiler modulation level (DID 17 / otCurrentModulationLevel) */
     volatile int    ot_comm_error;   /* 0/1, OT communication error flag */
     volatile int    boiler_type;     /* 0=OpenTherm, 1=On/Off; -1=unknown */
+    volatile float  temp_offset;     /* °C, happ_thermstat's room-temp correction
+                                        (the qt-gui "Temperatuurcorrectie"); already
+                                        included in indoor_temp */
+    volatile int    temp_offset_valid; /* 1 once GetTempOffset has answered */
     volatile float  humidity;        /* %  */
     volatile int    eco2;            /* ppm */
     volatile int    tvoc;            /* ppb */
@@ -126,6 +130,17 @@ int boxtalk_send_raw_xml(const char * xml);
    the OpenTherm gateway. type: 0=OpenTherm, 1=On/Off. */
 int boxtalk_get_boiler_type(void);
 int boxtalk_set_boiler_type(int type);
+
+/* Room-temperature correction, owned by happ_thermstat (persisted there as
+   i2cTempError) and shared with the stock qt-gui. happ_thermstat adds it to
+   every sensor reading, so indoor_temp already includes it and the
+   thermostat regulates on the corrected value.
+   GetTempOffset is read-only; the response updates toon_state.temp_offset.
+   AdjustTempOffset SETS the absolute offset in °C (not a delta), exactly as
+   qt-gui's TemperatureCorrectionScreen does; it sends no response, so the
+   setter re-reads with GetTempOffset. Clamped to qt-gui's ±6.0, 0.1 steps. */
+int boxtalk_get_temp_offset(void);
+int boxtalk_set_temp_offset(float deg);
 
 /* ---- hcb_config (ConfigProvider) plumbing ---- */
 extern volatile int config_response_ready;

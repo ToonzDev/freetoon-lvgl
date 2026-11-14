@@ -18,8 +18,6 @@ typedef struct {
     int touch_swap_xy;        /* 0/1 — swap the X and Y axes (90/270° rotation) */
     int touch_invert_x;       /* 0/1 — mirror horizontally */
     int touch_invert_y;       /* 0/1 — mirror vertically */
-    int temp_offset_centi;    /* -500..+500 — added to displayed indoor temp,
-                                 in centi-degrees (e.g. -120 = subtract 1.2°C) */
     int show_dim_weather;     /* 0/1 — show today's weather icon on the dim screen */
     int show_dim_waste;       /* 0/1 — show next-pickup on the dim screen */
     int show_dim_bars;        /* 0/1 — usage bars (energy now / gas hourly) flanking the dim clock */
@@ -388,8 +386,6 @@ typedef struct {
 #define FORECAST_HOURLY 1
 #define FORECAST_DAILY  2
 
-/* Display-side adjusted indoor temperature: raw + settings.temp_offset_centi/100 */
-float display_indoor_temp(float raw);
 
 extern settings_t settings;
 

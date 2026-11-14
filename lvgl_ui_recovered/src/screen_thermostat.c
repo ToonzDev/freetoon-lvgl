@@ -99,7 +99,7 @@ static void refresh_cb(lv_timer_t * t) {
     }
 
     if (toon_state.indoor_temp > 0)
-        lv_label_set_text_fmt(lbl_temp, "%.1f°C", display_indoor_temp(toon_state.indoor_temp));
+        lv_label_set_text_fmt(lbl_temp, "%.1f°C", toon_state.indoor_temp);
 
     /* Highlight logic: the mode button (Scheduled[0] or Off[1]) gets a white
      * border based on whether we're on the schedule (program_state 1, 2, 3, 8);

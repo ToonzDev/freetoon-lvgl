@@ -308,7 +308,7 @@ static void refresh_cb(lv_timer_t * t) {
     /* Always paint values: if data not yet present, fall back to a
        "wait..." marker instead of leaving the stale "-- C" default. */
     if (toon_state.indoor_temp > 0)
-        ui_label_set_text_fmt(lbl_temp, "%.1f°C", display_indoor_temp(toon_state.indoor_temp));
+        ui_label_set_text_fmt(lbl_temp, "%.1f°C", toon_state.indoor_temp);
     else
         ui_label_set_text(lbl_temp, "...");
     lv_obj_update_layout(lbl_temp);

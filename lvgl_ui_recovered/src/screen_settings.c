@@ -257,10 +257,44 @@ static void on_auto_brightness_change(lv_event_t * e) {
     }
 }
 #endif
+/* Room-temp correction: happ_thermstat owns it (shared with qt-gui), the
+ * slider works in tenths of a degree over qt-gui's ±6.0 range. Dragging only
+ * updates the label; the value is written once, on release. */
+static void offset_label(int tenths) {
+    if (!lbl_offset_val) return;
+    if (tenths == 0) { lv_label_set_text(lbl_offset_val, "0.0 C"); return; }
+    lv_label_set_text_fmt(lbl_offset_val, "%c%d.%d C", tenths < 0 ? '-' : '+',
+                          abs(tenths) / 10, abs(tenths) % 10);
+}
+
+static int offset_tenths_now(void) {
+    float o = toon_state.temp_offset;
+    return (int)(o * 10.0f + (o < 0 ? -0.5f : 0.5f));
+}
+
 static void on_offset_change(lv_event_t * e) {
-    int v = lv_slider_get_value(lv_event_get_target(e));
-    settings.temp_offset_centi = v;
-    lv_label_set_text_fmt(lbl_offset_val, "%+.1f C", v / 100.0f);
+    lv_obj_t * s = lv_event_get_target(e);
+    int v = lv_slider_get_value(s);
+    offset_label(v);
+    if (lv_event_get_code(e) == LV_EVENT_RELEASED && !settings.client_mode
+        && toon_state.temp_offset_valid && v != offset_tenths_now())
+        boxtalk_set_temp_offset(v / 10.0f);
+}
+
+/* Keep the slider in step with happ_thermstat (startup read arriving late,
+ * or the read-back after a write) unless the user is dragging it. */
+static void offset_sync(void) {
+    if (!sl_offset || settings.client_mode) return;
+    if (lv_obj_has_state(sl_offset, LV_STATE_PRESSED)) return;
+    if (!toon_state.temp_offset_valid) {
+        lv_obj_add_state(sl_offset, LV_STATE_DISABLED);
+        if (lbl_offset_val) lv_label_set_text(lbl_offset_val, tr("Onbekend", "Unknown"));
+        return;
+    }
+    lv_obj_clear_state(sl_offset, LV_STATE_DISABLED);
+    int t = offset_tenths_now();
+    if (lv_slider_get_value(sl_offset) != t) lv_slider_set_value(sl_offset, t, LV_ANIM_OFF);
+    offset_label(t);
 }
 
 /* ============================ small builders ============================ */
@@ -651,6 +685,7 @@ static void on_boiler_switch(lv_event_t * e) {
 /* ============================ live ticks ============================ */
 
 static void heating_tick(void) {
+    offset_sync();
     if (s_ot_err_display_countdown > 0) {
         s_ot_err_display_countdown--;
         if (lbl_boiler_mode) {
@@ -1279,11 +1314,14 @@ static void open_heating_modal(lv_event_t * e) {
     lv_obj_t * r = panel_row(p, y, tr("Correctie binnentemperatuur", "Indoor temp offset"), &lbl_offset_val);
     if (settings.client_mode) {
         lv_label_set_text(lbl_offset_val, tr("Beheerd door Master", "Managed by Master"));
-        sl_offset = row_slider(r, -500, 500, 0, on_offset_change);
+        sl_offset = row_slider(r, -60, 60, 0, on_offset_change);
         lv_obj_add_state(sl_offset, LV_STATE_DISABLED);
     } else {
-        lv_label_set_text_fmt(lbl_offset_val, "%+.1f C", settings.temp_offset_centi / 100.0f);
-        sl_offset = row_slider(r, -500, 500, settings.temp_offset_centi, on_offset_change);
+        /* Shared with the stock GUI: read from / written to happ_thermstat. */
+        sl_offset = row_slider(r, -60, 60, 0, on_offset_change);
+        lv_obj_add_event_cb(sl_offset, on_offset_change, LV_EVENT_RELEASED, NULL);
+        offset_sync();
+        boxtalk_get_temp_offset();
     }
     y += 90;
 

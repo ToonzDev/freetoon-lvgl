@@ -1405,7 +1405,7 @@ static int handle_settings_get(int fd) {
         "}",
         settings.auto_dim_enabled, settings.auto_dim_seconds,
         settings.active_brightness, settings.dim_brightness, settings.dim_sleep_away_black, settings.auto_brightness,
-        settings.temp_offset_centi, settings.show_dim_weather,
+        (int)(toon_state.temp_offset * 100.0f + (toon_state.temp_offset < 0 ? -0.5f : 0.5f)), settings.show_dim_weather,
         settings.show_dim_waste, settings.dim_waste_lead_days, settings.dim_waste_hour,
         settings.waste_postcode, settings.waste_housenr,
         settings.waste_provider, settings.waste_ics_url,
@@ -1469,7 +1469,14 @@ static int handle_settings_post(int fd, const char * body) {
     if (extract_int(body, "dim_brightness", &iv))     settings.dim_brightness = iv < 0 ? 0 : (iv > 1000 ? 1000 : iv);
     if (extract_int(body, "dim_sleep_away_black", &iv)) settings.dim_sleep_away_black = !!iv;
     if (extract_int(body, "auto_brightness", &iv))    settings.auto_brightness = !!iv;
-    if (extract_int(body, "temp_offset_centi", &iv))  settings.temp_offset_centi = iv < -500 ? -500 : (iv > 500 ? 500 : iv);
+    /* Room-temp correction lives in happ_thermstat (shared with qt-gui); only
+       write it when it actually changes, since a settings POST carries every
+       field. Centi-°C on the wire for API compatibility. */
+    if (extract_int(body, "temp_offset_centi", &iv) && !settings.client_mode) {
+        int cur = (int)(toon_state.temp_offset * 100.0f + (toon_state.temp_offset < 0 ? -0.5f : 0.5f));
+        if (toon_state.temp_offset_valid && iv / 10 != cur / 10)
+            boxtalk_set_temp_offset(iv / 100.0f);
+    }
     if (extract_int(body, "show_dim_weather", &iv))   settings.show_dim_weather = !!iv;
     if (extract_int(body, "show_dim_waste", &iv))     settings.show_dim_waste = !!iv;
     if (extract_int(body, "dim_waste_lead_days", &iv))settings.dim_waste_lead_days = iv < 0 ? 0 : (iv > 7 ? 7 : iv);

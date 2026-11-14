@@ -705,7 +705,7 @@ static void build_info(char * out, size_t n) {
     o += (size_t)snprintf(out + o, n - o, "%s", tr("<b>Status Toon:</b>\n", "<b>Toon status:</b>\n"));
     if (t.room_temp > 0)
         o += (size_t)snprintf(out + o, n - o, tr("  Temperatuur: <b>%.1f</b> graden\n", "  Temperature: <b>%.1f</b> °C\n"),
-                              display_indoor_temp(t.room_temp));
+                              t.room_temp);
     o += (size_t)snprintf(out + o, n - o, tr("  Thermostaat: <b>%.1f</b> graden\n", "  Thermostat: <b>%.1f</b> °C\n"), t.setpoint);
     o += (size_t)snprintf(out + o, n - o, tr("  Programma: <b>%s</b>\n", "  Program: <b>%s</b>\n"), preset_name(t.active_state));
     o += (size_t)snprintf(out + o, n - o, tr("  Auto programma: <b>%s</b>\n", "  Auto program: <b>%s</b>\n"), program_name(t.program_state));

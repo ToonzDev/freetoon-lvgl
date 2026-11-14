@@ -420,7 +420,7 @@ static void refresh_slot(slot_t * s) {
         lv_obj_set_style_text_color(s->val, lv_color_hex(low ? C_ALERT : C_TITLE), 0);
         if (s->banner) (low ? lv_obj_clear_flag : lv_obj_add_flag)(s->banner, LV_OBJ_FLAG_HIDDEN);
         break; }
-    case TT_INDOOR:  snprintf(b, sizeof b, "%.1f°", display_indoor_temp(toon_state.indoor_temp)); comma(b); lv_label_set_text(s->val, b); break;
+    case TT_INDOOR:  snprintf(b, sizeof b, "%.1f°", toon_state.indoor_temp); comma(b); lv_label_set_text(s->val, b); break;
     case TT_CO2:     snprintf(b, sizeof b, "%d ppm", toon_state.eco2);                     lv_label_set_text(s->val, b); break;
     case TT_TVOC:    snprintf(b, sizeof b, "%d ppb", toon_state.tvoc);                     lv_label_set_text(s->val, b); break;
     /* Tile ids "boilin"/"boilout" are persisted config keys labelled
