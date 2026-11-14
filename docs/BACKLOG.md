@@ -560,3 +560,12 @@
   - Delete: specific1 `RemoveRrd` to hcb_rrd with `<intAddr>`(logger name) and/or `<uuid>`; files removed ~5 s later.
   - Feeding: HTTP `hcb_rrd?action=setRrdData` (or BoxTalk `SetRraData`), `logger=<uuid>` or `loggerName=`, `rra=`, `samples={"<ts>":value,...}`; works with an empty deviceUuid (no live sampling). Write only bins that have already closed: at slot close hcb_rrd pushes its own consolidated (possibly NaN) value into the bin.
 - **Plan**: (1) after pairing a plug in FreeToon send EnableDevice; (2) per HomeWizard Energy Socket create a `hw_socket_qtty_<n>` logger (empty deviceSvc) via SetObjectConfig and push the socket's `total_power_import_kwh` (Wh) for each closed hour/day; show them in Stekkers next to the Z-Wave plugs. Existing sockets get a logger too; history starts at creation (the socket API has none).
+
+### 49. Simpler Forecast Strip on the Dim Screen
+- **Status**: Open (user request, 2026-11-14).
+- **Description**: The 5 forecasts at the bottom of the dim screen show hour/day, temperature and wind (e.g. "16:00 / 26°C ZO2") in small print and are hard to read from a distance.
+- **Wanted**:
+  - Per forecast only: day of the week (e.g. "zo", "ma") and that day's maximum temperature, both in a bigger font, plus the weather icon.
+  - So daily forecasts (5 days), not the 3-hourly slots; no wind.
+  - Weather icons in a lighter colour (they now use the full colour icon tint; lighter/softer for the dark dim screen).
+- **Scope**: both the classic dim layout (screen_dim.c) and the custom grid (screen_dim_grid.c, forecast block); check Toon 1 (800x480) as well.
