@@ -39,11 +39,12 @@ static int  g_info_seq = -1;
 /* ------------------------------------------------------------ overlay */
 enum {
     F_NONE, F_ADD_INTRO, F_ADD_BUSY, F_ADD_RESULT,
-    F_REM_INTRO, F_REM_BUSY, F_REM_RESULT, F_FORCE_CONFIRM,
+    F_REM_INTRO, F_REM_BUSY, F_REM_RESULT, F_FORCE_CONFIRM, F_REM_VERIFY,
     F_CFG_LOADING, F_CFG_EDIT, F_CFG_SAVING, F_CFG_RESULT
 };
 static int  g_flow = F_NONE;
 static int  g_admin_seq;
+static int  g_verify_force;      /* F_REM_VERIFY after a force remove (vs exclusion) */
 static time_t g_busy_since;
 static char g_uuid[48];          /* adapter being removed / configured */
 static char g_name[48];
@@ -375,8 +376,14 @@ static void flow_set(int f) {
                                      "1. Unplug the meter adapter and plug it in within 2 metres of the Toon.\n"
                                      "2. Tap Remove.\n3. Then briefly press the button on the meter adapter."),
                  g_name[0] ? g_name : tr("de meetadapter", "the meter adapter"));
-        ov_text(T_REM, buf, NULL, 0);
-        ov_buttons(tr("Verwijderen", "Remove"), NULL, tr("Annuleren", "Cancel"));
+        ov_text(T_REM, buf, tr("Adapter defect of niet meer bij de hand? Tik op \"Niet bij de hand\".",
+                               "Adapter broken or no longer at hand? Tap \"Not at hand\"."), THEME_TEXT_DIM);
+        ov_buttons(tr("Verwijderen", "Remove"), tr("Niet bij de hand", "Not at hand"), tr("Annuleren", "Cancel"));
+        break;
+    case F_REM_VERIFY:
+        g_busy_since = time(NULL);
+        ov_text(T_REM, NULL, tr("Controleren of de adapter weg is...", "Checking the adapter is gone..."), COL_AMBER);
+        ov_buttons(NULL, NULL, NULL);
         break;
     case F_REM_BUSY:
         ov_text(T_REM, tr("Druk nu kort op de knop van de meetadapter.", "Now briefly press the button on the meter adapter."),
@@ -385,6 +392,10 @@ static void flow_set(int f) {
         break;
     case F_REM_RESULT:
         if (!strcmp(g_res.status, "deleted")) {
+            /* The controller also answers "deleted" when no adapter button was
+             * pressed (nothing / another node excluded): only believe it once
+             * the adapter has really left the list. */
+            if (g_uuid[0]) { g_verify_force = 0; flow_set(F_REM_VERIFY); break; }
             if (!g_uuid[0])
                 ov_text(tr("Meetadapter resetten", "Reset meter adapter"),
                         tr("De meetadapter is losgekoppeld van de oude Toon. Je kunt hem nu toevoegen.",
@@ -452,6 +463,7 @@ static void on_ov_btn(lv_event_t * e) {
         break;
     case F_REM_INTRO:
         if (i == 0 && ma_exclude_start() == 0) { g_busy_since = time(NULL); flow_set(F_REM_BUSY); }
+        else if (i == 1) flow_set(F_FORCE_CONFIRM);
         else if (i == 2) flow_set(F_NONE);
         break;
     case F_REM_BUSY:
@@ -465,11 +477,8 @@ static void on_ov_btn(lv_event_t * e) {
     case F_FORCE_CONFIRM:
         if (i == 0) {
             ma_force_remove(g_uuid);
-            ov_text(tr("Meetadapter verwijderen", "Remove meter adapter"),
-                    tr("Verwijderopdracht verstuurd. De lijst werkt zichzelf bij.",
-                       "Remove command sent. The list updates by itself."), NULL, 0);
-            g_flow = F_CFG_RESULT;          /* reuse: only "Close" */
-            ov_buttons(NULL, NULL, tr("Sluiten", "Close"));
+            g_verify_force = 1;
+            flow_set(F_REM_VERIFY);
         } else flow_set(F_NONE);
         break;
     case F_CFG_EDIT:
@@ -506,6 +515,34 @@ static void tick(lv_timer_t * t) {
         ma_admin_timeout();
     }
     if (g_flow != F_ADD_BUSY && g_flow != F_REM_BUSY) g_admin_seq = a.seq;
+
+    if (g_flow == F_REM_VERIFY) {
+        static time_t last_req;
+        if (time(NULL) - last_req >= 5) { last_req = time(NULL); ma_subscribe(); }  /* fresh full set */
+        int present = 0;
+        for (int i = 0; i < inf.n; i++) if (!strcmp(inf.dev[i].uuid, g_uuid)) present = 1;
+        const char * T_REM = tr("Meetadapter verwijderen", "Remove meter adapter");
+        if (!present) {
+            ov_text(T_REM, tr("De meetadapter is verwijderd.", "The meter adapter has been removed."),
+                    tr("Verwijderd", "Removed"), COL_GREEN);
+            g_flow = F_CFG_RESULT; ov_buttons(NULL, NULL, tr("Sluiten", "Close"));
+        } else if (time(NULL) - g_busy_since > 20) {
+            if (g_verify_force) {
+                ov_text(T_REM, tr("De verwijderopdracht is verstuurd, maar de adapter staat nog in de lijst.",
+                                  "The remove command was sent, but the adapter is still listed."),
+                        tr("Niet gelukt", "Failed"), COL_RED);
+                g_flow = F_CFG_RESULT; ov_buttons(NULL, NULL, tr("Sluiten", "Close"));
+            } else {
+                ov_text(T_REM, tr("De adapter staat nog in de lijst: er is niets verwijderd. Was hij binnen bereik en "
+                                  "heb je op de knop gedrukt? Is hij defect of weg, verwijder hem dan geforceerd.",
+                                  "The adapter is still listed: nothing was removed. Was it in range and did you "
+                                  "press its button? If it is broken or gone, force-remove it."),
+                        tr("Niet gelukt", "Failed"), COL_RED);
+                g_flow = F_REM_RESULT;      /* Try again / Force / Close */
+                ov_buttons(tr("Opnieuw", "Try again"), tr("Geforceerd", "Force"), tr("Sluiten", "Close"));
+            }
+        }
+    }
 
     if (g_flow == F_CFG_LOADING) {
         ma_sensconf_t sc; ma_get_sensor_config(&sc);
@@ -643,7 +680,7 @@ lv_obj_t * screen_meteradapters_create(void) {
     lv_label_set_long_mode(ov_status, LV_LABEL_LONG_WRAP);
     lv_obj_align(ov_status, LV_ALIGN_BOTTOM_LEFT, 0, SY(-62));
     for (int i = 0; i < 3; i++) {
-        ov_btn[i] = mk_btn(card, "", i == 2 ? THEME_OFF : (i == 1 ? COL_WARNBT : COL_OKBTN),
+        ov_btn[i] = mk_btn(card, "", i == 2 ? 0x2a4060 : (i == 1 ? COL_WARNBT : COL_OKBTN),
                            on_ov_btn, (void *)(intptr_t)i, &ov_btn_lbl[i]);
         lv_obj_set_width(ov_btn[i], SX(i == 0 ? 260 : 200));
     }
