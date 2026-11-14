@@ -1033,6 +1033,20 @@ lv_obj_t * screen_dim_grid_create(void) {
     ui_obj_set_style_img_recolor(wx_icon, lv_color_hex(0xffffff), 0);
     ui_obj_set_style_img_recolor_opa(wx_icon, 255, 0);
 
+    /* Line the outside temp up with the clock: both use SF(96), so equal
+     * label tops give equal digit tops. Only when the clock's top falls
+     * inside the weather block's height (same row band in the dim editor);
+     * otherwise keep the default offset. */
+    if (g_dim_blocks[DB_CLOCK].visible && lbl_clock_colon) {
+        lv_obj_update_layout(scr_root);
+        lv_area_t ca, wa;
+        lv_obj_get_coords(lbl_clock_colon, &ca);
+        lv_obj_get_coords(bx_w, &wa);
+        lv_coord_t dy = ca.y1 - wa.y1;
+        if (dy >= 0 && dy + lv_obj_get_height(wcol) <= lv_area_get_height(&wa))
+            ui_obj_align(wcol, LV_ALIGN_TOP_MID, 0, dy);
+    }
+
     lbl_outside = NULL;
 
     /* Moon phase icon removed per CR11 */
