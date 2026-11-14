@@ -1383,15 +1383,24 @@ static void render_chart(void) {
 static void reload_and_render(void) {
     hide_tooltip();
     lv_chart_set_series_color(chart, cs, lv_color_hex(metrics[selected_metric].color));
+    lv_label_set_text(lbl_metric_name, metric_title(selected_metric));
     if (is_plug()) {
+        /* The plug name in a green button (tab colour) instead of the dim
+         * metric caption: which plug is shown must be obvious at a glance.
+         * Tap = next plug ("›" only with 2+ plugs). */
         plugs_refresh_power(&g_plugs[g_plug_sel], 1);       /* live watts + name */
-        lv_label_set_text(lbl_metric_name, g_plugs[g_plug_sel].name);
+        lv_obj_add_flag(lbl_metric_name, LV_OBJ_FLAG_HIDDEN);
+        if (btn_plug_next) {
+            lv_obj_t * l = lv_obj_get_child(btn_plug_next, 0);
+            if (l) {
+                if (g_plug_n > 1) lv_label_set_text_fmt(l, "%s  " LV_SYMBOL_RIGHT, g_plugs[g_plug_sel].name);
+                else              lv_label_set_text(l, g_plugs[g_plug_sel].name);
+            }
+            lv_obj_clear_flag(btn_plug_next, LV_OBJ_FLAG_HIDDEN);
+        }
     } else {
-        lv_label_set_text(lbl_metric_name, metric_title(selected_metric));
-    }
-    if (btn_plug_next) {
-        if (is_plug() && g_plug_n > 1) lv_obj_clear_flag(btn_plug_next, LV_OBJ_FLAG_HIDDEN);
-        else                           lv_obj_add_flag(btn_plug_next, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(lbl_metric_name, LV_OBJ_FLAG_HIDDEN);
+        if (btn_plug_next) lv_obj_add_flag(btn_plug_next, LV_OBJ_FLAG_HIDDEN);
     }
     load_for_period();
     render_chart();
@@ -1721,20 +1730,24 @@ lv_obj_t * screen_stats_create(void) {
     lv_label_set_long_mode(lbl_metric_name, LV_LABEL_LONG_DOT);
     lv_obj_set_width(lbl_metric_name, SX(170));
 
-    /* Stekkers: step to the next smart plug (only with 2+ plugs). */
+    /* Stekkers: the selected plug's name as a green button in place of the
+     * metric caption; tap = next plug. */
     btn_plug_next = lv_btn_create(scr_root);
-    lv_obj_set_size(btn_plug_next, SX(56), SY(34));
-    lv_obj_set_pos(btn_plug_next, SX(205), SY(240));
-    lv_obj_set_style_bg_color(btn_plug_next, lv_color_hex(THEME_BTN_BG), 0);
-    lv_obj_set_style_border_color(btn_plug_next, lv_color_hex(THEME_BORDER), 0);
-    lv_obj_set_style_border_width(btn_plug_next, 1, 0);
-    lv_obj_set_style_radius(btn_plug_next, 6, 0);
-    lv_obj_set_ext_click_area(btn_plug_next, 10);
+    lv_obj_set_size(btn_plug_next, SX(215), SY(36));
+    lv_obj_set_pos(btn_plug_next, SX(30), SY(236));
+    lv_obj_set_style_bg_color(btn_plug_next, lv_color_hex(metrics[M_PLUG].color), 0);
+    lv_obj_set_style_border_color(btn_plug_next, lv_color_hex(settings.home_light_mode ? 0x1d4ed8 : 0xffffff), 0);
+    lv_obj_set_style_border_width(btn_plug_next, 2, 0);
+    lv_obj_set_style_radius(btn_plug_next, 10, 0);
+    lv_obj_set_ext_click_area(btn_plug_next, 8);
     lv_obj_add_event_cb(btn_plug_next, on_plug_next, LV_EVENT_CLICKED, NULL);
     lv_obj_t * lbl_pn = lv_label_create(btn_plug_next);
-    lv_label_set_text(lbl_pn, LV_SYMBOL_RIGHT);
-    lv_obj_set_style_text_color(lbl_pn, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(lbl_pn, SF(16), 0);
+    lv_label_set_text(lbl_pn, "");
+    lv_label_set_long_mode(lbl_pn, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(lbl_pn, SX(195));
+    lv_obj_set_style_text_align(lbl_pn, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(lbl_pn, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(lbl_pn, SF(20), 0);
     lv_obj_center(lbl_pn);
     lv_obj_add_flag(btn_plug_next, LV_OBJ_FLAG_HIDDEN);
 
