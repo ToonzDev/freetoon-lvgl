@@ -54,6 +54,7 @@ typedef struct {
     char version[32];
     char min_toonui[24];        /* catalog "min_toonui"; "" = any toonui */
     lv_obj_t * row;
+    lv_obj_t * name_lbl;        /* "Name  v<installed>" (+ new catalog version) */
     lv_obj_t * badge_lbl;
     lv_obj_t * btn_update;
     lv_obj_t * btn_update_lbl;
@@ -519,6 +520,20 @@ static void update_row_state(integration_t * ent) {
     }
     int update_available = newer && compatible;
 
+    /* Title: the INSTALLED version for an installed app (the catalog's when
+     * not installed), plus the catalog's when it is newer. Re-done on every
+     * state refresh so it is right straight after an update. */
+    if (ent->name_lbl) {
+        const char * shown = (is_inst && meta->version[0]) ? meta->version : ent->version;
+        if (newer)
+            lv_label_set_text_fmt(ent->name_lbl, tr("%s  v%s  (nieuw: v%s)", "%s  v%s  (new: v%s)"),
+                                  ent->name, shown, ent->version);
+        else if (shown[0])
+            lv_label_set_text_fmt(ent->name_lbl, "%s  v%s", ent->name, shown);
+        else
+            lv_label_set_text(ent->name_lbl, ent->name);
+    }
+
     if (is_inst) {
         if (newer && !compatible) {
             /* An update exists but needs a newer FreeToon: say so instead of
@@ -640,6 +655,7 @@ static void build_rows(void) {
         else
             lv_label_set_text(lbl, ent->name);
         lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, SX(4), 0);
+        ent->name_lbl = lbl;   /* update_row_state() shows the installed version */
 
         /* Description, scrolling if long */
         lv_obj_t * desc = lv_label_create(ent->row);
