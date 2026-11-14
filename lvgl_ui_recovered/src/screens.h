@@ -40,6 +40,9 @@ void screen_home_open_news(void);
 lv_obj_t * screen_thermostat_create(void);
 lv_obj_t * screen_dim_create(void);
 lv_obj_t * screen_dim_grid_create(void);   /* custom grid dim (opt-in); used by screen_dim_create */
+/* Dim screens: outside temperature in the big room-temp font. Picks the
+ * longest of "8.4°C" / "8.4°" / "8°" that fits max_w with the label's font. */
+void dim_set_outside_temp(lv_obj_t * lbl, float t, lv_coord_t max_w);
 lv_obj_t * screen_black_create(void);      /* pure black standby screen when Slapen or Weg */
 lv_obj_t * screen_settings_create(void);
 lv_obj_t * screen_schedule_create(void);

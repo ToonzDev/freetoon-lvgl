@@ -37,6 +37,7 @@ static lv_obj_t * dim_moon_img;   /* moon-phase widget — always shown */
 static lv_obj_t * lbl_temp;
 static lv_obj_t * lbl_setpoint;
 static lv_obj_t * lbl_outside_temp = NULL;
+static lv_coord_t g_wx_box_w = 300;   /* weather block width, for fitting the temp */
 static lv_obj_t * lbl_program;
 static lv_obj_t * lbl_metrics;     /* TVOC / eCO2 / CH-water-pressure row */
 static lv_obj_t * lbl_burner;      /* "90 C" when CH, hidden otherwise */
@@ -659,7 +660,7 @@ static void refresh_cb(lv_timer_t * t) {
     }
     if (lbl_outside_temp) {
         if (settings.show_dim_weather && weather_state.connected) {
-            ui_label_set_text_fmt(lbl_outside_temp, "%.1f C", weather_display_temp());
+            dim_set_outside_temp(lbl_outside_temp, weather_display_temp(), g_wx_box_w);
             ui_obj_clear_flag(lbl_outside_temp, LV_OBJ_FLAG_HIDDEN);
         } else {
             ui_obj_add_flag(lbl_outside_temp, LV_OBJ_FLAG_HIDDEN);
@@ -1005,46 +1006,34 @@ lv_obj_t * screen_dim_grid_create(void) {
      * sits right next to the temperature and the pair stays centred in the
      * block — no matter how wide the block is — instead of the icon flying to
      * the left edge and the temp to the right edge. ---- */
-    lv_obj_t * bx_w = dim_box(DB_WEATHER, NULL, NULL);
-    /* Outside-temp font grows when the weather block is made WIDER in the editor
-     * (wider tile = room for a bigger, clearer temp — the tester's request). */
-    int w_grow = g_dim_blocks[DB_WEATHER].w - dim_block_default(DB_WEATHER).w;
-    const lv_font_t * wtemp_font = (w_grow >= 1) ? &lv_font_montserrat_48 : &lv_font_montserrat_28;
+    int wbw = 0;
+    lv_obj_t * bx_w = dim_box(DB_WEATHER, &wbw, NULL);
+    g_wx_box_w = wbw;
 
-    lv_obj_t * wrow = lv_obj_create(bx_w);
-    lv_obj_remove_style_all(wrow);
-    lv_obj_set_size(wrow, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    lv_obj_set_flex_flow(wrow, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(wrow, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(wrow, 8, 0);
-    ui_obj_clear_flag(wrow, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-    ui_obj_align(wrow, LV_ALIGN_TOP_MID, 0, 10);
-
-    wx_icon = lv_img_create(wrow);
-    ui_img_set_src(wx_icon, &icon_wx_cloud_lg);
-    ui_obj_set_style_img_recolor(wx_icon, lv_color_hex(0xffffff), 0);
-    ui_obj_set_style_img_recolor_opa(wx_icon, 255, 0);
-
-    /* temp over "Buiten" in a column, so "Buiten" sits directly UNDER the
-     * temperature (not centred under the whole icon+temp pair). */
-    lv_obj_t * wcol = lv_obj_create(wrow);
+    /* Outside temp in the same big font as the room temp (readable from
+     * across the room), weather icon centred underneath, no caption. The
+     * text falls back to "8.4°" / "8°" when the block is too narrow. */
+    lv_obj_t * wcol = lv_obj_create(bx_w);
     lv_obj_remove_style_all(wcol);
     lv_obj_set_size(wcol, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(wcol, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(wcol, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     ui_obj_clear_flag(wcol, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    ui_obj_align(wcol, LV_ALIGN_TOP_MID, 0, SY(26));
 
     lbl_outside_temp = lv_label_create(wcol);
     ui_obj_set_style_text_color(lbl_outside_temp, lv_color_hex(0xffffff), 0);
-    ui_obj_set_style_text_font(lbl_outside_temp, wtemp_font, 0);
+    ui_obj_set_style_text_font(lbl_outside_temp, SF(96), 0);
     lv_label_set_long_mode(lbl_outside_temp, LV_LABEL_LONG_CLIP);
     lv_obj_set_width(lbl_outside_temp, LV_SIZE_CONTENT);
     ui_label_set_text(lbl_outside_temp, "--");
 
-    lbl_outside = lv_label_create(wcol);
-    ui_obj_set_style_text_color(lbl_outside, lv_color_hex(0xbbbbbb), 0);
-    ui_obj_set_style_text_font(lbl_outside, &lv_font_montserrat_22, 0);
-    ui_label_set_text(lbl_outside, tr("Buiten", "Outside"));
+    wx_icon = lv_img_create(wcol);
+    ui_img_set_src(wx_icon, &icon_wx_cloud_lg);
+    ui_obj_set_style_img_recolor(wx_icon, lv_color_hex(0xffffff), 0);
+    ui_obj_set_style_img_recolor_opa(wx_icon, 255, 0);
+
+    lbl_outside = NULL;
 
     /* Moon phase icon removed per CR11 */
     dim_moon_img = NULL;

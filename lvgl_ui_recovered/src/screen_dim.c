@@ -568,7 +568,10 @@ static void refresh_cb(lv_timer_t * t) {
     }
     if (lbl_outside_temp) {
         if (settings.show_dim_weather && weather_state.connected) {
-            ui_label_set_text_fmt(lbl_outside_temp, "%.1f C", weather_display_temp());
+            dim_set_outside_temp(lbl_outside_temp, weather_display_temp(), SX(330));
+            /* keep the icon centred under the (right-aligned) temp */
+            lv_obj_update_layout(lbl_outside_temp);
+            if (wx_icon) lv_obj_align_to(wx_icon, lbl_outside_temp, LV_ALIGN_OUT_BOTTOM_MID, 0, SY(2));
             ui_obj_clear_flag(lbl_outside_temp, LV_OBJ_FLAG_HIDDEN);
         } else {
             ui_obj_add_flag(lbl_outside_temp, LV_OBJ_FLAG_HIDDEN);
@@ -699,6 +702,19 @@ static void refresh_cb(lv_timer_t * t) {
             ui_obj_add_flag(lbl_dim_nilm, LV_OBJ_FLAG_HIDDEN);
         }
     }
+}
+
+void dim_set_outside_temp(lv_obj_t * lbl, float t, lv_coord_t max_w) {
+    static const char * const fmts[] = { "%.1f°C", "%.1f°", "%.0f°" };
+    const lv_font_t * f = lv_obj_get_style_text_font(lbl, LV_PART_MAIN);
+    char b[24] = "";
+    for (size_t i = 0; i < sizeof fmts / sizeof fmts[0]; i++) {
+        snprintf(b, sizeof b, fmts[i], t);
+        lv_point_t sz;
+        lv_txt_get_size(&sz, b, f, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+        if (sz.x <= max_w) break;
+    }
+    ui_label_set_text(lbl, b);
 }
 
 static void on_screen_loaded(lv_event_t * e) {
@@ -884,29 +900,22 @@ lv_obj_t * screen_dim_create(void) {
     /* Weather cluster (right column): fixed top/width coordinates instead of
        RIGHT_MID offsets, so the icon and labels stay as one visual block even
        when text widths change. */
+    /* Outside temp in the same big font as the room temp (readable from
+     * across the room); icon + "Buiten" in a row underneath. */
     lbl_outside_temp = lv_label_create(scr_root);
     ui_obj_set_style_text_color(lbl_outside_temp, lv_color_hex(0xffffff), 0);
-    ui_obj_set_style_text_font(lbl_outside_temp, &lv_font_montserrat_28, 0);
+    ui_obj_set_style_text_font(lbl_outside_temp, SF(96), 0);
     ui_label_set_text(lbl_outside_temp, "");
-    lv_obj_set_width(lbl_outside_temp, SX(180));
-    lv_obj_set_style_text_align(lbl_outside_temp, LV_TEXT_ALIGN_RIGHT, 0);
-    ui_obj_align(lbl_outside_temp, LV_ALIGN_TOP_RIGHT, SX(-48), SY(78));
+    ui_obj_align(lbl_outside_temp, LV_ALIGN_TOP_RIGHT, SX(-24), SY(28));
 
     wx_icon = lv_img_create(scr_root);
     ui_img_set_src(wx_icon, &icon_wx_cloud_lg);
     ui_obj_set_style_img_recolor(wx_icon, lv_color_hex(0xffffff), 0);
     ui_obj_set_style_img_recolor_opa(wx_icon, 255, 0);
-    ui_obj_align(wx_icon, LV_ALIGN_TOP_RIGHT, SX(-150), SY(52));
+    lv_obj_align_to(wx_icon, lbl_outside_temp, LV_ALIGN_OUT_BOTTOM_MID, 0, SY(2));
 
-    lbl_outside = lv_label_create(scr_root);
-    ui_obj_set_style_text_color(lbl_outside, lv_color_hex(0xbbbbbb), 0);
-    ui_obj_set_style_text_font(lbl_outside, &lv_font_montserrat_22, 0);
-    ui_label_set_text(lbl_outside, tr("Buiten", "Outside"));
-    /* "Buiten" sits directly UNDER the temperature (same right edge + width), as
-     * in the custom dim — not centred low under the whole icon+temp cluster. */
-    lv_obj_set_width(lbl_outside, SX(180));
-    lv_obj_set_style_text_align(lbl_outside, LV_TEXT_ALIGN_RIGHT, 0);
-    ui_obj_align(lbl_outside, LV_ALIGN_TOP_RIGHT, SX(-48), SY(112));
+    /* No "Buiten" caption: the big temp + icon speak for themselves. */
+    lbl_outside = NULL;
 
     /* Life360 — sits under the outside temp on the right edge, mirroring
      * the Family tile on the home screen. Right-aligned so longer street
