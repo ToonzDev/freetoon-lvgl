@@ -569,3 +569,19 @@
   - So daily forecasts (5 days), not the 3-hourly slots; no wind.
   - Weather icons in a lighter colour (they now use the full colour icon tint; lighter/softer for the dark dim screen).
 - **Scope**: both the classic dim layout (screen_dim.c) and the custom grid (screen_dim_grid.c, forecast block); check Toon 1 (800x480) as well.
+
+### 50. Dead-Code Check After 250+ Commits
+- **Status**: Open (user request, 2026-11-14).
+- **Description**: After many features, rewrites and removed paths, find code that is no longer used and remove it.
+- **Approach**:
+  - Compiler/linker: build with `-Wunused-function -Wunused-variable` (+ `-ffunction-sections -fdata-sections -Wl,--gc-sections -Wl,--print-gc-sections`) for both targets and the sim; list functions the linker drops.
+  - Symbols: exported functions with no callers (`nm` / grep across src), static helpers never called, `#if 0` blocks, settings keys that are loaded/saved but never read, screens/integrations no longer reachable from any menu.
+  - Known candidates seen recently: the old fire-and-forget `boxtalk_zwave_include/exclude` (Z-Wave screen now uses ma_admin), the unused `boxtalk_get_rra_data` / `rrd_response_buf`, `screen_dim_stock` (not wired into screen_dim_create), the generic `display_indoor_temp` users removed in #45.
+  - Remove in small commits per area; build + sim render of the affected screens after each.
+
+### 51. Fetch Log Files Without SSH/SCP
+- **Status**: Open (user request, 2026-11-14).
+- **Description**: Retrieving `/tmp/toonui.log` (and e.g. ui_launcher.log, integration logs) now needs SSH/SCP into the Toon. Wanted: download them from a browser.
+- **Approach (preferred)**: serve them from FreeToon's own web server (port 10081) behind its existing login, e.g. `GET /api/logs` (list) and `GET /api/logs/<name>` (plain text, tail of the last N KB), plus a "Logbestanden" link on the remote web page.
+- **Not** in the stock web folder `/qmf/www` (lighttpd, port 80): readable by anyone on the LAN without login, and logs can hold IPs, hostnames, URLs and occasionally tokens/credentials. If wanted anyway, only as an opt-in setting, copied (not symlinked) and scrubbed.
+- Optional: "Logboek versturen" button in Settings > Systeem that shows a short code / QR to download the current log.
