@@ -121,7 +121,24 @@ int plugs_scan(plug_t * out, int max) {
             if (r && r < b) {
                 plug_t * pl = &out[n];
                 memset(pl, 0, sizeof *pl);
-                xml_elem(a, b, "name", pl->logger, sizeof pl->logger);   /* first <name> = logger */
+                /* Logger name: hcb_config may write the <rra> children (each
+                 * with its own <name>) BEFORE the logger's <name>, so use
+                 * <internalAddress> (= the name for these loggers), else the
+                 * first <name> that is not inside an <rra>. */
+                if (!xml_elem(a, b, "internalAddress", pl->logger, sizeof pl->logger)) {
+                    const char * s = a;
+                    while ((s = strstr(s, "<name>")) && s < b) {
+                        const char * ro = a, * last_open = NULL, * last_close = NULL;
+                        while ((ro = strstr(ro, "<rra>")) && ro < s) { last_open = ro; ro += 5; }
+                        ro = a;
+                        while ((ro = strstr(ro, "</rra>")) && ro < s) { last_close = ro; ro += 6; }
+                        if (!last_open || (last_close && last_close > last_open)) {
+                            xml_elem(s, b, "name", pl->logger, sizeof pl->logger);
+                            break;
+                        }
+                        s += 6;
+                    }
+                }
                 xml_elem(a, b, "deviceUuid", pl->dev_uuid, sizeof pl->dev_uuid);
                 /* URL-encode for the getRrdData query string */
                 size_t o = 0;
