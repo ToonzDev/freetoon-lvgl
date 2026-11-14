@@ -530,3 +530,9 @@
 - **Fix**:
   - FreeToon reads the offset with GetTempOffset at startup and when the Heating modal opens, and writes it with AdjustTempOffset when the slider is released (0.1 steps, +-6.0), then reads it back. No local offset is added anymore; `temp_offset_centi` is gone from toonui.cfg. The PWA settings API keeps the `temp_offset_centi` key, now backed by happ_thermstat, and only writes on an actual change.
   - Client mode: slider stays disabled ("Beheerd door Master"); the slave shows the master's corrected temperature.
+
+### 46. Verlichting Tile Ignores the Domoticz/HA Switches on a Slave Toon
+- **Status**: Works as designed (2026-11-14), left as is.
+- **Description**: On a slave Toon (client mode) switching Domoticz or Home Assistant off in Settings does not change the Verlichting tile; it keeps showing the Domoticz lights. Earlier report: after enabling Domoticz the tile showed nothing until a GUI restart.
+- **Explanation**: In client mode the slave takes its Domoticz devices from the master (`/api/state` "dz" list) and the tile uses them whenever that list is non-empty (`client_mode && domoticz_state.count > 0`); the slave's own `enable_domoticz` / `enable_ha` are not consulted. The two tile switches are still the slave's own choice (`domoticz_tile_idx1/2`) from the master's list. Switching Domoticz off on the master removes them on the slave too.
+- **Possible later change**: show "Beheerd door Master" on the slave's Domoticz/HA switches, or add a per-slave "show master lights" setting.
