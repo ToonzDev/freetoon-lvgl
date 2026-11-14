@@ -549,3 +549,14 @@
   - Z-Wave plugs need no config editing: read the history with the existing `boxtalk_get_rra_data(<device uuid>, "1monthhour" / "1yearday")` (hcb_rrd GetRraData, as the meter history), turn the cumulative counter into usage per hour/day.
   - Show it per plug: an "Stekkers" tab in Statistics (hours for the last month, days for the year), and/or a history view on the Devices screen.
   - Only HomeWizard sockets (#43) would need extra `<rrdLogger>` blocks in `config_hcb_rrd.xml`; the Z-Wave loggers above show the exact block shape to copy.
+
+### 48. New Z-Wave Plugs and HomeWizard Sockets in "Stekkers" (Loggers via hcb_config)
+- **Status**: In progress (2026-11-14). Follows #47.
+- **Facts (static RE of happ_smartplug / hcb_rrd, Toon 1 binaries)**:
+  - Stock "add plug" = Z-Wave IncludeDevice, then `EnableDevice` (arg `ZwUuid` only) to happ_smartplug (handler table `default`, i.e. the specific1 route). happ_smartplug then creates the plug, matches the device's services against its templates and sends one ConfigProvider `SetObjectConfig` to `<host>:hcb_config` with `<Config>` holding one `<rrdLogger>` per match. A plug paired through FreeToon without EnableDevice gets no loggers.
+  - Logger block (no `<uuid>`, internalAddress = name; futureBins/sampleOffset only when > 0; no saveInterval):
+    `<rrdLogger><package>hcb_rrd</package><name>N</name><internalAddress>N</internalAddress><visibility>0</visibility><deviceVar>CurrentElectricityQuantity</deviceVar><deviceSvc>ElectricityQuantityMeter</deviceSvc><deviceUuid>U</deviceUuid><sampleType>integer</sampleType><rra><binLength>3600</binLength><bins>744</bins><consolidator>last</consolidator><name>1monthhour</name><minSamplesPerBin>1</minSamplesPerBin></rra><rra><binLength>86400</binLength><bins>365</bins><consolidator>last</consolidator><name>1yearday</name><minSamplesPerBin>1</minSamplesPerBin></rra></rrdLogger>`
+    plus `plug_elec_flow_%` (CurrentElectricityFlow / ElectricityFlowMeter, double, rra 5min 300 s x 2016, avg). Name = template with `%` replaced by the uuid minus its first character (happ_smartplug bug).
+  - Delete: specific1 `RemoveRrd` to hcb_rrd with `<intAddr>`(logger name) and/or `<uuid>`; files removed ~5 s later.
+  - Feeding: HTTP `hcb_rrd?action=setRrdData` (or BoxTalk `SetRraData`), `logger=<uuid>` or `loggerName=`, `rra=`, `samples={"<ts>":value,...}`; works with an empty deviceUuid (no live sampling). Write only bins that have already closed: at slot close hcb_rrd pushes its own consolidated (possibly NaN) value into the bin.
+- **Plan**: (1) after pairing a plug in FreeToon send EnableDevice; (2) per HomeWizard Energy Socket create a `hw_socket_qtty_<n>` logger (empty deviceSvc) via SetObjectConfig and push the socket's `total_power_import_kwh` (Wh) for each closed hour/day; show them in Stekkers next to the Z-Wave plugs. Existing sockets get a logger too; history starts at creation (the socket API has none).
