@@ -21,6 +21,7 @@ typedef struct {
     char  name[40];       /* Z-Wave device name, e.g. "Tuin" */
     float power_w;        /* CurrentElectricityFlow */
     int   have_power;
+    int   hw_slot;        /* HomeWizard socket index, -1 = Z-Wave plug */
 } plug_t;
 
 /* Find the plug loggers in the local hcb_rrd config and fill in name + live

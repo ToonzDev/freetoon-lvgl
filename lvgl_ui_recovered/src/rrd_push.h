@@ -10,4 +10,12 @@
 int rrd_push(const char * logger_name, const char * rra,
              long ts, double value);
 
+/* 1 if hcb_rrd's config has a logger with this internalAddress (= name). */
+int rrd_logger_exists(const char * name);
+
+/* Create a counter logger (Wh, integer; archives 1monthhour + 1yearday, as
+ * hcb_rrd keeps for Z-Wave plugs) through hcb_config SetObjectConfig. It has
+ * no device behind it: fed with rrd_push only. 0 = sent. */
+int rrd_create_counter_logger(const char * name);
+
 #endif

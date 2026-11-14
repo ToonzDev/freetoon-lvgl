@@ -305,7 +305,34 @@ static void poll_socket(int i) {
         return;
     }
     const char * j = strstr(body, "\r\n\r\n");
-    S->power_w = (float)parse_num(j ? j + 4 : body, "active_power_w", 0);
+    j = j ? j + 4 : body;
+    S->power_w = (float)parse_num(j, "active_power_w", 0);
+    /* Lifetime kWh counter, for the socket's hcb_rrd history. */
+    if (strstr(j, "\"total_power_import_kwh\""))
+        { S->total_kwh = parse_num(j, "total_power_import_kwh", 0); S->have_total = 1; }
+    else if (strstr(j, "\"total_power_import_t1_kwh\""))
+        { S->total_kwh = parse_num(j, "total_power_import_t1_kwh", 0); S->have_total = 1; }
+    /* Serial (GET /api), once per host: it names the logger, so the history
+     * survives a new IP address. */
+    if (strcmp(S->host_seen, ip) != 0) {
+        snprintf(S->host_seen, sizeof S->host_seen, "%s", ip);
+        S->serial[0] = 0; S->serial_tries = 0;
+    }
+    if (!S->serial[0] && S->serial_tries < 5) {
+        S->serial_tries++;
+        if (http_get(ip, "/api", body, sizeof body) == 0) {
+            const char * s = strstr(body, "\"serial\"");
+            if (s && (s = strchr(s + 8, '"'))) {
+                s++;
+                size_t n = strcspn(s, "\"");
+                if (n > 0 && n < sizeof S->serial) {
+                    memcpy(S->serial, s, n); S->serial[n] = 0;
+                    for (char * c = S->serial; *c; c++)   /* logger-name safe */
+                        if (!((*c >= '0' && *c <= '9') || (*c >= 'a' && *c <= 'z') || (*c >= 'A' && *c <= 'Z'))) *c = '_';
+                }
+            }
+        }
+    }
     if (s_socket_pending[i]) { S->connected = 1; return; }   /* don't undo a switch */
     if (http_get(ip, "/api/v1/state", body, sizeof body) != 0) { S->connected = 0; return; }
     const char * p = strstr(body, "\"power_on\":");
@@ -531,6 +558,57 @@ static void push_to_rrd(void) {
     }
 }
 
+/* ---- Energy Socket history in hcb_rrd (Statistics > Stekkers, #48) ----
+ * Per socket a counter logger like the ones happ_smartplug makes for Z-Wave
+ * plugs (1monthhour + 1yearday), created through hcb_config, filled with the
+ * socket's lifetime counter. Only bins that have closed are written: at slot
+ * close hcb_rrd stores its own (here NaN) consolidation, which would wipe a
+ * value written into the open bin. History starts when the logger is made. */
+int homewizard_socket_logger(int i, char * out, size_t outsz) {
+    if (i < 0 || i >= HW_SOCKET_MAX || !settings.hw_socket_host[i][0]) return 0;
+    hw_socket_t * S = &hw_sockets[i];
+    if (S->serial[0]) { snprintf(out, outsz, "hw_socket_qtty_%s", S->serial); return 1; }
+    if (S->serial_tries < 5) return 0;                 /* still asking for it */
+    char ip[24]; snprintf(ip, sizeof ip, "%s", settings.hw_socket_host[i]);
+    for (char * c = ip; *c; c++) if (*c == '.') *c = '_';
+    snprintf(out, outsz, "hw_socket_qtty_ip%s", ip);   /* no serial: by IP */
+    return 1;
+}
+
+static void socket_rrd_tick(void) {
+    if (settings.client_mode) return;
+    static char   made[HW_SOCKET_MAX][64];
+    static long   made_t[HW_SOCKET_MAX], last_h[HW_SOCKET_MAX], last_d[HW_SOCKET_MAX], fix_t[HW_SOCKET_MAX];
+    static double wh_h[HW_SOCKET_MAX];
+    long now = (long)time(NULL), bh = bin_hour(now), bd = bin_day(now);
+    for (int i = 0; i < HW_SOCKET_MAX; i++) {
+        hw_socket_t * S = &hw_sockets[i];
+        char name[64];
+        if (!S->connected || !S->have_total || !homewizard_socket_logger(i, name, sizeof name)) continue;
+        if (strcmp(made[i], name) != 0) {                      /* new / other socket here */
+            if (!rrd_logger_exists(name)) {
+                int rc = rrd_create_counter_logger(name);
+                fprintf(stderr, "[hw] socket %d: created hcb_rrd logger %s (rc=%d)\n", i, name, rc);
+            }
+            snprintf(made[i], sizeof made[i], "%s", name);
+            made_t[i] = now; last_h[i] = last_d[i] = 0; fix_t[i] = 0;
+        }
+        if (now - made_t[i] < 20) continue;                    /* let hcb_rrd load it */
+        double wh = S->total_kwh * 1000.0;
+        if (last_h[i] != bh) {                                 /* the hour that just closed */
+            rrd_push(name, "1monthhour", bh - 3600, wh);
+            last_h[i] = bh; wh_h[i] = wh; fix_t[i] = now + 600;
+        } else if (fix_t[i] && now >= fix_t[i]) {              /* once more, in case of a late close */
+            rrd_push(name, "1monthhour", bh - 3600, wh_h[i]);
+            fix_t[i] = 0;
+        }
+        if (last_d[i] != bd) {                                 /* the (UTC) day that just closed */
+            rrd_push(name, "1yearday", bd - 86400, wh);
+            last_d[i] = bd;
+        }
+    }
+}
+
 static void * hw_thread(void * arg) {
     (void)arg;
     /* 2 s loop for WATER: pours produce a 1-second update on the HWE-WTR side;
@@ -559,6 +637,7 @@ static void * hw_thread(void * arg) {
             poll_water();
         }
         push_to_rrd();
+        socket_rrd_tick();
         tick++;
         /* Feed NILM every 5 s from the cached P1 reading (P1 HTTP poll stays at
          * 10 s to avoid exhausting its lwIP TIME_WAIT PCBs). */

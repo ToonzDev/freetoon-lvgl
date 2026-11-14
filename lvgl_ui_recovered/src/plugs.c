@@ -4,6 +4,7 @@
 #include "plugs.h"
 #include "stats.h"
 #include "settings.h"
+#include "homewizard.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -94,9 +95,18 @@ static void custom_name(plug_t * p) {
 void plugs_refresh_power(plug_t * p, int n) {
     if (n <= 0) return;
     static char body[64 * 1024];
-    if (stats_http_get("hdrv_zwave?action=getDevices.json", body, sizeof body) == 0)
-        for (int i = 0; i < n; i++) zwave_info(body, &p[i]);
-    for (int i = 0; i < n; i++) custom_name(&p[i]);
+    int any_zw = 0;
+    for (int i = 0; i < n; i++) if (p[i].hw_slot == -1) any_zw = 1;
+    if (any_zw && stats_http_get("hdrv_zwave?action=getDevices.json", body, sizeof body) == 0)
+        for (int i = 0; i < n; i++) if (p[i].hw_slot == -1) zwave_info(body, &p[i]);
+    for (int i = 0; i < n; i++) {
+        if (p[i].hw_slot == -1) { custom_name(&p[i]); continue; }
+        int s = p[i].hw_slot;                  /* HomeWizard socket */
+        if (s < 0 || s >= HW_SOCKET_MAX) continue;
+        if (settings.hw_socket_name[s][0]) snprintf(p[i].name, sizeof p[i].name, "%s", settings.hw_socket_name[s]);
+        p[i].have_power = hw_sockets[s].connected;
+        p[i].power_w = hw_sockets[s].power_w;
+    }
 }
 
 int plugs_scan(plug_t * out, int max) {
@@ -115,6 +125,7 @@ int plugs_scan(plug_t * out, int max) {
             if (eq) { *eq = 0; snprintf(pl->dev_uuid, sizeof pl->dev_uuid, "%s", eq + 1); }
             snprintf(pl->logger, sizeof pl->logger, "%s", tok);
             snprintf(pl->logger_q, sizeof pl->logger_q, "@%s", tok);
+            pl->hw_slot = -1;
             snprintf(pl->name, sizeof pl->name, "Stekker %d", n + 1);
             n++;
         }
@@ -137,8 +148,12 @@ int plugs_scan(plug_t * out, int max) {
         xml_elem(a, b, "deviceSvc", svc, sizeof svc);
         xml_elem(a, b, "deviceVar", var, sizeof var);
         /* plug loggers: kWh counter with the hcb_rrd plug archives (the meter
-         * loggers use 5yrhours/10yrdays instead) */
-        if (!strcmp(svc, "ElectricityQuantityMeter") && !strcmp(var, "CurrentElectricityQuantity")) {
+         * loggers use 5yrhours/10yrdays instead) — Z-Wave plugs (made by
+         * happ_smartplug) or HomeWizard sockets (made by FreeToon, no device) */
+        char ia[64] = "";
+        xml_elem(a, b, "internalAddress", ia, sizeof ia);
+        int is_hw = !strncmp(ia, "hw_socket_qtty_", 15);
+        if (is_hw || (!strcmp(svc, "ElectricityQuantityMeter") && !strcmp(var, "CurrentElectricityQuantity"))) {
             const char * r = strstr(a, "<name>1monthhour</name>");
             if (r && r < b) {
                 plug_t * pl = &out[n];
@@ -173,8 +188,16 @@ int plugs_scan(plug_t * out, int max) {
                         o += (size_t)snprintf(pl->logger_q + o, sizeof pl->logger_q - o, "%%%02X", ch);
                 }
                 pl->logger_q[o] = 0;
+                pl->hw_slot = -1;
+                if (is_hw) {                    /* which configured socket is it? */
+                    pl->hw_slot = -2;           /* socket no longer set up */
+                    for (int i = 0; i < HW_SOCKET_MAX; i++) {
+                        char nm[64];
+                        if (homewizard_socket_logger(i, nm, sizeof nm) && !strcmp(nm, pl->logger)) { pl->hw_slot = i; break; }
+                    }
+                }
                 if (pl->logger[0]) {
-                    snprintf(pl->name, sizeof pl->name, "Stekker %d", n + 1);
+                    snprintf(pl->name, sizeof pl->name, is_hw ? "HomeWizard %d" : "Stekker %d", n + 1);
                     n++;
                 }
             }

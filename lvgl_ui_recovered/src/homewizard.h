@@ -1,5 +1,6 @@
 #ifndef TOON_HOMEWIZARD_H
 #define TOON_HOMEWIZARD_H
+#include <stddef.h>
 
 /* Live state from the two HomeWizard devices on VLAN99.
    Updated by homewizard_thread (poll every 5s). */
@@ -50,11 +51,22 @@ typedef struct {
     volatile int   connected;
     volatile int   on;          /* power_on */
     volatile float power_w;     /* active_power_w */
+    /* kWh history (Statistics > Stekkers): lifetime counter + serial, the
+     * serial names the socket's hcb_rrd logger (hw_socket_qtty_<serial>). */
+    volatile double total_kwh;  /* total_power_import_kwh */
+    volatile int   have_total;
+    char           serial[24];  /* from GET /api ("" until known) */
+    int            serial_tries;
+    char           host_seen[24];   /* host the serial belongs to */
     /* Client mode: mirrored from the master's state ("hws"), see client_link.c */
     volatile int   remote_present;
     char           remote_name[24];
 } hw_socket_t;
 extern hw_socket_t hw_sockets[];   /* HW_SOCKET_MAX entries (settings.h) */
+
+/* hcb_rrd logger name of socket i ("hw_socket_qtty_<serial or ip>"); 0 when
+ * the socket is not set up / not identified yet. */
+int homewizard_socket_logger(int i, char * out, size_t outsz);
 
 /* Switch socket i on/off in the background (PUT /api/v1/state). The new
  * state is shown at once; the next poll confirms it. */
