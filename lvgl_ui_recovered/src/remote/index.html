@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#e4eaf2">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0f1a2a">
 <meta name="theme-color" content="#0f1a2a">
 <title>FreeToon</title>
 <!--
@@ -18,10 +20,23 @@
   --text:#ffffff;--dim:#88aabb;--muted:#556677;--border:#335577;
   --warm:#ffcc44;--accent:#44aaff;--active:#3377cc;--danger:#ff7766;
 }
+@media (prefers-color-scheme: light){
+  :root:not([data-theme=dark]){
+    --bg:#e4eaf2;--card:#ffffff;--row:#f0f4f8;--btn:#d0d8e2;--btn-hi:#ccdaea;
+    --text:#1e2838;--dim:#687c94;--muted:#8898aa;--border:#c8d4e2;
+    --warm:#d97706;--accent:#1d4ed8;--active:#2f6fd0;--danger:#c0392b;
+  }
+  :root:not([data-theme=dark]) .presets button.on{border-color:#1e2838}
+}
 :root[data-theme=light]{
   --bg:#e4eaf2;--card:#ffffff;--row:#f0f4f8;--btn:#d0d8e2;--btn-hi:#ccdaea;
   --text:#1e2838;--dim:#687c94;--muted:#8898aa;--border:#c8d4e2;
   --warm:#d97706;--accent:#1d4ed8;--active:#2f6fd0;--danger:#c0392b;
+}
+:root[data-theme=dark]{
+  --bg:#0f1a2a;--card:#1a2a44;--row:#1f3050;--btn:#223344;--btn-hi:#335577;
+  --text:#ffffff;--dim:#88aabb;--muted:#556677;--border:#335577;
+  --warm:#ffcc44;--accent:#44aaff;--active:#3377cc;--danger:#ff7766;
 }
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--text);
@@ -286,7 +301,9 @@ var T = {
   gas:["Gas (dit uur)","Gas (this hour)"], flow:["Stroomt","Flowing"], session:["Deze tapbeurt","This draw"],
   total:["Meterstand","Meter"], notap:["Geen water","No flow"],
   nocal:["Geen afspraken","No events"], nowaste:["Niets gepland","Nothing planned"],
-  unknown:["onbekend","unknown"], theme:["Licht / donker","Light / dark"], logout:["Uitloggen","Sign out"]
+  unknown:["onbekend","unknown"], theme:["Licht / donker","Light / dark"],
+  thAuto:["Automatisch","Auto"], thLight:["Licht","Light"], thDark:["Donker","Dark"],
+  logout:["Uitloggen","Sign out"]
 };
 function t(k) { var e = T[k]; return e ? e[lang] : k; }
 function esc(s) {
@@ -387,20 +404,84 @@ function applyLayout() {
     });
 }
 
-/* ---------- theme: follows the Toon unless the viewer picked one ---------- */
+/* ---------- theme: follows system default (Android/iOS/Windows) or user choice ---------- */
 var themePick = null;
-try { themePick = localStorage.getItem("ft-theme"); } catch (e) {}
-function applyTheme() {
-  var light = themePick ? themePick === "light" : !!S.ui_light;
-  document.documentElement.setAttribute("data-theme", light ? "light" : "dark");
-  var m = document.querySelector("meta[name=theme-color]");
-  if (m) m.setAttribute("content", light ? "#e4eaf2" : "#0f1a2a");
+try {
+  if (localStorage.getItem("ft-theme")) {
+    /* Migrate away from old test override so system preference takes effect automatically */
+    localStorage.removeItem("ft-theme");
+  }
+  themePick = localStorage.getItem("ft-theme-v2");
+} catch (e) {}
+
+function getSystemLight() {
+  if (window.matchMedia) {
+    if (window.matchMedia("(prefers-color-scheme: light)").matches) return true;
+    if (window.matchMedia("(prefers-color-scheme: dark)").matches) return false;
+  }
+  return !!S.ui_light;
 }
+
+function isLight() {
+  if (themePick === "light") return true;
+  if (themePick === "dark") return false;
+  return getSystemLight();
+}
+
+function updateThemeTitle() {
+  var b = $("btn-theme");
+  if (!b) return;
+  var mode = !themePick ? t("thAuto") : (themePick === "light" ? t("thLight") : t("thDark"));
+  b.title = t("theme") + " (" + mode + ")";
+}
+
+function applyTheme() {
+  var light = isLight();
+  document.documentElement.setAttribute("data-theme", light ? "light" : "dark");
+  var metas = document.querySelectorAll("meta[name=theme-color]");
+  for (var i = 0; i < metas.length; i++) {
+    metas[i].setAttribute("content", light ? "#e4eaf2" : "#0f1a2a");
+  }
+  updateThemeTitle();
+}
+
+if (window.matchMedia) {
+  try {
+    var mq = window.matchMedia("(prefers-color-scheme: dark)");
+    var onSchemeChange = function () {
+      if (!themePick) {
+        applyTheme();
+        renderWeather();
+      }
+    };
+    if (mq.addEventListener) {
+      mq.addEventListener("change", onSchemeChange);
+    } else if (mq.addListener) {
+      mq.addListener(onSchemeChange);
+    }
+  } catch (e) {}
+}
+
+applyTheme();
+
 $("btn-theme").onclick = function () {
-  var light = document.documentElement.getAttribute("data-theme") === "light";
-  themePick = light ? "dark" : "light";
-  try { localStorage.setItem("ft-theme", themePick); } catch (e) {}
+  var currentLight = document.documentElement.getAttribute("data-theme") === "light";
+  if (!themePick) {
+    /* Manual override to opposite of system */
+    themePick = currentLight ? "dark" : "light";
+  } else if ((themePick === "light") !== getSystemLight()) {
+    /* Second click returns to system default (auto) */
+    themePick = null;
+  } else {
+    /* Otherwise toggle */
+    themePick = currentLight ? "dark" : "light";
+  }
+  try {
+    if (themePick) localStorage.setItem("ft-theme-v2", themePick);
+    else localStorage.removeItem("ft-theme-v2");
+  } catch (e) {}
   applyTheme();
+  renderWeather();
 };
 $("btn-logout").onclick = function () { location.href = "/logout"; };
 
@@ -758,7 +839,7 @@ function render() {
     Array.prototype.forEach.call(document.querySelectorAll("[data-t]"), function (el) {
       el.textContent = t(el.getAttribute("data-t"));
     });
-    $("btn-theme").title = t("theme");
+    updateThemeTitle();
     $("btn-logout").title = t("logout");
     tickClock();
   }
