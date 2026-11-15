@@ -562,7 +562,7 @@
 - **Plan**: (1) after pairing a plug in FreeToon send EnableDevice; (2) per HomeWizard Energy Socket create a `hw_socket_qtty_<n>` logger (empty deviceSvc) via SetObjectConfig and push the socket's `total_power_import_kwh` (Wh) for each closed hour/day; show them in Stekkers next to the Z-Wave plugs. Existing sockets get a logger too; history starts at creation (the socket API has none).
 
 ### 49. Simpler Forecast Strip on the Dim Screen
-- **Status**: Open (user request, 2026-11-14).
+- **Status**: Done (2026-11-15, e2104c6): dim_fc_build / dim_fc_paint shared by the classic and grid dim; weekday + max temp in 24/28 px, icon tinted halfway to white; checked in the sim on Toon 1 and Toon 2.
 - **Description**: The 5 forecasts at the bottom of the dim screen show hour/day, temperature and wind (e.g. "16:00 / 26°C ZO2") in small print and are hard to read from a distance.
 - **Wanted**:
   - Per forecast only: day of the week (e.g. "zo", "ma") and that day's maximum temperature, both in a bigger font, plus the weather icon.
