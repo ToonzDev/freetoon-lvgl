@@ -167,7 +167,7 @@ int boxtalk_zwave_get_devices(void);
 int boxtalk_zwave_heal(void);
 int boxtalk_zwave_include(int start);   /* 1=begin add, 0=stop */
 int boxtalk_zwave_exclude(int start);   /* 1=begin remove, 0=stop */
-int boxtalk_zwave_basic_set(const char * uuid, int state);
+int boxtalk_zwave_basic_set(const char * uuid, int node_id, int state);
 int boxtalk_zwave_set_name(const char * uuid, const char * name);
 
 /* Runtime device UUIDs (derived from the Toon's hostname/serial) for inbox +

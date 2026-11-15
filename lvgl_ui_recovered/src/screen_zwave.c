@@ -294,8 +294,9 @@ static void on_switch_toggled(lv_event_t * e) {
     zw_dev_t * d = (zw_dev_t *)lv_event_get_user_data(e);
     lv_obj_t * sw = lv_event_get_target(e);
     int want = lv_obj_has_state(sw, LV_STATE_CHECKED) ? 1 : 0;
-    boxtalk_zwave_basic_set(d->uuid, want);
-    snprintf(g_status, sizeof g_status, "%s -> %s", d->name, want ? tr("aan", "on") : tr("uit", "off"));
+    d->state = want;
+    boxtalk_zwave_basic_set(d->uuid, d->node_id, want);
+    snprintf(g_status, sizeof g_status, "%s -> %s", d->name[0] ? d->name : d->type, want ? tr("aan", "on") : tr("uit", "off"));
     g_poll_ticks = 0;   /* refresh soon */
 }
 
@@ -442,7 +443,7 @@ static void on_row_delete(lv_event_t * e) {
     lv_obj_add_event_cb(g_delete_modal, on_delete_cancel, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t * card = lv_obj_create(g_delete_modal);
-    lv_obj_set_size(card, SX(540), SY(170));
+    lv_obj_set_size(card, SX(560), SY(230));
     lv_obj_align(card, LV_ALIGN_CENTER, 0, 0);
     lv_obj_set_style_bg_color(card, lv_color_hex(COL_CARD), 0);
     lv_obj_set_style_border_width(card, 0, 0);
@@ -454,8 +455,22 @@ static void on_row_delete(lv_event_t * e) {
     lv_obj_t * t = lv_label_create(card);
     lv_obj_set_style_text_color(t, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_set_style_text_font(t, SF(20), 0);
-    lv_label_set_text_fmt(t, tr("Apparaat \"%s\" verwijderen?", "Remove device \"%s\"?"), d->name[0] ? d->name : d->type);
-    lv_obj_align(t, LV_ALIGN_TOP_LEFT, 0, 4);
+    lv_label_set_text_fmt(t, tr("Geforceerd \"%s\" verwijderen?", "Force remove \"%s\"?"), d->name[0] ? d->name : d->type);
+    lv_obj_align(t, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    lv_obj_t * warn = lv_label_create(card);
+    lv_obj_set_style_text_color(warn, lv_color_hex(COL_TEXT_DIM), 0);
+    lv_obj_set_style_text_font(warn, SF(15), 0);
+    lv_label_set_long_mode(warn, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(warn, SX(528));
+    lv_label_set_text(warn, tr(
+        "Dit verwijdert het apparaat direct uit de Toon-database zonder radiocommunicatie. "
+        "Gebruik dit alleen als normaal ontkoppelen via \"- Verwijderen\" mislukt.\n"
+        "Als het apparaat nog actief is, dient u het daarna handmatig via de knop op de stekker te resetten.",
+        "This deletes the device from the Toon database without radio exclusion. "
+        "Only use this if normal removal via \"- Remove\" fails.\n"
+        "If the device is still active, you will need to manually factory reset it using its physical button."));
+    lv_obj_align(warn, LV_ALIGN_TOP_LEFT, 0, SY(32));
 
     lv_obj_t * cancel = lv_btn_create(card);
     lv_obj_set_size(cancel, SX(130), SY(42));
@@ -466,11 +481,11 @@ static void on_row_delete(lv_event_t * e) {
     lv_obj_center(cl);
 
     lv_obj_t * del = lv_btn_create(card);
-    lv_obj_set_size(del, SX(140), SY(42));
+    lv_obj_set_size(del, SX(170), SY(42));
     lv_obj_align(del, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     lv_obj_set_style_bg_color(del, lv_color_hex(COL_WARN), 0);
     lv_obj_add_event_cb(del, on_delete_confirm, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * dl = lv_label_create(del); lv_label_set_text(dl, tr("Verwijderen", "Remove"));
+    lv_obj_t * dl = lv_label_create(del); lv_label_set_text(dl, tr("Forceer verwijder", "Force remove"));
     lv_obj_center(dl);
 }
 
@@ -558,14 +573,18 @@ static void build_rows(void) {
         lv_obj_align(sub, LV_ALIGN_TOP_LEFT, SX(4), SY(34));
 
         int x = -4;
-        if (d->is_switch && settings.enable_zwave) {
-            lv_obj_t * sw = lv_switch_create(row);
-            lv_obj_align(sw, LV_ALIGN_RIGHT_MID, SX(x), 0);
-            if (d->state == 1) lv_obj_add_state(sw, LV_STATE_CHECKED);
-            lv_obj_add_event_cb(sw, on_switch_toggled, LV_EVENT_VALUE_CHANGED, d);
-            x -= 80;
-        }
         if (settings.enable_zwave) {
+            if (d->node_id > 1) {
+                lv_obj_t * del = lv_btn_create(row);
+                lv_obj_set_size(del, SX(110), SY(48));
+                lv_obj_align(del, LV_ALIGN_RIGHT_MID, SX(x), 0);
+                lv_obj_set_style_bg_color(del, lv_color_hex(COL_WARN), 0);
+                lv_obj_add_event_cb(del, on_row_delete, LV_EVENT_CLICKED, d);
+                lv_obj_t * dl = lv_label_create(del); lv_label_set_text(dl, tr("Verwijder", "Delete"));
+                lv_obj_center(dl);
+                x -= 120;
+            }
+
             lv_obj_t * ren = lv_btn_create(row);
             lv_obj_set_size(ren, SX(110), SY(48));
             lv_obj_align(ren, LV_ALIGN_RIGHT_MID, SX(x), 0);
@@ -575,14 +594,11 @@ static void build_rows(void) {
             lv_obj_center(rl);
             x -= 120;
 
-            if (d->node_id > 1) {
-                lv_obj_t * del = lv_btn_create(row);
-                lv_obj_set_size(del, SX(110), SY(48));
-                lv_obj_align(del, LV_ALIGN_RIGHT_MID, SX(x), 0);
-                lv_obj_set_style_bg_color(del, lv_color_hex(COL_WARN), 0);
-                lv_obj_add_event_cb(del, on_row_delete, LV_EVENT_CLICKED, d);
-                lv_obj_t * dl = lv_label_create(del); lv_label_set_text(dl, tr("Verwijder", "Delete"));
-                lv_obj_center(dl);
+            if (d->is_switch) {
+                lv_obj_t * sw = lv_switch_create(row);
+                lv_obj_align(sw, LV_ALIGN_RIGHT_MID, SX(x - 10), 0);
+                if (d->state == 1) lv_obj_add_state(sw, LV_STATE_CHECKED);
+                lv_obj_add_event_cb(sw, on_switch_toggled, LV_EVENT_VALUE_CHANGED, d);
             }
         }
     }

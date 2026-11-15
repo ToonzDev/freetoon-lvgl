@@ -20,6 +20,7 @@
 #include "client_link.h"
 #include "http.h"
 #include "canonical_state.h"
+#include "stats.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -896,11 +897,52 @@ int boxtalk_wifi_disconnect(void) {
     return netcon_action("ResetWirelessNetwork", NULL, "wfx");
 }
 
-/* Switch a binary device on (1) / off (0). Targets the device uuid. */
-int boxtalk_zwave_basic_set(const char * uuid, int state) {
-    char inner[160];
-    snprintf(inner, sizeof inner, "<uuid>%s</uuid><state>%d</state>", uuid, state ? 1 : 0);
-    return zwave_action("basicSet", inner, "zwb");
+/* Switch a binary device on (1) / off (0).
+ * Source of truth: stock firmware QML (ControlPanelItem.qml, PlugScheduleApp.qml):
+ *   bxtFactory.newBxtMessage(ACTION_INVOKE, DevUUID, "SwitchPower", "SetTarget")
+ *   with argument <NewTargetValue>1</NewTargetValue> (or 0).
+ * Sent twice as recommended by stock plugSchedule for Z-Wave mesh reliability.
+ * Also invokes basicCommand on the controller via BoxTalk and local HTTP fallback. */
+int boxtalk_zwave_basic_set(const char * uuid, int node_id, int state) {
+    if (!uuid || !uuid[0]) return -1;
+    char xml[1024];
+
+    /* 1. Primary native path: BoxTalk SwitchPower:SetTarget to device UUID */
+    snprintf(xml, sizeof xml,
+        "<action class=\"invoke\" uuid=\"%s\" destuuid=\"%s\" "
+        "serviceid=\"urn:hcb-hae-com:serviceId:SwitchPower1\" requestid=\"%d-sp1\">"
+        "<u:SetTarget xmlns:u=\"urn:hcb-hae-com:service:SwitchPower:1\">"
+        "<NewTargetValue>%d</NewTargetValue></u:SetTarget></action>",
+        OUR_UUID, uuid, getpid(), state ? 1 : 0);
+    send_msg(xml);
+    send_msg(xml); /* repeat once as stock plug schedule does */
+
+    /* 2. Alternate serviceid form without trailing 1 */
+    snprintf(xml, sizeof xml,
+        "<action class=\"invoke\" uuid=\"%s\" destuuid=\"%s\" "
+        "serviceid=\"urn:hcb-hae-com:serviceId:SwitchPower\" requestid=\"%d-sp2\">"
+        "<u:SetTarget xmlns:u=\"urn:hcb-hae-com:service:SwitchPower:1\">"
+        "<NewTargetValue>%d</NewTargetValue></u:SetTarget></action>",
+        OUR_UUID, uuid, getpid(), state ? 1 : 0);
+    send_msg(xml);
+
+    /* 3. Controller basicCommand via BoxTalk to hdrv_zwave */
+    char inner[256];
+    snprintf(inner, sizeof inner,
+        "<nodeID>%d</nodeID><uuid>%s</uuid><state>%d</state><value>%d</value>",
+        node_id, uuid, state ? 1 : 0, state ? 255 : 0);
+    zwave_action("basicCommand", inner, "zwb");
+
+    /* 4. Local HTTP driver endpoint fallback */
+    if (node_id > 0) {
+        char url[128];
+        char resp[256];
+        snprintf(url, sizeof url, "hdrv_zwave?action=basicCommand&nodeID=%d&state=%d",
+                 node_id, state ? 1 : 0);
+        stats_http_get(url, resp, sizeof resp);
+    }
+
+    return 0;
 }
 
 /* Rename a device. name must be pre-sanitised (no XML metacharacters). */
