@@ -500,7 +500,7 @@
   - Apparaten beheren in front of the HA modal; tracker picker lists person entities; waste tile on a low tile; Toon 1 bold dim font.
 
 ### 43. Energy Use per HomeWizard Socket (History in Statistics)
-- **Status**: Parked (2026-11-13), user report.
+- **Status**: Done (2026-11-15): covered by #48 (HomeWizard socket loggers in Stekkers), confirmed working by the user.
 - **Description**:
   - A user wants to see the energy use per HomeWizard Energy Socket. Today the Devices screen ("Stekkers (HomeWizard)") shows only the live watts; no history is kept.
 - **Options**:
@@ -538,7 +538,7 @@
 - **Possible later change**: show "Beheerd door Master" on the slave's Domoticz/HA switches, or add a per-slave "show master lights" setting.
 
 ### 47. Energy History of Z-Wave Smart Plugs (Already Logged by the Toon)
-- **Status**: Implemented (2026-11-14): Statistics tab "Stekkers" (plugs.c + screen_stats.c), verified in the sim against the production Toon's hcb_rrd; on-device test pending. Related: #43 (HomeWizard sockets).
+- **Status**: Done (2026-11-15): Statistics tab "Stekkers" (plugs.c + screen_stats.c), confirmed working on a Toon by the user. Related: #43, #48.
 - **Implementation**: plugs.c reads `config_hcb_rrd.xml` (/mnt/data/qmf/config, fallback /qmf/config) for `<rrdLogger>` blocks with deviceSvc ElectricityQuantityMeter + deviceVar CurrentElectricityQuantity + an rra `1monthhour`; logger `<name>` is used with getRrdData loggerName=, names and live W from `hdrv_zwave?action=getDevices.json`. Tab only shown when plugs exist (not on a slave). Nu = last 12 h hourly, Uren from 1monthhour, Dagen/Weken/Maanden/Jaren from 1yearday; small values in Wh; Euro with the electricity tariff. hcb_rrd also accepts `logger=<logger-uuid>` (the .rra/.dat file name), used by the sim hook TOONUI_PLUG_LOGGERS.
 - **Finding (production Toon 2, read-only, 2026-11-14)**: when a Z-Wave smart plug is added in the stock UI, hcb_rrd creates a logger for it by itself, although the stock UI never shows that data. On the production Toon two NAS_WR01Z plugs ("Tuin", node 10, uuid `482195c7-f27e-4958-8c43-600996d7be5f`; "Kerstboom", node 11, uuid `6f78136e-c3f9-429f-bb8d-834bec7dfba9`) each have a logger in `/mnt/data/qmf/var/hcb_rrd/<logger-uuid>.*`:
   - variable `CurrentElectricityQuantity` (cumulative, Wh) of service `ElectricityQuantityMeter`, integer
@@ -551,7 +551,7 @@
   - Only HomeWizard sockets (#43) would need extra `<rrdLogger>` blocks in `config_hcb_rrd.xml`; the Z-Wave loggers above show the exact block shape to copy.
 
 ### 48. New Z-Wave Plugs and HomeWizard Sockets in "Stekkers" (Loggers via hcb_config)
-- **Status**: In progress (2026-11-14). Follows #47.
+- **Status**: Done (2026-11-15): pairing + EnableDevice, HomeWizard socket loggers and the plug fixes up to 20094eb, confirmed working by the user. Follows #47.
 - **Facts (static RE of happ_smartplug / hcb_rrd, Toon 1 binaries)**:
   - Stock "add plug" = Z-Wave IncludeDevice, then `EnableDevice` (arg `ZwUuid` only) to happ_smartplug (handler table `default`, i.e. the specific1 route). happ_smartplug then creates the plug, matches the device's services against its templates and sends one ConfigProvider `SetObjectConfig` to `<host>:hcb_config` with `<Config>` holding one `<rrdLogger>` per match. A plug paired through FreeToon without EnableDevice gets no loggers.
   - Logger block (no `<uuid>`, internalAddress = name; futureBins/sampleOffset only when > 0; no saveInterval):
