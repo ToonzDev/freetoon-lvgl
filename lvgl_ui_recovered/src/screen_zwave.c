@@ -174,6 +174,17 @@ static void zwave_set_custom_name(const char * uuid, const char * name) {
 /* ===================================================================== */
 /* XML helpers                                                           */
 /* ===================================================================== */
+static const char * ci_strstr(const char * hay, const char * needle) {
+    if (!hay || !needle) return NULL;
+    size_t nl = strlen(needle);
+    if (!nl) return hay;
+    while (*hay) {
+        if (strncasecmp(hay, needle, nl) == 0) return hay;
+        hay++;
+    }
+    return NULL;
+}
+
 /* Copy the text of <key>...</key> within [src,end) into out. Returns 1/0. */
 static int xml_elem(const char * src, const char * end, const char * key,
                     char * out, size_t outsz) {
@@ -231,13 +242,42 @@ static void parse_devices(void) {
         else if (xml_elem(d0, d1, "internalAddress", tmp, sizeof tmp))
             d->node_id = atoi(tmp);
 
-        /* Binary-switch capable = command class 0x25 in the CC list. */
+        /* Binary-switch capable = command class 0x25 / 37 in the CC list,
+         * or recognized switch/plug model (e.g. Neo Coolcam NAS_WR01Z, Fibaro, Qubino),
+         * or any non-meter device with node_id > 1. */
         char cc[256] = "";
         if (xml_elem(d0, d1, "ccList", cc, sizeof cc) ||
-            xml_elem(d0, d1, "supportedCC", cc, sizeof cc)) {
-            d->is_switch = (strstr(cc, "25") != NULL);
+            xml_elem(d0, d1, "cclist", cc, sizeof cc) ||
+            xml_elem(d0, d1, "supportedCC", cc, sizeof cc) ||
+            xml_elem(d0, d1, "supportedCommandClasses", cc, sizeof cc) ||
+            xml_elem(d0, d1, "classes", cc, sizeof cc)) {
+            d->is_switch = (strstr(cc, "25") != NULL ||
+                            strstr(cc, "37") != NULL ||
+                            strstr(cc, "0x25") != NULL);
         }
+
+        if (!d->is_switch && d->type[0]) {
+            if (ci_strstr(d->type, "NAS_") ||
+                ci_strstr(d->type, "PLUG") ||
+                ci_strstr(d->type, "SWITCH") ||
+                ci_strstr(d->type, "FIBARO") ||
+                ci_strstr(d->type, "FGWP") ||
+                ci_strstr(d->type, "GREENWAVE") ||
+                ci_strstr(d->type, "POWERNODE") ||
+                ci_strstr(d->type, "QUBINO") ||
+                ci_strstr(d->type, "AEOTEC") ||
+                ci_strstr(d->type, "RELAY")) {
+                d->is_switch = 1;
+            } else if (!ma_is_meter_type(d->type) && d->node_id > 1) {
+                d->is_switch = 1;
+            }
+        }
+
         if (xml_elem(d0, d1, "CurrentState", tmp, sizeof tmp) && tmp[0])
+            d->state = atoi(tmp);
+        else if (xml_elem(d0, d1, "currentState", tmp, sizeof tmp) && tmp[0])
+            d->state = atoi(tmp);
+        else if (xml_elem(d0, d1, "state", tmp, sizeof tmp) && tmp[0])
             d->state = atoi(tmp);
         else
             d->state = -1;
@@ -368,6 +408,72 @@ static void on_row_rename(lv_event_t * e) {
     lv_obj_add_event_cb(kb, on_rename_kb_event, LV_EVENT_ALL, NULL);
 }
 
+/* --- delete modal --------------------------------------------------- */
+static char       g_delete_uuid[48] = "";
+static lv_obj_t * g_delete_modal = NULL;
+
+static void delete_close(void) {
+    if (g_delete_modal) { lv_obj_del(g_delete_modal); g_delete_modal = NULL; }
+    g_delete_uuid[0] = 0;
+}
+static void on_delete_cancel(lv_event_t * e) { (void)e; delete_close(); }
+static void on_delete_confirm(lv_event_t * e) {
+    (void)e;
+    if (g_delete_uuid[0]) {
+        ma_force_remove(g_delete_uuid);
+        snprintf(g_status, sizeof g_status, "%s", tr("Apparaat verwijderd.", "Device removed."));
+        boxtalk_zwave_get_devices();
+    }
+    delete_close();
+}
+
+static void on_row_delete(lv_event_t * e) {
+    zw_dev_t * d = (zw_dev_t *)lv_event_get_user_data(e);
+    snprintf(g_delete_uuid, sizeof g_delete_uuid, "%s", d->uuid);
+
+    g_delete_modal = lv_obj_create(scr_root);
+    lv_obj_set_size(g_delete_modal, LV_HOR_RES, LV_VER_RES);
+    lv_obj_set_pos(g_delete_modal, 0, 0);
+    lv_obj_set_style_bg_color(g_delete_modal, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(g_delete_modal, LV_OPA_70, 0);
+    lv_obj_set_style_border_width(g_delete_modal, 0, 0);
+    lv_obj_clear_flag(g_delete_modal, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(g_delete_modal, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(g_delete_modal, on_delete_cancel, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t * card = lv_obj_create(g_delete_modal);
+    lv_obj_set_size(card, SX(540), SY(170));
+    lv_obj_align(card, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_bg_color(card, lv_color_hex(COL_CARD), 0);
+    lv_obj_set_style_border_width(card, 0, 0);
+    lv_obj_set_style_radius(card, 14, 0);
+    lv_obj_set_style_pad_all(card, SX(16), 0);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(card, LV_OBJ_FLAG_CLICKABLE);
+
+    lv_obj_t * t = lv_label_create(card);
+    lv_obj_set_style_text_color(t, lv_color_hex(COL_TEXT_HI), 0);
+    lv_obj_set_style_text_font(t, SF(20), 0);
+    lv_label_set_text_fmt(t, tr("Apparaat \"%s\" verwijderen?", "Remove device \"%s\"?"), d->name[0] ? d->name : d->type);
+    lv_obj_align(t, LV_ALIGN_TOP_LEFT, 0, 4);
+
+    lv_obj_t * cancel = lv_btn_create(card);
+    lv_obj_set_size(cancel, SX(130), SY(42));
+    lv_obj_align(cancel, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    lv_obj_set_style_bg_color(cancel, lv_color_hex(COL_OFF), 0);
+    lv_obj_add_event_cb(cancel, on_delete_cancel, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * cl = lv_label_create(cancel); lv_label_set_text(cl, tr("Annuleer", "Cancel"));
+    lv_obj_center(cl);
+
+    lv_obj_t * del = lv_btn_create(card);
+    lv_obj_set_size(del, SX(140), SY(42));
+    lv_obj_align(del, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    lv_obj_set_style_bg_color(del, lv_color_hex(COL_WARN), 0);
+    lv_obj_add_event_cb(del, on_delete_confirm, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * dl = lv_label_create(del); lv_label_set_text(dl, tr("Verwijderen", "Remove"));
+    lv_obj_center(dl);
+}
+
 static void on_include(lv_event_t * e) {
     (void)e;
     if (g_exc_active) { zw_exc(0); g_exc_active = 0; }
@@ -467,6 +573,17 @@ static void build_rows(void) {
             lv_obj_add_event_cb(ren, on_row_rename, LV_EVENT_CLICKED, d);
             lv_obj_t * rl = lv_label_create(ren); lv_label_set_text(rl, tr("Hernoem", "Rename"));
             lv_obj_center(rl);
+            x -= 120;
+
+            if (d->node_id > 1) {
+                lv_obj_t * del = lv_btn_create(row);
+                lv_obj_set_size(del, SX(110), SY(48));
+                lv_obj_align(del, LV_ALIGN_RIGHT_MID, SX(x), 0);
+                lv_obj_set_style_bg_color(del, lv_color_hex(COL_WARN), 0);
+                lv_obj_add_event_cb(del, on_row_delete, LV_EVENT_CLICKED, d);
+                lv_obj_t * dl = lv_label_create(del); lv_label_set_text(dl, tr("Verwijder", "Delete"));
+                lv_obj_center(dl);
+            }
         }
     }
 }
@@ -561,6 +678,8 @@ static void refresh_cb(lv_timer_t * t) {
 static void back_async(void * u) { (void)u; ui_pop(); }
 static void on_back(lv_event_t * e) {
     (void)e;
+    rename_close();
+    delete_close();
     /* Leave no inclusion/exclusion window open behind us. */
     if (g_inc_active) { zw_inc(0); g_inc_active = 0; }
     if (g_exc_active) { zw_exc(0); g_exc_active = 0; }
