@@ -24,6 +24,7 @@
 #include "theme.h"
 #include "boxtalk.h"
 #include "ma_admin.h"
+#include "stats.h"
 #include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -203,13 +204,53 @@ static int xml_elem(const char * src, const char * end, const char * key,
     return 1;
 }
 
-/* Parse zwave_response_buf (GetDevicesResponse XML) into g_dev[]. */
-static void parse_devices(void) {
+static int g_rows_built = 0;
+
+/* Sync switch on/off states from hdrv_zwave?action=getDevices.json */
+static void sync_states_from_json(void) {
+    static char body[64 * 1024];
+    if (stats_http_get("hdrv_zwave?action=getDevices.json", body, sizeof body) != 0) return;
+    for (int i = 0; i < g_dev_count; i++) {
+        zw_dev_t * d = &g_dev[i];
+        if (!d->is_switch) continue;
+        char needle[64];
+        snprintf(needle, sizeof needle, "\"%s\"", d->uuid);
+        const char * p = strstr(body, needle);
+        if (!p && d->node_id > 0) {
+            snprintf(needle, sizeof needle, "\"dev_%d\"", d->node_id);
+            p = strstr(body, needle);
+        }
+        if (p) {
+            const char * end = strchr(p, '}');
+            if (end) {
+                const char * cs = strstr(p, "\"CurrentState\":");
+                if (!cs || cs > end) cs = strstr(p, "\"TargetStatus\":");
+                if (cs && cs < end) {
+                    while (*cs && *cs != ':' && cs < end) cs++;
+                    if (*cs == ':') {
+                        cs++;
+                        while (*cs == ' ' || *cs == '\"') cs++;
+                        if (*cs == '0' || *cs == '1')
+                            d->state = (*cs == '1') ? 1 : 0;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/* Parse zwave_response_buf (GetDevicesResponse XML) into g_dev[].
+ * Returns 1 if rows need rebuilding, 0 if device list/state unchanged. */
+static int parse_devices(void) {
+    zw_dev_t old_dev[MAX_ZW_DEV];
+    int old_count = g_dev_count;
+    memcpy(old_dev, g_dev, sizeof(old_dev));
+
     g_dev_count = 0;
     const char * buf = zwave_response_buf;
     const char * ds = strstr(buf, "<devices>");
     const char * de = strstr(buf, "</devices>");
-    if (!ds || !de) return;
+    if (!ds || !de) return 0;
     ds += strlen("<devices>");
 
     const char * scan = ds;
@@ -273,18 +314,48 @@ static void parse_devices(void) {
             }
         }
 
+        /* Check previous known switch state so we don't clobber it */
+        int prev_state = -1;
+        for (int j = 0; j < old_count; j++) {
+            if (strcmp(old_dev[j].uuid, d->uuid) == 0 && old_dev[j].state >= 0) {
+                prev_state = old_dev[j].state;
+                break;
+            }
+        }
+
+        /* NOTE: Do NOT use <state>! In hdrv_zwave GetDevices XML, <state>1</state>
+         * is the Z-Wave node reachability/alive status, NOT the switch on/off state. */
         if (xml_elem(d0, d1, "CurrentState", tmp, sizeof tmp) && tmp[0])
             d->state = atoi(tmp);
         else if (xml_elem(d0, d1, "currentState", tmp, sizeof tmp) && tmp[0])
             d->state = atoi(tmp);
-        else if (xml_elem(d0, d1, "state", tmp, sizeof tmp) && tmp[0])
+        else if (xml_elem(d0, d1, "TargetStatus", tmp, sizeof tmp) && tmp[0])
             d->state = atoi(tmp);
+        else if (xml_elem(d0, d1, "targetStatus", tmp, sizeof tmp) && tmp[0])
+            d->state = atoi(tmp);
+        else if (prev_state >= 0)
+            d->state = prev_state;
         else
-            d->state = -1;
+            d->state = 0;
 
         if (d->uuid[0]) g_dev_count++;
         scan = d1 + strlen("</device>");
     }
+
+    /* On initial load (before user interaction), sync real state from driver JSON */
+    if (!g_rows_built) {
+        sync_states_from_json();
+    }
+
+    if (!g_rows_built || g_dev_count != old_count) return 1;
+    for (int i = 0; i < g_dev_count; i++) {
+        if (strcmp(g_dev[i].uuid, old_dev[i].uuid) != 0 ||
+            strcmp(g_dev[i].name, old_dev[i].name) != 0 ||
+            g_dev[i].state != old_dev[i].state) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 /* ===================================================================== */
@@ -297,7 +368,8 @@ static void on_switch_toggled(lv_event_t * e) {
     d->state = want;
     boxtalk_zwave_basic_set(d->uuid, d->node_id, want);
     snprintf(g_status, sizeof g_status, "%s -> %s", d->name[0] ? d->name : d->type, want ? tr("aan", "on") : tr("uit", "off"));
-    g_poll_ticks = 0;   /* refresh soon */
+    if (lbl_status) lv_label_set_text(lbl_status, g_status);
+    g_poll_ticks = 4;   /* pause polling to let mesh settle */
 }
 
 /* --- rename modal --------------------------------------------------- */
@@ -598,10 +670,12 @@ static void build_rows(void) {
                 lv_obj_t * sw = lv_switch_create(row);
                 lv_obj_align(sw, LV_ALIGN_RIGHT_MID, SX(x - 10), 0);
                 if (d->state == 1) lv_obj_add_state(sw, LV_STATE_CHECKED);
+                else lv_obj_clear_state(sw, LV_STATE_CHECKED);
                 lv_obj_add_event_cb(sw, on_switch_toggled, LV_EVENT_VALUE_CHANGED, d);
             }
         }
     }
+    g_rows_built = 1;
 }
 
 static void refresh_cb(lv_timer_t * t) {
@@ -609,12 +683,14 @@ static void refresh_cb(lv_timer_t * t) {
     if (!scr_root || lv_scr_act() != scr_root) return;
     /* Poll for a pending GetDevices response. */
     if (zwave_response_ready) {
-        parse_devices();
+        int need_rebuild = parse_devices();
         zwave_response_ready = 0;
-        build_rows();
-        if (lbl_ctrl)
-            lv_label_set_text_fmt(lbl_ctrl, "%d %s", g_dev_count,
-                g_dev_count == 1 ? tr("apparaat", "device") : tr("apparaten", "devices"));
+        if (need_rebuild) {
+            build_rows();
+            if (lbl_ctrl)
+                lv_label_set_text_fmt(lbl_ctrl, "%d %s", g_dev_count,
+                    g_dev_count == 1 ? tr("apparaat", "device") : tr("apparaten", "devices"));
+        }
     }
 
     /* Result of add / remove (ma_admin). */
@@ -709,6 +785,7 @@ static void on_scr_event(lv_event_t * e) {
         g_poll_ticks = 0;
     } else if (c == LV_EVENT_SCREEN_UNLOADED) {
         if (refresh_timer) lv_timer_pause(refresh_timer);
+        g_rows_built = 0;
     }
 }
 
@@ -740,6 +817,7 @@ lv_obj_t * screen_zwave_create(void) {
      * more paused timer leaks per toggle. */
     if (refresh_timer) { lv_timer_del(refresh_timer); refresh_timer = NULL; }
     scr_light_mode = settings.home_light_mode;
+    g_rows_built = 0;
 
     scr_root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(COL_BG), 0);
