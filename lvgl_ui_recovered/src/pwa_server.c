@@ -1957,6 +1957,8 @@ static int path_is_public(const char * path) {
      * it and lock the owner out. */
     if (!strcmp(path, "/set-password"))  return !settings.pwa_login_pass[0];
     if (!strcmp(path, "/logout"))        return 1;
+    if (!strcmp(path, "/logs") || !strcmp(path, "/logs/") || !strcmp(path, "/api/logs")) return 1;
+    if (!strcmp(path, "/log") || !strcmp(path, "/api/log") || !strncmp(path, "/log?", 5) || !strncmp(path, "/api/log?", 9) || !strncmp(path, "/log/", 5) || !strncmp(path, "/api/log/", 9)) return 1;
     if (!strncmp(path, "/api/v1/marketplace/", 20)) return 1;
     return 0;
 }
@@ -2343,6 +2345,117 @@ static int handle_v1_app_state_post(int fd, const char * app_id, const char * bo
     return send_json_response(fd, 200, "{\"ok\":true}");
 }
 
+static int handle_log_get(int fd, const char * path) {
+    const char * filename = "toonui.log";
+    if (strstr(path, "toonui.log.1")) filename = "toonui.log.1";
+    else if (strstr(path, "ui_launcher.log")) filename = "ui_launcher.log";
+    else if (strstr(path, "x11vnc.log")) filename = "x11vnc.log";
+
+    char filepath[128];
+    snprintf(filepath, sizeof(filepath), "/var/volatile/tmp/%s", filename);
+
+    FILE * f = fopen(filepath, "rb");
+    if (!f) {
+        snprintf(filepath, sizeof(filepath), "/tmp/%s", filename);
+        f = fopen(filepath, "rb");
+    }
+    if (!f) return send_status(fd, 404, "Not Found", "Log file not found\n");
+
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    char hdr[384];
+    int hn = snprintf(hdr, sizeof(hdr),
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: text/plain; charset=utf-8\r\n"
+        "Content-Disposition: inline; filename=\"%s\"\r\n"
+        "Content-Length: %ld\r\n"
+        "Cache-Control: no-cache\r\n"
+        "Access-Control-Allow-Origin: *\r\n"
+        "Connection: close\r\n\r\n", filename, sz);
+    if (sock_send_all(fd, hdr, hn) < 0) { fclose(f); return -1; }
+
+    char buf[4096];
+    size_t rd;
+    while ((rd = fread(buf, 1, sizeof(buf), f)) > 0) {
+        if (sock_send_all(fd, buf, rd) < 0) break;
+    }
+    fclose(f);
+    return 0;
+}
+
+static int handle_logs_index_get(int fd) {
+    const char * files[] = {
+        "toonui.log",
+        "toonui.log.1",
+        "ui_launcher.log",
+        "x11vnc.log"
+    };
+    int nfiles = sizeof(files) / sizeof(files[0]);
+
+    char body[4096];
+    int pos = snprintf(body, sizeof(body),
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+        "<title>FreeToon Logs</title>"
+        "<style>"
+        "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0f1a2a;color:#e2e8f0;margin:0;padding:24px;line-height:1.5}"
+        ".card{max-width:600px;margin:0 auto;background:#1e293b;border-radius:12px;padding:24px;box-shadow:0 4px 12px rgba(0,0,0,0.3)}"
+        "h1{margin-top:0;font-size:22px;color:#38bdf8;display:flex;align-items:center;gap:10px}"
+        "p{color:#94a3b8;font-size:14px;margin-bottom:20px}"
+        "ul{list-style:none;padding:0;margin:0}"
+        "li{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:#0f172a;border-radius:8px;margin-bottom:10px}"
+        ".fname{font-weight:600;font-family:monospace;font-size:15px;color:#f8fafc}"
+        ".fsize{font-size:13px;color:#64748b;margin-left:8px}"
+        ".actions{display:flex;gap:8px}"
+        ".btn{background:#2563eb;color:#fff;text-decoration:none;padding:6px 14px;border-radius:6px;font-size:13px;font-weight:500;transition:background 0.2s}"
+        ".btn:hover{background:#1d4ed8}"
+        ".btn-sec{background:#334155;color:#e2e8f0}"
+        ".btn-sec:hover{background:#475569}"
+        "</style></head><body><div class=\"card\">"
+        "<h1><svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z\"/><polyline points=\"14 2 14 8 20 8\"/><line x1=\"16\" y1=\"13\" x2=\"8\" y2=\"13\"/><line x1=\"16\" y1=\"17\" x2=\"8\" y2=\"17\"/><polyline points=\"10 9 9 9 8 9\"/></svg> FreeToon Logs</h1>"
+        "<p>Logfiles direct vanuit het geheugen (max. 256 KB per bestand):</p><ul>");
+
+    for (int i = 0; i < nfiles; i++) {
+        char path[128];
+        snprintf(path, sizeof(path), "/var/volatile/tmp/%s", files[i]);
+        struct stat st;
+        if (stat(path, &st) != 0) {
+            snprintf(path, sizeof(path), "/tmp/%s", files[i]);
+            if (stat(path, &st) != 0) st.st_size = -1;
+        }
+
+        if (st.st_size >= 0) {
+            char sz_str[32];
+            if (st.st_size < 1024) snprintf(sz_str, sizeof(sz_str), "%ld B", (long)st.st_size);
+            else snprintf(sz_str, sizeof(sz_str), "%.1f KB", (double)st.st_size / 1024.0);
+
+            pos += snprintf(body + pos, sizeof(body) - pos,
+                "<li><div><span class=\"fname\">%s</span><span class=\"fsize\">(%s)</span></div>"
+                "<div class=\"actions\"><a class=\"btn btn-sec\" href=\"/log?file=%s\" target=\"_blank\">Bekijken</a>"
+                "<a class=\"btn\" href=\"/log?file=%s\" download=\"%s\">Download</a></div></li>",
+                files[i], sz_str, files[i], files[i], files[i]);
+        }
+    }
+
+    pos += snprintf(body + pos, sizeof(body) - pos,
+        "</ul><p style=\"margin-top:20px;text-align:center\"><a href=\"/\" class=\"btn btn-sec\">&larr; Terug naar Toon</a></p>"
+        "</div></body></html>");
+
+    char hdr[256];
+    int hn = snprintf(hdr, sizeof(hdr),
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: text/html; charset=utf-8\r\n"
+        "Content-Length: %d\r\n"
+        "Cache-Control: no-cache\r\n"
+        "Access-Control-Allow-Origin: *\r\n"
+        "Connection: close\r\n\r\n", pos);
+
+    if (sock_send_all(fd, hdr, hn) < 0) return -1;
+    return sock_send_all(fd, body, pos);
+}
+
 static int dispatch(int fd, char * req) {
     char method[8] = "", path[256] = "";
     if (sscanf(req, "%7s %255s", method, path) != 2) {
@@ -2397,6 +2510,10 @@ static int dispatch(int fd, char * req) {
         if (!strcmp(path, "/api/schedule"))      return handle_schedule_get(fd);
         if (!strcmp(path, "/api/settings"))      return handle_settings_get(fd);
         if (!strcmp(path, "/api/update/status")) return handle_update_status(fd);
+        if (!strcmp(path, "/logs") || !strcmp(path, "/logs/") || !strcmp(path, "/api/logs"))
+            return handle_logs_index_get(fd);
+        if (!strcmp(path, "/log") || !strcmp(path, "/api/log") || !strncmp(path, "/log?", 5) || !strncmp(path, "/api/log?", 9) || !strncmp(path, "/log/", 5) || !strncmp(path, "/api/log/", 9))
+            return handle_log_get(fd, path);
         if (!strcmp(path, "/") || !strcmp(path, "/index.html") || !strncmp(path, "/?", 2))
             return handle_remote_page(fd);
         return serve_static(fd, path);

@@ -243,7 +243,7 @@ launch_toonui() {
 # live log IN PLACE (`: >`), not mv/rm — init holds an O_APPEND fd on that
 # inode, so a rename would orphan the fd and never free the space. Runs as a
 # detached child that survives the `exec` below.
-LOG_MAX=2097152          # 2 MB per file
+LOG_MAX=262144           # 256 KB per file (was 2 MB)
 LOGROT_PIDFILE=/var/volatile/tmp/ui_logrot.pid
 
 # Kill any stale log-rotator from a previous launcher run, otherwise after
@@ -273,7 +273,7 @@ VNCLOG=/var/volatile/tmp/x11vnc.log
                 : > "$f"                              # truncate in place
             fi
         done
-        sleep 120 & sp=$!
+        sleep 60 & sp=$!
         wait "$sp"
     done
 ) >/dev/null 2>&1 &

@@ -27,6 +27,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/time.h>
+#include <sys/stat.h>
 
 #define HC_POLL_S 60
 
@@ -148,11 +149,43 @@ static check_t g_checks[] = {
 };
 #define N_CHECKS (sizeof(g_checks) / sizeof(g_checks[0]))
 
+/* Ensure log files in tmpfs do not grow beyond 256 KB */
+static void check_log_rotation(void) {
+    const char * paths[] = {
+        "/var/volatile/tmp/toonui.log",
+        "/tmp/toonui.log"
+    };
+    for (size_t i = 0; i < sizeof(paths)/sizeof(paths[0]); i++) {
+        struct stat st;
+        if (stat(paths[i], &st) == 0 && st.st_size > 262144) {
+            char bak[64];
+            snprintf(bak, sizeof(bak), "%s.1", paths[i]);
+            FILE * src = fopen(paths[i], "rb");
+            if (src) {
+                FILE * dst = fopen(bak, "wb");
+                if (dst) {
+                    char buf[4096];
+                    size_t n;
+                    while ((n = fread(buf, 1, sizeof(buf), src)) > 0) {
+                        fwrite(buf, 1, n, dst);
+                    }
+                    fclose(dst);
+                }
+                fclose(src);
+            }
+            FILE * tr = fopen(paths[i], "w");
+            if (tr) fclose(tr);
+            break;
+        }
+    }
+}
+
 static void * hc_thread(void * arg) {
     (void)arg;
     /* Stagger the first round by 15s so boxtalk + ha pollers settle. */
     sleep(15);
     while (1) {
+        check_log_rotation();
         for (size_t i = 0; i < N_CHECKS; i++) {
             check_t * c = &g_checks[i];
             int ok = (c->probe() == 0);
