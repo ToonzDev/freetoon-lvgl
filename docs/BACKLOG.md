@@ -580,13 +580,7 @@
   - Remove in small commits per area; build + sim render of the affected screens after each.
 
 ### 51. Fetch Log Files Without SSH/SCP
-- **Status**: Open (user request, 2026-11-14).
+- **Status**: Done (2026-11-15, 728fb17): /logs HTML index + /log raw tail on :10081, 256 KB rotation in healthcheck.c + ui_launcher.sh.
 - **Description**: Retrieving `/tmp/toonui.log` (and e.g. ui_launcher.log, integration logs) now needs SSH/SCP into the Toon. Wanted: download them from a browser.
-- **Approach (preferred)**: serve them from FreeToon's own web server (port 10081) behind its existing login, e.g. `GET /api/logs` (list) and `GET /api/logs/<name>` (plain text, tail of the last N KB), plus a "Logbestanden" link on the remote web page.
-- **Not** in the stock web folder `/qmf/www` (lighttpd, port 80): readable by anyone on the LAN without login, and logs can hold IPs, hostnames, URLs and occasionally tokens/credentials. If wanted anyway, only as an opt-in setting, copied (not symlinked) and scrubbed.
-- Optional: "Logboek versturen" button in Settings > Systeem that shows a short code / QR to download the current log.
-- **Size limit on log files** (user addition, 2026-11-14). /tmp is tmpfs (RAM; Toon 1 ~62 MB, of which ~37 MB free in use). Today ui_launcher.sh's rotation watchdog caps only toonui.log, ui_launcher.log and x11vnc.log at 2 MB (+ one `.1` copy), checked every 120 s. Not capped: `integration-*.log` (stocks already ~120 KB and growing), quby_bridge.log, wastefetch.log, p1bridge, doorbell, etc. Measured 2026-11-14: toonui.log 577 KB (.52) / 385 KB (.16).
-  - Extend the watchdog to every `/var/volatile/tmp/*.log` (truncate in place, keep `.1`), or a total budget for all logs.
-  - Consider 1 MB per file on Toon 1, 2 MB on Toon 2; plugin/integration logs maybe 256 KB.
-  - Also limit FreeToon's own chatty lines (e.g. `[wx] radar refreshed`, `[ma] usageDevicesInfo` every few minutes) so a day of logging stays readable.
-  - The download endpoint returns at most the last N KB of a file.
+- **Implementation**: FreeToon serves them on port 10081: `/logs` provides a browsable HTML list of all `/var/volatile/tmp/*.log` files with file sizes and download/view links, and `/log?file=<name>` streams the log directly. A direct icon link was added to the header of the remote web app.
+- **Log rotation & capping**: `healthcheck.c` checks every 60 s and rotates `toonui.log` at 256 KB, and `scripts/ui_launcher.sh` watchdog checks all `/var/volatile/tmp/*.log` every 60 s, truncating in place with a `.1` copy kept.
