@@ -346,8 +346,8 @@ static void sync_states_from_json_buf(const char * body) {
 
             /* Don't overwrite state while waiting for recent user toggle to settle */
             if (now >= g_switch_settle_until) {
-                const char * cs = strstr(p, "\"CurrentState\":");
-                if (!cs || cs > end) cs = strstr(p, "\"TargetStatus\":");
+                const char * cs = strstr(p, "\"TargetStatus\":");
+                if (!cs || cs > end) cs = strstr(p, "\"CurrentState\":");
                 if (cs && cs < end) {
                     while (*cs && *cs != ':' && cs < end) cs++;
                     if (*cs == ':') {
@@ -358,8 +358,9 @@ static void sync_states_from_json_buf(const char * body) {
                     }
                 }
             } else {
-                /* If physical device has already confirmed the commanded state, settle early */
-                const char * cs = strstr(p, "\"CurrentState\":");
+                /* If driver / device has already recorded the commanded state, settle early */
+                const char * cs = strstr(p, "\"TargetStatus\":");
+                if (!cs || cs > end) cs = strstr(p, "\"CurrentState\":");
                 if (cs && cs < end) {
                     while (*cs && *cs != ':' && cs < end) cs++;
                     if (*cs == ':') {
@@ -455,8 +456,8 @@ static void parse_devices_json_buf(const char * body) {
 
         /* Switch state */
         d->state = -1;
-        const char * cs = strstr(p, "\"CurrentState\":");
-        if (!cs || cs > dend) cs = strstr(p, "\"TargetStatus\":");
+        const char * cs = strstr(p, "\"TargetStatus\":");
+        if (!cs || cs > dend) cs = strstr(p, "\"CurrentState\":");
         if (cs && cs < dend) {
             while (*cs && *cs != ':' && cs < dend) cs++;
             if (*cs == ':') {
@@ -572,13 +573,13 @@ static int parse_devices(void) {
 
         /* NOTE: Do NOT use <state>! In hdrv_zwave GetDevices XML, <state>1</state>
          * is the Z-Wave node reachability/alive status, NOT the switch on/off state. */
-        if (xml_elem(d0, d1, "CurrentState", tmp, sizeof tmp) && tmp[0])
-            d->state = atoi(tmp);
-        else if (xml_elem(d0, d1, "currentState", tmp, sizeof tmp) && tmp[0])
-            d->state = atoi(tmp);
-        else if (xml_elem(d0, d1, "TargetStatus", tmp, sizeof tmp) && tmp[0])
+        if (xml_elem(d0, d1, "TargetStatus", tmp, sizeof tmp) && tmp[0])
             d->state = atoi(tmp);
         else if (xml_elem(d0, d1, "targetStatus", tmp, sizeof tmp) && tmp[0])
+            d->state = atoi(tmp);
+        else if (xml_elem(d0, d1, "CurrentState", tmp, sizeof tmp) && tmp[0])
+            d->state = atoi(tmp);
+        else if (xml_elem(d0, d1, "currentState", tmp, sizeof tmp) && tmp[0])
             d->state = atoi(tmp);
         else if (prev_state >= 0)
             d->state = prev_state;

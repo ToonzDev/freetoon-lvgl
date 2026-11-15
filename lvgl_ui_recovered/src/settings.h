@@ -18,6 +18,7 @@ typedef struct {
     int touch_swap_xy;        /* 0/1 — swap the X and Y axes (90/270° rotation) */
     int touch_invert_x;       /* 0/1 — mirror horizontally */
     int touch_invert_y;       /* 0/1 — mirror vertically */
+    int _reserved_temp_offset;/* ABI padding: preserves struct layout for marketplace plugins (was temp_offset_centi) */
     int show_dim_weather;     /* 0/1 — show today's weather icon on the dim screen */
     int show_dim_waste;       /* 0/1 — show next-pickup on the dim screen */
     int show_dim_bars;        /* 0/1 — usage bars (energy now / gas hourly) flanking the dim clock */
@@ -110,16 +111,16 @@ typedef struct {
     int  domoticz_tile_idx2;   /* device idx pinned to tile switch 2 (-1 = none) */
     int  clock_moon_phase;     /* 0 = off (clean clock), 1 = show moon phase icon at night */
 
+    /* Philips Hue Bridge (REST API on LAN, port 80) */
+    int  hue_enabled;
+    char hue_host[64];
+    char hue_user[64];
+
     /* Sonos HTTP API integration (node-sonos-http-api) */
     int  sonos_enabled;
     char sonos_host[64];
     int  sonos_port;
     char sonos_zone[48];
-
-    /* Philips Hue Bridge (REST API on LAN, port 80) */
-    int  hue_enabled;
-    char hue_host[64];
-    char hue_user[64];
 
     /* Z-Wave control — gates the Settings → Z-Wave management screen's
      * write actions (include/exclude/on-off/rename). Default 0. Flipping it
