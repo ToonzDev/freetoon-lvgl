@@ -656,11 +656,14 @@ static void bt_subscribe_pwrusage(void) {
     fprintf(stderr, "[bxt-meter] happ_pwrusage alive -> subscribed powerUsage/gasUsage\n");
 }
 
+static volatile time_t g_probe_until;   /* diagnostic probe, see bxt_probe_tick */
 static void handle_msg(const char* xml) {
     const char* p = xml;
     while (*p && isspace((unsigned char)*p)) p++;
     if (*p != '<') return;
     p++;
+    if (g_probe_until && time(NULL) < g_probe_until && strstr(xml, "probe"))
+        fprintf(stderr, "[probe] %.1500s\n", xml);
     boxtalk_lock();
     if (strstr(xml, "thermostatSettings")) {
         const char * ts = strstr(xml, "thermostatSettings");
@@ -1403,6 +1406,40 @@ static int parse_json_int(const char* json, const char* key, int dflt) {
 }
 
 
+/* ---- Diagnostic probe (Toon 1 RE) ----
+ * The Toon 1 BoxTalk hub (hcb_comm) answers only known clients, so outside
+ * probes over nc/ssh get nothing. For investigation: if /tmp/toonui_bxt_probe
+ * exists, each line is sent as one BoxTalk message ("@ME@" -> our uuid,
+ * "@HOST@" -> the device base, e.g. "eneco-001-125338"), the file is removed,
+ * and for 60 s every response whose requestid contains "probe" is logged in
+ * full ("[probe] ..."). No file, no effect. */
+static volatile time_t g_probe_until = 0;
+
+static void bxt_probe_tick(void) {
+    const char * path = "/tmp/toonui_bxt_probe";
+    FILE * f = fopen(path, "r");
+    if (!f) return;
+    static char line[2048], out[2304];
+    int n = 0;
+    while (fgets(line, sizeof line, f)) {
+        line[strcspn(line, "\r\n")] = 0;
+        if (line[0] != '<') continue;
+        size_t o = 0;
+        for (const char * s = line; *s && o + 100 < sizeof out; ) {
+            if (!strncmp(s, "@ME@", 4))   { o += (size_t)snprintf(out + o, sizeof out - o, "%s", OUR_UUID); s += 4; }
+            else if (!strncmp(s, "@HOST@", 6)) { o += (size_t)snprintf(out + o, sizeof out - o, "%s", dev_base); s += 6; }
+            else out[o++] = *s++;
+        }
+        out[o] = 0;
+        send_msg(out);
+        n++;
+    }
+    fclose(f);
+    unlink(path);
+    g_probe_until = time(NULL) + 60;
+    fprintf(stderr, "[probe] sent %d message(s)\n", n);
+}
+
 static void* http_poll_thread(void* arg) {
     (void)arg;
     char body[2048];
@@ -1511,6 +1548,7 @@ static void* http_poll_thread(void* arg) {
          * burner_on / dhw_on / active_state / setpoint all ride this poll;
          * happ_thermstat is the local loopback so the cost is negligible. */
         canonical_state_notify(CSTATE_EVT_THERMOSTAT | CSTATE_EVT_BOILER);
+        bxt_probe_tick();
         sleep(3);
     }
     return NULL;
