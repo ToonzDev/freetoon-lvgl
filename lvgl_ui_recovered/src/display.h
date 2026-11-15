@@ -48,6 +48,9 @@
  *
  * Use SF(px) wherever a literal &lv_font_montserrat_<px> would have gone.
  * The 64/96 readout fonts ship as custom glyph subsets (digits/°), declared here.
+ * They (and the 76 px Bold) fall back to Montserrat 48 for any other glyph, so
+ * a unit or status text on a big readout ("266 W", "P1 offline") still renders
+ * — smaller — instead of as a tofu box.
  */
 LV_FONT_DECLARE(lv_font_montserrat_64_custom)
 LV_FONT_DECLARE(lv_font_montserrat_76_bold)
