@@ -162,12 +162,6 @@ int plugs_scan(plug_t * out, int max) {
         xml_elem(a, b, "internalAddress", ia, sizeof ia);
         int is_hw = !strncmp(ia, "hw_socket_qtty_", 15);
         if (is_hw || (!strcmp(svc, "ElectricityQuantityMeter") && !strcmp(var, "CurrentElectricityQuantity"))) {
-            /* Z-Wave plug loggers are created by happ_smartplug and have internalAddress "smartplug_<node_id>".
-             * Non-smartplug loggers (like the P1 meteradapter dev_7 or "electricity") must be excluded. */
-            if (!is_hw && strncmp(ia, "smartplug_", 10) != 0) {
-                p = b + 12;
-                continue;
-            }
             const char * r = strstr(a, "<name>1monthhour</name>");
             if (r && r < b) {
                 plug_t * pl = &out[n];

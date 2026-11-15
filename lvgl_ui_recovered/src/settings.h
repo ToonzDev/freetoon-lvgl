@@ -110,16 +110,16 @@ typedef struct {
     int  domoticz_tile_idx2;   /* device idx pinned to tile switch 2 (-1 = none) */
     int  clock_moon_phase;     /* 0 = off (clean clock), 1 = show moon phase icon at night */
 
-    /* Philips Hue Bridge (REST API on LAN, port 80) */
-    int  hue_enabled;
-    char hue_host[64];
-    char hue_user[64];
-
     /* Sonos HTTP API integration (node-sonos-http-api) */
     int  sonos_enabled;
     char sonos_host[64];
     int  sonos_port;
     char sonos_zone[48];
+
+    /* Philips Hue Bridge (REST API on LAN, port 80) */
+    int  hue_enabled;
+    char hue_host[64];
+    char hue_user[64];
 
     /* Z-Wave control — gates the Settings → Z-Wave management screen's
      * write actions (include/exclude/on-off/rename). Default 0. Flipping it

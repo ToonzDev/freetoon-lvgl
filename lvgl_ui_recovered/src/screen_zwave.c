@@ -324,10 +324,12 @@ static void zwave_set_custom_name(const char * uuid, const char * name) {
 }
 
 static int g_rows_built = 0;
+static time_t g_switch_settle_until = 0;
 
 /* Sync switch on/off states and power from hdrv_zwave?action=getDevices.json */
 static void sync_states_from_json_buf(const char * body) {
     if (!body) return;
+    time_t now = time(NULL);
     for (int i = 0; i < g_dev_count; i++) {
         zw_dev_t * d = &g_dev[i];
         if (!d->is_switch) continue;
@@ -341,17 +343,34 @@ static void sync_states_from_json_buf(const char * body) {
         if (p) {
             const char * next_dev = strstr(p + 1, "\"dev_");
             const char * end = next_dev ? next_dev : p + strlen(p);
-            const char * cs = strstr(p, "\"CurrentState\":");
-            if (!cs || cs > end) cs = strstr(p, "\"TargetStatus\":");
-            if (cs && cs < end) {
-                while (*cs && *cs != ':' && cs < end) cs++;
-                if (*cs == ':') {
-                    cs++;
-                    while (*cs == ' ' || *cs == '\"') cs++;
-                    if (*cs == '0' || *cs == '1')
-                        d->state = (*cs == '1') ? 1 : 0;
+
+            /* Don't overwrite state while waiting for recent user toggle to settle */
+            if (now >= g_switch_settle_until) {
+                const char * cs = strstr(p, "\"CurrentState\":");
+                if (!cs || cs > end) cs = strstr(p, "\"TargetStatus\":");
+                if (cs && cs < end) {
+                    while (*cs && *cs != ':' && cs < end) cs++;
+                    if (*cs == ':') {
+                        cs++;
+                        while (*cs == ' ' || *cs == '\"') cs++;
+                        if (*cs == '0' || *cs == '1')
+                            d->state = (*cs == '1') ? 1 : 0;
+                    }
+                }
+            } else {
+                /* If physical device has already confirmed the commanded state, settle early */
+                const char * cs = strstr(p, "\"CurrentState\":");
+                if (cs && cs < end) {
+                    while (*cs && *cs != ':' && cs < end) cs++;
+                    if (*cs == ':') {
+                        cs++;
+                        while (*cs == ' ' || *cs == '\"') cs++;
+                        if ((*cs == '1' && d->state == 1) || (*cs == '0' && d->state == 0))
+                            g_switch_settle_until = 0;
+                    }
                 }
             }
+
             const char * flow = strstr(p, "\"CurrentElectricityFlow\"");
             if (flow && flow < end) {
                 flow += strlen("\"CurrentElectricityFlow\"");
@@ -594,6 +613,7 @@ static void on_switch_toggled(lv_event_t * e) {
     lv_obj_t * sw = lv_event_get_target(e);
     int want = lv_obj_has_state(sw, LV_STATE_CHECKED) ? 1 : 0;
     d->state = want;
+    g_switch_settle_until = time(NULL) + 5;
     boxtalk_zwave_basic_set(d->uuid, d->node_id, want);
     snprintf(g_status, sizeof g_status, "%s -> %s", d->name[0] ? d->name : d->type, want ? tr("aan", "on") : tr("uit", "off"));
     if (lbl_status) lv_label_set_text(lbl_status, g_status);
@@ -1174,6 +1194,7 @@ int zwave_toggle_switch(int idx) {
         if (seen++ == idx) {
             int want = (g_dev[i].state == 1) ? 0 : 1;
             g_dev[i].state = want;
+            g_switch_settle_until = time(NULL) + 5;
             boxtalk_zwave_basic_set(g_dev[i].uuid, g_dev[i].node_id, want);
             return 1;
         }
