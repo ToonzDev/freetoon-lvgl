@@ -790,6 +790,12 @@ static int load_for_period(void) {
             case PERIOD_HOURS:
                 return stats_fetch_range(lg, "1monthhour", from - HOUR, to, 26, &series);
             case PERIOD_DAYS:
+                /* A HomeWizard socket's logger has no device, so hcb_rrd keeps
+                 * no running day in 1yearday (only closed bins can be written).
+                 * Take the days from the hourly archive (31 days), which also
+                 * gives today up to the last full hour — as for water. */
+                if (g_plugs[g_plug_sel].hw_slot != -1)
+                    return fetch_daily_from_hourly(lg, "1monthhour", from - DAY, to, &series);
                 return stats_fetch_range(lg, "1yearday", from - DAY, to, 34, &series);
             case PERIOD_WEEKS:
                 return stats_fetch_range(lg, "1yearday", from - DAY, to, 88, &series);

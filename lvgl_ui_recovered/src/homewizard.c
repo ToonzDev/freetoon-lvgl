@@ -561,9 +561,15 @@ static void push_to_rrd(void) {
 /* ---- Energy Socket history in hcb_rrd (Statistics > Stekkers, #48) ----
  * Per socket a counter logger like the ones happ_smartplug makes for Z-Wave
  * plugs (1monthhour + 1yearday), created through hcb_config, filled with the
- * socket's lifetime counter. Only bins that have closed are written: at slot
- * close hcb_rrd stores its own (here NaN) consolidation, which would wipe a
- * value written into the open bin. History starts when the logger is made. */
+ * socket's lifetime counter. History starts when the logger is made.
+ *
+ * Timestamps (verified on a Toon 1 with a fake socket, 2026-11-15): hcb_rrd
+ * labels a bin with its END, so the hour that closed at bh is written with
+ * ts = bh (as push_to_rrd does for the P1 meters), the day with ts = bd.
+ * Only closed bins can be written: for a logger without a device the open
+ * bin is refused ("after RRA range"); only hcb_rrd's own sampling fills it.
+ * So the running hour/day is not in these archives (Statistics derives the
+ * running day from the hourly archive). */
 int homewizard_socket_logger(int i, char * out, size_t outsz) {
     if (i < 0 || i >= HW_SOCKET_MAX || !settings.hw_socket_host[i][0]) return 0;
     hw_socket_t * S = &hw_sockets[i];
@@ -579,7 +585,8 @@ static void socket_rrd_tick(void) {
     if (settings.client_mode) return;
     static char   made[HW_SOCKET_MAX][64];
     static long   made_t[HW_SOCKET_MAX], last_h[HW_SOCKET_MAX], last_d[HW_SOCKET_MAX], fix_t[HW_SOCKET_MAX];
-    static double wh_h[HW_SOCKET_MAX];
+    static long   fix_h[HW_SOCKET_MAX], fix_d[HW_SOCKET_MAX];
+    static double wh_h[HW_SOCKET_MAX], wh_d[HW_SOCKET_MAX];
     long now = (long)time(NULL), bh = bin_hour(now), bd = bin_day(now);
     for (int i = 0; i < HW_SOCKET_MAX; i++) {
         hw_socket_t * S = &hw_sockets[i];
@@ -595,16 +602,17 @@ static void socket_rrd_tick(void) {
         }
         if (now - made_t[i] < 20) continue;                    /* let hcb_rrd load it */
         double wh = S->total_kwh * 1000.0;
-        if (last_h[i] != bh) {                                 /* the hour that just closed */
-            rrd_push(name, "1monthhour", bh - 3600, wh);
-            last_h[i] = bh; wh_h[i] = wh; fix_t[i] = now + 600;
-        } else if (fix_t[i] && now >= fix_t[i]) {              /* once more, in case of a late close */
-            rrd_push(name, "1monthhour", bh - 3600, wh_h[i]);
+        if (last_h[i] != bh) {                                 /* the hour that just closed (label = its end) */
+            rrd_push(name, "1monthhour", bh, wh);
+            last_h[i] = bh; wh_h[i] = wh; fix_h[i] = bh; fix_d[i] = 0; fix_t[i] = now + 600;
+            if (last_d[i] != bd) {                             /* and the (UTC) day that just closed */
+                rrd_push(name, "1yearday", bd, wh);
+                last_d[i] = bd; wh_d[i] = wh; fix_d[i] = bd;
+            }
+        } else if (fix_t[i] && now >= fix_t[i]) {              /* once more, in case hcb_rrd closed the slot late */
+            rrd_push(name, "1monthhour", fix_h[i], wh_h[i]);
+            if (fix_d[i]) rrd_push(name, "1yearday", fix_d[i], wh_d[i]);
             fix_t[i] = 0;
-        }
-        if (last_d[i] != bd) {                                 /* the (UTC) day that just closed */
-            rrd_push(name, "1yearday", bd - 86400, wh);
-            last_d[i] = bd;
         }
     }
 }
