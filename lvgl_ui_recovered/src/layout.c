@@ -382,6 +382,7 @@ void layout_type_min(int type, int * min_w, int * min_h) {
         case LT_SLOT:         w = 2; h = 2; break;
         case LT_SONOS:        w = 2; h = 2; break;
         case LT_RAINFALL:     w = 3; h = 2; break;
+        case LT_SMARTPLUG:    w = 2; h = 2; break;
         default:              w = 0; h = 0; break;
     }
     if (min_w) *min_w = w;
@@ -405,6 +406,7 @@ const char * layout_type_name(int type) {
         case LT_SLOT:        return "Integratie";
         case LT_SONOS:       return "Sonos";
         case LT_RAINFALL:    return "Neerslag";
+        case LT_SMARTPLUG:   return "Slimme stekker";
         default:             return "?";
     }
 }

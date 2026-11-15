@@ -414,12 +414,28 @@ int ma_zwave_is_plug(const char * zw_uuid) {
     snprintf(key, sizeof key, "\"%s\"", zw_uuid);
     const char * u = strstr(body, key);
     if (!u) return 0;                                /* not listed (yet) */
-    const char * end = strchr(u, '}');               /* device objects are flat */
-    if (!end) return 0;
-    const char * t = strstr(u, "\"type\": \"");
-    if (t && t < end && strncmp(t + 9, "HAE_METER", 9) == 0) return 0;   /* meter adapter */
+    const char * next_dev = strstr(u + 1, "\"dev_");
+    const char * end = next_dev ? next_dev : u + strlen(u);
+    const char * t = strstr(u, "\"type\":");
+    if (t && t < end && strstr(t, "HAE_METER") && strstr(t, "HAE_METER") < end) return 0;   /* meter adapter */
+
+    /* If it is a known plug/switch model or has switch / meter CC, it is a plug! */
+    const char * cc = strstr(u, "\"ccList\":");
+    if (!cc || cc > end) cc = strstr(u, "\"supportedCC\":");
+    if (cc && cc < end) {
+        if (strstr(cc, "25") || strstr(cc, "32") || strstr(cc, "37") || strstr(cc, "0x25") || strstr(cc, "0x32"))
+            return 1;
+    }
+    if (t && t < end) {
+        if (strstr(t, "NAS_") || strstr(t, "PLUG") || strstr(t, "SWITCH") || strstr(t, "FGWP"))
+            return 1;
+    }
     const char * q = strstr(u, "\"CurrentElectricityQuantity\"");
-    return (q && q < end) ? 1 : 0;
+    if (q && q < end) return 1;
+    const char * f = strstr(u, "\"CurrentElectricityFlow\"");
+    if (f && f < end) return 1;
+
+    return 0;
 }
 
 int ma_enable_plug(const char * zw_uuid) {

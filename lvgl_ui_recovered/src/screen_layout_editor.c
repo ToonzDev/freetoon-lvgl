@@ -73,7 +73,7 @@ static lv_obj_t * name_ta;                   /* its text area */
 /* tile types offerable in the insert palette (LT_SLOT is page-1 only). */
 static const int PALETTE[] = {
     LT_CLOCK, LT_THERMOSTAT, LT_FORECAST, LT_RAINFALL, LT_NEWS_TICKER, LT_NEWS_SUMMARY, LT_CALENDAR,
-    LT_ENERGY, LT_WATER, LT_VENT, LT_FAMILY, LT_WASTE, LT_LIGHTS, LT_SONOS,
+    LT_ENERGY, LT_WATER, LT_VENT, LT_FAMILY, LT_WASTE, LT_LIGHTS, LT_SONOS, LT_SMARTPLUG,
 };
 #define N_PALETTE ((int)(sizeof PALETTE / sizeof PALETTE[0]))
 
@@ -82,7 +82,7 @@ static const uint32_t TYPE_COL[LT_COUNT] = {
     [LT_NEWS_SUMMARY]=0x6666aa, [LT_CALENDAR]=0x4477cc, [LT_ENERGY]=0xaa77ff,
     [LT_WATER]=0x44aaff, [LT_VENT]=0x66bbdd, [LT_FAMILY]=0xff8866,
     [LT_WASTE]=0x88dd66, [LT_LIGHTS]=0xddaa44, [LT_SLOT]=0x778899,
-    [LT_SONOS]=0x2077a0,
+    [LT_SONOS]=0x2077a0, [LT_SMARTPLUG]=0x3fbf7f,
 };
 
 static void place_rect(int i);

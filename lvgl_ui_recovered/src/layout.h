@@ -37,6 +37,7 @@ typedef enum {
     LT_SONOS,           /* Sonos controller tile */
     LT_CLOCK,           /* standalone clock and date tile */
     LT_RAINFALL,        /* Buienradar rain forecast graph */
+    LT_SMARTPLUG,       /* Z-Wave smart plug switch / monitor */
     LT_COUNT
 } layout_tile_type_t;
 

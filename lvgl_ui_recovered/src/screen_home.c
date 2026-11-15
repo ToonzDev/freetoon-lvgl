@@ -42,6 +42,7 @@
 #include "plugin_loader.h"
 #include "theme.h"
 #include "buienradar_rain.h"
+#include "screen_zwave.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
@@ -118,6 +119,13 @@ static lv_obj_t * tile_lights_lbl2_name = NULL;
 static lv_obj_t * tile_lights_sw2 = NULL;
 static lv_obj_t * tile_lights_lbl2_st = NULL;
 static char       g_current_rot_id[48] = "";
+
+/* Smart plug tile (LT_SMARTPLUG) */
+static lv_obj_t * tile_smartplug = NULL;
+static lv_obj_t * lbl_lt_sp_name = NULL;
+static lv_obj_t * btn_lt_sp_toggle = NULL;
+static lv_obj_t * lbl_lt_sp_toggle = NULL;
+static lv_obj_t * lbl_lt_sp_power = NULL;
 
 /* Bottom-row labels (Energy/Weather/Waste) — updated by refresh_cb */
 static lv_obj_t * lbl_bot_energy;
@@ -1963,26 +1971,31 @@ static int rotate_member_at(int n, char * out, size_t sz) {
 
 /* What button n (0/1) on the Verlichting tile controls.
  *  - Domoticz enabled: the two switches chosen in Settings > Domoticz.
- *  - otherwise: the first two Home Assistant lights/switches flagged "Home"
- *    in the device manager (Settings > Home Assistant > Apparaten beheren).
- * Before, the tile only knew Domoticz and kept showing "Dev #2" buttons
- * after Domoticz was switched off; HA devices could not be put on it.
- * Resolved on every use: ha_devices[] shifts when a device is removed. */
-typedef struct { int kind; int dz_idx; int ha_i; } tile_light_src_t;   /* kind: 0 none, 1 Domoticz, 2 HA */
+ *  - Home Assistant enabled: lights/switches flagged "Home".
+ *  - Z-Wave plugs/switches: available Z-Wave smart plug switches.
+ * Resolved on every use. */
+typedef struct { int kind; int dz_idx; int ha_i; int zw_i; } tile_light_src_t;   /* kind: 0 none, 1 Domoticz, 2 HA, 3 Z-Wave */
 
 static tile_light_src_t tile_light_src(int n) {
-    tile_light_src_t s = { 0, -1, -1 };
+    tile_light_src_t s = { 0, -1, -1, -1 };
     if (settings.enable_domoticz || (settings.client_mode && domoticz_state.count > 0)) {
         int idx = n == 0 ? settings.domoticz_tile_idx1 : settings.domoticz_tile_idx2;
-        if (idx >= 0) { s.kind = 1; s.dz_idx = idx; }
-        return s;
+        if (idx >= 0) { s.kind = 1; s.dz_idx = idx; return s; }
     }
-    if (!settings.enable_ha) return s;
-    int seen = 0;
-    for (int i = 0; i < ha_device_count; i++) {
-        if (!ha_devices[i].pin_home) continue;
-        if (ha_devices[i].type != HADEV_LIGHT && ha_devices[i].type != HADEV_SWITCH) continue;
-        if (seen++ == n) { s.kind = 2; s.ha_i = i; return s; }
+    if (settings.enable_ha) {
+        int seen = 0;
+        for (int i = 0; i < ha_device_count; i++) {
+            if (!ha_devices[i].pin_home) continue;
+            if (ha_devices[i].type != HADEV_LIGHT && ha_devices[i].type != HADEV_SWITCH) continue;
+            if (seen++ == n) { s.kind = 2; s.ha_i = i; return s; }
+        }
+    }
+    /* Fallback / Z-Wave switches: find the n-th active Z-Wave switch */
+    zwave_dev_t zd;
+    if (zwave_get_switch(n, &zd)) {
+        s.kind = 3;
+        s.zw_i = n;
+        return s;
     }
     return s;
 }
@@ -1991,6 +2004,7 @@ static void tile_light_toggle(int n) {
     tile_light_src_t s = tile_light_src(n);
     if (s.kind == 1) domoticz_switch_async(s.dz_idx, "Toggle");
     else if (s.kind == 2) ha_device_toggle_async(ha_devices[s.ha_i].type, ha_devices[s.ha_i].entity_id);
+    else if (s.kind == 3) zwave_toggle_switch(s.zw_i);
 }
 static void on_tile_light_btn1(lv_event_t * e) { (void)e; tile_light_toggle(0); }
 static void on_tile_light_btn2(lv_event_t * e) { (void)e; tile_light_toggle(1); }
@@ -2017,16 +2031,61 @@ static void update_tile_light_btn(lv_obj_t * btn, lv_obj_t * lbl_name, lv_obj_t 
         const domoticz_dev_t * d = find_domoticz_dev(s.dz_idx);
         if (d) { known = 1; on = d->on; if (lbl_name) ui_label_set_text(lbl_name, d->name); }
         else if (lbl_name) ui_label_set_text_fmt(lbl_name, "Dev #%d", s.dz_idx);
-    } else {
+    } else if (s.kind == 2) {
         const ha_device_t * d = &ha_devices[s.ha_i];
         known = d->available; on = d->on;
         if (lbl_name) ui_label_set_text(lbl_name, d->name);
+    } else if (s.kind == 3) {
+        zwave_dev_t d;
+        if (zwave_get_switch(s.zw_i, &d)) {
+            known = 1; on = (d.state == 1);
+            if (lbl_name) ui_label_set_text(lbl_name, d.name[0] ? d.name : d.type);
+        }
     }
     if (lbl_st) ui_label_set_text(lbl_st, !known ? "--" : on ? tr("AAN", "ON") : tr("UIT", "OFF"));
     ui_obj_set_style_bg_color(btn, lv_color_hex(settings.home_light_mode ? 0xedf2f7 : 0x1e2838), 0);
     if (sw_btn) ui_obj_set_style_bg_color(sw_btn, lv_color_hex((known && on) ? 0x2e6e3a : (settings.home_light_mode ? 0xd0d8e2 : 0x283848)), 0);
     if (lbl_name) ui_obj_set_style_text_color(lbl_name, lv_color_hex(COL_TEXT_HI), 0);
     if (lbl_st) ui_obj_set_style_text_color(lbl_st, lv_color_hex((known && on) ? 0xffffff : (settings.home_light_mode ? 0x485868 : 0x88aabb)), 0);
+}
+
+static void on_lt_smartplug_tap(lv_event_t * e) {
+    (void)e;
+    ui_push(screen_zwave_create());
+}
+
+static void on_lt_sp_toggle(lv_event_t * e) {
+    if (e) lv_event_stop_bubbling(e);
+    zwave_toggle_switch(0);
+}
+
+static void update_tile_smartplug(void) {
+    if (!tile_smartplug) return;
+    zwave_dev_t d;
+    if (zwave_get_switch(0, &d)) {
+        if (lbl_lt_sp_name) ui_label_set_text(lbl_lt_sp_name, d.name[0] ? d.name : d.type);
+        int on = (d.state == 1);
+        if (lbl_lt_sp_toggle) ui_label_set_text(lbl_lt_sp_toggle, on ? tr("AAN", "ON") : tr("UIT", "OFF"));
+        if (btn_lt_sp_toggle) {
+            ui_obj_set_style_bg_color(btn_lt_sp_toggle, lv_color_hex(on ? 0x2e6e3a : (settings.home_light_mode ? 0xd0d8e2 : 0x283848)), 0);
+        }
+        if (lbl_lt_sp_power) {
+            if (d.power_w >= 0.05f) {
+                if (d.power_w < 100.0f)
+                    ui_label_set_text_fmt(lbl_lt_sp_power, "%.1f W", d.power_w);
+                else
+                    ui_label_set_text_fmt(lbl_lt_sp_power, "%.0f W", d.power_w);
+            } else if (on) {
+                ui_label_set_text(lbl_lt_sp_power, "0.0 W");
+            } else {
+                ui_label_set_text(lbl_lt_sp_power, "--- W");
+            }
+        }
+    } else {
+        if (lbl_lt_sp_name) ui_label_set_text(lbl_lt_sp_name, tr("Geen stekker", "No plug"));
+        if (lbl_lt_sp_toggle) ui_label_set_text(lbl_lt_sp_toggle, "--");
+        if (lbl_lt_sp_power) ui_label_set_text(lbl_lt_sp_power, "");
+    }
 }
 
 static void update_tile_lights(void) {
@@ -2080,7 +2139,14 @@ static void refresh_cb(lv_timer_t * t) {
     (void)t;
     if (!scr_root || lv_scr_act() != scr_root) return;
 
+    static int zw_poll_ticks = 0;
+    if (++zw_poll_ticks >= 4) {
+        zw_poll_ticks = 0;
+        zwave_poll();
+    }
+
     update_tile_lights();
+    update_tile_smartplug();
     update_rain_tile_ui();
 
     /* Only manage page-0 tile visibility while page 0 is showing — otherwise
@@ -3366,6 +3432,10 @@ static void open_lights_backend(void) {
         ui_push(screen_domoticz_create());
     else if (settings.hue_enabled || hue_state.count > 0)
         ui_push_owned(screen_hue_create());
+    else if (settings.enable_ha || (settings.client_mode && ha_light_count > 0))
+        ui_push(screen_lights_create());
+    else if (zwave_switch_count() > 0)
+        ui_push(screen_zwave_create());
     else
         ui_push(screen_lights_create());
 }
@@ -3425,6 +3495,13 @@ static void home_show_page(int n) {
         if (Lr && Lr->page == 0) {
             if (n == 0 && Lr->visible) ui_obj_clear_flag(tile_rain, LV_OBJ_FLAG_HIDDEN);
             else ui_obj_add_flag(tile_rain, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    if (tile_smartplug) {
+        const layout_tile_t * Lsp = settings.custom_layout_enabled ? layout_find(LT_SMARTPLUG) : NULL;
+        if (Lsp && Lsp->page == 0) {
+            if (n == 0 && Lsp->visible) ui_obj_clear_flag(tile_smartplug, LV_OBJ_FLAG_HIDDEN);
+            else ui_obj_add_flag(tile_smartplug, LV_OBJ_FLAG_HIDDEN);
         }
     }
     home_set_dot(n);
@@ -4857,6 +4934,38 @@ lv_obj_t * screen_home_create(void) {
         lv_obj_set_width(lbl_lt_sonos_sub, LV_PCT(90));
         ui_obj_align(lbl_lt_sonos_sub, LV_ALIGN_BOTTOM_MID, 0, -8);
         ui_label_set_text(lbl_lt_sonos_sub, "");
+
+        /* Smart plug tile in custom layout */
+        tile_t sp_t;
+        make_tile(scr_root, 0, 0, 200, 150, LT_SMARTPLUG, tr("Slimme stekker", "Smart plug"), 0x3fbf7f, on_lt_smartplug_tap, &sp_t);
+        tile_smartplug = sp_t.tile;
+
+        lbl_lt_sp_name = lv_label_create(tile_smartplug);
+        ui_obj_set_style_text_color(lbl_lt_sp_name, lv_color_hex(COL_TEXT_HI), 0);
+        ui_obj_set_style_text_font(lbl_lt_sp_name, SF(17), 0);
+        lv_label_set_long_mode(lbl_lt_sp_name, LV_LABEL_LONG_DOT);
+        lv_obj_set_width(lbl_lt_sp_name, LV_PCT(90));
+        ui_obj_align(lbl_lt_sp_name, LV_ALIGN_TOP_LEFT, 0, SY(28));
+        ui_label_set_text(lbl_lt_sp_name, "Stekker");
+
+        btn_lt_sp_toggle = lv_btn_create(tile_smartplug);
+        lv_obj_set_size(btn_lt_sp_toggle, LV_PCT(90), (DISP_VER < 600) ? 36 : SY(42));
+        ui_obj_align(btn_lt_sp_toggle, LV_ALIGN_CENTER, 0, SY(4));
+        ui_obj_set_style_bg_color(btn_lt_sp_toggle, lv_color_hex(settings.home_light_mode ? 0xd0d8e2 : 0x283848), 0);
+        lv_obj_set_style_radius(btn_lt_sp_toggle, 8, 0);
+        lv_obj_add_event_cb(btn_lt_sp_toggle, on_lt_sp_toggle, LV_EVENT_CLICKED, NULL);
+
+        lbl_lt_sp_toggle = lv_label_create(btn_lt_sp_toggle);
+        ui_obj_set_style_text_font(lbl_lt_sp_toggle, SF(18), 0);
+        ui_obj_set_style_text_color(lbl_lt_sp_toggle, lv_color_hex(0xffffff), 0);
+        lv_obj_center(lbl_lt_sp_toggle);
+        ui_label_set_text(lbl_lt_sp_toggle, "UIT");
+
+        lbl_lt_sp_power = lv_label_create(tile_smartplug);
+        ui_obj_set_style_text_color(lbl_lt_sp_power, lv_color_hex(0x3fbf7f), 0);
+        ui_obj_set_style_text_font(lbl_lt_sp_power, SF(19), 0);
+        ui_obj_align(lbl_lt_sp_power, LV_ALIGN_BOTTOM_MID, 0, -SY(4));
+        ui_label_set_text(lbl_lt_sp_power, "--- W");
     }
     tile_water = water_t.tile;
     lbl_title_slot[TILE_SLOT_WATER] = water_t.title;
@@ -5563,6 +5672,11 @@ void screen_home_destroy(void) {
         tile_lights_lbl2_name = NULL;
         tile_lights_sw2 = NULL;
         tile_lights_lbl2_st = NULL;
+        tile_smartplug = NULL;
+        lbl_lt_sp_name = NULL;
+        btn_lt_sp_toggle = NULL;
+        lbl_lt_sp_toggle = NULL;
+        lbl_lt_sp_power = NULL;
         tile_news_sum_lbl = NULL;
         tile_cal_dates = NULL;
         tile_cal_times = NULL;

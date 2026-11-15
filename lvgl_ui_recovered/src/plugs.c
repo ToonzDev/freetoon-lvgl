@@ -53,21 +53,35 @@ static void zwave_info(const char * json, plug_t * p) {
     char key[64];
     snprintf(key, sizeof key, "\"%s\"", p->dev_uuid);
     const char * u = strstr(json, key);
+    if (!u) {
+        const char * colon = strrchr(p->dev_uuid, ':');
+        if (colon) {
+            snprintf(key, sizeof key, "\"%s\"", colon + 1);
+            u = strstr(json, key);
+        }
+    }
     if (!u) return;
-    const char * end = strchr(u, '}');               /* device objects are flat */
-    if (!end) return;
-    const char * s = strstr(u, "\"name\": \"");
+    const char * next_dev = strstr(u + 1, "\"dev_");
+    const char * end = next_dev ? next_dev : u + strlen(u);
+
+    const char * s = strstr(u, "\"DeviceName\":");
+    if (!s || s > end) s = strstr(u, "\"name\":");
     if (s && s < end) {
-        s += 9;
-        size_t n = strcspn(s, "\"");
+        s += (*s == '\"' && s[1] == 'D') ? 13 : 7;
+        while (*s == ' ' || *s == '\"') s++;
+        size_t n = strcspn(s, "\",\r\n}");
         if (n >= sizeof p->name) n = sizeof p->name - 1;
         memcpy(p->name, s, n);
         p->name[n] = 0;
     }
-    const char * w = strstr(u, "\"CurrentElectricityFlow\": \"");
+    const char * w = strstr(u, "\"CurrentElectricityFlow\"");
     if (w && w < end) {
-        w += 27;
-        if (strncmp(w, "NaN", 3) != 0) { p->power_w = (float)atof(w); p->have_power = 1; }
+        w += strlen("\"CurrentElectricityFlow\"");
+        while (*w && (*w == ' ' || *w == ':' || *w == '\"')) w++;
+        if (strncmp(w, "NaN", 3) != 0 && strncmp(w, "null", 4) != 0) {
+            p->power_w = (float)atof(w);
+            p->have_power = 1;
+        }
     }
 }
 
@@ -205,6 +219,57 @@ int plugs_scan(plug_t * out, int max) {
         p = b + 12;
     }
     free(xml);
+
+    if (n == 0) {
+        /* Fallback: discover smart plugs directly from hdrv_zwave?action=getDevices.json
+         * so live power is available even before hcb_rrd creates RRD loggers. */
+        static char d_body[64 * 1024];
+        if (stats_http_get("hdrv_zwave?action=getDevices.json", d_body, sizeof d_body) == 0) {
+            const char * scan_p = d_body;
+            while (n < max && (scan_p = strstr(scan_p, "\"dev_"))) {
+                const char * next = strstr(scan_p + 5, "\"dev_");
+                const char * dend = next ? next : scan_p + strlen(scan_p);
+                /* Check if switch or plug */
+                const char * cc = strstr(scan_p, "\"ccList\":");
+                if (!cc || cc > dend) cc = strstr(scan_p, "\"supportedCC\":");
+                int is_sw = 0;
+                if (cc && cc < dend && (strstr(cc, "25") || strstr(cc, "37") || strstr(cc, "0x25"))) is_sw = 1;
+                const char * typ = strstr(scan_p, "\"type\":");
+                if (typ && typ < dend && (strstr(typ, "NAS_") || strstr(typ, "PLUG") || strstr(typ, "SWITCH") || strstr(typ, "FGWP"))) is_sw = 1;
+
+                if (is_sw) {
+                    plug_t * pl = &out[n];
+                    memset(pl, 0, sizeof *pl);
+                    pl->hw_slot = -1;
+                    /* extract dev_uuid */
+                    const char * u = strstr(scan_p, "\"uuid\":");
+                    if (u && u < dend) {
+                        u += 7;
+                        while (*u == ' ' || *u == '\"') u++;
+                        size_t ul = strcspn(u, "\",\r\n}");
+                        if (ul >= sizeof pl->dev_uuid) ul = sizeof pl->dev_uuid - 1;
+                        memcpy(pl->dev_uuid, u, ul);
+                        pl->dev_uuid[ul] = 0;
+                    }
+                    /* internalAddress / node ID for logger */
+                    const char * ia = strstr(scan_p, "\"internalAddress\":");
+                    if (ia && ia < dend) {
+                        ia += 18;
+                        while (*ia == ' ' || *ia == '\"') ia++;
+                        int node_id = atoi(ia);
+                        snprintf(pl->logger, sizeof pl->logger, "smartplug_%d", node_id);
+                        snprintf(pl->logger_q, sizeof pl->logger_q, "smartplug_%d", node_id);
+                    }
+                    snprintf(pl->name, sizeof pl->name, "Stekker %d", n + 1);
+                    zwave_info(scan_p, pl);
+                    custom_name(pl);
+                    n++;
+                }
+                scan_p = next ? next : dend;
+            }
+        }
+    }
+
     plugs_refresh_power(out, n);
     fprintf(stderr, "[plugs] %d smart plug logger(s) found\n", n);
     return n;

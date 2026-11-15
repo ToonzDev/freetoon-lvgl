@@ -206,10 +206,9 @@ static int xml_elem(const char * src, const char * end, const char * key,
 
 static int g_rows_built = 0;
 
-/* Sync switch on/off states from hdrv_zwave?action=getDevices.json */
-static void sync_states_from_json(void) {
-    static char body[64 * 1024];
-    if (stats_http_get("hdrv_zwave?action=getDevices.json", body, sizeof body) != 0) return;
+/* Sync switch on/off states and power from hdrv_zwave?action=getDevices.json */
+static void sync_states_from_json_buf(const char * body) {
+    if (!body) return;
     for (int i = 0; i < g_dev_count; i++) {
         zw_dev_t * d = &g_dev[i];
         if (!d->is_switch) continue;
@@ -221,21 +220,156 @@ static void sync_states_from_json(void) {
             p = strstr(body, needle);
         }
         if (p) {
-            const char * end = strchr(p, '}');
-            if (end) {
-                const char * cs = strstr(p, "\"CurrentState\":");
-                if (!cs || cs > end) cs = strstr(p, "\"TargetStatus\":");
-                if (cs && cs < end) {
-                    while (*cs && *cs != ':' && cs < end) cs++;
-                    if (*cs == ':') {
-                        cs++;
-                        while (*cs == ' ' || *cs == '\"') cs++;
-                        if (*cs == '0' || *cs == '1')
-                            d->state = (*cs == '1') ? 1 : 0;
-                    }
+            const char * next_dev = strstr(p + 1, "\"dev_");
+            const char * end = next_dev ? next_dev : p + strlen(p);
+            const char * cs = strstr(p, "\"CurrentState\":");
+            if (!cs || cs > end) cs = strstr(p, "\"TargetStatus\":");
+            if (cs && cs < end) {
+                while (*cs && *cs != ':' && cs < end) cs++;
+                if (*cs == ':') {
+                    cs++;
+                    while (*cs == ' ' || *cs == '\"') cs++;
+                    if (*cs == '0' || *cs == '1')
+                        d->state = (*cs == '1') ? 1 : 0;
+                }
+            }
+            const char * flow = strstr(p, "\"CurrentElectricityFlow\"");
+            if (flow && flow < end) {
+                flow += strlen("\"CurrentElectricityFlow\"");
+                while (*flow && (*flow == ' ' || *flow == ':' || *flow == '\"')) flow++;
+                if (strncmp(flow, "NaN", 3) != 0 && strncmp(flow, "null", 4) != 0) {
+                    d->power_w = (float)atof(flow);
                 }
             }
         }
+    }
+}
+
+static void parse_devices_json_buf(const char * body) {
+    if (!body) return;
+    const char * p = body;
+    while (g_dev_count < MAX_ZW_DEV && (p = strstr(p, "\"dev_"))) {
+        const char * next = strstr(p + 5, "\"dev_");
+        const char * dend = next ? next : p + strlen(p);
+
+        zw_dev_t * d = &g_dev[g_dev_count];
+        memset(d, 0, sizeof *d);
+
+        /* Extract uuid */
+        const char * u = strstr(p, "\"uuid\":");
+        if (u && u < dend) {
+            u += 7;
+            while (*u == ' ' || *u == '\"') u++;
+            size_t n = strcspn(u, "\",\r\n}");
+            if (n >= sizeof d->uuid) n = sizeof d->uuid - 1;
+            memcpy(d->uuid, u, n);
+            d->uuid[n] = 0;
+        }
+
+        /* Extract name */
+        const char * nm = strstr(p, "\"DeviceName\":");
+        if (!nm || nm > dend) nm = strstr(p, "\"name\":");
+        if (nm && nm < dend) {
+            nm += (*nm == '\"' && nm[1] == 'D') ? 13 : 7;
+            while (*nm == ' ' || *nm == '\"') nm++;
+            size_t n = strcspn(nm, "\",\r\n}");
+            if (n >= sizeof d->name) n = sizeof d->name - 1;
+            memcpy(d->name, nm, n);
+            d->name[n] = 0;
+        }
+
+        /* Extract type */
+        const char * tp = strstr(p, "\"type\":");
+        if (tp && tp < dend) {
+            tp += 7;
+            while (*tp == ' ' || *tp == '\"') tp++;
+            size_t n = strcspn(tp, "\",\r\n}");
+            if (n >= sizeof d->type) n = sizeof d->type - 1;
+            memcpy(d->type, tp, n);
+            d->type[n] = 0;
+        }
+
+        /* Extract nodeId / internalAddress */
+        const char * ia = strstr(p, "\"internalAddress\":");
+        if (ia && ia < dend) {
+            ia += 18;
+            while (*ia == ' ' || *ia == '\"') ia++;
+            d->node_id = atoi(ia);
+        }
+
+        /* Check switch CC or plug model */
+        const char * cc = strstr(p, "\"ccList\":");
+        if (!cc || cc > dend) cc = strstr(p, "\"supportedCC\":");
+        if (cc && cc < dend) {
+            d->is_switch = (strstr(cc, "25") != NULL ||
+                            strstr(cc, "37") != NULL ||
+                            strstr(cc, "0x25") != NULL);
+        }
+        if (!d->is_switch && d->type[0]) {
+            if (ci_strstr(d->type, "NAS_") ||
+                ci_strstr(d->type, "PLUG") ||
+                ci_strstr(d->type, "SWITCH") ||
+                ci_strstr(d->type, "FIBARO") ||
+                ci_strstr(d->type, "FGWP") ||
+                ci_strstr(d->type, "GREENWAVE") ||
+                ci_strstr(d->type, "POWERNODE") ||
+                ci_strstr(d->type, "QUBINO") ||
+                ci_strstr(d->type, "AEOTEC") ||
+                ci_strstr(d->type, "RELAY")) {
+                d->is_switch = 1;
+            } else if (!ma_is_meter_type(d->type) && d->node_id > 1) {
+                d->is_switch = 1;
+            }
+        }
+
+        /* Switch state */
+        d->state = -1;
+        const char * cs = strstr(p, "\"CurrentState\":");
+        if (!cs || cs > dend) cs = strstr(p, "\"TargetStatus\":");
+        if (cs && cs < dend) {
+            while (*cs && *cs != ':' && cs < dend) cs++;
+            if (*cs == ':') {
+                cs++;
+                while (*cs == ' ' || *cs == '\"') cs++;
+                if (*cs == '0' || *cs == '1')
+                    d->state = (*cs == '1') ? 1 : 0;
+            }
+        }
+
+        /* Live power */
+        const char * flow = strstr(p, "\"CurrentElectricityFlow\"");
+        if (flow && flow < dend) {
+            flow += strlen("\"CurrentElectricityFlow\"");
+            while (*flow && (*flow == ' ' || *flow == ':' || *flow == '\"')) flow++;
+            if (strncmp(flow, "NaN", 3) != 0 && strncmp(flow, "null", 4) != 0) {
+                d->power_w = (float)atof(flow);
+            }
+        }
+
+        /* Apply custom name override if user renamed this device */
+        char custom[64] = "";
+        if (d->uuid[0] && zwave_get_custom_name(d->uuid, custom, sizeof custom) && custom[0]) {
+            snprintf(d->name, sizeof d->name, "%s", custom);
+        }
+
+        if (d->uuid[0]) g_dev_count++;
+        p = next ? next : dend;
+    }
+}
+
+static void sync_states_from_json(void) {
+    static char body[64 * 1024];
+    if (stats_http_get("hdrv_zwave?action=getDevices.json", body, sizeof body) != 0) return;
+    sync_states_from_json_buf(body);
+}
+
+void zwave_poll(void) {
+    static char body[64 * 1024];
+    if (stats_http_get("hdrv_zwave?action=getDevices.json", body, sizeof body) != 0) return;
+    if (g_dev_count == 0) {
+        parse_devices_json_buf(body);
+    } else {
+        sync_states_from_json_buf(body);
     }
 }
 
@@ -314,14 +448,17 @@ static int parse_devices(void) {
             }
         }
 
-        /* Check previous known switch state so we don't clobber it */
+        /* Check previous known switch state and power so we don't clobber it */
         int prev_state = -1;
+        float prev_power = 0.0f;
         for (int j = 0; j < old_count; j++) {
-            if (strcmp(old_dev[j].uuid, d->uuid) == 0 && old_dev[j].state >= 0) {
-                prev_state = old_dev[j].state;
+            if (strcmp(old_dev[j].uuid, d->uuid) == 0) {
+                if (old_dev[j].state >= 0) prev_state = old_dev[j].state;
+                prev_power = old_dev[j].power_w;
                 break;
             }
         }
+        d->power_w = prev_power;
 
         /* NOTE: Do NOT use <state>! In hdrv_zwave GetDevices XML, <state>1</state>
          * is the Z-Wave node reachability/alive status, NOT the switch on/off state. */
@@ -914,6 +1051,45 @@ int zwave_dev_at(int i, zwave_dev_t * out) {
     *out = g_dev[i];
     return 1;
 }
+
+int zwave_switch_count(void) {
+    if (g_dev_count == 0) zwave_poll();
+    int c = 0;
+    for (int i = 0; i < g_dev_count; i++)
+        if (g_dev[i].is_switch) c++;
+    return c;
+}
+
+int zwave_get_switch(int idx, zwave_dev_t * out) {
+    if (!out || idx < 0) return 0;
+    if (g_dev_count == 0) zwave_poll();
+    int seen = 0;
+    for (int i = 0; i < g_dev_count; i++) {
+        if (!g_dev[i].is_switch) continue;
+        if (seen++ == idx) {
+            *out = g_dev[i];
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int zwave_toggle_switch(int idx) {
+    if (idx < 0) return 0;
+    if (g_dev_count == 0) zwave_poll();
+    int seen = 0;
+    for (int i = 0; i < g_dev_count; i++) {
+        if (!g_dev[i].is_switch) continue;
+        if (seen++ == idx) {
+            int want = (g_dev[i].state == 1) ? 0 : 1;
+            g_dev[i].state = want;
+            boxtalk_zwave_basic_set(g_dev[i].uuid, g_dev[i].node_id, want);
+            return 1;
+        }
+    }
+    return 0;
+}
+
 void zwave_set_devices_from_remote(int n, const zwave_dev_t * src) {
     if (n < 0) n = 0;
     if (n > MAX_ZW_DEV) n = MAX_ZW_DEV;

@@ -15,11 +15,18 @@ typedef struct {
     int  node_id;
     int  is_switch;
     int  state;        /* 0 off, 1 on, -1 unknown */
+    float power_w;     /* Live power consumption from CurrentElectricityFlow */
 } zwave_dev_t;
 
 /* Read-only accessors used by pwa_server's render_state_json. */
 int zwave_dev_count(void);
 int zwave_dev_at(int i, zwave_dev_t * out);
+
+/* Switch / plug helpers used by screen_home (Verlichting tile & Slimme stekkers tile) */
+int  zwave_switch_count(void);
+int  zwave_get_switch(int idx, zwave_dev_t * out);
+int  zwave_toggle_switch(int idx);
+void zwave_poll(void);
 
 /* Slave-side setter — replace the screen's internal device list with the
  * master's. Idempotent; the next refresh of the Z-Wave admin screen on the
