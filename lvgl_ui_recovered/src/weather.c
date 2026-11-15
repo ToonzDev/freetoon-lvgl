@@ -815,7 +815,8 @@ static void * wx_thread(void * arg) {
         if (g_loc_id == 0) weather_locate();
 
         /* Current conditions + 5-day + hourly — Buienradar forecast for the place. */
-        if (fetch_br_forecast(g_loc_id) == 0) {
+        int fc_ok = (fetch_br_forecast(g_loc_id) == 0);
+        if (fc_ok) {
             weather_state.connected = 1;
             fprintf(stderr, "[wx] %s %.1fC @ id %d, %d-day %d-hour\n",
                     weather_state.current_desc, weather_state.current_temp,
@@ -834,9 +835,12 @@ static void * wx_thread(void * arg) {
             weather_unlock();
         }
 
-        /* No data at all (e.g. WiFi still connecting on boot): retry every 10 s
-         * until the first successful fetch, rather than sleeping 15 minutes. */
-        if (!weather_state.connected) {
+        /* No forecast (e.g. WiFi still connecting on boot, or a busy first
+         * minute after a restart): retry every 10 s rather than sleeping 15
+         * minutes. Test the forecast itself, not weather_state.connected: the
+         * station fallback above sets that, and then the 5-day / hourly strips
+         * stayed empty for up to 15 minutes (seen on a Toon 1). */
+        if (!fc_ok) {
             for (int s = 0; s < 10 && !g_wx_wake; s++)
                 sleep(1);
             g_wx_wake = 0;
