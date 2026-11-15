@@ -266,6 +266,11 @@ static int rain_mode_24h            = 0;
 static int s_rain_compact           = 0;
 static lv_obj_t * devices_btn       = NULL;   /* top-right, opens the Devices hub */
 
+/* Settings gear floating in the top-right corner of the home screen. */
+#define HOME_GEAR_SZ   54
+#define HOME_GEAR_MX    6   /* gap to the right screen edge */
+#define HOME_GEAR_MY    4   /* gap to the top screen edge   */
+
 /* Swipeable tile pages. The five built-in tiles (Waste/Energy/Vent/Family/
  * Water) are "page 0". Swiping left in the tile zone reveals page 1 — an
  * overlay with extra configurable slots — and swiping right returns. We keep
@@ -380,9 +385,21 @@ static void make_tile(lv_obj_t * parent, int x, int y, int w, int h, int ltype,
         lv_obj_add_event_cb(t, tile_click_wrapper, LV_EVENT_CLICKED, (void *)click_cb);
     }
 
-    /* Thin accent bar on top */
+    /* Thin accent bar on top. The settings gear floats over the top-right
+     * corner of the screen; stop the bar short of it so the gear doesn't cut
+     * through the bar of whichever tile sits there. */
+    int bar_w = w - 20;
+    if (parent == scr_root) {
+        int gear_x0 = DISP_HOR - HOME_GEAR_MX - HOME_GEAR_SZ;
+        int gear_y1 = HOME_GEAR_MY + HOME_GEAR_SZ;
+        int bar_x0  = x + 10;                       /* tile pad_all = 10 */
+        if (y + 10 < gear_y1 && bar_x0 + bar_w > gear_x0 - 8) {
+            bar_w = gear_x0 - 8 - bar_x0;
+            if (bar_w < 0) bar_w = 0;
+        }
+    }
     lv_obj_t * bar = lv_obj_create(t);
-    lv_obj_set_size(bar, w - 20, 4);
+    lv_obj_set_size(bar, bar_w, 4);
     lv_obj_set_pos(bar, 0, 0);
     ui_obj_set_style_bg_color(bar, lv_color_hex(accent_color), 0);
     ui_obj_set_style_border_width(bar, 0, 0);
@@ -2034,6 +2051,14 @@ static void update_tile_lights(void) {
         }
         if (tile_lights_btn1) ui_obj_add_flag(tile_lights_btn1, LV_OBJ_FLAG_HIDDEN);
     }
+}
+
+/* Logo of the active lights backend for the lights handle: Domoticz if that's
+ * configured (matches open_lights_backend's priority), else HA, else none. */
+static const lv_img_dsc_t * lights_backend_logo(void) {
+    if (settings.enable_domoticz || (settings.client_mode && domoticz_state.count > 0)) return &icon_domoticz;
+    if (settings.enable_ha || (settings.client_mode && ha_light_count > 0)) return &icon_ha;
+    return NULL;
 }
 
 static void refresh_cb(lv_timer_t * t) {
@@ -5427,10 +5452,10 @@ lv_obj_t * screen_home_create(void) {
     ui_obj_add_flag(rain_lbl_empty, LV_OBJ_FLAG_HIDDEN);
 
     /* Gear in the very top-right corner of the screen. */
-    lv_coord_t gear_sz = 54;
+    lv_coord_t gear_sz = HOME_GEAR_SZ;
     lv_obj_t * gear = lv_btn_create(scr_root);
     lv_obj_set_size(gear, gear_sz, gear_sz);
-    ui_obj_align(gear, LV_ALIGN_TOP_RIGHT, -6, 4);
+    ui_obj_align(gear, LV_ALIGN_TOP_RIGHT, -HOME_GEAR_MX, HOME_GEAR_MY);
     ui_obj_set_style_bg_color(gear, lv_color_hex(settings.home_light_mode ? 0xd0d8e2 : 0x223344), 0);
     lv_obj_set_style_radius(gear, gear_sz / 2, 0);
     lv_obj_set_ext_click_area(gear, 25);
