@@ -584,3 +584,24 @@
 - **Description**: Retrieving `/tmp/toonui.log` (and e.g. ui_launcher.log, integration logs) now needs SSH/SCP into the Toon. Wanted: download them from a browser.
 - **Implementation**: FreeToon serves them on port 10081: `/logs` provides a browsable HTML list of all `/var/volatile/tmp/*.log` files with file sizes and download/view links, and `/log?file=<name>` streams the log directly. A direct icon link was added to the header of the remote web app.
 - **Log rotation & capping**: `healthcheck.c` checks every 60 s and rotates `toonui.log` at 256 KB, and `scripts/ui_launcher.sh` watchdog checks all `/var/volatile/tmp/*.log` every 60 s, truncating in place with a `.1` copy kept.
+
+### 52. Direct Solar Inverter Integration (Porting QML `solarPanel`)
+- **Status**: Open (user request, 2026-11-15).
+- **Description**: The community QML app `solarPanel` (ToonSoftwareCollective / oepi-loepi) allowed rooted Toons to read solar power and cumulative yield directly from solar inverters over the local network (LAN / Wi-Fi) without needing a hardware meter adapter (ZonOpToon) or physical kWh submeter in the fusebox. Wanted: bring this capability natively into FreeToon.
+- **Background & QML Architecture**:
+  - The QML `solarPanel` app uses `inverters.json` and brand-specific plugin definitions (`solarpanel-plugins`) to query inverters (Enphase Envoy, SolarEdge, SMA Sunny Boy, Fronius, Growatt, GoodWe, APSystems, Hoymiles/OpenDTU, etc.) or local platforms (Home Assistant).
+  - It retrieves two core metrics: current production (W) and total cumulative production (kWh).
+  - To integrate with Toon's native energy graphs, it pushed data into `hcb_rrd` (`solar_flow` and `solar_quantity`) using `setRrdData`, emulating a hardware solar meter adapter.
+- **FreeToon Status Today**:
+  - `energy.c` already provides `energy_have_solar()` and `energy_solar_w()`, currently fed by hardware meter adapters, HomeWizard kWh meters (single or dual array), or Home Assistant.
+  - FreeToon already has a fully functional Solar home tile and a dedicated "Zon" tab in Statistics (`screen_stats.c`), which queries `solar_flow` and `solar_quantity` from `hcb_rrd`.
+- **Implementation Approach**:
+  - **Inverter Driver / Poller (`solar_inverter.c`)**:
+    - Settings under Instellingen → Integraties → **Zonnepanelen**: select inverter brand / type, IP address / hostname, optional API token/port.
+    - Support the most common local LAN inverter endpoints natively (e.g. Enphase Envoy `/production.json`, SolarEdge local/Modbus, SMA WebConnect `/dyn/getDashValues.json`, Fronius Solar API, OpenDTU/Hoymiles `/api/livedata/status`, and a configurable generic JSON endpoint with custom JSON paths for W and kWh).
+    - Polling interval ~10–30 s while daylight / connected.
+  - **Feed `energy.c` & `hcb_rrd`**:
+    - Feed live wattage into `energy_solar_w()` so the home Solar tile and remote web interface show real-time production.
+    - Feed hourly and daily cumulative kWh into `hcb_rrd` via `rrd_push()` (or BoxTalk `SetRraData`), ensuring the "Zon" tab in Statistics populates full historical graphs.
+  - **Conflict check**:
+    - As with the original QML app, ensure direct inverter polling is disabled if a hardware meter adapter or HomeWizard solar meter is already bound, preventing double counting.
