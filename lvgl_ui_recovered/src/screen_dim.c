@@ -493,79 +493,9 @@ static void refresh_cb(lv_timer_t * t) {
         }
     }
 
-    int use_hourly = settings.show_dim_weather && settings.forecast_mode != FORECAST_DAILY && weather_state.hour_count > 0;
-    for (int i = 0; i < WEATHER_FORECAST_DAYS; i++) {
-        if (!dim_fc_icon[i]) continue;
-        if (!settings.show_dim_weather) {
-            ui_obj_add_flag(dim_fc_icon[i], LV_OBJ_FLAG_HIDDEN);
-            ui_obj_add_flag(dim_fc_day[i],  LV_OBJ_FLAG_HIDDEN);
-            ui_obj_add_flag(dim_fc_temp[i], LV_OBJ_FLAG_HIDDEN);
-            continue;
-        }
-        /* For the hourly view, skip slot 0 — it's "now" and already lives
-         * in the city header above. Daily view shows all 5 days from 0.
-         * If the hourly horizon runs short (late evening) fall back to the
-         * daily forecast so all 5 columns still carry data. */
-        int painted = 0;
-        if (use_hourly) {
-            int si = i + 1;
-            if (si < weather_state.hour_count) {
-                const weather_hour_t * h = &weather_state.hours[si];
-                ui_img_set_src(dim_fc_icon[i], weather_icon_for(h->icon));
-                ui_obj_set_style_img_recolor(dim_fc_icon[i],
-                    lv_color_hex(weather_icon_color_for(h->icon)), 0);
-                ui_label_set_text(dim_fc_day[i], h->label);
-                if (h->wind_dir[0])
-                    ui_label_set_text_fmt(dim_fc_temp[i], "%.0f°C  %s%d",
-                                          weather_hour_display_temp(h), h->wind_dir, h->wind_bft);
-                else
-                    ui_label_set_text_fmt(dim_fc_temp[i], "%.0f°C",
-                                          weather_hour_display_temp(h));
-                painted = 1;
-            } else {
-                /* Fall back to daily, starting at days[0] (= tomorrow). */
-                int di = si - weather_state.hour_count;
-                if (di < weather_state.day_count) {
-                    const weather_day_t * d = &weather_state.days[di];
-                    ui_img_set_src(dim_fc_icon[i], weather_icon_for(d->icon));
-                    ui_obj_set_style_img_recolor(dim_fc_icon[i],
-                        lv_color_hex(weather_icon_color_for(d->icon)), 0);
-                    ui_label_set_text(dim_fc_day[i], d->day);
-                    if (d->wind_dir[0])
-                        ui_label_set_text_fmt(dim_fc_temp[i], "%.0f/%.0f  %s%d",
-                                              d->min_temp, d->max_temp,
-                                              d->wind_dir, d->wind_bft);
-                    else
-                        ui_label_set_text_fmt(dim_fc_temp[i], "%.0f/%.0f°C",
-                                              d->min_temp, d->max_temp);
-                    painted = 1;
-                }
-            }
-        } else if (i < weather_state.day_count) {
-            const weather_day_t * d = &weather_state.days[i];
-            ui_img_set_src(dim_fc_icon[i], weather_icon_for(d->icon));
-            ui_obj_set_style_img_recolor(dim_fc_icon[i],
-                lv_color_hex(weather_icon_color_for(d->icon)), 0);
-            ui_label_set_text(dim_fc_day[i], d->day);
-            if (d->wind_dir[0])
-                ui_label_set_text_fmt(dim_fc_temp[i], "%.0f/%.0f  %s%d",
-                                      d->min_temp, d->max_temp,
-                                      d->wind_dir, d->wind_bft);
-            else
-                ui_label_set_text_fmt(dim_fc_temp[i], "%.0f/%.0f°C",
-                                      d->min_temp, d->max_temp);
-            painted = 1;
-        }
-        if (painted) {
-            ui_obj_clear_flag(dim_fc_icon[i], LV_OBJ_FLAG_HIDDEN);
-            ui_obj_clear_flag(dim_fc_day[i],  LV_OBJ_FLAG_HIDDEN);
-            ui_obj_clear_flag(dim_fc_temp[i], LV_OBJ_FLAG_HIDDEN);
-        } else {
-            ui_obj_add_flag(dim_fc_icon[i], LV_OBJ_FLAG_HIDDEN);
-            ui_obj_add_flag(dim_fc_day[i],  LV_OBJ_FLAG_HIDDEN);
-            ui_obj_add_flag(dim_fc_temp[i], LV_OBJ_FLAG_HIDDEN);
-        }
-    }
+    /* Forecast strip: 5 days, weekday + max temperature + lighter icon (#49). */
+    for (int i = 0; i < WEATHER_FORECAST_DAYS; i++)
+        dim_fc_paint(dim_fc_icon[i], dim_fc_day[i], dim_fc_temp[i], i);
     if (lbl_outside_temp) {
         if (settings.show_dim_weather && weather_state.connected) {
             dim_set_outside_temp(lbl_outside_temp, weather_display_temp(), SX(330));
@@ -715,6 +645,66 @@ void dim_set_outside_temp(lv_obj_t * lbl, float t, lv_coord_t max_w) {
         if (sz.x <= max_w) break;
     }
     ui_label_set_text(lbl, b);
+}
+
+void dim_fc_build(lv_obj_t * parent, int x, int y, int col_w, int h,
+                  lv_obj_t ** icon, lv_obj_t ** day, lv_obj_t ** temp) {
+    const lv_font_t * fd = SF(24), * ft = SF(28);
+    const int icon_w = 40;                              /* icon_wx_* are 40 px */
+    int gap = SX(10), text_w = SX(70);
+    int gx = x + (col_w - (icon_w + gap + text_w)) / 2;
+    if (gx < x) gx = x;
+    int lh_d = lv_font_get_line_height(fd), lh_t = lv_font_get_line_height(ft);
+    int ty = y + (h - (lh_d + lh_t)) / 2;
+    if (ty < y) ty = y;
+    int iy = y + (h - icon_w) / 2;
+    if (iy < y) iy = y;
+
+    *icon = lv_img_create(parent);
+    ui_img_set_src(*icon, &icon_wx_cloud);
+    ui_obj_set_style_img_recolor_opa(*icon, 255, 0);
+    lv_obj_set_pos(*icon, gx, iy);
+    ui_obj_add_flag(*icon, LV_OBJ_FLAG_HIDDEN);
+
+    *day = lv_label_create(parent);
+    ui_obj_set_style_text_color(*day, lv_color_hex(0xcccccc), 0);
+    ui_obj_set_style_text_font(*day, fd, 0);
+    lv_obj_set_width(*day, text_w);
+    lv_label_set_long_mode(*day, LV_LABEL_LONG_CLIP);
+    ui_label_set_text(*day, "");
+    lv_obj_set_pos(*day, gx + icon_w + gap, ty);
+    ui_obj_add_flag(*day, LV_OBJ_FLAG_HIDDEN);
+
+    *temp = lv_label_create(parent);
+    ui_obj_set_style_text_color(*temp, lv_color_hex(0xffffff), 0);
+    ui_obj_set_style_text_font(*temp, ft, 0);
+    lv_obj_set_width(*temp, text_w);
+    lv_label_set_long_mode(*temp, LV_LABEL_LONG_CLIP);
+    ui_label_set_text(*temp, "");
+    lv_obj_set_pos(*temp, gx + icon_w + gap, ty + lh_d);
+    ui_obj_add_flag(*temp, LV_OBJ_FLAG_HIDDEN);
+}
+
+void dim_fc_paint(lv_obj_t * icon, lv_obj_t * day, lv_obj_t * temp, int i) {
+    if (!icon || !day || !temp) return;
+    if (!settings.show_dim_weather || i >= weather_state.day_count) {
+        ui_obj_add_flag(icon, LV_OBJ_FLAG_HIDDEN);
+        ui_obj_add_flag(day,  LV_OBJ_FLAG_HIDDEN);
+        ui_obj_add_flag(temp, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    const weather_day_t * d = &weather_state.days[i];
+    ui_img_set_src(icon, weather_icon_for(d->icon));
+    /* lighter tint: the icon colour mixed halfway to white */
+    ui_obj_set_style_img_recolor(icon,
+        lv_color_lighten(lv_color_hex(weather_icon_color_for(d->icon)), LV_OPA_50), 0);
+    char wd[8];                                         /* "Zo 15-11" -> "Zo" */
+    snprintf(wd, sizeof wd, "%.*s", (int)strcspn(d->day, " "), d->day);
+    ui_label_set_text(day, wd);
+    ui_label_set_text_fmt(temp, "%.0f°", d->max_temp);
+    ui_obj_clear_flag(icon, LV_OBJ_FLAG_HIDDEN);
+    ui_obj_clear_flag(day,  LV_OBJ_FLAG_HIDDEN);
+    ui_obj_clear_flag(temp, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void on_screen_loaded(lv_event_t * e) {
@@ -973,47 +963,15 @@ lv_obj_t * screen_dim_create(void) {
     dim_lbl_city = NULL;
     waste_box_ptr = NULL;  /* absolute layout doesn't use the box pointer */
 
-    /* 5-day forecast strip across the bottom of dim. Black/white style:
-       40×40 icon at top, day label below, temp range under that. */
-    /* Strip sits below the city header (y=498..~516) with a tiny gap.
-     * Total vertical budget: 600 − 518 = 82 px for icon(40) + 4 gap +
-     * day(18) + 2 gap + temp(18) = 82, tight but fits cleanly. */
-    /* SY() compresses the strip onto the shorter Toon 1 panel; the extra
-       nudge clears the bottom edge for the temp row's 18-px font (unscaled). */
+    /* 5-day forecast strip across the bottom of dim (#49): per day a lighter
+     * weather icon with weekday + max temperature next to it, larger print.
+     * Same vertical band as before (below the city header). */
     int strip_y = (DISP_VER < 600) ? 398 : SY(508);
     int col_w   = DISP_HOR / WEATHER_FORECAST_DAYS;
-    const lv_font_t * fc_font = (DISP_VER < 600) ? &lv_font_montserrat_14 : &lv_font_montserrat_18;
-    int day_dy  = (DISP_VER < 600) ? 42 : SY(44);
-    int temp_dy = (DISP_VER < 600) ? 60 : SY(64);
-
-    for (int i = 0; i < WEATHER_FORECAST_DAYS; i++) {
-        int cx = i * col_w + col_w / 2;
-
-        dim_fc_icon[i] = lv_img_create(scr_root);
-        ui_img_set_src(dim_fc_icon[i], &icon_wx_cloud);
-        ui_obj_set_style_img_recolor(dim_fc_icon[i], lv_color_hex(0xffffff), 0);
-        ui_obj_set_style_img_recolor_opa(dim_fc_icon[i], 255, 0);
-        lv_obj_set_pos(dim_fc_icon[i], cx - 20, strip_y);
-        ui_obj_add_flag(dim_fc_icon[i], LV_OBJ_FLAG_HIDDEN);
-
-        dim_fc_day[i] = lv_label_create(scr_root);
-        ui_obj_set_style_text_color(dim_fc_day[i], lv_color_hex(0xbbbbbb), 0);
-        ui_obj_set_style_text_font(dim_fc_day[i], fc_font, 0);
-        ui_label_set_text(dim_fc_day[i], "");
-        lv_obj_set_style_text_align(dim_fc_day[i], LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_width(dim_fc_day[i], col_w);
-        lv_obj_set_pos(dim_fc_day[i], i * col_w, strip_y + day_dy);
-        ui_obj_add_flag(dim_fc_day[i], LV_OBJ_FLAG_HIDDEN);
-
-        dim_fc_temp[i] = lv_label_create(scr_root);
-        ui_obj_set_style_text_color(dim_fc_temp[i], lv_color_hex(0xffffff), 0);
-        ui_obj_set_style_text_font(dim_fc_temp[i], fc_font, 0);
-        ui_label_set_text(dim_fc_temp[i], "");
-        lv_obj_set_style_text_align(dim_fc_temp[i], LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_width(dim_fc_temp[i], col_w);
-        lv_obj_set_pos(dim_fc_temp[i], i * col_w, strip_y + temp_dy);
-        ui_obj_add_flag(dim_fc_temp[i], LV_OBJ_FLAG_HIDDEN);
-    }
+    int strip_h = DISP_VER - strip_y - SY(6);
+    for (int i = 0; i < WEATHER_FORECAST_DAYS; i++)
+        dim_fc_build(scr_root, i * col_w, strip_y, col_w, strip_h,
+                     &dim_fc_icon[i], &dim_fc_day[i], &dim_fc_temp[i]);
 
     /* Usage bars at the outer edges, centred on the indoor-temp row (restored;
      * gated/positioned per show_dim_bars + dim_bars_swap in refresh_cb). */

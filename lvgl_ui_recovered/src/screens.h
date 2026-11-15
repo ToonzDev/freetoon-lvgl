@@ -43,6 +43,13 @@ lv_obj_t * screen_dim_grid_create(void);   /* custom grid dim (opt-in); used by 
 /* Dim screens: outside temperature in the big room-temp font. Picks the
  * longest of "8.4°C" / "8.4°" / "8°" that fits max_w with the label's font. */
 void dim_set_outside_temp(lv_obj_t * lbl, float t, lv_coord_t max_w);
+/* Dim screens, forecast strip (#49): one column per day = weather icon (in a
+ * lighter tint) with the weekday and the day's maximum temperature next to
+ * it, in a larger font. build: column i of width col_w and height h at x,y in
+ * parent. paint: fill column i from weather_state.days[i] (hidden if none). */
+void dim_fc_build(lv_obj_t * parent, int x, int y, int col_w, int h,
+                  lv_obj_t ** icon, lv_obj_t ** day, lv_obj_t ** temp);
+void dim_fc_paint(lv_obj_t * icon, lv_obj_t * day, lv_obj_t * temp, int i);
 lv_obj_t * screen_black_create(void);      /* pure black standby screen when Slapen or Weg */
 lv_obj_t * screen_settings_create(void);
 lv_obj_t * screen_schedule_create(void);
