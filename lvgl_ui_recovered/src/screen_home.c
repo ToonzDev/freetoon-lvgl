@@ -2049,6 +2049,8 @@ static void update_tile_light_btn(lv_obj_t * btn, lv_obj_t * lbl_name, lv_obj_t 
     if (lbl_st) ui_obj_set_style_text_color(lbl_st, lv_color_hex((known && on) ? 0xffffff : (settings.home_light_mode ? 0x485868 : 0x88aabb)), 0);
 }
 
+static void update_tile_smartplug(void);
+
 static void on_lt_smartplug_tap(lv_event_t * e) {
     (void)e;
     ui_push(screen_zwave_create());
@@ -2057,6 +2059,7 @@ static void on_lt_smartplug_tap(lv_event_t * e) {
 static void on_lt_sp_toggle(lv_event_t * e) {
     if (e) lv_event_stop_bubbling(e);
     zwave_toggle_switch(0);
+    update_tile_smartplug();
 }
 
 static void update_tile_smartplug(void) {
@@ -4940,17 +4943,23 @@ lv_obj_t * screen_home_create(void) {
         make_tile(scr_root, 0, 0, 200, 150, LT_SMARTPLUG, tr("Slimme stekker", "Smart plug"), 0x3fbf7f, on_lt_smartplug_tap, &sp_t);
         tile_smartplug = sp_t.tile;
 
+        /* Move tile title up and shrink font slightly to give room to the plug name */
+        if (sp_t.title) {
+            ui_obj_set_style_text_font(sp_t.title, SF(14), 0);
+            ui_obj_align(sp_t.title, LV_ALIGN_TOP_LEFT, 0, SY(4));
+        }
+
         lbl_lt_sp_name = lv_label_create(tile_smartplug);
         ui_obj_set_style_text_color(lbl_lt_sp_name, lv_color_hex(COL_TEXT_HI), 0);
-        ui_obj_set_style_text_font(lbl_lt_sp_name, SF(17), 0);
+        ui_obj_set_style_text_font(lbl_lt_sp_name, SF(18), 0);
         lv_label_set_long_mode(lbl_lt_sp_name, LV_LABEL_LONG_DOT);
         lv_obj_set_width(lbl_lt_sp_name, LV_PCT(90));
-        ui_obj_align(lbl_lt_sp_name, LV_ALIGN_TOP_LEFT, 0, SY(28));
+        ui_obj_align(lbl_lt_sp_name, LV_ALIGN_TOP_LEFT, 0, SY(26));
         ui_label_set_text(lbl_lt_sp_name, "Stekker");
 
         btn_lt_sp_toggle = lv_btn_create(tile_smartplug);
         lv_obj_set_size(btn_lt_sp_toggle, LV_PCT(90), (DISP_VER < 600) ? 36 : SY(42));
-        ui_obj_align(btn_lt_sp_toggle, LV_ALIGN_CENTER, 0, SY(4));
+        ui_obj_align(btn_lt_sp_toggle, LV_ALIGN_CENTER, 0, SY(12));
         ui_obj_set_style_bg_color(btn_lt_sp_toggle, lv_color_hex(settings.home_light_mode ? 0xd0d8e2 : 0x283848), 0);
         lv_obj_set_style_radius(btn_lt_sp_toggle, 8, 0);
         lv_obj_add_event_cb(btn_lt_sp_toggle, on_lt_sp_toggle, LV_EVENT_CLICKED, NULL);

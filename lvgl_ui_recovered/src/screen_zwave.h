@@ -27,6 +27,8 @@ int  zwave_switch_count(void);
 int  zwave_get_switch(int idx, zwave_dev_t * out);
 int  zwave_toggle_switch(int idx);
 void zwave_poll(void);
+int  zwave_is_switch_device(const char * type, const char * name, const char * cc, int node_id);
+int  zwave_get_custom_name(const char * uuid, int node_id, char * out, size_t outsz);
 
 /* Slave-side setter — replace the screen's internal device list with the
  * master's. Idempotent; the next refresh of the Z-Wave admin screen on the

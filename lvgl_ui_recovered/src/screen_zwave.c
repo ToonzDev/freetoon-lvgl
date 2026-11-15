@@ -84,8 +84,83 @@ static void zw_exc(int start) {
 }
 
 /* ===================================================================== */
-/* Persistent custom device name overrides                                */
+/* XML / string helpers                                                  */
 /* ===================================================================== */
+static const char * ci_strstr(const char * hay, const char * needle) {
+    if (!hay || !needle) return NULL;
+    size_t nl = strlen(needle);
+    if (!nl) return hay;
+    while (*hay) {
+        if (strncasecmp(hay, needle, nl) == 0) return hay;
+        hay++;
+    }
+    return NULL;
+}
+
+/* Copy the text of <key>...</key> within [src,end) into out. Returns 1/0. */
+static int xml_elem(const char * src, const char * end, const char * key,
+                    char * out, size_t outsz) {
+    char open[48];
+    snprintf(open, sizeof open, "<%s>", key);
+    const char * p = strstr(src, open);
+    if (!p || p >= end) { if (out && outsz) out[0] = 0; return 0; }
+    p += strlen(open);
+    char close[48];
+    snprintf(close, sizeof close, "</%s>", key);
+    const char * q = strstr(p, close);
+    if (!q || q > end) { if (out && outsz) out[0] = 0; return 0; }
+    size_t n = (size_t)(q - p);
+    if (n + 1 > outsz) n = outsz - 1;
+    if (out) { memcpy(out, p, n); out[n] = 0; }
+    return 1;
+}
+
+/* ===================================================================== */
+/* Device classification & custom names                                  */
+/* ===================================================================== */
+int zwave_is_switch_device(const char * type, const char * name, const char * cc, int node_id) {
+    if (node_id == 7) return 0;   /* Node 7 is the Toon Z-Wave meter adapter */
+    if (type) {
+        if (ci_strstr(type, "METER") ||
+            ci_strstr(type, "HAE_") ||
+            ci_strstr(type, "SMOKE") ||
+            ci_strstr(type, "GAS") ||
+            ci_strstr(type, "WATER") ||
+            ci_strstr(type, "SENSOR"))
+            return 0;
+    }
+    if (name) {
+        if (ci_strstr(name, "METER") ||
+            ci_strstr(name, "HAE_") ||
+            ci_strstr(name, "SMOKE") ||
+            ci_strstr(name, "GAS") ||
+            ci_strstr(name, "WATER") ||
+            ci_strstr(name, "SENSOR"))
+            return 0;
+    }
+    if (cc) {
+        if (strstr(cc, " 25 ") || strstr(cc, " 25") || strstr(cc, "25 ") ||
+            strstr(cc, "0x25") || strstr(cc, " 37 ") || strstr(cc, " 27 ") ||
+            !strcmp(cc, "25") || !strcmp(cc, "37"))
+            return 1;
+    }
+    if (type && type[0]) {
+        if (ci_strstr(type, "NAS_") ||
+            ci_strstr(type, "PLUG") ||
+            ci_strstr(type, "SWITCH") ||
+            ci_strstr(type, "FIBARO") ||
+            ci_strstr(type, "FGWP") ||
+            ci_strstr(type, "GREENWAVE") ||
+            ci_strstr(type, "POWERNODE") ||
+            ci_strstr(type, "QUBINO") ||
+            ci_strstr(type, "AEOTEC") ||
+            ci_strstr(type, "RELAY") ||
+            ci_strstr(type, "SOCKET"))
+            return 1;
+    }
+    return 0;
+}
+
 static const char * zwave_names_dir(void) {
     const char * d = getenv("TOONUI_DATA_DIR");
     if (d && *d) return d;
@@ -93,30 +168,106 @@ static const char * zwave_names_dir(void) {
     return ".";
 }
 
-static int zwave_get_custom_name(const char * uuid, char * out, size_t outsz) {
-    if (!uuid || !uuid[0] || !out || outsz == 0) return 0;
+int zwave_get_custom_name(const char * uuid, int node_id, char * out, size_t outsz) {
+    if (!out || outsz == 0) return 0;
     out[0] = 0;
+
+    /* 1. Check toonui_zwave_names.cfg */
     char path[256];
     snprintf(path, sizeof path, "%s/toonui_zwave_names.cfg", zwave_names_dir());
     FILE * f = fopen(path, "r");
-    if (!f) return 0;
-    char line[160];
-    int found = 0;
-    while (fgets(line, sizeof line, f)) {
-        char * eq = strchr(line, '=');
-        if (!eq) continue;
-        *eq = 0;
-        char * val = eq + 1;
-        size_t vl = strlen(val);
-        while (vl > 0 && (val[vl - 1] == '\r' || val[vl - 1] == '\n')) val[--vl] = 0;
-        if (strcmp(line, uuid) == 0) {
-            snprintf(out, outsz, "%s", val);
-            found = 1;
-            break;
+    if (f) {
+        char line[160];
+        char dev_id_str[32] = "";
+        char node_id_str[32] = "";
+        if (node_id > 0) {
+            snprintf(dev_id_str, sizeof dev_id_str, "dev_%d", node_id);
+            snprintf(node_id_str, sizeof node_id_str, "%d", node_id);
         }
+        while (fgets(line, sizeof line, f)) {
+            char * eq = strchr(line, '=');
+            if (!eq) continue;
+            *eq = 0;
+            char * key = line;
+            char * val = eq + 1;
+            size_t vl = strlen(val);
+            while (vl > 0 && (val[vl - 1] == '\r' || val[vl - 1] == '\n')) val[--vl] = 0;
+            if (!val[0]) continue;
+
+            int match = 0;
+            if (uuid && uuid[0] && strcmp(key, uuid) == 0) match = 1;
+            else if (dev_id_str[0] && strcmp(key, dev_id_str) == 0) match = 1;
+            else if (node_id_str[0] && strcmp(key, node_id_str) == 0) match = 1;
+
+            if (match) {
+                snprintf(out, outsz, "%s", val);
+                fclose(f);
+                return 1;
+            }
+        }
+        fclose(f);
     }
-    fclose(f);
-    return found;
+
+    /* 2. Check stock config_happ_smartplug.xml */
+    const char * xml_paths[] = {
+        "/mnt/data/qmf/config/config_happ_smartplug.xml",
+        "/qmf/config/config_happ_smartplug.xml",
+        NULL
+    };
+    for (int k = 0; xml_paths[k]; k++) {
+        FILE * fx = fopen(xml_paths[k], "r");
+        if (!fx) continue;
+        fseek(fx, 0, SEEK_END);
+        long sz = ftell(fx);
+        fseek(fx, 0, SEEK_SET);
+        if (sz > 0 && sz < 256 * 1024) {
+            char * buf = malloc((size_t)sz + 1);
+            if (buf) {
+                size_t rd = fread(buf, 1, (size_t)sz, fx);
+                buf[rd] = 0;
+                const char * scan = buf;
+                char dev_str[32] = "";
+                if (node_id > 0) snprintf(dev_str, sizeof dev_str, "dev_%d", node_id);
+
+                while ((scan = strstr(scan, "<device>"))) {
+                    const char * d_end = strstr(scan, "</device>");
+                    if (!d_end) break;
+
+                    char name_buf[64] = "";
+                    char zw_buf[64] = "";
+                    char dev_buf[64] = "";
+                    xml_elem(scan, d_end, "Name", name_buf, sizeof name_buf);
+                    if (!name_buf[0]) xml_elem(scan, d_end, "name", name_buf, sizeof name_buf);
+                    xml_elem(scan, d_end, "ZWUuid", zw_buf, sizeof zw_buf);
+                    if (!zw_buf[0]) xml_elem(scan, d_end, "zwUuid", zw_buf, sizeof zw_buf);
+                    xml_elem(scan, d_end, "DevUUID", dev_buf, sizeof dev_buf);
+                    if (!dev_buf[0]) xml_elem(scan, d_end, "devUuid", dev_buf, sizeof dev_buf);
+
+                    int match = 0;
+                    if (uuid && uuid[0]) {
+                        if (zw_buf[0] && strstr(uuid, zw_buf)) match = 1;
+                        else if (dev_buf[0] && strstr(uuid, dev_buf)) match = 1;
+                        else if (zw_buf[0] && strstr(zw_buf, uuid)) match = 1;
+                    }
+                    if (!match && dev_str[0] && dev_buf[0] && strstr(dev_buf, dev_str)) {
+                        match = 1;
+                    }
+
+                    if (match && name_buf[0]) {
+                        snprintf(out, outsz, "%s", name_buf);
+                        free(buf);
+                        fclose(fx);
+                        return 1;
+                    }
+                    scan = d_end + 9;
+                }
+                free(buf);
+            }
+        }
+        fclose(fx);
+    }
+
+    return 0;
 }
 
 static void zwave_set_custom_name(const char * uuid, const char * name) {
@@ -172,38 +323,6 @@ static void zwave_set_custom_name(const char * uuid, const char * name) {
     rename(tmppath, path);
 }
 
-/* ===================================================================== */
-/* XML helpers                                                           */
-/* ===================================================================== */
-static const char * ci_strstr(const char * hay, const char * needle) {
-    if (!hay || !needle) return NULL;
-    size_t nl = strlen(needle);
-    if (!nl) return hay;
-    while (*hay) {
-        if (strncasecmp(hay, needle, nl) == 0) return hay;
-        hay++;
-    }
-    return NULL;
-}
-
-/* Copy the text of <key>...</key> within [src,end) into out. Returns 1/0. */
-static int xml_elem(const char * src, const char * end, const char * key,
-                    char * out, size_t outsz) {
-    char open[48];
-    snprintf(open, sizeof open, "<%s>", key);
-    const char * p = strstr(src, open);
-    if (!p || p >= end) { if (out && outsz) out[0] = 0; return 0; }
-    p += strlen(open);
-    char close[48];
-    snprintf(close, sizeof close, "</%s>", key);
-    const char * q = strstr(p, close);
-    if (!q || q > end) { if (out && outsz) out[0] = 0; return 0; }
-    size_t n = (size_t)(q - p);
-    if (n + 1 > outsz) n = outsz - 1;
-    if (out) { memcpy(out, p, n); out[n] = 0; }
-    return 1;
-}
-
 static int g_rows_built = 0;
 
 /* Sync switch on/off states and power from hdrv_zwave?action=getDevices.json */
@@ -240,6 +359,10 @@ static void sync_states_from_json_buf(const char * body) {
                 if (strncmp(flow, "NaN", 3) != 0 && strncmp(flow, "null", 4) != 0) {
                     d->power_w = (float)atof(flow);
                 }
+            }
+            char custom[64] = "";
+            if (zwave_get_custom_name(d->uuid, d->node_id, custom, sizeof custom) && custom[0]) {
+                snprintf(d->name, sizeof d->name, "%s", custom);
             }
         }
     }
@@ -300,27 +423,16 @@ static void parse_devices_json_buf(const char * body) {
         /* Check switch CC or plug model */
         const char * cc = strstr(p, "\"ccList\":");
         if (!cc || cc > dend) cc = strstr(p, "\"supportedCC\":");
+        char cc_buf[256] = "";
         if (cc && cc < dend) {
-            d->is_switch = (strstr(cc, "25") != NULL ||
-                            strstr(cc, "37") != NULL ||
-                            strstr(cc, "0x25") != NULL);
+            cc += (*cc == '\"' && cc[1] == 'c') ? 9 : 14;
+            while (*cc == ' ' || *cc == '\"' || *cc == ':') cc++;
+            size_t n = strcspn(cc, "\",\r\n}");
+            if (n >= sizeof cc_buf) n = sizeof cc_buf - 1;
+            memcpy(cc_buf, cc, n);
+            cc_buf[n] = 0;
         }
-        if (!d->is_switch && d->type[0]) {
-            if (ci_strstr(d->type, "NAS_") ||
-                ci_strstr(d->type, "PLUG") ||
-                ci_strstr(d->type, "SWITCH") ||
-                ci_strstr(d->type, "FIBARO") ||
-                ci_strstr(d->type, "FGWP") ||
-                ci_strstr(d->type, "GREENWAVE") ||
-                ci_strstr(d->type, "POWERNODE") ||
-                ci_strstr(d->type, "QUBINO") ||
-                ci_strstr(d->type, "AEOTEC") ||
-                ci_strstr(d->type, "RELAY")) {
-                d->is_switch = 1;
-            } else if (!ma_is_meter_type(d->type) && d->node_id > 1) {
-                d->is_switch = 1;
-            }
-        }
+        d->is_switch = zwave_is_switch_device(d->type, d->name, cc_buf, d->node_id);
 
         /* Switch state */
         d->state = -1;
@@ -348,7 +460,7 @@ static void parse_devices_json_buf(const char * body) {
 
         /* Apply custom name override if user renamed this device */
         char custom[64] = "";
-        if (d->uuid[0] && zwave_get_custom_name(d->uuid, custom, sizeof custom) && custom[0]) {
+        if (zwave_get_custom_name(d->uuid, d->node_id, custom, sizeof custom) && custom[0]) {
             snprintf(d->name, sizeof d->name, "%s", custom);
         }
 
@@ -405,48 +517,27 @@ static int parse_devices(void) {
         }
         xml_elem(d0, d1, "type", d->type, sizeof d->type);
 
-        /* Apply custom name override if user renamed this device */
-        char custom[64] = "";
-        if (d->uuid[0] && zwave_get_custom_name(d->uuid, custom, sizeof custom) && custom[0]) {
-            snprintf(d->name, sizeof d->name, "%s", custom);
-        }
-
         char tmp[64];
         if (xml_elem(d0, d1, "nodeId", tmp, sizeof tmp) && tmp[0])
             d->node_id = atoi(tmp);
         else if (xml_elem(d0, d1, "internalAddress", tmp, sizeof tmp))
             d->node_id = atoi(tmp);
 
-        /* Binary-switch capable = command class 0x25 / 37 in the CC list,
-         * or recognized switch/plug model (e.g. Neo Coolcam NAS_WR01Z, Fibaro, Qubino),
-         * or any non-meter device with node_id > 1. */
+        /* Apply custom name override if user renamed this device */
+        char custom[64] = "";
+        if (d->uuid[0] && zwave_get_custom_name(d->uuid, d->node_id, custom, sizeof custom) && custom[0]) {
+            snprintf(d->name, sizeof d->name, "%s", custom);
+        }
+
+        /* Binary-switch capable */
         char cc[256] = "";
         if (xml_elem(d0, d1, "ccList", cc, sizeof cc) ||
             xml_elem(d0, d1, "cclist", cc, sizeof cc) ||
             xml_elem(d0, d1, "supportedCC", cc, sizeof cc) ||
             xml_elem(d0, d1, "supportedCommandClasses", cc, sizeof cc) ||
             xml_elem(d0, d1, "classes", cc, sizeof cc)) {
-            d->is_switch = (strstr(cc, "25") != NULL ||
-                            strstr(cc, "37") != NULL ||
-                            strstr(cc, "0x25") != NULL);
         }
-
-        if (!d->is_switch && d->type[0]) {
-            if (ci_strstr(d->type, "NAS_") ||
-                ci_strstr(d->type, "PLUG") ||
-                ci_strstr(d->type, "SWITCH") ||
-                ci_strstr(d->type, "FIBARO") ||
-                ci_strstr(d->type, "FGWP") ||
-                ci_strstr(d->type, "GREENWAVE") ||
-                ci_strstr(d->type, "POWERNODE") ||
-                ci_strstr(d->type, "QUBINO") ||
-                ci_strstr(d->type, "AEOTEC") ||
-                ci_strstr(d->type, "RELAY")) {
-                d->is_switch = 1;
-            } else if (!ma_is_meter_type(d->type) && d->node_id > 1) {
-                d->is_switch = 1;
-            }
-        }
+        d->is_switch = zwave_is_switch_device(d->type, d->name, cc, d->node_id);
 
         /* Check previous known switch state and power so we don't clobber it */
         int prev_state = -1;

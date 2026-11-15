@@ -5,6 +5,7 @@
 #include "stats.h"
 #include "settings.h"
 #include "homewizard.h"
+#include "screen_zwave.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -85,25 +86,18 @@ static void zwave_info(const char * json, plug_t * p) {
     }
 }
 
-/* A name given in FreeToon's Z-Wave screen (toonui_zwave_names.cfg,
- * "<zw-uuid>=<name>") wins over the Z-Wave device name, which for a plug
- * paired through FreeToon is just its type ("NAS_WR01Z"). */
+/* A name given in FreeToon's Z-Wave screen (toonui_zwave_names.cfg) or in the
+ * stock Eneco GUI (config_happ_smartplug.xml) wins over generic model names. */
 static void custom_name(plug_t * p) {
-    const char * d = getenv("TOONUI_DATA_DIR");
-    char path[256];
-    snprintf(path, sizeof path, "%s/toonui_zwave_names.cfg", (d && *d) ? d : "/mnt/data");
-    FILE * f = fopen(path, "r");
-    if (!f) return;
-    char line[160];
-    size_t ul = strlen(p->dev_uuid);
-    while (ul && fgets(line, sizeof line, f)) {
-        if (strncmp(line, p->dev_uuid, ul) != 0 || line[ul] != '=') continue;
-        char * v = line + ul + 1;
-        v[strcspn(v, "\r\n")] = 0;
-        if (*v) snprintf(p->name, sizeof p->name, "%s", v);
-        break;
+    int node_id = 0;
+    const char * colon = strrchr(p->dev_uuid, ':');
+    if (colon && !strncmp(colon + 1, "dev_", 4)) node_id = atoi(colon + 5);
+    else if (!strncmp(p->logger, "smartplug_", 10)) node_id = atoi(p->logger + 10);
+
+    char cname[64] = "";
+    if (zwave_get_custom_name(p->dev_uuid, node_id, cname, sizeof cname) && cname[0]) {
+        snprintf(p->name, sizeof p->name, "%s", cname);
     }
-    fclose(f);
 }
 
 void plugs_refresh_power(plug_t * p, int n) {
@@ -168,6 +162,12 @@ int plugs_scan(plug_t * out, int max) {
         xml_elem(a, b, "internalAddress", ia, sizeof ia);
         int is_hw = !strncmp(ia, "hw_socket_qtty_", 15);
         if (is_hw || (!strcmp(svc, "ElectricityQuantityMeter") && !strcmp(var, "CurrentElectricityQuantity"))) {
+            /* Z-Wave plug loggers are created by happ_smartplug and have internalAddress "smartplug_<node_id>".
+             * Non-smartplug loggers (like the P1 meteradapter dev_7 or "electricity") must be excluded. */
+            if (!is_hw && strncmp(ia, "smartplug_", 10) != 0) {
+                p = b + 12;
+                continue;
+            }
             const char * r = strstr(a, "<name>1monthhour</name>");
             if (r && r < b) {
                 plug_t * pl = &out[n];
@@ -191,6 +191,10 @@ int plugs_scan(plug_t * out, int max) {
                     }
                 }
                 xml_elem(a, b, "deviceUuid", pl->dev_uuid, sizeof pl->dev_uuid);
+                if (!is_hw && (strstr(pl->dev_uuid, "dev_7") || strstr(pl->dev_uuid, "HAE_METER"))) {
+                    p = b + 12;
+                    continue;
+                }
                 /* URL-encode for the getRrdData query string */
                 size_t o = 0;
                 for (const char * c = pl->logger; *c && o + 4 < sizeof pl->logger_q; c++) {
@@ -212,6 +216,7 @@ int plugs_scan(plug_t * out, int max) {
                 }
                 if (pl->logger[0]) {
                     snprintf(pl->name, sizeof pl->name, is_hw ? "HomeWizard %d" : "Stekker %d", n + 1);
+                    custom_name(pl);
                     n++;
                 }
             }
@@ -229,15 +234,51 @@ int plugs_scan(plug_t * out, int max) {
             while (n < max && (scan_p = strstr(scan_p, "\"dev_"))) {
                 const char * next = strstr(scan_p + 5, "\"dev_");
                 const char * dend = next ? next : scan_p + strlen(scan_p);
-                /* Check if switch or plug */
+
+                int node_id = 0;
+                const char * ia = strstr(scan_p, "\"internalAddress\":");
+                if (ia && ia < dend) {
+                    ia += 18;
+                    while (*ia == ' ' || *ia == '\"') ia++;
+                    node_id = atoi(ia);
+                }
+
+                char typ_buf[48] = "";
+                const char * tp = strstr(scan_p, "\"type\":");
+                if (tp && tp < dend) {
+                    tp += 7;
+                    while (*tp == ' ' || *tp == '\"') tp++;
+                    size_t tl = strcspn(tp, "\",\r\n}");
+                    if (tl >= sizeof typ_buf) tl = sizeof typ_buf - 1;
+                    memcpy(typ_buf, tp, tl);
+                    typ_buf[tl] = 0;
+                }
+
+                char name_buf[64] = "";
+                const char * nm = strstr(scan_p, "\"DeviceName\":");
+                if (!nm || nm > dend) nm = strstr(scan_p, "\"name\":");
+                if (nm && nm < dend) {
+                    nm += (*nm == '\"' && nm[1] == 'D') ? 13 : 7;
+                    while (*nm == ' ' || *nm == '\"') nm++;
+                    size_t nl = strcspn(nm, "\",\r\n}");
+                    if (nl >= sizeof name_buf) nl = sizeof name_buf - 1;
+                    memcpy(name_buf, nm, nl);
+                    name_buf[nl] = 0;
+                }
+
+                char cc_buf[256] = "";
                 const char * cc = strstr(scan_p, "\"ccList\":");
                 if (!cc || cc > dend) cc = strstr(scan_p, "\"supportedCC\":");
-                int is_sw = 0;
-                if (cc && cc < dend && (strstr(cc, "25") || strstr(cc, "37") || strstr(cc, "0x25"))) is_sw = 1;
-                const char * typ = strstr(scan_p, "\"type\":");
-                if (typ && typ < dend && (strstr(typ, "NAS_") || strstr(typ, "PLUG") || strstr(typ, "SWITCH") || strstr(typ, "FGWP"))) is_sw = 1;
+                if (cc && cc < dend) {
+                    cc += (*cc == '\"' && cc[1] == 'c') ? 9 : 14;
+                    while (*cc == ' ' || *cc == '\"' || *cc == ':') cc++;
+                    size_t cl = strcspn(cc, "\",\r\n}");
+                    if (cl >= sizeof cc_buf) cl = sizeof cc_buf - 1;
+                    memcpy(cc_buf, cc, cl);
+                    cc_buf[cl] = 0;
+                }
 
-                if (is_sw) {
+                if (zwave_is_switch_device(typ_buf, name_buf, cc_buf, node_id)) {
                     plug_t * pl = &out[n];
                     memset(pl, 0, sizeof *pl);
                     pl->hw_slot = -1;
@@ -251,12 +292,7 @@ int plugs_scan(plug_t * out, int max) {
                         memcpy(pl->dev_uuid, u, ul);
                         pl->dev_uuid[ul] = 0;
                     }
-                    /* internalAddress / node ID for logger */
-                    const char * ia = strstr(scan_p, "\"internalAddress\":");
-                    if (ia && ia < dend) {
-                        ia += 18;
-                        while (*ia == ' ' || *ia == '\"') ia++;
-                        int node_id = atoi(ia);
+                    if (node_id > 0) {
                         snprintf(pl->logger, sizeof pl->logger, "smartplug_%d", node_id);
                         snprintf(pl->logger_q, sizeof pl->logger_q, "smartplug_%d", node_id);
                     }
