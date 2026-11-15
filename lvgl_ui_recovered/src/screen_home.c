@@ -274,6 +274,19 @@ static lv_obj_t * lights_handle     = NULL;
 static lv_obj_t * lights_handle_lbl = NULL;
 static lv_obj_t * lights_handle_img = NULL;   /* backend logo (HA / Domoticz) */
 
+/* Collapsed lights handle: a slim tab, half of it off-screen, so the visible
+ * part (LH_TAB_W/2) stays within the gutter left of the tile content (4px
+ * inter-tile margin + tile padding) instead of covering e.g. the thermostat
+ * preset buttons. */
+#define LH_TAB_W   24
+#define LH_TAB_H   80
+#define LH_TAB_EXT  8     /* extra touch area around the tab */
+
+/* Settings gear floating in the top-right corner of the home screen. */
+#define HOME_GEAR_SZ   54
+#define HOME_GEAR_MX    6   /* gap to the right screen edge */
+#define HOME_GEAR_MY    4   /* gap to the top screen edge   */
+
 /* Swipeable tile pages. The five built-in tiles (Waste/Energy/Vent/Family/
  * Water) are "page 0". Swiping left in the tile zone reveals page 1 — an
  * overlay with extra configurable slots — and swiping right returns. We keep
@@ -388,9 +401,21 @@ static void make_tile(lv_obj_t * parent, int x, int y, int w, int h, int ltype,
         lv_obj_add_event_cb(t, tile_click_wrapper, LV_EVENT_CLICKED, (void *)click_cb);
     }
 
-    /* Thin accent bar on top */
+    /* Thin accent bar on top. The settings gear floats over the top-right
+     * corner of the screen; stop the bar short of it so the gear doesn't cut
+     * through the bar of whichever tile sits there. */
+    int bar_w = w - 20;
+    if (parent == scr_root) {
+        int gear_x0 = DISP_HOR - HOME_GEAR_MX - HOME_GEAR_SZ;
+        int gear_y1 = HOME_GEAR_MY + HOME_GEAR_SZ;
+        int bar_x0  = x + 10;                       /* tile pad_all = 10 */
+        if (y + 10 < gear_y1 && bar_x0 + bar_w > gear_x0 - 8) {
+            bar_w = gear_x0 - 8 - bar_x0;
+            if (bar_w < 0) bar_w = 0;
+        }
+    }
     lv_obj_t * bar = lv_obj_create(t);
-    lv_obj_set_size(bar, w - 20, 4);
+    lv_obj_set_size(bar, bar_w, 4);
     lv_obj_set_pos(bar, 0, 0);
     ui_obj_set_style_bg_color(bar, lv_color_hex(accent_color), 0);
     ui_obj_set_style_border_width(bar, 0, 0);
@@ -2138,6 +2163,14 @@ static void update_tile_lights(void) {
     }
 }
 
+/* Logo of the active lights backend for the lights handle: Domoticz if that's
+ * configured (matches open_lights_backend's priority), else HA, else none. */
+static const lv_img_dsc_t * lights_backend_logo(void) {
+    if (settings.enable_domoticz || (settings.client_mode && domoticz_state.count > 0)) return &icon_domoticz;
+    if (settings.enable_ha || (settings.client_mode && ha_light_count > 0)) return &icon_ha;
+    return NULL;
+}
+
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
     if (!scr_root || lv_scr_act() != scr_root) return;
@@ -3399,26 +3432,18 @@ static void refresh_cb(lv_timer_t * t) {
 
     /* Refresh lights handle logo dynamically if backend becomes active or changes */
     if (lights_handle) {
-        const lv_img_dsc_t * want_logo = (settings.enable_domoticz || (settings.client_mode && domoticz_state.count > 0)) ? &icon_domoticz
-                                       : (settings.enable_ha || (settings.client_mode && ha_light_count > 0)) ? &icon_ha
-                                       : NULL;
+        const lv_img_dsc_t * want_logo = lights_backend_logo();
         if (want_logo) {
             if (!lights_handle_img) {
                 lights_handle_img = lv_img_create(lights_handle);
                 lv_img_set_zoom(lights_handle_img, 224);   /* 48px -> ~42px */
-                lv_obj_center(lights_handle_img);
+                ui_obj_add_flag(lights_handle_img, LV_OBJ_FLAG_HIDDEN);  /* shown when expanded */
             }
             if (lv_img_get_src(lights_handle_img) != want_logo) {
                 ui_img_set_src(lights_handle_img, want_logo);
             }
-            if (lv_obj_get_width(lights_handle) <= 60) {   /* collapsed state */
-                ui_obj_clear_flag(lights_handle_img, LV_OBJ_FLAG_HIDDEN);
-                if (lights_handle_lbl) ui_obj_add_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
-            }
         } else if (lights_handle_img) {
             ui_obj_add_flag(lights_handle_img, LV_OBJ_FLAG_HIDDEN);
-            if (lights_handle_lbl && lv_obj_get_width(lights_handle) <= 60)
-                ui_obj_clear_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
         }
     }
     /* No lv_obj_invalidate(scr_root) here: with the ui_lazy.h setters an
@@ -3563,32 +3588,34 @@ static void on_home_gesture_to_lights(lv_event_t * e) {
     open_lights_backend();
 }
 
-/* Collapsible lights handle: idles as a slim half-circle tab peeking from the
- * left edge, expands into a horizontal "Lights" button while pressed, and
- * opens the lights backend on release. */
+/* Collapsible lights handle: idles as a slim tab peeking from the left edge
+ * (only LH_TAB_W/2 visible, so it never covers tile content), expands into a
+ * horizontal "Devices" button — with the backend logo when there is one —
+ * while pressed, and opens the lights backend on release. */
 static void lights_handle_set(bool open) {
     if (!lights_handle) return;
-    lv_obj_set_size(lights_handle, open ? 160 : 56, open ? 56 : 80);
-    ui_obj_align(lights_handle, LV_ALIGN_LEFT_MID, open ? 4 : -4, 0);
+    bool logo = lights_handle_img && lights_backend_logo();
+    lv_obj_set_size(lights_handle, open ? (logo ? 200 : 160) : LH_TAB_W,
+                                   open ? 56 : LH_TAB_H);
+    ui_obj_align(lights_handle, LV_ALIGN_LEFT_MID, open ? 4 : -LH_TAB_W / 2, 0);
     lv_obj_set_style_radius(lights_handle, open ? 16 : LV_RADIUS_CIRCLE, 0);
     if (open) {
-        /* Expanded: word label, hide the logo. */
-        if (lights_handle_img) ui_obj_add_flag(lights_handle_img, LV_OBJ_FLAG_HIDDEN);
+        /* Expanded: backend logo (if any) + word label. */
+        if (logo) {
+            ui_obj_align(lights_handle_img, LV_ALIGN_LEFT_MID, 4, 0);
+            ui_obj_clear_flag(lights_handle_img, LV_OBJ_FLAG_HIDDEN);
+        }
         if (lights_handle_lbl) {
             ui_label_set_text(lights_handle_lbl, tr("Apparaten", "Devices"));
             ui_obj_set_style_text_font(lights_handle_lbl, SF(22), 0);
+            if (logo) ui_obj_align(lights_handle_lbl, LV_ALIGN_LEFT_MID, 52, 0);
+            else      ui_obj_align(lights_handle_lbl, LV_ALIGN_CENTER, 0, 0);
             ui_obj_clear_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
         }
     } else {
-        /* Collapsed: the backend logo if we have one, else the charge glyph. */
-        if (lights_handle_img) {
-            ui_obj_clear_flag(lights_handle_img, LV_OBJ_FLAG_HIDDEN);
-            if (lights_handle_lbl) ui_obj_add_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
-        } else if (lights_handle_lbl) {
-            ui_label_set_text(lights_handle_lbl, LV_SYMBOL_CHARGE);
-            ui_obj_set_style_text_font(lights_handle_lbl, SF(28), 0);
-            ui_obj_clear_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
-        }
+        /* Collapsed: a bare tab — too narrow for a logo or label. */
+        if (lights_handle_img) ui_obj_add_flag(lights_handle_img, LV_OBJ_FLAG_HIDDEN);
+        if (lights_handle_lbl) ui_obj_add_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
     }
 }
 static void on_lights_handle(lv_event_t * e) {
@@ -5424,37 +5451,29 @@ lv_obj_t * screen_home_create(void) {
     lights_handle_lbl = NULL;
     if (!have_lights_tile) {
         lights_handle = lv_btn_create(scr_root);
-        lv_obj_set_size(lights_handle, 56, 80);
-        ui_obj_align(lights_handle, LV_ALIGN_LEFT_MID, -4, 0);
-        ui_obj_set_style_bg_color(lights_handle, lv_color_hex(settings.home_light_mode ? 0xccdaea : 0x2a4060), 0);
+        /* Collapsed it's a thin accent-coloured tab (no glyph fits); pressed it
+         * takes the regular button colour while expanded. */
+        ui_obj_set_style_bg_color(lights_handle, lv_color_hex(settings.home_light_mode ? 0xd97706 : 0xffe08a), 0);
         ui_obj_set_style_bg_color(lights_handle, lv_color_hex(settings.home_light_mode ? 0xb0c4de : 0x3a5688), LV_STATE_PRESSED);
         ui_obj_set_style_bg_opa(lights_handle, LV_OPA_70, 0);
-        lv_obj_set_style_radius(lights_handle, LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_pad_all(lights_handle, 0, 0);
-        lv_obj_set_ext_click_area(lights_handle, 24);   /* generous touch target */
+        lv_obj_set_ext_click_area(lights_handle, LH_TAB_EXT);
         lv_obj_add_event_cb(lights_handle, on_lights_handle, LV_EVENT_PRESSED,    NULL);
         lv_obj_add_event_cb(lights_handle, on_lights_handle, LV_EVENT_RELEASED,   NULL);
         lv_obj_add_event_cb(lights_handle, on_lights_handle, LV_EVENT_PRESS_LOST, NULL);
         lv_obj_add_event_cb(lights_handle, on_lights_handle, LV_EVENT_CLICKED,    NULL);
         lights_handle_lbl = lv_label_create(lights_handle);
         ui_obj_set_style_text_color(lights_handle_lbl, lv_color_hex(settings.home_light_mode ? 0xd97706 : 0xffe08a), 0);
-        ui_obj_set_style_text_font(lights_handle_lbl, SF(28), 0);
-        ui_label_set_text(lights_handle_lbl, LV_SYMBOL_CHARGE);
-        lv_obj_center(lights_handle_lbl);
 
-        /* Collapsed handle shows the active backend's logo: Domoticz if that's
-         * configured (matches open_lights_backend's priority), else HA. The
-         * charge glyph stays as the fallback when neither is enabled. */
-        const lv_img_dsc_t * logo = (settings.enable_domoticz || (settings.client_mode && domoticz_state.count > 0)) ? &icon_domoticz
-                                  : (settings.enable_ha || (settings.client_mode && ha_light_count > 0)) ? &icon_ha
-                                  : NULL;
+        /* The expanded button shows the active backend's logo next to the
+         * label (see lights_backend_logo for the priority). */
+        const lv_img_dsc_t * logo = lights_backend_logo();
         if (logo) {
             lights_handle_img = lv_img_create(lights_handle);
             ui_img_set_src(lights_handle_img, logo);
             lv_img_set_zoom(lights_handle_img, 224);   /* 48px -> ~42px */
-            lv_obj_center(lights_handle_img);
-            ui_obj_add_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
         }
+        lights_handle_set(false);
     }
 
     /* --- Buienradar rain forecast tile (LT_RAINFALL) --- */
@@ -5607,10 +5626,10 @@ lv_obj_t * screen_home_create(void) {
     ui_obj_add_flag(rain_lbl_empty, LV_OBJ_FLAG_HIDDEN);
 
     /* Gear in the very top-right corner of the screen. */
-    lv_coord_t gear_sz = 54;
+    lv_coord_t gear_sz = HOME_GEAR_SZ;
     lv_obj_t * gear = lv_btn_create(scr_root);
     lv_obj_set_size(gear, gear_sz, gear_sz);
-    ui_obj_align(gear, LV_ALIGN_TOP_RIGHT, -6, 4);
+    ui_obj_align(gear, LV_ALIGN_TOP_RIGHT, -HOME_GEAR_MX, HOME_GEAR_MY);
     ui_obj_set_style_bg_color(gear, lv_color_hex(settings.home_light_mode ? 0xd0d8e2 : 0x223344), 0);
     lv_obj_set_style_radius(gear, gear_sz / 2, 0);
     lv_obj_set_ext_click_area(gear, 25);
