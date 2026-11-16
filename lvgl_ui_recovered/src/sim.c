@@ -1241,6 +1241,16 @@ int main(int argc, char ** argv) {
         }
     }
     pump(60);
+    /* SIM_PREHEAT_LATE=1: pre-heating starts AFTER the screen was built, as on
+     * a device — exercises the screen's refresh path, not just its create path. */
+    if (getenv("SIM_PREHEAT_LATE")) {
+        toon_state.preheating_enabled = 1;
+        toon_state.preheating_active  = 1;
+        toon_state.burner_on          = 1;
+        toon_state.next_setpoint      = 20.5f;
+        toon_state.next_time          = (int)time(NULL) + 95 * 60;
+        for (int ms = 1500; ms > 0; ms -= 20) { lv_timer_handler(); lv_tick_inc(20); }
+    }
     dump_ppm(out);
     fprintf(stderr, "[sim] %s (%d taps) -> %s  (%dx%d)\n", mode, taps, out, DISP_HOR, DISP_VER);
     return 0;

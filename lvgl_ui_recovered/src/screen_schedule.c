@@ -32,7 +32,6 @@ static lv_obj_t * timeline_now_line;
 static lv_obj_t * hour_labels[5] = {NULL};
 static lv_obj_t * day_list;       /* parent of switch-point rows */
 static lv_timer_t * refresh_timer = NULL;
-static lv_obj_t * box_preheat = NULL;   /* label + switch, right-aligned row */
 static lv_obj_t * sw_preheat = NULL;
 static lv_obj_t * lbl_preheat = NULL;
 
@@ -532,11 +531,11 @@ static void show_edit_modal(int idx) {
 static int ph_last_en = -1, ph_last_act = -1, ph_last_vis = -1;
 
 static void update_preheat_ui(void) {
-    if (!box_preheat || !sw_preheat || !lbl_preheat) return;
+    if (!sw_preheat || !lbl_preheat) return;
     int vis = !settings.client_mode && toon_state.program_state != PROG_MANUAL;
     if (vis != ph_last_vis) {
-        if (vis) lv_obj_clear_flag(box_preheat, LV_OBJ_FLAG_HIDDEN);
-        else     lv_obj_add_flag(box_preheat, LV_OBJ_FLAG_HIDDEN);
+        if (vis) { lv_obj_clear_flag(sw_preheat, LV_OBJ_FLAG_HIDDEN); lv_obj_clear_flag(lbl_preheat, LV_OBJ_FLAG_HIDDEN); }
+        else     { lv_obj_add_flag(sw_preheat, LV_OBJ_FLAG_HIDDEN);   lv_obj_add_flag(lbl_preheat, LV_OBJ_FLAG_HIDDEN); }
         ph_last_vis = vis;
     }
     int en = toon_state.preheating_enabled ? 1 : 0;
@@ -612,7 +611,6 @@ lv_obj_t * screen_schedule_create(void) {
     scr_light_mode = settings.home_light_mode;
     memset(hour_labels, 0, sizeof(hour_labels));
     timeline_now_line = NULL;
-    box_preheat = NULL;
     sw_preheat = NULL;
     lbl_preheat = NULL;
     ph_last_en = ph_last_act = ph_last_vis = -1;
@@ -654,32 +652,34 @@ lv_obj_t * screen_schedule_create(void) {
     }
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, SX(30), (DISP_VER < 550) ? 14 : SY(18));
 
-    /* Pre-heating toggle: label + switch packed to the RIGHT of a fixed-width
-     * flex row that ends left of the close button. The label used to be
-     * align_to'd while still empty, so its left edge sat 12 px left of the
-     * switch and the text grew rightwards over it; here a longer text
-     * ("... (actief)") grows to the left. */
-    box_preheat = lv_obj_create(scr_root);
-    lv_obj_remove_style_all(box_preheat);
-    lv_obj_set_size(box_preheat, SX(440), x_h);
-    lv_obj_set_flex_flow(box_preheat, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(box_preheat, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(box_preheat, SX(12), 0);
-    lv_obj_clear_flag(box_preheat, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_clear_flag(box_preheat, LV_OBJ_FLAG_CLICKABLE);   /* only label + switch take taps */
-    lv_obj_align(box_preheat, LV_ALIGN_TOP_RIGHT, SX(-12) - x_w - SX(20), SY(12));
+    /* Pre-heating toggle, left of the close button. Switch and label are both
+     * children of the screen aligned TOP_RIGHT, so their RIGHT edges are
+     * fixed and LVGL re-applies the alignment whenever the label's size
+     * changes: "Voorverwarmen" -> "Voorverwarmen (actief)" grows to the left.
+     * (align_to on a still-empty label, and a flex row, both left the text
+     * overlapping the switch or clipped on the left.) */
+    const lv_font_t * ph_font = (DISP_VER < 550) ? SF(16) : SF(20);
+    int sw_w = (DISP_VER < 550) ? SX(50) : SX(58);
+    int sw_h = (DISP_VER < 550) ? 26 : 30;
+    int sw_right = SX(-12) - x_w - SX(20);          /* right edge offset of the switch */
+    int row_mid  = SY(12) + x_h / 2;                /* vertical centre of the close button */
 
-    lbl_preheat = lv_label_create(box_preheat);
-    lv_obj_set_style_text_font(lbl_preheat, (DISP_VER < 550) ? SF(16) : SF(20), 0);
+    sw_preheat = lv_switch_create(scr_root);
+    lv_obj_set_size(sw_preheat, sw_w, sw_h);
+    lv_obj_align(sw_preheat, LV_ALIGN_TOP_RIGHT, sw_right, row_mid - sw_h / 2);
+    lv_obj_set_ext_click_area(sw_preheat, 15);
+    lv_obj_add_event_cb(sw_preheat, on_preheat_toggle, LV_EVENT_VALUE_CHANGED, NULL);
+
+    lbl_preheat = lv_label_create(scr_root);
+    lv_obj_set_style_text_font(lbl_preheat, ph_font, 0);
+    lv_label_set_long_mode(lbl_preheat, LV_LABEL_LONG_CLIP);   /* never wrap */
+    lv_obj_set_size(lbl_preheat, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_label_set_text(lbl_preheat, tr("Voorverwarmen", "Pre-heating"));
+    lv_obj_align(lbl_preheat, LV_ALIGN_TOP_RIGHT, sw_right - sw_w - SX(12),
+                 row_mid - lv_font_get_line_height(ph_font) / 2);
     lv_obj_add_flag(lbl_preheat, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_ext_click_area(lbl_preheat, 10);
     lv_obj_add_event_cb(lbl_preheat, on_preheat_label_tap, LV_EVENT_CLICKED, NULL);
-
-    sw_preheat = lv_switch_create(box_preheat);
-    lv_obj_set_size(sw_preheat, (DISP_VER < 550) ? SX(50) : SX(58), (DISP_VER < 550) ? 26 : 30);
-    lv_obj_set_ext_click_area(sw_preheat, 15);
-    lv_obj_add_event_cb(sw_preheat, on_preheat_toggle, LV_EVENT_VALUE_CHANGED, NULL);
 
     update_preheat_ui();
 
