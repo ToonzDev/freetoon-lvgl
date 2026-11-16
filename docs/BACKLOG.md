@@ -605,3 +605,18 @@
     - Feed hourly and daily cumulative kWh into `hcb_rrd` via `rrd_push()` (or BoxTalk `SetRraData`), ensuring the "Zon" tab in Statistics populates full historical graphs.
   - **Conflict check**:
     - As with the original QML app, ensure direct inverter polling is disabled if a hardware meter adapter or HomeWizard solar meter is already bound, preventing double counting.
+
+### 53. Unified Devices hub — one entry point for lights & plugs
+- **Status**: Open (design proposal, 2026-11-17). Decisions pending (see below).
+- **Problem**: Five entry points reach different things:
+  - left-edge handle (Domoticz / HA logo or ⚡) and swipe-right on the thermostat half open **one** backend by fixed priority Domoticz → Hue → HA → Z-Wave (`open_lights_backend()` in `screen_home.c`) — a second system (e.g. HA next to Hue) is unreachable from home;
+  - the handle floats left-middle and overlaps tiles;
+  - **Verlichting** tile (`LT_LIGHTS`): 2 quick switches from Domoticz *or* HA pins *or* Z-Wave;
+  - **Slimme stekker** tile (`LT_SMARTPLUG`): Z-Wave switch #0 only, tap opens the Z-Wave *management* screen;
+  - sockets appear in the Hue, Domoticz and HA screens (HomeWizard section); favourites are set three ways (`domoticz_tile_idx1/2`, HA `pin_home`, Z-Wave index 0).
+- **Proposal**:
+  1. **"Apparaten" hub screen** listing devices of all enabled backends (Hue, HA, Domoticz, Z-Wave, HomeWizard sockets, efanlamp) with a small source badge, toggle, wattage where known, and ★ favourite. Filter chips Alles / Lampen / Stekkers / Overig. Backend screens remain as "Beheer" links (scenes, groups, pairing); Z-Wave include/exclude only under Settings.
+  2. **One "Apparaten" tile** replacing Verlichting + Slimme stekker: shows the ★ favourites from any backend (2 at 2×2, 4 at 3×2, 6 at 3×3), title tap → hub. Migrate layouts (`LT_LIGHTS`/`LT_SMARTPLUG` → new type) and existing pins → ★.
+  3. **No floating handle**: keep swipe-right (→ hub) and add a devices icon in the status bar next to the inbox envelope; hide it when the Apparaten tile is placed.
+- **Order**: (1) hub + swipe/status-bar entry, drop handle — fixes overlap and the second-backend problem; watch Toon 1 memory (cap/paginate rows). (2) ★ favourites + merged tile + layout migration. (3) remove per-backend socket sections and old tile types after one release.
+- **Open decisions**: remove the handle entirely vs. keep as off-by-default option; hub grouped by type (filter chips) or by room (only HA/Hue have rooms); silent migration of old tiles vs. one-time notice.
