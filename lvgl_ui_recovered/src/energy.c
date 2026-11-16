@@ -111,7 +111,7 @@ static void * gas_baseline_thread(void * arg) {
         }
     }
     pthread_mutex_lock(&g_gb_mtx);
-    if (v > 0 && day == g_gb_day) {
+    if (v > 0 && day == g_gb_day && !g_gb_exact) {   /* not after a rebase */
         g_gb_m3 = v / 1000.0;
         g_gb_exact = 1;
         fprintf(stderr, "[energy] gas at 00:00 from hcb_rrd: %.3f m3\n", g_gb_m3);
@@ -134,6 +134,17 @@ static float gas_since_midnight(float cum_m3) {
         g_gb_m3 = cum_m3;
         g_gb_exact = 0;
         g_gb_last_try = 0;
+    }
+    /* Baseline above the current reading: the meter was replaced (a new one
+     * restarts near 0) and the 00:00 value, or the first one seen today, is
+     * the old meter's. Count from the new meter's reading instead of
+     * clamping "today" to 0 for the rest of the day. The usage between
+     * 00:00 and the swap is lost — the two counters can't be joined. */
+    if (cum_m3 < g_gb_m3 - 0.001) {
+        fprintf(stderr, "[energy] gas reading %.3f below today's baseline %.3f m3 (new meter?): rebased\n",
+                cum_m3, g_gb_m3);
+        g_gb_m3 = cum_m3;
+        g_gb_exact = 1;                        /* don't fetch the old 00:00 value again */
     }
     /* look the 00:00 reading up: at once, then every 10 min until found */
     if (!g_gb_exact && !g_gb_busy && !settings.client_mode && (long)now - g_gb_last_try >= 600) {
@@ -204,7 +215,7 @@ static void * elec_baseline_thread(void * arg) {
         }
     }
     pthread_mutex_lock(&g_eb_mtx);
-    if ((v_nt > 0 || v_lt > 0) && day == g_eb_day) {
+    if ((v_nt > 0 || v_lt > 0) && day == g_eb_day && !g_eb_exact) {
         g_eb_kwh = ((v_nt > 0 ? v_nt : 0) + (v_lt > 0 ? v_lt : 0)) / 1000.0;
         g_eb_exact = 1;
         fprintf(stderr, "[energy] elec at 00:00 from hcb_rrd: %.3f kWh\n", g_eb_kwh);
@@ -227,6 +238,13 @@ static float elec_since_midnight(double cum_kwh) {
         g_eb_kwh = cum_kwh;
         g_eb_exact = 0;
         g_eb_last_try = 0;
+    }
+    /* New meter (reading below the baseline): rebase, see gas_since_midnight. */
+    if (cum_kwh < g_eb_kwh - 0.001) {
+        fprintf(stderr, "[energy] elec reading %.3f below today's baseline %.3f kWh (new meter?): rebased\n",
+                cum_kwh, g_eb_kwh);
+        g_eb_kwh = cum_kwh;
+        g_eb_exact = 1;
     }
     if (!g_eb_exact && !g_eb_busy && !settings.client_mode && (long)now - g_eb_last_try >= 600) {
         g_eb_busy = 1;

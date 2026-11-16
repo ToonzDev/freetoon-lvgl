@@ -114,6 +114,18 @@ static long gas_ring_last_t = 0;
 static void gas_hour_update(float gas_now) {
     if (gas_now <= 0) { hw_state.gas_hour_m3 = 0; return; }  /* no gas meter read */
     long now = time(NULL);
+    /* Reading went down: a new meter (counter restarted near 0). The old
+     * snapshots belong to the other meter, so start the window over instead
+     * of reporting 0 for the next hour. */
+    if (gas_ring_count > 0) {
+        int last = (gas_ring_head - 1 + GAS_RING_N) % GAS_RING_N;
+        if (gas_now < gas_ring[last].m3 - 0.001f) {
+            fprintf(stderr, "[hw] gas reading dropped %.3f -> %.3f m3 (new meter?): hourly window reset\n",
+                    gas_ring[last].m3, gas_now);
+            gas_ring_head = gas_ring_count = 0;
+            gas_ring_last_t = 0;
+        }
+    }
     if (gas_ring_last_t == 0 || now - gas_ring_last_t >= 55) {  /* ~1/min */
         gas_ring[gas_ring_head].t  = now;
         gas_ring[gas_ring_head].m3 = gas_now;

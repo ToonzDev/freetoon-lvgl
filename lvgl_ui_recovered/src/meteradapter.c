@@ -198,7 +198,11 @@ static int parse_rrd_delta(const char * body, float * out_delta, float * out_lat
     if (!body || !out_delta) return 0;
     const char * p = strchr(body, '{');
     if (!p) p = body;
-    float first = -1.0f, last = -1.0f;
+    /* Sum the positive steps instead of last - first: when the meter is
+     * replaced mid-day the counter drops to near 0 and last < first, which
+     * used to discard the whole day. A drop is skipped; usage after it is
+     * still counted. */
+    float first = -1.0f, last = -1.0f, sum = 0.0f;
     while (*p) {
         const char * k1 = strchr(p, '"');
         if (!k1) break;
@@ -213,6 +217,7 @@ static int parse_rrd_delta(const char * body, float * out_delta, float * out_lat
             float val = strtof(v, &endp);
             if (endp != v && val >= 0.0f) {
                 if (first < 0.0f) first = val;
+                else if (val > last) sum += val - last;
                 last = val;
             }
             p = (endp && endp > v) ? endp : v + 1;
@@ -220,8 +225,8 @@ static int parse_rrd_delta(const char * body, float * out_delta, float * out_lat
             p = v + 4;
         }
     }
-    if (first >= 0.0f && last >= first) {
-        *out_delta = (last - first) / 1000.0f;
+    if (first >= 0.0f) {
+        *out_delta = sum / 1000.0f;
         if (out_latest) *out_latest = last / 1000.0f;
         return 1;
     }

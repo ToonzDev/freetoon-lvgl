@@ -117,6 +117,14 @@ static long gas_ring_last_t = 0;
 static void gas_hour_update(float gas_now) {
     if (gas_now <= 0) { p1esp_state.gas_hour_m3 = 0; return; }
     long now = time(NULL);
+    /* Reading went down: new meter. Start the window over (see homewizard.c). */
+    if (gas_ring_count > 0) {
+        int last = (gas_ring_head - 1 + GAS_RING_N) % GAS_RING_N;
+        if (gas_now < gas_ring[last].m3 - 0.001f) {
+            gas_ring_head = gas_ring_count = 0;
+            gas_ring_last_t = 0;
+        }
+    }
     if (gas_ring_last_t == 0 || now - gas_ring_last_t >= 55) {
         gas_ring[gas_ring_head].t  = now;
         gas_ring[gas_ring_head].m3 = gas_now;
