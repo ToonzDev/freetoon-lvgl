@@ -731,6 +731,20 @@ static void handle_msg(const char* xml) {
                 toon_state.modulation_level = v;
             if (elem_text_float(xml, "currentSetpoint", &v) && v > 0)
                 toon_state.setpoint = v / 100.0f;
+            /* Pre-heating setting: ONLY published here. The HTTP
+             * getThermostatInfo has no maxPreheatTime (checked on a Toon 2),
+             * so without this the switch fell back to "off" after a restart.
+             * qt-gui reads the same field: enabled = maxPreheatTime > 0. The
+             * subscription asks for the full set, so it arrives at start-up
+             * and again after every SetPreheating. */
+            if (elem_text_float(xml, "maxPreheatTime", &v) && v >= 0) {
+                toon_state.max_preheat_time   = (int)v;
+                toon_state.preheating_enabled = v > 0 ? 1 : 0;
+            }
+            if (elem_text_float(xml, "nextSetpoint", &v) && v > 0)
+                toon_state.next_setpoint = v / 100.0f;
+            /* nextTime not here: an epoch in a float loses ~2 min; the
+             * HTTP poll reads it exactly. */
         }
         /* Could be a response to our SetSetpoint — extract setpoint from response */
         if (!settings.client_mode && (strstr(xml, "ManualSetpoint") || strstr(xml, "SetSetpoint") || strstr(xml, "Setpoint"))) {
@@ -1570,8 +1584,10 @@ static void* http_poll_thread(void* arg) {
             if (bi >= 0) {
                 update_burner_state(bi);
             }
-            /* Pre-heating setting (as qt-gui: enabled = maxPreheatTime > 0)
-             * and the next block, which the pre-heat status text targets. */
+            /* The next block, which the pre-heat status text targets.
+             * maxPreheatTime is NOT in this JSON on current firmware (it comes
+             * from the thermostatInfo dataset, see handle_msg); parsed here
+             * only in case a firmware does add it. */
             int mpt = parse_json_int(body, "maxPreheatTime", -1);
             if (mpt >= 0) {
                 toon_state.max_preheat_time = mpt;
