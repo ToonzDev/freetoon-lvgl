@@ -408,7 +408,9 @@ static void refresh_cb(lv_timer_t * t) {
     if (lbl_setpoint) {
         const char * prog = program_label();
         if (toon_state.setpoint > 0) {
-            if (toon_state.burner_on)
+            if (toon_state.preheating_active)
+                ui_label_set_text_fmt(lbl_setpoint, "%s - %s %.1f°C", prog, tr("aanwarmen", "pre-heat"), toon_state.setpoint);
+            else if (toon_state.burner_on)
                 ui_label_set_text_fmt(lbl_setpoint, "%s - naar %.1f°C", prog, toon_state.setpoint);
             else
                 ui_label_set_text_fmt(lbl_setpoint, "%s - %.1f°C", prog, toon_state.setpoint);
@@ -489,7 +491,7 @@ static void refresh_cb(lv_timer_t * t) {
      * boiler is firing CH — original-Toon style. No "90 C" target text:
      * the glyph itself is the signal. */
     if (dim_img_flame) {
-        if (toon_state.burner_on)
+        if (toon_state.burner_on || toon_state.preheating_active)
             ui_obj_clear_flag(dim_img_flame, LV_OBJ_FLAG_HIDDEN);
         else
             ui_obj_add_flag(dim_img_flame, LV_OBJ_FLAG_HIDDEN);

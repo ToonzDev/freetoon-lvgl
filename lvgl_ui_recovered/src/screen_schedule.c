@@ -32,6 +32,8 @@ static lv_obj_t * timeline_now_line;
 static lv_obj_t * hour_labels[5] = {NULL};
 static lv_obj_t * day_list;       /* parent of switch-point rows */
 static lv_timer_t * refresh_timer = NULL;
+static lv_obj_t * sw_preheat = NULL;
+static lv_obj_t * lbl_preheat = NULL;
 
 /* Layout constants — VERTICAL orientation: one column per weekday, time
  * runs top→bottom (00:00 at top, 24:00 at bottom). Reads like a planner.
@@ -522,9 +524,47 @@ static void show_edit_modal(int idx) {
 }
 
 /* Periodic timer just to refresh the "now" indicator. */
+static void update_preheat_ui(void) {
+    if (!sw_preheat || !lbl_preheat) return;
+    int en = (settings.preheat_enabled >= 0) ? settings.preheat_enabled : toon_state.preheating_enabled;
+    if (en) {
+        lv_obj_add_state(sw_preheat, LV_STATE_CHECKED);
+    } else {
+        lv_obj_clear_state(sw_preheat, LV_STATE_CHECKED);
+    }
+    if (toon_state.preheating_active) {
+        lv_label_set_text(lbl_preheat, tr("Voorverwarmen (actief)", "Pre-heating (active)"));
+        lv_obj_set_style_text_color(lbl_preheat, lv_color_hex(0xffaa44), 0);
+    } else {
+        lv_label_set_text(lbl_preheat, tr("Voorverwarmen", "Pre-heating"));
+        lv_obj_set_style_text_color(lbl_preheat, lv_color_hex(THEME_TEXT_HI), 0);
+    }
+}
+
+static void on_preheat_toggle(lv_event_t * e) {
+    (void)e;
+    if (!sw_preheat) return;
+    int en = lv_obj_has_state(sw_preheat, LV_STATE_CHECKED) ? 1 : 0;
+    settings.preheat_enabled = en;
+    settings_save();
+    boxtalk_set_preheating(en);
+    update_preheat_ui();
+}
+
+static void on_preheat_label_tap(lv_event_t * e) {
+    (void)e;
+    if (!sw_preheat) return;
+    if (lv_obj_has_state(sw_preheat, LV_STATE_CHECKED))
+        lv_obj_clear_state(sw_preheat, LV_STATE_CHECKED);
+    else
+        lv_obj_add_state(sw_preheat, LV_STATE_CHECKED);
+    on_preheat_toggle(NULL);
+}
+
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
     if (!scr_root || lv_scr_act() != scr_root || !timeline_box) return;
+    update_preheat_ui();
     time_t now = time(NULL);
     struct tm tm;
     localtime_r(&now, &tm);
@@ -556,6 +596,8 @@ lv_obj_t * screen_schedule_create(void) {
     scr_light_mode = settings.home_light_mode;
     memset(hour_labels, 0, sizeof(hour_labels));
     timeline_now_line = NULL;
+    sw_preheat = NULL;
+    lbl_preheat = NULL;
 
     schedule_load();
 
@@ -593,6 +635,21 @@ lv_obj_t * screen_schedule_create(void) {
         lv_label_set_text(title, tr("Programma", "Schedule"));
     }
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, SX(30), (DISP_VER < 550) ? 14 : SY(18));
+
+    /* Pre-heating toggle */
+    sw_preheat = lv_switch_create(scr_root);
+    lv_obj_set_size(sw_preheat, (DISP_VER < 550) ? SX(50) : SX(58), (DISP_VER < 550) ? 26 : 30);
+    lv_obj_align(sw_preheat, LV_ALIGN_TOP_RIGHT, SX(-95), (DISP_VER < 550) ? 16 : SY(20));
+    lv_obj_set_ext_click_area(sw_preheat, 15);
+    lv_obj_add_event_cb(sw_preheat, on_preheat_toggle, LV_EVENT_VALUE_CHANGED, NULL);
+
+    lbl_preheat = lv_label_create(scr_root);
+    lv_obj_set_style_text_font(lbl_preheat, (DISP_VER < 550) ? SF(16) : SF(20), 0);
+    lv_obj_align_to(lbl_preheat, sw_preheat, LV_ALIGN_OUT_LEFT_MID, SX(-12), 0);
+    lv_obj_add_flag(lbl_preheat, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(lbl_preheat, on_preheat_label_tap, LV_EVENT_CLICKED, NULL);
+
+    update_preheat_ui();
 
     /* Day chips — precisely aligned over their corresponding timeline column */
     for (int i = 0; i < 7; i++) {
@@ -658,6 +715,6 @@ lv_obj_t * screen_schedule_create(void) {
     rebuild_timeline();
     rebuild_day_list();
 
-    if (!refresh_timer) refresh_timer = lv_timer_create(refresh_cb, 60000, NULL);
+    if (!refresh_timer) refresh_timer = lv_timer_create(refresh_cb, 1000, NULL);
     return scr_root;
 }

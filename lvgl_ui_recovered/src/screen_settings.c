@@ -81,6 +81,8 @@ static lv_obj_t * lbl_dim_elec_scale_val  = NULL;
 static lv_obj_t * sl_waste_lead, * lbl_waste_lead;
 static lv_obj_t * sl_waste_hour, * lbl_waste_hour;
 static lv_obj_t * sl_offset,   * lbl_offset_val;
+static lv_obj_t * sw_preheat_settings = NULL;
+static lv_obj_t * lbl_preheat_val = NULL;
 static lv_obj_t * sw_boiler;
 static lv_obj_t * lbl_boiler_mode;
 static lv_obj_t * lbl_boiler_ot;
@@ -693,10 +695,40 @@ static void on_boiler_switch(lv_event_t * e) {
     lv_obj_center(b_yes_l);
 }
 
+static void on_preheat_settings_toggle(lv_event_t * e) {
+    (void)e;
+    if (!sw_preheat_settings) return;
+    int en = lv_obj_has_state(sw_preheat_settings, LV_STATE_CHECKED) ? 1 : 0;
+    settings.preheat_enabled = en;
+    settings_save();
+    boxtalk_set_preheating(en);
+    if (lbl_preheat_val) {
+        if (toon_state.preheating_active) {
+            lv_label_set_text(lbl_preheat_val, tr("Actief", "Active"));
+            lv_obj_set_style_text_color(lbl_preheat_val, lv_color_hex(0xffaa44), 0);
+        } else {
+            lv_label_set_text(lbl_preheat_val, en ? tr("Aan", "On") : tr("Uit", "Off"));
+            lv_obj_set_style_text_color(lbl_preheat_val, lv_color_hex(0xffffff), 0);
+        }
+    }
+}
+
 /* ============================ live ticks ============================ */
 
 static void heating_tick(void) {
     offset_sync();
+    if (lbl_preheat_val && sw_preheat_settings) {
+        int en = (settings.preheat_enabled >= 0) ? settings.preheat_enabled : toon_state.preheating_enabled;
+        if (en) lv_obj_add_state(sw_preheat_settings, LV_STATE_CHECKED);
+        else    lv_obj_clear_state(sw_preheat_settings, LV_STATE_CHECKED);
+        if (toon_state.preheating_active) {
+            lv_label_set_text(lbl_preheat_val, tr("Actief", "Active"));
+            lv_obj_set_style_text_color(lbl_preheat_val, lv_color_hex(0xffaa44), 0);
+        } else {
+            lv_label_set_text(lbl_preheat_val, en ? tr("Aan", "On") : tr("Uit", "Off"));
+            lv_obj_set_style_text_color(lbl_preheat_val, lv_color_hex(0xffffff), 0);
+        }
+    }
     if (s_ot_err_display_countdown > 0) {
         s_ot_err_display_countdown--;
         if (lbl_boiler_mode) {
@@ -1324,7 +1356,7 @@ static void open_waste_modal(lv_event_t * e) {
 
 static void open_heating_modal(lv_event_t * e) {
     (void)e;
-    lv_obj_t * p = modal_open(tr("Verwarming", "Heating"), 470);
+    lv_obj_t * p = modal_open(tr("Verwarming", "Heating"), 540);
     int y = 70;
 
     /* indoor temp calibration */
@@ -1340,7 +1372,18 @@ static void open_heating_modal(lv_event_t * e) {
         offset_sync();
         boxtalk_get_temp_offset();
     }
-    y += 90;
+    y += 85;
+
+    /* pre-heating (aanwarmvervroeging) */
+    lv_obj_t * r_ph = panel_row(p, y, tr("Voorverwarmen (aanwarmen)", "Pre-heating (optimal start)"), &lbl_preheat_val);
+    sw_preheat_settings = lv_switch_create(r_ph);
+    lv_obj_set_size(sw_preheat_settings, SX(64), SY(30));
+    lv_obj_align(sw_preheat_settings, LV_ALIGN_RIGHT_MID, SX(-10), 0);
+    int ph_en = (settings.preheat_enabled >= 0) ? settings.preheat_enabled : toon_state.preheating_enabled;
+    if (ph_en) lv_obj_add_state(sw_preheat_settings, LV_STATE_CHECKED);
+    else       lv_obj_clear_state(sw_preheat_settings, LV_STATE_CHECKED);
+    lv_obj_add_event_cb(sw_preheat_settings, on_preheat_settings_toggle, LV_EVENT_VALUE_CHANGED, NULL);
+    y += 75;
 
     /* boiler control type */
     lv_obj_t * box = lv_obj_create(p);
@@ -5914,7 +5957,7 @@ lv_obj_t * screen_settings_create(void) {
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_DOWNLOAD, tr("Update", "Update"),
               tr("versie & bijwerken", "version & update"), open_about_modal); n++;
     make_tile(GX(n), GY(n), &icon_flame, NULL, tr("Verwarming", "Heating"),
-              tr("correctie, keteltype", "offset, boiler type"), open_heating_modal); n++;
+              tr("voorverwarmen, keteltype", "pre-heating, boiler type"), open_heating_modal); n++;
     make_tile(GX(n), GY(n), &icon_radiator, NULL, tr("Voorkeuren", "Presets"),
               tr("schema-streefwaarden", "scheme setpoints"), open_presets_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_WIFI, tr("Webtoegang", "Web Access"),

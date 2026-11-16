@@ -78,6 +78,7 @@ typedef struct {
     char otgw_host[64];          /* "192.168.99.21" — IP or hostname (no scheme) */
     char otgw_user[32];          /* HTTP Basic-Auth user, empty = no auth */
     char otgw_pass[64];          /* HTTP Basic-Auth pass */
+    int  preheat_enabled;        /* -1 = unconfigured (adopt from happ_thermstat on first poll), 0 = off, 1 = on */
 
     /* MQTT broker for the banner subscriber. Empty host disables subscriber.
      * Topics: filter strings the subscriber listens on; each new PUBLISH

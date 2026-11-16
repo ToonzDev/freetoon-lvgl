@@ -154,6 +154,7 @@ static char s_therm_settings_uuid[96] = {0};
 
 static void bt_seed_thermostat_settings_uuid(void) {
     FILE * f = fopen("/qmf/config/config_happ_thermstat.xml", "r");
+    if (!f) f = fopen("/mnt/data/qmf/config/config_happ_thermstat.xml", "r");
     if (!f) return;
     char line[512];
     char cur_uuid[96] = {0};
@@ -329,11 +330,14 @@ static void update_burner_state(int bi) {
         s_burner_last_active_ts = now;
         toon_state.burner_on = 1;
         toon_state.dhw_on    = 0;
+        toon_state.preheating_active = (bi == 3);
     } else if (bi == 2) {
         toon_state.burner_on = 0;
         toon_state.dhw_on    = 1;
+        toon_state.preheating_active = 0;
     } else {
         toon_state.dhw_on = 0;
+        toon_state.preheating_active = 0;
         /* Debounce burner off-state: hold active for 20s if still heating towards setpoint */
         if (s_burner_last_active_ts > 0 && (now - s_burner_last_active_ts < 20) &&
             (toon_state.setpoint > toon_state.indoor_temp)) {
@@ -1069,6 +1073,31 @@ int boxtalk_set_boiler_type(int type) {
     return rc;
 }
 
+int boxtalk_set_preheating(int enable) {
+    enable = enable ? 1 : 0;
+    if (!s_therm_settings_uuid[0]) bt_seed_thermostat_settings_uuid();
+    const char * dest = s_therm_settings_uuid[0] ? s_therm_settings_uuid : (g_therm_pub[0] ? g_therm_pub : THERMD_UUID);
+    char buf[512];
+    snprintf(buf, sizeof(buf),
+        "<action class=\"invoke\" uuid=\"%s\" destuuid=\"%s\" "
+        "serviceid=\"urn:hcb-hae-com:serviceId:Thermostat\" requestid=\"%d-sph\">"
+        "<u:SetPreheating xmlns:u=\"urn:hcb-hae-com:service:Thermostat:1\">"
+        "<enable>%d</enable></u:SetPreheating></action>",
+        OUR_UUID, dest, getpid(), enable);
+    int rc = send_msg(buf);
+    fprintf(stderr, "[bxt] SetPreheating enable=%d rc=%d (dest=%s)\n", enable, rc, dest);
+    if (rc == 0) {
+        toon_state.preheating_enabled = enable;
+        if (enable && toon_state.max_preheat_time <= 0) {
+            toon_state.max_preheat_time = 360;
+        } else if (!enable) {
+            toon_state.max_preheat_time = 0;
+            toon_state.preheating_active = 0;
+        }
+    }
+    return rc;
+}
+
 /* ---- Room-temperature correction (shared with qt-gui) ----
  * Same calls as qt-gui's ThermostatSettingsApp.qml: service "Thermostat" on
  * happ_thermstat, GetTempOffset -> <offset>-1.0</offset><measuredTemp>2265
@@ -1296,6 +1325,10 @@ static void send_initial_handshake(void) {
     boxtalk_get_boiler_type();
     /* Seed the room-temp correction (shared with qt-gui) for the Settings UI. */
     boxtalk_get_temp_offset();
+    /* Resend saved preheat configuration on reconnect/startup if already configured */
+    if (settings.preheat_enabled >= 0) {
+        boxtalk_set_preheating(settings.preheat_enabled);
+    }
     /* Boiler flow/return temps — BoilerInfo is query-only (no notifies). */
     boxtalk_request_boiler_refresh();
 
@@ -1516,6 +1549,23 @@ static void* http_poll_thread(void* arg) {
             int bi = parse_json_int(body, "burnerInfo", -2);
             if (bi >= 0) {
                 update_burner_state(bi);
+            }
+            int mpt = parse_json_int(body, "maxPreheatTime", -1);
+            if (mpt >= 0) {
+                toon_state.max_preheat_time = mpt;
+                toon_state.preheating_enabled = (mpt > 0) ? 1 : 0;
+                /* If not yet configured in toonui.cfg, adopt the current setting from happ_thermstat
+                 * and write it to toonui.cfg so it is persisted from now on. */
+                if (settings.preheat_enabled < 0) {
+                    settings.preheat_enabled = toon_state.preheating_enabled;
+                    fprintf(stderr, "[bxt] Adopted preheat_enabled=%d from happ_thermstat (maxPreheatTime=%d)\n",
+                            settings.preheat_enabled, mpt);
+                    settings_save();
+                }
+            }
+            int ph = parse_json_int(body, "preheating", -1);
+            if (ph >= 0) {
+                toon_state.preheating_active = (ph == 1) || (bi == 3);
             }
             /* Stooklijn target — same reasoning as burnerInfo. */
             int chsp = parse_json_int(body, "currentInternalBoilerSetpoint", -1);

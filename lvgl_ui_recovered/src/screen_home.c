@@ -2508,7 +2508,9 @@ static void refresh_cb(lv_timer_t * t) {
      * burner is actively heating toward it (idle just shows the target
      * temperature, no arrow). */
     if (toon_state.setpoint > 0) {
-        if (toon_state.burner_on)
+        if (toon_state.preheating_active)
+            ui_label_set_text_fmt(lbl_t_setpoint, tr("aanwarmen %.1f°C", "pre-heat %.1f°C"), toon_state.setpoint);
+        else if (toon_state.burner_on)
             ui_label_set_text_fmt(lbl_t_setpoint, tr("naar %.1f°C", "to %.1f°C"), toon_state.setpoint);
         else
             ui_label_set_text_fmt(lbl_t_setpoint, "%.1f°C", toon_state.setpoint);
@@ -2591,7 +2593,7 @@ static void refresh_cb(lv_timer_t * t) {
     }
 
     if (lbl_t_burner) ui_label_set_text(lbl_t_burner, "");
-    if (toon_state.burner_on) {
+    if (toon_state.burner_on || toon_state.preheating_active) {
         if (tile_img_flame)  ui_obj_clear_flag(tile_img_flame,  LV_OBJ_FLAG_HIDDEN);
         if (tile_img_faucet) ui_obj_add_flag(tile_img_faucet, LV_OBJ_FLAG_HIDDEN);
         if (tile_img_drop)   ui_obj_add_flag(tile_img_drop,   LV_OBJ_FLAG_HIDDEN);

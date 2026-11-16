@@ -167,7 +167,10 @@ static void refresh_cb(lv_timer_t * t) {
      * and the right-column "CH water Flow … Return …" panel has the temps.
      * The old left-side flame/faucet/drop icons are now redundant — kept as
      * widgets but always hidden. */
-    if (toon_state.burner_on) {
+    if (toon_state.preheating_active) {
+        lv_label_set_text(lbl_burner, tr("Voorverwarmen", "Pre-heating"));
+        lv_obj_set_style_text_color(lbl_burner, lv_color_hex(0xffaa44), 0);
+    } else if (toon_state.burner_on) {
         lv_label_set_text(lbl_burner, tr("Verwarmen", "Heating"));
         lv_obj_set_style_text_color(lbl_burner, lv_color_hex(0xff6644), 0);
     } else if (toon_state.dhw_on) {
@@ -199,7 +202,7 @@ static void refresh_cb(lv_timer_t * t) {
 
     /* Radiator+flame next to the big indoor-temp — visible while CH fires. */
     if (img_temp_flame) {
-        if (toon_state.burner_on)
+        if (toon_state.burner_on || toon_state.preheating_active)
             lv_obj_clear_flag(img_temp_flame, LV_OBJ_FLAG_HIDDEN);
         else
             lv_obj_add_flag(img_temp_flame, LV_OBJ_FLAG_HIDDEN);

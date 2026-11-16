@@ -76,6 +76,7 @@ settings_t settings = {
     .otgw_host           = "",            /* set per-device in Settings → OT Bridge */
     .otgw_user           = "",
     .otgw_pass           = "",
+    .preheat_enabled     = -1,            /* adopt from happ_thermstat on first poll */
     /* MQTT is opt-in and unconfigured by default — no personal broker baked
      * into the public binary. Enable + fill host/user in Settings → MQTT. */
     .mqtt_enabled        = 0,
@@ -299,6 +300,7 @@ void settings_load(void) {
         else if (strcmp(k, "otgw_pass")         == 0)
             snprintf(settings.otgw_pass,
                      sizeof settings.otgw_pass, "%s", v);
+        else if (strcmp(k, "preheat_enabled")   == 0) settings.preheat_enabled = iv;
         else if (strcmp(k, "mqtt_enabled")      == 0) settings.mqtt_enabled = iv;
         else if (strcmp(k, "mqtt_host")         == 0)
             snprintf(settings.mqtt_host, sizeof settings.mqtt_host, "%s", v);
@@ -999,6 +1001,7 @@ static void settings_write_file(void) {
     fprintf(f, "otgw_host=%s\n",           settings.otgw_host);
     fprintf(f, "otgw_user=%s\n",           settings.otgw_user);
     fprintf(f, "otgw_pass=%s\n",           settings.otgw_pass);
+    fprintf(f, "preheat_enabled=%d\n",     settings.preheat_enabled);
     fprintf(f, "mqtt_enabled=%d\n",        settings.mqtt_enabled);
     fprintf(f, "mqtt_host=%s\n",           settings.mqtt_host);
     fprintf(f, "mqtt_port=%d\n",           settings.mqtt_port);

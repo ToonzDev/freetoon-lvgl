@@ -40,6 +40,9 @@ typedef struct {
                                         2=TEMPOVERRIDE 8=LOCKEDBASE, -1=unknown */
     volatile int    active_state;    /* happ "activeState" = the LIVE comfort preset:
                                         0=Comfort 1=Home 2=Sleep 3=Away, -1=manual */
+    volatile int    preheating_enabled; /* 0/1, maxPreheatTime > 0 */
+    volatile int    preheating_active;  /* 0/1, preheating == 1 or burnerInfo == 3 */
+    volatile int    max_preheat_time;   /* minutes (e.g. 360) */
 } toon_state_t;
 
 #define PROG_MANUAL        0   /* manual hold, no schedule */
@@ -130,6 +133,11 @@ int boxtalk_send_raw_xml(const char * xml);
    the OpenTherm gateway. type: 0=OpenTherm, 1=On/Off. */
 int boxtalk_get_boiler_type(void);
 int boxtalk_set_boiler_type(int type);
+
+/* Pre-heating (aanwarmvervroeging): enable=1 turns on adaptive preheating
+   (happ_thermstat sets maxPreheatTime to 360 min and starts heating ahead of
+   scheduled blocks), enable=0 turns it off (maxPreheatTime = 0). */
+int boxtalk_set_preheating(int enable);
 
 /* Room-temperature correction, owned by happ_thermstat (persisted there as
    i2cTempError) and shared with the stock qt-gui. happ_thermstat adds it to
