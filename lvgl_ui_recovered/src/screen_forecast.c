@@ -102,6 +102,9 @@ static void update_forecast_view_mode(void) {
 
         buienradar_rain_snapshot_t snap;
         buienradar_rain_get_snapshot(&snap);
+        if (!snap.is_valid) {
+            buienradar_rain_refresh_async();
+        }
 
         int has_rain = (fc_view_mode == 1) ? snap.has_rain_3h : snap.has_rain_24h;
 

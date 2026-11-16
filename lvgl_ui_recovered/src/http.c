@@ -151,10 +151,11 @@ static int curl_fetch(const char * url, char * out, size_t out_max, int timeout_
             || c == ' ' || c == '\n' || c == '\r') return -1;
     }
 
+    int conn_to = (timeout_s >= 10) ? 8 : (timeout_s >= 4 ? 4 : timeout_s);
     char cmd[1024];
     snprintf(cmd, sizeof(cmd),
-        "/usr/bin/curl -s -4 %s-L --compressed --max-time %d --connect-timeout 4 "
-        "-A 'toonui/1.0' '%s'", verify_tls ? "" : "-k ", timeout_s, url);
+        "/usr/bin/curl -s -4 %s-L --compressed --max-time %d --connect-timeout %d "
+        "-A 'toonui/1.0' '%s'", verify_tls ? "" : "-k ", timeout_s, conn_to, url);
     FILE * fp = popen(cmd, "r");
     if (!fp) return -1;
     size_t got = 0;

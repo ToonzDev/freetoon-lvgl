@@ -434,6 +434,8 @@ static int fetch_br_forecast(int id) {
                the forecast's own location for the rain tile. */
             if (g_cfg_lat == 0.0 && g_cfg_lon == 0.0 && (lat != 0.0 || lon != 0.0)) {
                 g_cfg_lat = lat; g_cfg_lon = lon;
+                extern void buienradar_rain_refresh_async(void);
+                buienradar_rain_refresh_async();
             }
             return 0;
         }
@@ -785,6 +787,13 @@ static void weather_locate(void) {
  * different id than the one in use — the caller then refetches. */
 static int weather_check_name(void) {
     if (g_loc_by_name || !settings.weather_location[0]) return 0;
+    /* If the user has explicitly configured a custom location ID (different from
+     * the default De Bilt 2757783), honour it! Never let a default or mismatched
+     * place name string overwrite the user's configured ID. */
+    if (settings.weather_location_id > 0 && settings.weather_location_id != 2757783) {
+        g_loc_by_name = 1;
+        return 0;
+    }
     double lat, lon;
     int id = br_find_place(settings.weather_location, &lat, &lon);
     if (id <= 0) return 0;                   /* no answer / not found: try again later */
@@ -797,6 +806,7 @@ static int weather_check_name(void) {
     fprintf(stderr, "[wx] '%s' is id %d, not %d — switching\n",
             settings.weather_location, id, g_loc_id);
     g_loc_id = id;
+    settings.weather_location_id = id;
     return 1;
 }
 

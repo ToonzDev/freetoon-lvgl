@@ -214,8 +214,16 @@ static void * rain_thread(void * arg) {
         buienradar_rain_snapshot_t temp_snap = {0};
 
         /* Fetch 3-hour forecast */
-        if (http_fetch_to(url_3h, body_3h, sizeof(body_3h), 10) == 0) {
-            parse_3h(body_3h, &temp_snap);
+        fprintf(stderr, "[rain] fetching 3h forecast (%.4f, %.4f)\n", lat, lon);
+        if (http_fetch_to(url_3h, body_3h, sizeof(body_3h), 15) == 0) {
+            if (parse_3h(body_3h, &temp_snap) == 0) {
+                fprintf(stderr, "[rain] 3h forecast OK (%d points, '%s')\n",
+                        temp_snap.count_3h, temp_snap.summary_3h);
+            } else {
+                fprintf(stderr, "[rain] 3h forecast parse failed\n");
+            }
+        } else {
+            fprintf(stderr, "[rain] 3h forecast fetch failed\n");
         }
 
         /* Fetch 24-hour forecast every 30 mins or on first run */
@@ -224,8 +232,16 @@ static void * rain_thread(void * arg) {
             snprintf(url_24h, sizeof(url_24h),
                      "https://graphdata.buienradar.nl/3.0/forecast/geo/Rain24Hour?lat=%.4f&lon=%.4f",
                      lat, lon);
-            if (http_fetch_to(url_24h, body_24h, sizeof(body_24h), 10) == 0) {
-                parse_24h(body_24h, &temp_snap);
+            fprintf(stderr, "[rain] fetching 24h forecast (%.4f, %.4f)\n", lat, lon);
+            if (http_fetch_to(url_24h, body_24h, sizeof(body_24h), 15) == 0) {
+                if (parse_24h(body_24h, &temp_snap) == 0) {
+                    fprintf(stderr, "[rain] 24h forecast OK (%d points, '%s')\n",
+                            temp_snap.count_24h, temp_snap.summary_24h);
+                } else {
+                    fprintf(stderr, "[rain] 24h forecast parse failed\n");
+                }
+            } else {
+                fprintf(stderr, "[rain] 24h forecast fetch failed\n");
             }
         }
 
@@ -247,6 +263,17 @@ static void * rain_thread(void * arg) {
             s_rain_data.max_mm_24h = temp_snap.max_mm_24h;
         }
         pthread_mutex_unlock(&s_rain_mtx);
+
+        /* If initial fetch failed, retry quickly (every 10s) until we have data,
+         * rather than making the user stare at 'Laden...' for 5 minutes! */
+        if (!s_rain_data.is_valid) {
+            fprintf(stderr, "[rain] no rain forecast data yet — retrying in 10s\n");
+            for (int i = 0; i < 10 && !s_rain_wake; i++) {
+                sleep(1);
+            }
+            s_rain_wake = 0;
+            continue;
+        }
 
         tick_24h = (tick_24h + 1) % 6; /* 6 * 5 min = 30 min */
 
