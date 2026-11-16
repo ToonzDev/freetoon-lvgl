@@ -154,17 +154,48 @@ void ui_pop(void) {
 }
 
 static volatile int wake_pending = 0;
+static uint32_t     dim_suppress_wake_until = 0;
 
 void ui_mark_activity(void) {
     last_activity_ms = lv_tick_get();
     /* Any touch while dimmed queues a wake. The actual pop+lv_scr_load
        runs from ui_idle_tick (main-loop context) so we never mutate the
        screen stack from inside an LVGL event dispatch. */
-    if (is_dimmed) wake_pending = 1;
+    if (is_dimmed) {
+        if (lv_tick_get() < dim_suppress_wake_until) return;
+        wake_pending = 1;
+    }
 }
 
 void ui_wake_now(void) {
     wake_pending = 1;
+}
+
+void ui_dim_now(void) {
+    if (is_dimmed) return;
+    fprintf(stderr, "[ui] manual dim request (gear long-press)\n");
+    screen_calendar_close();
+    screen_waste_close();
+    screen_home_dismiss_modals();
+    screen_settings_close_modals();
+    if (settings.dim_sleep_away_black && is_sleep_or_away()) {
+        backlight_set(0);
+        ui_push(screen_black_create());
+        is_black_screen = 1;
+    } else {
+        backlight_set(settings.dim_brightness);
+        ui_push(screen_dim_create());
+        is_black_screen = 0;
+    }
+    is_dimmed = 1;
+    wake_pending = 0;
+    dim_suppress_wake_until = lv_tick_get() + 600; /* ignore lingering touch while releasing */
+    lv_indev_t * id = lv_indev_get_next(NULL);
+    while (id) {
+        lv_indev_wait_release(id);
+        id = lv_indev_get_next(id);
+    }
+    lv_obj_add_flag(lv_layer_top(), LV_OBJ_FLAG_HIDDEN);
 }
 
 int ui_is_dimmed(void) {

@@ -62,7 +62,7 @@ static const struct { const char * name; int w, h; } SIZES[] = {
     { "Breed\n12x2", 12, 2 },
 };
 #define N_SIZES ((int)(sizeof SIZES / sizeof SIZES[0]))
-static int        pick_w = 6, pick_h = 2;   /* currently-selected insert size */
+static int        pick_w = 3, pick_h = 2;   /* currently-selected insert size */
 static lv_obj_t * size_btns[N_SIZES];
 static lv_obj_t * type_grid;                 /* palette's type-button container */
 static lv_obj_t * preset_mgr;                /* "Indelingen" preset-manager modal */
@@ -467,6 +467,7 @@ static void on_add(lv_event_t * e) {
 
     /* size row (only when adding, not when replacing type) */
     if (replace_idx < 0) {
+        pick_w = 3; pick_h = 2;
         lv_obj_t * srow = lv_obj_create(chooser);
         lv_obj_set_width(srow, LV_PCT(100));
         lv_obj_set_height(srow, 70);

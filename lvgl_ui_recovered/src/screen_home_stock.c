@@ -215,6 +215,7 @@ static void on_scene(lv_event_t * e) {
     }
 }
 static void on_apps_grid(lv_event_t * e) { (void)e; ui_push(screen_settings_create()); }
+static void on_apps_grid_longpress(lv_event_t * e) { (void)e; ui_dim_now(); }
 
 /* ---- collapsible lights handle (mirrors LVGL home screen) ---------------- */
 static lv_obj_t * s_lights_handle     = NULL;
@@ -930,7 +931,8 @@ lv_obj_t * screen_home_stock_create(void) {
     lv_obj_clear_flag(grid, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(grid, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_ext_click_area(grid, SX(18));
-    lv_obj_add_event_cb(grid, on_apps_grid, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(grid, on_apps_grid, LV_EVENT_SHORT_CLICKED, NULL);
+    lv_obj_add_event_cb(grid, on_apps_grid_longpress, LV_EVENT_LONG_PRESSED, NULL);
     for (int r = 0; r < 3; r++) for (int c = 0; c < 3; c++) {
         lv_obj_t * d = lv_obj_create(grid);
         lv_obj_set_size(d, SX(6), SY(6));

@@ -889,6 +889,11 @@ static void open_settings(lv_event_t * e) {
     (void)e;
     pin_gate(open_settings_action, NULL);
 }
+static void on_gear_longpress(lv_event_t * e) {
+    (void)e;
+    fprintf(stderr, "[home] gear long press -> dim now\n");
+    ui_dim_now();
+}
 static void open_stats(lv_event_t * e) {
     (void)e;
     if (check_slot_integration_open(0)) return;
@@ -5614,7 +5619,8 @@ lv_obj_t * screen_home_create(void) {
     ui_obj_set_style_bg_color(gear, lv_color_hex(settings.home_light_mode ? 0xd0d8e2 : 0x223344), 0);
     lv_obj_set_style_radius(gear, gear_sz / 2, 0);
     lv_obj_set_ext_click_area(gear, 25);
-    lv_obj_add_event_cb(gear, open_settings, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(gear, open_settings, LV_EVENT_SHORT_CLICKED, NULL);
+    lv_obj_add_event_cb(gear, on_gear_longpress, LV_EVENT_LONG_PRESSED, NULL);
     lv_obj_t * gear_lbl = lv_label_create(gear);
     ui_label_set_text(gear_lbl, LV_SYMBOL_SETTINGS);
     ui_obj_set_style_text_color(gear_lbl, lv_color_hex(settings.home_light_mode ? 0x1e2838 : 0xffffff), 0);

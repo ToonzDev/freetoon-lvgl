@@ -492,8 +492,9 @@ static void on_restore_block(lv_event_t * e) {
         return;
     }
 
-    int w = edit_dim[idx].w;
-    int h = edit_dim[idx].h;
+    /* Default newly added blocks to 3x2, which fits more easily */
+    int w = 3;
+    int h = 2;
     int is_energy_block = (idx == DB_ENERGY || idx == DB_GAS || idx == DB_SOLAR || idx == DB_EDAY);
     int min_h = (idx == DB_DATE || is_energy_block) ? 1 : DIM_MIN_H;
     int min_w = (is_energy_block && settings.dim_bars_vertical) ? 1 : DIM_MIN_W;
