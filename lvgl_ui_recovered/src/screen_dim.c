@@ -62,21 +62,26 @@ static int        dim_vent_period_ms = 0; /* current spin animation period */
 static lv_obj_t * lbl_dim_nilm  = NULL;  /* NILM transient device event */
 static lv_timer_t * refresh_timer = NULL;
 
-/* ---- usage bars flanking the clock: energy now (W) + gas hourly (m³) ----
- * RESTORED (PR follow-up): the symmetric-dim rework deleted this rendering but
- * left settings.show_dim_bars + its Settings toggle orphaned. This brings the
- * bars back, gated by that existing toggle (default on). Placement mirrors the
- * original (screen edges, temp-row height) — may need repositioning against the
- * new symmetric waste/weather layout (left to the layout owner to confirm). */
-#define DIM_BAR_W     58      /* bar width, design px (SX-scaled) */
-#define DIM_BAR_INSET 20      /* gap from the screen bezel (outer edges) */
-#define DIM_BAR_Y     45      /* vertical centre = the indoor-temp row */
+/* ---- usage bars flanking the clock: energy now (W) + gas day (m³) + energy day (kWh) ----
+ * RESTORED (PR follow-up): 3 usage bars, gated by settings.show_dim_bars (default on).
+ * Placement honours settings.dim_bars_swap (0..3):
+ *   0: Gas left | Electricity right (actual + day total)
+ *   1: Electricity left (actual + day total) | Gas right
+ *   2: Day totals left (gas + elec day) | Electricity actual right
+ *   3: Electricity actual left | Day totals right (gas + elec day) */
+#define DIM_BAR_W     48      /* bar width, design px */
+#define DIM_BAR_Y     25      /* vertical centre offset from mid-screen */
 #define DIM_CLOCK_H   96      /* clock font px; envelope = 2x this */
-static lv_obj_t * bar_l_env, * bar_l_fill, * bar_l_cap;
-static lv_obj_t * bar_r_env, * bar_r_fill, * bar_r_cap;
+
+static lv_obj_t * bar_gas_env,  * bar_gas_fill,  * bar_gas_cap;
+static lv_obj_t * bar_eact_env, * bar_eact_fill, * bar_eact_cap;
+static lv_obj_t * bar_eday_env, * bar_eday_fill, * bar_eday_cap;
+
 #define DIM_NSEG 12
-static lv_obj_t * bar_l_segs[DIM_NSEG];
-static lv_obj_t * bar_r_segs[DIM_NSEG];
+static lv_obj_t * bar_gas_segs[DIM_NSEG];
+static lv_obj_t * bar_eact_segs[DIM_NSEG];
+static lv_obj_t * bar_eday_segs[DIM_NSEG];
+
 static int   dim_bar_h = 0;        /* envelope height (px, computed at create) */
 #define DIM_E_FULL_W    5000.0f     /* power at full bar height (fixed scale) */
 #define DIM_G_FULL_M3H  2.0f        /* gas (m³/h) at full bar height (fixed scale) */
@@ -118,15 +123,12 @@ static void dim_vent_apply_anim(int rpm) {
     lv_anim_start(&a);
 }
 
-/* Build one bar slot (side: -1 left edge, +1 right edge). Envelope is a dark
- * track at the screen edge, vertically centred on the indoor-temp row; the fill
+/* Build one bar slot. Envelope is a dark track at the screen edge; the fill
  * is a child anchored to the bottom that grows upward. Caption is align_to'd to
  * the envelope. Neither is CLICKABLE, so a tap on the bar falls through to wake. */
-static void dim_make_bar(int side, lv_obj_t ** env, lv_obj_t ** fill,
+static void dim_make_bar(lv_obj_t ** env, lv_obj_t ** fill,
                          lv_obj_t ** cap, lv_obj_t * segs[DIM_NSEG]) {
-    int bw = DIM_BAR_W;       /* unscaled so both Toon 1 and Toon 2 share full 58px thickness */
-    lv_align_t al = (side < 0) ? LV_ALIGN_LEFT_MID : LV_ALIGN_RIGHT_MID;
-    int xinset = (side < 0) ? SX(DIM_BAR_INSET) : -SX(DIM_BAR_INSET);
+    int bw = DIM_BAR_W;
 
     *env = lv_obj_create(scr_root);
     lv_obj_remove_style_all(*env);
@@ -134,7 +136,6 @@ static void dim_make_bar(int side, lv_obj_t ** env, lv_obj_t ** fill,
     ui_obj_set_style_bg_opa(*env, LV_OPA_TRANSP, 0);
     ui_obj_clear_flag(*env, LV_OBJ_FLAG_CLICKABLE);
     ui_obj_clear_flag(*env, LV_OBJ_FLAG_SCROLLABLE);
-    ui_obj_align(*env, al, xinset, SY(DIM_BAR_Y));
 
     *fill = lv_obj_create(*env);
     lv_obj_remove_style_all(*fill);
@@ -167,36 +168,62 @@ static void dim_make_bar(int side, lv_obj_t ** env, lv_obj_t ** fill,
 
     *cap = lv_label_create(scr_root);
     ui_obj_set_style_text_color(*cap, lv_color_hex(0xffffff), 0);
-    ui_obj_set_style_text_font(*cap, &lv_font_montserrat_22, 0);
+    ui_obj_set_style_text_font(*cap, (DISP_VER < 600) ? &lv_font_montserrat_14 : &lv_font_montserrat_18, 0);
     lv_obj_set_style_text_align(*cap, LV_TEXT_ALIGN_CENTER, 0);
     ui_label_set_text(*cap, "");
-    lv_obj_align_to(*cap, *env,
-                    (side < 0) ? LV_ALIGN_OUT_BOTTOM_LEFT : LV_ALIGN_OUT_BOTTOM_RIGHT,
-                    0, SY(14));
+}
+
+/* Dynamically position the 3 bars according to settings.dim_bars_swap (0..3) */
+static void dim_layout_bars(void) {
+    if (!bar_gas_env || !bar_eact_env || !bar_eday_env) return;
+    int bw = DIM_BAR_W;
+    int x_single = SX(24);
+    int x_outer  = SX(16);
+    int x_inner  = SX(16 + bw + 10);
+
+    int gas_side, gas_x;
+    int act_side, act_x;
+    int day_side, day_x;
+
+    switch (settings.dim_bars_swap) {
+        case 1: /* Stroom links (Actueel + Dag), Gas rechts */
+            act_side = -1; act_x = x_outer;
+            day_side = -1; day_x = x_inner;
+            gas_side = +1; gas_x = x_single;
+            break;
+        case 2: /* Dagtotalen links (Gas + Stroom Dag), Stroom Actueel rechts */
+            gas_side = -1; gas_x = x_outer;
+            day_side = -1; day_x = x_inner;
+            act_side = +1; act_x = x_single;
+            break;
+        case 3: /* Stroom Actueel links, Dagtotalen rechts (Gas + Stroom Dag) */
+            act_side = -1; act_x = x_single;
+            gas_side = +1; gas_x = x_outer;
+            day_side = +1; day_x = x_inner;
+            break;
+        default: /* 0: Gas links, Stroom rechts (Actueel + Dag) */
+            gas_side = -1; gas_x = x_single;
+            act_side = +1; act_x = x_inner;
+            day_side = +1; day_x = x_outer;
+            break;
+    }
+
+    ui_obj_align(bar_gas_env,  (gas_side < 0) ? LV_ALIGN_LEFT_MID : LV_ALIGN_RIGHT_MID,
+                 (gas_side < 0) ? gas_x : -gas_x, SY(DIM_BAR_Y));
+    ui_obj_align(bar_eact_env, (act_side < 0) ? LV_ALIGN_LEFT_MID : LV_ALIGN_RIGHT_MID,
+                 (act_side < 0) ? act_x : -act_x, SY(DIM_BAR_Y));
+    ui_obj_align(bar_eday_env, (day_side < 0) ? LV_ALIGN_LEFT_MID : LV_ALIGN_RIGHT_MID,
+                 (day_side < 0) ? day_x : -day_x, SY(DIM_BAR_Y));
 }
 
 /* Apply a value to a bar slot. ratio 0..1 of the envelope. Hidden when !show. */
 static void dim_bar_set(lv_obj_t * env, lv_obj_t * fill, lv_obj_t * cap,
                         lv_obj_t * segs[DIM_NSEG],
-                        int side, int show, int text_only,
-                        float ratio, uint32_t color, const char * txt) {
+                        int show, float ratio, uint32_t color, const char * txt) {
     if (!env) return;
     if (!show) {
         ui_obj_add_flag(env, LV_OBJ_FLAG_HIDDEN);
         if (cap) ui_obj_add_flag(cap, LV_OBJ_FLAG_HIDDEN);
-        return;
-    }
-    if (text_only) {
-        ui_obj_add_flag(env, LV_OBJ_FLAG_HIDDEN);
-        if (cap) {
-            ui_label_set_text(cap, txt);
-            ui_obj_set_style_text_color(cap, lv_color_hex(0xffffff), 0);
-            ui_obj_set_style_text_font(cap, &lv_font_montserrat_22, 0);
-            lv_obj_align_to(cap, env,
-                (side < 0) ? LV_ALIGN_OUT_RIGHT_MID : LV_ALIGN_OUT_LEFT_MID,
-                (side < 0) ? SX(6) : -SX(6), 0);
-            ui_obj_clear_flag(cap, LV_OBJ_FLAG_HIDDEN);
-        }
         return;
     }
     if (ratio < 0) ratio = 0;
@@ -230,10 +257,8 @@ static void dim_bar_set(lv_obj_t * env, lv_obj_t * fill, lv_obj_t * cap,
     if (cap) {
         ui_label_set_text(cap, txt);
         ui_obj_set_style_text_color(cap, lv_color_hex(0xffffff), 0);
-        ui_obj_set_style_text_font(cap, &lv_font_montserrat_22, 0);
-        lv_obj_align_to(cap, env,
-            (side < 0) ? LV_ALIGN_OUT_BOTTOM_LEFT : LV_ALIGN_OUT_BOTTOM_RIGHT,
-            0, SY(14));
+        ui_obj_set_style_text_font(cap, (DISP_VER < 600) ? &lv_font_montserrat_14 : &lv_font_montserrat_18, 0);
+        lv_obj_align_to(cap, env, LV_ALIGN_OUT_BOTTOM_MID, 0, SY(10));
         ui_obj_clear_flag(cap, LV_OBJ_FLAG_HIDDEN);
     }
 }
@@ -583,18 +608,24 @@ static void refresh_cb(lv_timer_t * t) {
         }
     }
 
-    /* Usage bars: energy now (W, white) + gas daily (m³, white), each
-     * on a fixed full-scale. Side honours dim_bars_swap; gated by show_dim_bars.
-     * Gas needs the P1; energy follows settings.energy_source (Toon vs HWE). */
-    if (bar_l_env) {
+    /* Usage bars: energy now (W), gas daily (m³), energy daily (kWh).
+     * Side honours dim_bars_swap (0..3); gated by show_dim_bars. */
+    if (bar_gas_env) {
+        dim_layout_bars();
+        int show = settings.show_dim_bars;
+
+        /* 1. Stroom actueel (W / kW) */
         int   e_conn = energy_connected();
         float e = energy_power_w();
         if (e < 0) e = 0;                          /* export → empty */
         float er = e / DIM_E_FULL_W;
+        if (er > 1.0f) er = 1.0f;
         char etxt[24];
         if (e >= 1000) snprintf(etxt, sizeof etxt, "%.1f kW", e / 1000.0f);
         else           snprintf(etxt, sizeof etxt, "%.0f W", e);
+        if (!e_conn) { er = 0; snprintf(etxt, sizeof etxt, "-- W"); }
 
+        /* 2. Gas dagtotaal (m³) */
         float g_today = energy_gas_today_m3();
         float gh = (g_today >= 0) ? g_today : energy_gas_hour_m3();
         int   g_conn = (gh >= 0);
@@ -602,25 +633,27 @@ static void refresh_cb(lv_timer_t * t) {
         float gr = (g_today >= 0) ? (g / 5.0f) : (g / DIM_G_FULL_M3H);
         if (gr > 1.0f) gr = 1.0f;
         char gtxt[24];
-        if (g_today >= 0) {
-            snprintf(gtxt, sizeof gtxt, "%.2f m3", g);
+        if (g_today >= 0) snprintf(gtxt, sizeof gtxt, "%.2f m3", g);
+        else              snprintf(gtxt, sizeof gtxt, "%.2f m3/h", g);
+        if (!g_conn) { gr = 0; snprintf(gtxt, sizeof gtxt, "-- m3"); }
+
+        /* 3. Stroom dagtotaal (kWh) */
+        float ed = energy_elec_today_kwh();
+        int   ed_conn = (ed >= 0);
+        float max_kwh = (settings.dim_elec_max_kwh > 0) ? (float)settings.dim_elec_max_kwh : 15.0f;
+        float edr = (ed > 0) ? (ed / max_kwh) : 0.0f;
+        if (edr > 1.0f) edr = 1.0f;
+        char edtxt[24];
+        if (ed_conn) {
+            if (ed < 10.0f) snprintf(edtxt, sizeof edtxt, "%.2f kWh", ed);
+            else            snprintf(edtxt, sizeof edtxt, "%.1f kWh", ed);
         } else {
-            snprintf(gtxt, sizeof gtxt, "%.2f m3/h", g);
+            snprintf(edtxt, sizeof edtxt, "-- kWh");
         }
 
-        int show = settings.show_dim_bars;
-        /* Keep the energy/gas section visible whenever the toggle is on — show an
-         * empty bar + "--" when the source is offline, instead of vanishing (the
-         * P1 drops out intermittently, which made gas/energy "disappear"). */
-        if (!g_conn) { gr = 0; snprintf(gtxt, sizeof gtxt, "-- m3"); }
-        if (!e_conn) { er = 0; snprintf(etxt, sizeof etxt, "-- W"); }
-        if (!settings.dim_bars_swap) {             /* default: gas LEFT, energy RIGHT */
-            dim_bar_set(bar_l_env, bar_l_fill, bar_l_cap, bar_l_segs, -1, show, 0, gr, 0xffffff, gtxt);
-            dim_bar_set(bar_r_env, bar_r_fill, bar_r_cap, bar_r_segs, +1, show, 0, er, 0xffffff, etxt);
-        } else {                                   /* swapped: energy LEFT, gas RIGHT */
-            dim_bar_set(bar_l_env, bar_l_fill, bar_l_cap, bar_l_segs, -1, show, 0, er, 0xffffff, etxt);
-            dim_bar_set(bar_r_env, bar_r_fill, bar_r_cap, bar_r_segs, +1, show, 0, gr, 0xffffff, gtxt);
-        }
+        dim_bar_set(bar_gas_env,  bar_gas_fill,  bar_gas_cap,  bar_gas_segs,  show, gr,  0xffffff, gtxt);
+        dim_bar_set(bar_eact_env, bar_eact_fill, bar_eact_cap, bar_eact_segs, show, er,  0xffffff, etxt);
+        dim_bar_set(bar_eday_env, bar_eday_fill, bar_eday_cap, bar_eday_segs, show, edr, 0xffffff, edtxt);
     }
     /* NILM transient device label */
     if (lbl_dim_nilm) {
@@ -973,11 +1006,13 @@ lv_obj_t * screen_dim_create(void) {
         dim_fc_build(scr_root, i * col_w, strip_y, col_w, strip_h,
                      &dim_fc_icon[i], &dim_fc_day[i], &dim_fc_temp[i]);
 
-    /* Usage bars at the outer edges, centred on the indoor-temp row (restored;
-     * gated/positioned per show_dim_bars + dim_bars_swap in refresh_cb). */
+    /* 3 Usage bars: gas day, electricity actual, electricity day total.
+     * Positioned per settings.dim_bars_swap (0..3) in dim_layout_bars(). */
     dim_bar_h = SY(2 * DIM_CLOCK_H);
-    dim_make_bar(-1, &bar_l_env, &bar_l_fill, &bar_l_cap, bar_l_segs);
-    dim_make_bar(+1, &bar_r_env, &bar_r_fill, &bar_r_cap, bar_r_segs);
+    dim_make_bar(&bar_gas_env,  &bar_gas_fill,  &bar_gas_cap,  bar_gas_segs);
+    dim_make_bar(&bar_eact_env, &bar_eact_fill, &bar_eact_cap, bar_eact_segs);
+    dim_make_bar(&bar_eday_env, &bar_eday_fill, &bar_eday_cap, bar_eday_segs);
+    dim_layout_bars();
 
     if (!refresh_timer) refresh_timer = lv_timer_create(refresh_cb, 1000, NULL);
     return scr_root;

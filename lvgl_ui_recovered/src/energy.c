@@ -164,6 +164,120 @@ float energy_gas_today_m3(void) {
     }
 }
 
+/* --- electricity used since local midnight (kWh) --- */
+static pthread_mutex_t g_eb_mtx = PTHREAD_MUTEX_INITIALIZER;
+static int    g_eb_day = -1;
+static double g_eb_kwh = -1;
+static int    g_eb_exact = 0;
+static int    g_eb_busy = 0;
+static long   g_eb_last_try = 0;
+
+static void * elec_baseline_thread(void * arg) {
+    int day = (int)(intptr_t)arg;
+    time_t now = time(NULL);
+    struct tm lt;
+    localtime_r(&now, &lt);
+    lt.tm_hour = 0; lt.tm_min = 0; lt.tm_sec = 0; lt.tm_isdst = -1;
+    long midnight = (long)mktime(&lt);
+    char url[256], want[40];
+    snprintf(url, sizeof url,
+        "http://127.0.0.1:10080/hcb_rrd?action=getRrdData&loggerName=elec_quantity_nt&rra=5yrhours"
+        "&from=%ld&to=%ld&readableTime=1&nullForNaN=1", midnight - 3600, midnight + 60);
+    snprintf(want, sizeof want, "%02d-%02d-%04d 00:00:00", lt.tm_mday, lt.tm_mon + 1, lt.tm_year + 1900);
+    static char body[2048];
+    double v_nt = -1, v_lt = -1;
+    if (http_fetch(url, body, sizeof body) == 0) {
+        const char * p = strstr(body, want);
+        if (p && (p = strchr(p + strlen(want), ':'))) {
+            p++; while (*p == ' ') p++;
+            if (*p != 'n') v_nt = strtod(p, NULL);
+        }
+    }
+    snprintf(url, sizeof url,
+        "http://127.0.0.1:10080/hcb_rrd?action=getRrdData&loggerName=elec_quantity_lt&rra=5yrhours"
+        "&from=%ld&to=%ld&readableTime=1&nullForNaN=1", midnight - 3600, midnight + 60);
+    if (http_fetch(url, body, sizeof body) == 0) {
+        const char * p = strstr(body, want);
+        if (p && (p = strchr(p + strlen(want), ':'))) {
+            p++; while (*p == ' ') p++;
+            if (*p != 'n') v_lt = strtod(p, NULL);
+        }
+    }
+    pthread_mutex_lock(&g_eb_mtx);
+    if ((v_nt > 0 || v_lt > 0) && day == g_eb_day) {
+        g_eb_kwh = ((v_nt > 0 ? v_nt : 0) + (v_lt > 0 ? v_lt : 0)) / 1000.0;
+        g_eb_exact = 1;
+        fprintf(stderr, "[energy] elec at 00:00 from hcb_rrd: %.3f kWh\n", g_eb_kwh);
+    }
+    g_eb_busy = 0;
+    pthread_mutex_unlock(&g_eb_mtx);
+    return NULL;
+}
+
+static float elec_since_midnight(double cum_kwh) {
+    if (cum_kwh <= 0) return -1.0f;
+    time_t now = time(NULL);
+    struct tm lt;
+    localtime_r(&now, &lt);
+    int day = (lt.tm_year + 1900) * 1000 + lt.tm_yday;
+    float out;
+    pthread_mutex_lock(&g_eb_mtx);
+    if (day != g_eb_day) {
+        g_eb_day = day;
+        g_eb_kwh = cum_kwh;
+        g_eb_exact = 0;
+        g_eb_last_try = 0;
+    }
+    if (!g_eb_exact && !g_eb_busy && !settings.client_mode && (long)now - g_eb_last_try >= 600) {
+        g_eb_busy = 1;
+        g_eb_last_try = (long)now;
+        pthread_t t;
+        if (pthread_create(&t, NULL, elec_baseline_thread, (void *)(intptr_t)day) == 0) pthread_detach(t);
+        else g_eb_busy = 0;
+    }
+    out = (float)(cum_kwh - g_eb_kwh);
+    pthread_mutex_unlock(&g_eb_mtx);
+    return out < 0 ? 0.0f : out;
+}
+
+/* Today's total electricity import in kWh (<0 when unavailable). */
+float energy_elec_today_kwh(void) {
+    if (settings.client_mode) {
+        if (meter_state.elec_today_kwh >= 0) return meter_state.elec_today_kwh;
+        if (hw_state.connected_p1) {
+            double c = hw_state.kwh_import_total > 0 ? hw_state.kwh_import_total
+                                                     : (hw_state.kwh_import_t1 + hw_state.kwh_import_t2);
+            if (c > 0) return elec_since_midnight(c);
+        }
+    }
+    switch (settings.energy_source) {
+        case 1: { /* HomeWizard P1 */
+            if (!hw_state.connected_p1) return -1.0f;
+            double c = hw_state.kwh_import_total > 0 ? hw_state.kwh_import_total
+                                                     : (hw_state.kwh_import_t1 + hw_state.kwh_import_t2);
+            return elec_since_midnight(c);
+        }
+        case 2: { /* ESPHome P1 */
+            if (!p1esp_state.connected) return -1.0f;
+            double c = p1esp_state.kwh_import_t1 + p1esp_state.kwh_import_t2;
+            return elec_since_midnight(c);
+        }
+        case 3: { /* Home Assistant */
+            if (meter_state.elec_today_kwh >= 0) return meter_state.elec_today_kwh;
+            return -1.0f;
+        }
+        default: { /* meteradapter / Toon smart meter */
+            if (meter_state.elec_today_kwh >= 0) return meter_state.elec_today_kwh;
+            if (meter_state.reading_elec_normal_wh > 0 || meter_state.reading_elec_low_wh > 0) {
+                double c = ((meter_state.reading_elec_normal_wh > 0 ? meter_state.reading_elec_normal_wh : 0) +
+                            (meter_state.reading_elec_low_wh > 0 ? meter_state.reading_elec_low_wh : 0)) / 1000.0;
+                return elec_since_midnight(c);
+            }
+            return -1.0f;
+        }
+    }
+}
+
 const char * energy_offline_label(void) {
     if (settings.client_mode)
         return tr("Master offline", "Master offline");

@@ -16,6 +16,7 @@ typedef struct {
     volatile float gas_today_m3; /* today's gas usage in m³, <0 = unavailable */
     volatile float gas_now_m3h;  /* current gas flow rate in m³/h (from gasUsage) */
     volatile float gas_m3;       /* cumulative total gas in m³ */
+    volatile float elec_today_kwh; /* today's electricity in kWh, <0 = unavailable */
     /* The meter's own registers, as the stock "Meterstanden" pop-up shows
      * them: happ_pwrusage's powerUsage / gasUsage datasets (meterReading,
      * meterReadingLow, ...Produ in Wh; gas meterReading in litres). <0 =

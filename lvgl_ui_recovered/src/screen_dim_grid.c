@@ -110,7 +110,8 @@ static lv_obj_t * dim_box(int id, int * ow, int * oh) {
 static lv_obj_t * en_pwr_track, * en_pwr_fill, * en_pwr_lbl;
 static lv_obj_t * en_gas_track, * en_gas_fill, * en_gas_lbl;
 static lv_obj_t * en_sol_track, * en_sol_fill, * en_sol_lbl;
-static int   en_pwr_w = 0, en_gas_w = 0, en_sol_w = 0;   /* mini-bar track widths (px, set at create) */
+static lv_obj_t * en_eday_track, * en_eday_fill, * en_eday_lbl;
+static int   en_pwr_w = 0, en_gas_w = 0, en_sol_w = 0, en_eday_w = 0;   /* mini-bar track widths (px, set at create) */
 #define DIM_GRID_NSEG 12
 static lv_obj_t * en_pwr_segs[DIM_GRID_NSEG];
 static lv_obj_t * en_pwr_vlbl, * en_pwr_vunit;
@@ -118,6 +119,8 @@ static lv_obj_t * en_gas_segs[DIM_GRID_NSEG];
 static lv_obj_t * en_gas_vlbl, * en_gas_vunit;
 static lv_obj_t * en_sol_segs[DIM_GRID_NSEG];
 static lv_obj_t * en_sol_vlbl, * en_sol_vunit;
+static lv_obj_t * en_eday_segs[DIM_GRID_NSEG];
+static lv_obj_t * en_eday_vlbl, * en_eday_vunit;
 #define DIM_E_FULL_W    5000.0f     /* power at a full bar (fixed scale) */
 #define DIM_G_FULL_M3H  2.0f        /* gas (m³/h) at a full bar (fixed scale) */
 
@@ -672,11 +675,11 @@ static void refresh_cb(lv_timer_t * t) {
         }
     }
 
-    /* Energy block: power now (W, white) + gas trailing-hour (m³/h, amber) + solar (W, gold),
+    /* Energy block: power now (W, white) + gas trailing-hour (m³/h, amber) + solar (W, gold) + electricity day (kWh),
      * each a value + fixed-full-scale mini-bar. Gas needs the P1; energy follows
      * settings.energy_source (Toon vs HWE); solar follows energy_solar_w().
      * The whole block can be toggled off via the existing show_dim_bars setting. */
-    if (en_pwr_lbl || en_gas_lbl || en_sol_lbl) {
+    if (en_pwr_lbl || en_gas_lbl || en_sol_lbl || en_eday_lbl) {
         int   e_conn = energy_connected();
         float e = energy_power_w();
         if (e < 0) e = 0;                          /* export → empty */
@@ -690,9 +693,13 @@ static void refresh_cb(lv_timer_t * t) {
         float s = energy_solar_w();
         if (s < 0) s = 0;
 
+        float ed = energy_elec_today_kwh();
+        int   ed_conn = (ed >= 0);
+
         char epwr_val[16], epwr_unit[16];
         char gas_val[16],  gas_unit[16];
         char sol_val[16],  sol_unit[16];
+        char eday_val[16], eday_unit[16];
 
         if (e_conn) {
             if (e >= 1000) {
@@ -728,30 +735,45 @@ static void refresh_cb(lv_timer_t * t) {
             snprintf(sol_unit, sizeof sol_unit, "W");
         }
 
+        if (ed_conn) {
+            if (ed < 10.0f) snprintf(eday_val, sizeof eday_val, "%.2f", ed);
+            else            snprintf(eday_val, sizeof eday_val, "%.1f", ed);
+            snprintf(eday_unit, sizeof eday_unit, "kWh");
+        } else {
+            snprintf(eday_val, sizeof eday_val, "--");
+            snprintf(eday_unit, sizeof eday_unit, "kWh");
+        }
+
         float er = e / DIM_E_FULL_W;
         float gr = (g_today >= 0) ? (g / 5.0f) : (g / DIM_G_FULL_M3H);
         float sr = s / DIM_E_FULL_W;
+        float max_kwh = (settings.dim_elec_max_kwh > 0) ? (float)settings.dim_elec_max_kwh : 15.0f;
+        float edr = (ed > 0) ? (ed / max_kwh) : 0.0f;
+        if (edr > 1.0f) edr = 1.0f;
 
-        char edisp[32], gdisp[32], sdisp[32];
+        char edisp[32], gdisp[32], sdisp[32], eddisp[32];
         snprintf(edisp, sizeof edisp, "%s %s", epwr_val, epwr_unit);
         snprintf(gdisp, sizeof gdisp, "%s %s", gas_val,  gas_unit);
         snprintf(sdisp, sizeof sdisp, "%s %s", sol_val,  sol_unit);
+        snprintf(eddisp, sizeof eddisp, "%s %s", eday_val, eday_unit);
 
         en_set_bar(en_pwr_fill, en_pwr_lbl, en_pwr_w, er, edisp);
         en_set_bar(en_gas_fill, en_gas_lbl, en_gas_w, gr, gdisp);
         en_set_bar(en_sol_fill, en_sol_lbl, en_sol_w, sr, sdisp);
+        en_set_bar(en_eday_fill, en_eday_lbl, en_eday_w, edr, eddisp);
 
         en_set_vbar(en_pwr_segs, en_pwr_vlbl, en_pwr_vunit, er, epwr_val, epwr_unit);
         en_set_vbar(en_gas_segs, en_gas_vlbl, en_gas_vunit, gr, gas_val,  gas_unit);
         en_set_vbar_color(en_sol_segs, en_sol_vlbl, en_sol_vunit, sr, sol_val, sol_unit, 0xE5A93B, 0xFFD54F);
+        en_set_vbar(en_eday_segs, en_eday_vlbl, en_eday_vunit, edr, eday_val, eday_unit);
 
         /* show_dim_bars off → hide blocks' contents.
          * dim_bars_vertical chooses horizontal mini-bars vs classic vertical segmented bars. */
         int show = settings.show_dim_bars;
         int vert = settings.dim_bars_vertical;
 
-        lv_obj_t * en_parts[] = { en_pwr_track, en_gas_track, en_sol_track,
-                                  en_pwr_lbl,   en_gas_lbl,   en_sol_lbl };
+        lv_obj_t * en_parts[] = { en_pwr_track, en_gas_track, en_sol_track, en_eday_track,
+                                  en_pwr_lbl,   en_gas_lbl,   en_sol_lbl,   en_eday_lbl };
         for (unsigned i = 0; i < sizeof en_parts / sizeof en_parts[0]; i++)
             if (en_parts[i]) {
                 if (show && !vert) ui_obj_clear_flag(en_parts[i], LV_OBJ_FLAG_HIDDEN);
@@ -770,6 +792,10 @@ static void refresh_cb(lv_timer_t * t) {
                 if (show && vert) ui_obj_clear_flag(en_sol_segs[i], LV_OBJ_FLAG_HIDDEN);
                 else              ui_obj_add_flag(en_sol_segs[i], LV_OBJ_FLAG_HIDDEN);
             }
+            if (en_eday_segs[i]) {
+                if (show && vert) ui_obj_clear_flag(en_eday_segs[i], LV_OBJ_FLAG_HIDDEN);
+                else              ui_obj_add_flag(en_eday_segs[i], LV_OBJ_FLAG_HIDDEN);
+            }
         }
         if (en_pwr_vlbl) {
             if (show && vert) ui_obj_clear_flag(en_pwr_vlbl, LV_OBJ_FLAG_HIDDEN);
@@ -783,7 +809,11 @@ static void refresh_cb(lv_timer_t * t) {
             if (show && vert) ui_obj_clear_flag(en_sol_vlbl, LV_OBJ_FLAG_HIDDEN);
             else              ui_obj_add_flag(en_sol_vlbl, LV_OBJ_FLAG_HIDDEN);
         }
-        lv_obj_t * en_vunits[] = { en_pwr_vunit, en_gas_vunit, en_sol_vunit };
+        if (en_eday_vlbl) {
+            if (show && vert) ui_obj_clear_flag(en_eday_vlbl, LV_OBJ_FLAG_HIDDEN);
+            else              ui_obj_add_flag(en_eday_vlbl, LV_OBJ_FLAG_HIDDEN);
+        }
+        lv_obj_t * en_vunits[] = { en_pwr_vunit, en_gas_vunit, en_sol_vunit, en_eday_vunit };
         for (unsigned i = 0; i < sizeof en_vunits / sizeof en_vunits[0]; i++) {
             if (en_vunits[i]) {
                 if (show && vert) ui_obj_clear_flag(en_vunits[i], LV_OBJ_FLAG_HIDDEN);
@@ -1137,6 +1167,11 @@ lv_obj_t * screen_dim_grid_create(void) {
     en_sol_w = sbw_sol - 8;
     en_make_bar(bx_sol, en_sol_w, 6, 0xffcc00, &en_sol_track, &en_sol_fill, &en_sol_lbl);
     en_make_vbar(bx_sol, sbw_sol, sbh_sol, en_sol_segs, &en_sol_vlbl, &en_sol_vunit);
+
+    int edbw = 0, edbh = 0; lv_obj_t * bx_ed = dim_box(DB_EDAY, &edbw, &edbh);
+    en_eday_w = edbw - 8;
+    en_make_bar(bx_ed, en_eday_w, 6, 0xffffff, &en_eday_track, &en_eday_fill, &en_eday_lbl);
+    en_make_vbar(bx_ed, edbw, edbh, en_eday_segs, &en_eday_vlbl, &en_eday_vunit);
 
     /* ---- AGENDA: next calendar event(s) — 2-column, height-adaptive, all white text ---- */
     int abw = 0, abh = 0; lv_obj_t * bx_a = dim_box(DB_AGENDA, &abw, &abh);

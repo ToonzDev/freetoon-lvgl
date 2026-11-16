@@ -76,7 +76,8 @@ static lv_obj_t * sl_dim,      * lbl_dim_val;
 static lv_obj_t * sw_dim_wx;
 static lv_obj_t * sw_forecast_mode, * sw_weather_feel;
 static lv_obj_t * sw_dim_waste;
-static lv_obj_t * sw_dim_bars, * sw_dim_bars_swap;
+static lv_obj_t * sw_dim_bars;
+static lv_obj_t * lbl_dim_elec_scale_val  = NULL;
 static lv_obj_t * sl_waste_lead, * lbl_waste_lead;
 static lv_obj_t * sl_waste_hour, * lbl_waste_hour;
 static lv_obj_t * sl_offset,   * lbl_offset_val;
@@ -97,9 +98,19 @@ static void on_dim_wx_change(lv_event_t * e) {
 }
 static void on_dim_bars_change(lv_event_t * e) {
     settings.show_dim_bars = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    settings_save();
 }
 static void on_dim_bars_swap_change(lv_event_t * e) {
     settings.dim_bars_swap = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    settings_save();
+}
+static void on_dim_elec_scale_change(lv_event_t * e) {
+    int v = lv_slider_get_value(lv_event_get_target(e));
+    settings.dim_elec_max_kwh = v;
+    if (lbl_dim_elec_scale_val) {
+        lv_label_set_text_fmt(lbl_dim_elec_scale_val, "%d kWh", v);
+    }
+    settings_save();
 }
 static void on_dim_bars_vertical_change(lv_event_t * e) {
     settings.dim_bars_vertical = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
@@ -973,14 +984,20 @@ static void open_display_modal(lv_event_t * e) {
     y += 82;
 #endif
 
-    /* Usage bars flanking the dim clock: energy now (W) + gas hourly (m³),
-       auto-scaled. The swap toggle flips which metric is on which side. */
-    r = panel_row(p, y, tr("Verbruiksbalken op dimscherm", "Usage bars on dim screen"), NULL);
+    /* Usage bars flanking the dim clock: energy now (W) + gas day (m³) + energy day (kWh) */
+    r = panel_row(p, y, tr("Verbruiksbalken op dimscherm (3 balken)", "Usage bars on dim screen (3 bars)"), NULL);
     sw_dim_bars = row_switch(r, settings.show_dim_bars, on_dim_bars_change);
     y += 82;
 
-    r = panel_row(p, y, tr("Balken: wisselen (energie links / gas rechts)", "Bars: swap (energy left / gas right)"), NULL);
-    sw_dim_bars_swap = row_switch(r, settings.dim_bars_swap, on_dim_bars_swap_change);
+    r = panel_row(p, y, tr("Balken omwisselen (stroom links / gas rechts)", "Bars: swap (power left / gas right)"), NULL);
+    row_switch(r, settings.dim_bars_swap, on_dim_bars_swap_change);
+    y += 82;
+
+    /* Electricity day total full-scale slider (default 15 kWh) */
+    r = panel_row(p, y, tr("Schaal stroom dagtotaal", "Electricity day total scale"), &lbl_dim_elec_scale_val);
+    lv_label_set_text_fmt(lbl_dim_elec_scale_val, "%d kWh",
+                          settings.dim_elec_max_kwh > 0 ? settings.dim_elec_max_kwh : 15);
+    row_slider(r, 5, 50, settings.dim_elec_max_kwh > 0 ? settings.dim_elec_max_kwh : 15, on_dim_elec_scale_change);
     y += 82;
 
     /* Bars orientation: horizontal vs vertical segmented (classic Toon style) */

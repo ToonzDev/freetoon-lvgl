@@ -728,6 +728,25 @@ static void poll_stock_master(void) {
                 }
             }
 
+            /* Electricity day total from hcb_rrd */
+            float e_tot = 0.0f;
+            int have_e = 0;
+            get_stock_url(url, sizeof url,
+                     "hcb_rrd?action=getRrdData&loggerName=elec_quantity_nt&rra=5yrhours&from=%ld&to=%ld&readableTime=1&nullForNaN=1&samples=24",
+                     (long)midnight, (long)now_ts);
+            if (http_fetch_to(url, buf, sizeof buf, 2) == 0) {
+                float d = 0.0f;
+                if (parse_rrd_delta(buf, &d, NULL)) { e_tot += d; have_e = 1; }
+            }
+            get_stock_url(url, sizeof url,
+                     "hcb_rrd?action=getRrdData&loggerName=elec_quantity_lt&rra=5yrhours&from=%ld&to=%ld&readableTime=1&nullForNaN=1&samples=24",
+                     (long)midnight, (long)now_ts);
+            if (http_fetch_to(url, buf, sizeof buf, 2) == 0) {
+                float d = 0.0f;
+                if (parse_rrd_delta(buf, &d, NULL)) { e_tot += d; have_e = 1; }
+            }
+            if (have_e) meter_state.elec_today_kwh = e_tot;
+
             /* Water pressure from hcb_rrd */
             static const struct {
                 const char * name;

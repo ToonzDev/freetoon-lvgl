@@ -28,7 +28,9 @@ static const nilm_sig_t nilm_sigs[] = {
 
 meter_state_t    meter_state   = { .reading_elec_normal_wh = -1, .reading_elec_low_wh = -1,
                                    .reading_prod_normal_wh = -1, .reading_prod_low_wh = -1,
-                                   .reading_gas_l = -1 };
+                                   .reading_gas_l = -1,
+                                   .gas_today_m3 = -1.0f,
+                                   .elec_today_kwh = -1.0f };
 
 void meteradapter_on_flow(float watts) {
     static float  prev_w       = -1.0f;
@@ -261,6 +263,34 @@ static void *watchdog_thread(void *arg) {
                         meter_state.gas_m3 = tot;
                     }
                 }
+
+                /* Query RRD elec_quantity hourly archive to compute today's electricity import */
+                float e_tot = 0.0f;
+                int have_e = 0;
+                snprintf(rrd_url, sizeof rrd_url,
+                         "http://127.0.0.1:10080/hcb_rrd?action=getRrdData&loggerName=elec_quantity_nt&rra=5yrhours&from=%ld&to=%ld&readableTime=1&nullForNaN=1&samples=24",
+                         (long)midnight, (long)now);
+                if (http_fetch_to(rrd_url, rrd_buf, sizeof rrd_buf, 2) == 0) {
+                    float d = 0.0f;
+                    if (parse_rrd_delta(rrd_buf, &d, NULL)) { e_tot += d; have_e = 1; }
+                }
+                snprintf(rrd_url, sizeof rrd_url,
+                         "http://127.0.0.1:10080/hcb_rrd?action=getRrdData&loggerName=elec_quantity_lt&rra=5yrhours&from=%ld&to=%ld&readableTime=1&nullForNaN=1&samples=24",
+                         (long)midnight, (long)now);
+                if (http_fetch_to(rrd_url, rrd_buf, sizeof rrd_buf, 2) == 0) {
+                    float d = 0.0f;
+                    if (parse_rrd_delta(rrd_buf, &d, NULL)) { e_tot += d; have_e = 1; }
+                }
+                if (!have_e) {
+                    snprintf(rrd_url, sizeof rrd_url,
+                             "http://127.0.0.1:10080/hcb_rrd?action=getRrdData&loggerName=elec_quantity&rra=5yrhours&from=%ld&to=%ld&readableTime=1&nullForNaN=1&samples=24",
+                             (long)midnight, (long)now);
+                    if (http_fetch_to(rrd_url, rrd_buf, sizeof rrd_buf, 2) == 0) {
+                        float d = 0.0f;
+                        if (parse_rrd_delta(rrd_buf, &d, NULL)) { e_tot = d; have_e = 1; }
+                    }
+                }
+                if (have_e) meter_state.elec_today_kwh = e_tot;
             }
         }
 
@@ -278,6 +308,7 @@ static void *watchdog_thread(void *arg) {
 
 int meteradapter_start(void) {
     meter_state.gas_today_m3 = -1.0f;
+    meter_state.elec_today_kwh = -1.0f;
     pthread_t t;
     if (pthread_create(&t, NULL, watchdog_thread, NULL) != 0) return -1;
     pthread_detach(t);

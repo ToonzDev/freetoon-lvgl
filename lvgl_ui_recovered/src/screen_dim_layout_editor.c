@@ -58,7 +58,7 @@ static const uint32_t DB_COL[DB_COUNT] = {
     [DB_WASTE]=0x88dd66,  [DB_FAMILY]=0xff8866,  [DB_VENT]=0x6666aa,
     [DB_ENERGY]=0xaa77ff, [DB_GAS]=0xffaa33,     [DB_CLOCK]=0x2b7bbb,
     [DB_DATE]=0x486b88,   [DB_AGENDA]=0x4477cc,  [DB_RAINFALL]=0x3a77aa,
-    [DB_SOLAR]=0xeeaa22,
+    [DB_SOLAR]=0xeeaa22,  [DB_EDAY]=0x8855dd,
 };
 
 static void place_rect(int i);
@@ -279,7 +279,7 @@ static void on_resize(lv_event_t * e) {
     if (sel < 0 || sel >= DB_COUNT || !edit_dim[sel].visible) return;
     int d = (int)(intptr_t)lv_event_get_user_data(e);   /* 0:w- 1:w+ 2:h- 3:h+ */
     dim_block_t * b = &edit_dim[sel];
-    int is_energy_block = (sel == DB_ENERGY || sel == DB_GAS || sel == DB_SOLAR);
+    int is_energy_block = (sel == DB_ENERGY || sel == DB_GAS || sel == DB_SOLAR || sel == DB_EDAY);
     int min_h = (sel == DB_DATE || is_energy_block) ? 1 : DIM_MIN_H;
     int min_w = (is_energy_block && settings.dim_bars_vertical) ? 1 : DIM_MIN_W;
 
@@ -457,7 +457,7 @@ static void on_restore_block(lv_event_t * e) {
             int row = edit_dim[old_idx].row;
             int w = edit_dim[old_idx].w;
             int h = edit_dim[old_idx].h;
-            int is_energy_block = (idx == DB_ENERGY || idx == DB_GAS || idx == DB_SOLAR);
+            int is_energy_block = (idx == DB_ENERGY || idx == DB_GAS || idx == DB_SOLAR || idx == DB_EDAY);
             int min_h = (idx == DB_DATE || is_energy_block) ? 1 : DIM_MIN_H;
             int min_w = (is_energy_block && settings.dim_bars_vertical) ? 1 : DIM_MIN_W;
             if (w < min_w) w = min_w;
@@ -494,7 +494,7 @@ static void on_restore_block(lv_event_t * e) {
 
     int w = edit_dim[idx].w;
     int h = edit_dim[idx].h;
-    int is_energy_block = (idx == DB_ENERGY || idx == DB_GAS || idx == DB_SOLAR);
+    int is_energy_block = (idx == DB_ENERGY || idx == DB_GAS || idx == DB_SOLAR || idx == DB_EDAY);
     int min_h = (idx == DB_DATE || is_energy_block) ? 1 : DIM_MIN_H;
     int min_w = (is_energy_block && settings.dim_bars_vertical) ? 1 : DIM_MIN_W;
     if (w < min_w) w = min_w;

@@ -25,8 +25,13 @@ typedef struct {
     int show_dim_metrics;     /* 0/1 — TVOC/eCO2/CH-pressure row on the dim screen */
     int dim_custom_enabled;   /* 0 = original dim layout (default); 1 = custom grid (dim editor) */
     int language;             /* 0=NL, 1=EN */
-    int dim_bars_swap;        /* 0 = energy LEFT + gas RIGHT (default); 1 = swapped */
+    int dim_bars_swap;        /* 0..3: bar placement on dim screen:
+                                 0 = Gas left, Electricity right (act + day) [default]
+                                 1 = Electricity left (act + day), Gas right
+                                 2 = Day totals left (gas + elec day), Electricity act right
+                                 3 = Electricity act left, Day totals right (gas + elec day) */
     int dim_bars_vertical;    /* 0 = horizontal (default); 1 = vertical segmented (classic Toon style) */
+    int dim_elec_max_kwh;     /* 5..50 kWh — full scale for electricity day total bar (default 15) */
     int dim_waste_lead_days;  /* 0..7 — only show if pickup is within this many days
                                  (0 disables; 1 = only on pickup day; 2 = day before + day of) */
     int dim_waste_hour;       /* 0..23 — alert window start/end hour (default 18 = 18:00) */
