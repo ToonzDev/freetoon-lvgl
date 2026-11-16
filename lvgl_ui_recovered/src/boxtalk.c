@@ -1073,29 +1073,53 @@ int boxtalk_set_boiler_type(int type) {
     return rc;
 }
 
+/* Pre-heating: qt-gui's ThermostatApp.togglePreheating() sends SetPreheating
+ * (service "Thermostat") to the discovered happ_thermstat device — the same
+ * destination as Get/AdjustTempOffset, i.e. THERMD_UUID. happ_thermstat
+ * persists it as maxPreheatTime; the getThermostatInfo poll reads it back, so
+ * the switch always shows happ's value and a change made elsewhere (qt-gui,
+ * app, web) is never overridden from here. */
 int boxtalk_set_preheating(int enable) {
     enable = enable ? 1 : 0;
-    if (!s_therm_settings_uuid[0]) bt_seed_thermostat_settings_uuid();
-    const char * dest = s_therm_settings_uuid[0] ? s_therm_settings_uuid : (g_therm_pub[0] ? g_therm_pub : THERMD_UUID);
+    if (settings.client_mode) {
+        fprintf(stderr, "[bxt] SetPreheating ignored in client mode\n");
+        return -1;
+    }
     char buf[512];
     snprintf(buf, sizeof(buf),
         "<action class=\"invoke\" uuid=\"%s\" destuuid=\"%s\" "
         "serviceid=\"urn:hcb-hae-com:serviceId:Thermostat\" requestid=\"%d-sph\">"
         "<u:SetPreheating xmlns:u=\"urn:hcb-hae-com:service:Thermostat:1\">"
         "<enable>%d</enable></u:SetPreheating></action>",
-        OUR_UUID, dest, getpid(), enable);
+        OUR_UUID, THERMD_UUID, getpid(), enable);
     int rc = send_msg(buf);
-    fprintf(stderr, "[bxt] SetPreheating enable=%d rc=%d (dest=%s)\n", enable, rc, dest);
-    if (rc == 0) {
-        toon_state.preheating_enabled = enable;
-        if (enable && toon_state.max_preheat_time <= 0) {
-            toon_state.max_preheat_time = 360;
-        } else if (!enable) {
-            toon_state.max_preheat_time = 0;
-            toon_state.preheating_active = 0;
-        }
-    }
+    fprintf(stderr, "[bxt] SetPreheating enable=%d rc=%d\n", enable, rc);
+    /* Optimistic until the next poll confirms (or corrects) maxPreheatTime. */
+    if (rc == 0) toon_state.preheating_enabled = enable;
     return rc;
+}
+
+int boxtalk_preheat_shown(void) {
+    return toon_state.preheating_active && toon_state.program_state != PROG_MANUAL;
+}
+
+float boxtalk_preheat_target(void) {
+    return toon_state.next_setpoint > 0 ? toon_state.next_setpoint : toon_state.setpoint;
+}
+
+int boxtalk_preheat_minutes(void) {
+    if (toon_state.next_time <= 0) return -1;
+    long diff = ((long)toon_state.next_time - (long)time(NULL)) / 60;
+    int m = (int)(((diff + 2) / 5) * 5);          /* nearest 5-minute block */
+    return m < 5 ? 5 : m;
+}
+
+void boxtalk_preheat_eta(char * buf, int len) {
+    int m = boxtalk_preheat_minutes();
+    if (m < 0)            snprintf(buf, len, "%s", "");
+    else if (m < 60)      snprintf(buf, len, " %s %d min", tr("over", "in"), m);
+    else if (m % 60 == 0) snprintf(buf, len, " %s %d %s", tr("over", "in"), m / 60, tr("uur", "h"));
+    else                  snprintf(buf, len, " %s %d%s%02d", tr("over", "in"), m / 60, tr("u", "h"), m % 60);
 }
 
 /* ---- Room-temperature correction (shared with qt-gui) ----
@@ -1325,10 +1349,6 @@ static void send_initial_handshake(void) {
     boxtalk_get_boiler_type();
     /* Seed the room-temp correction (shared with qt-gui) for the Settings UI. */
     boxtalk_get_temp_offset();
-    /* Resend saved preheat configuration on reconnect/startup if already configured */
-    if (settings.preheat_enabled >= 0) {
-        boxtalk_set_preheating(settings.preheat_enabled);
-    }
     /* Boiler flow/return temps — BoilerInfo is query-only (no notifies). */
     boxtalk_request_boiler_refresh();
 
@@ -1550,23 +1570,17 @@ static void* http_poll_thread(void* arg) {
             if (bi >= 0) {
                 update_burner_state(bi);
             }
+            /* Pre-heating setting (as qt-gui: enabled = maxPreheatTime > 0)
+             * and the next block, which the pre-heat status text targets. */
             int mpt = parse_json_int(body, "maxPreheatTime", -1);
             if (mpt >= 0) {
                 toon_state.max_preheat_time = mpt;
                 toon_state.preheating_enabled = (mpt > 0) ? 1 : 0;
-                /* If not yet configured in toonui.cfg, adopt the current setting from happ_thermstat
-                 * and write it to toonui.cfg so it is persisted from now on. */
-                if (settings.preheat_enabled < 0) {
-                    settings.preheat_enabled = toon_state.preheating_enabled;
-                    fprintf(stderr, "[bxt] Adopted preheat_enabled=%d from happ_thermstat (maxPreheatTime=%d)\n",
-                            settings.preheat_enabled, mpt);
-                    settings_save();
-                }
             }
-            int ph = parse_json_int(body, "preheating", -1);
-            if (ph >= 0) {
-                toon_state.preheating_active = (ph == 1) || (bi == 3);
-            }
+            int nsp = parse_json_int(body, "nextSetpoint", -1);
+            if (nsp >= 0) toon_state.next_setpoint = nsp / 100.0f;
+            int nt = parse_json_int(body, "nextTime", -1);
+            if (nt >= 0) toon_state.next_time = nt;
             /* Stooklijn target — same reasoning as burnerInfo. */
             int chsp = parse_json_int(body, "currentInternalBoilerSetpoint", -1);
             if (chsp >= 0) toon_state.ch_setpoint = (float)chsp;

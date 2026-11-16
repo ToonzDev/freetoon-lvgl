@@ -40,6 +40,8 @@ STATE_INT(toon_state, boiler_type,       boiler_type)
 STATE_INT(toon_state, preheating_enabled, preheating_enabled)
 STATE_INT(toon_state, preheating_active,  preheating_active)
 STATE_INT(toon_state, max_preheat_time,   max_preheat_time)
+STATE_NUM(toon_state, next_setpoint,     next_setpoint,     "%.2f")
+STATE_INT(toon_state, next_time,         next_time)
 STATE_INT(toon_state, connected,         connected)
 
 /* ---- Home Assistant + curtains + Life360 (ha_state) --------------------- */

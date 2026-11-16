@@ -435,6 +435,19 @@ static void mock_state(void) {
      * SIM_PS=<programState> SIM_AS=<activeState>. */
     if (getenv("SIM_PS")) toon_state.program_state = atoi(getenv("SIM_PS"));
     if (getenv("SIM_AS")) toon_state.active_state  = atoi(getenv("SIM_AS"));
+    /* SIM_PREHEAT=1: pre-heating enabled; =2: also active (burnerInfo 3,
+     * heading for 20.5 °C in the block starting in 95 min). */
+    if (getenv("SIM_PREHEAT")) {
+        int ph = atoi(getenv("SIM_PREHEAT"));
+        toon_state.preheating_enabled = ph >= 1;
+        toon_state.max_preheat_time   = ph >= 1 ? 360 : 0;
+        if (ph >= 2) {
+            toon_state.preheating_active = 1;
+            toon_state.burner_on         = 1;
+            toon_state.next_setpoint     = 20.5f;
+            toon_state.next_time         = (int)time(NULL) + 95 * 60;
+        }
+    }
 
     weather_state.connected   = 1;
     weather_state.current_temp = 22.6f;

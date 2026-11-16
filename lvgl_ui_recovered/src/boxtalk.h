@@ -40,9 +40,13 @@ typedef struct {
                                         2=TEMPOVERRIDE 8=LOCKEDBASE, -1=unknown */
     volatile int    active_state;    /* happ "activeState" = the LIVE comfort preset:
                                         0=Comfort 1=Home 2=Sleep 3=Away, -1=manual */
-    volatile int    preheating_enabled; /* 0/1, maxPreheatTime > 0 */
-    volatile int    preheating_active;  /* 0/1, preheating == 1 or burnerInfo == 3 */
-    volatile int    max_preheat_time;   /* minutes (e.g. 360) */
+    volatile int    preheating_enabled; /* 0/1 = happ "maxPreheatTime" > 0. happ_thermstat
+                                           owns and persists this; there is no local copy. */
+    volatile int    preheating_active;  /* 0/1 = burnerInfo == 3: boiler firing to reach the
+                                           NEXT block's setpoint (same test as stock qt-gui) */
+    volatile int    max_preheat_time;   /* happ "maxPreheatTime", minutes; 0 = off */
+    volatile float  next_setpoint;      /* °C — happ "nextSetpoint" (next block), 0 = unknown */
+    volatile int    next_time;          /* happ "nextTime", epoch s of next block, 0 = unknown */
 } toon_state_t;
 
 #define PROG_MANUAL        0   /* manual hold, no schedule */
@@ -134,10 +138,26 @@ int boxtalk_send_raw_xml(const char * xml);
 int boxtalk_get_boiler_type(void);
 int boxtalk_set_boiler_type(int type);
 
-/* Pre-heating (aanwarmvervroeging): enable=1 turns on adaptive preheating
-   (happ_thermstat sets maxPreheatTime to 360 min and starts heating ahead of
-   scheduled blocks), enable=0 turns it off (maxPreheatTime = 0). */
+/* Pre-heating (aanwarmvervroeging): same call as qt-gui's
+   ThermostatApp.togglePreheating(). enable=1 lets happ_thermstat start heating
+   ahead of a scheduled block so the room is warm when it starts; enable=0
+   turns it off. happ_thermstat persists the setting (maxPreheatTime) itself.
+   Not available in client mode (returns -1): the slave's own happ_thermstat
+   is not the one controlling the boiler. */
 int boxtalk_set_preheating(int enable);
+
+/* True when the UI should show the "pre-heating" status: burnerInfo 3 and a
+   program running (stock qt-gui shows "Program Off" in manual mode). */
+int   boxtalk_preheat_shown(void);
+/* Pre-heat target: the next block's setpoint (°C), falling back to the
+   current setpoint when nextSetpoint is unknown. */
+float boxtalk_preheat_target(void);
+/* Minutes until the next block starts, rounded to 5 and at least 5, as
+   ThermostatSidePanel.qml nextBlockPreheating(); -1 when nextTime unknown. */
+int   boxtalk_preheat_minutes(void);
+/* " in 1u30" / " in 45 min" (leading space, localised) for the time until the
+   next block, or "" when unknown. buf >= 24. */
+void  boxtalk_preheat_eta(char * buf, int len);
 
 /* Room-temperature correction, owned by happ_thermstat (persisted there as
    i2cTempError) and shared with the stock qt-gui. happ_thermstat adds it to

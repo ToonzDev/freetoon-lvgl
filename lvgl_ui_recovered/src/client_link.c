@@ -562,15 +562,20 @@ static int parse_rrd_delta(const char * body, float * out_delta, float * out_lat
 static time_t s_client_burner_last_on = 0;
 static void client_update_burner(int bi) {
     time_t now = time(NULL);
-    if (bi == 1) {
+    /* 0 off, 1 heating, 2 hot water, 3 pre-heating, 4 error — mirrors
+     * update_burner_state() in boxtalk.c. */
+    if (bi == 1 || bi == 3) {
         s_client_burner_last_on = now;
         toon_state.burner_on = 1;
         toon_state.dhw_on    = 0;
+        toon_state.preheating_active = (bi == 3);
     } else if (bi == 2) {
         toon_state.burner_on = 0;
         toon_state.dhw_on    = 1;
+        toon_state.preheating_active = 0;
     } else {
         toon_state.dhw_on = 0;
+        toon_state.preheating_active = 0;
         if (s_client_burner_last_on > 0 && (now - s_client_burner_last_on < 20) &&
             (toon_state.setpoint > toon_state.indoor_temp)) {
             toon_state.burner_on = 1;
@@ -638,6 +643,15 @@ static void poll_stock_master(void) {
             if (bi >= 0) {
                 client_update_burner(bi);
             }
+            int mpt = parse_json_val(buf, "maxPreheatTime", -1);
+            if (mpt >= 0) {
+                toon_state.max_preheat_time   = mpt;
+                toon_state.preheating_enabled = (mpt > 0) ? 1 : 0;
+            }
+            int nsp = parse_json_val(buf, "nextSetpoint", -1);
+            if (nsp >= 0) toon_state.next_setpoint = nsp / 100.0f;
+            int nt = parse_json_val(buf, "nextTime", -1);
+            if (nt >= 0) toon_state.next_time = nt;
             toon_state.modulation_level = parse_json_val(buf, "currentModulationLevel", toon_state.modulation_level);
             toon_state.ot_comm_error    = parse_json_val(buf, "otCommError", toon_state.ot_comm_error);
 

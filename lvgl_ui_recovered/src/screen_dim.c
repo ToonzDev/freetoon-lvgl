@@ -419,7 +419,7 @@ static void refresh_cb(lv_timer_t * t) {
      * boiler is firing CH — original-Toon style. No "90 C" target text:
      * the glyph itself is the signal. */
     if (dim_img_flame) {
-        if (toon_state.burner_on || toon_state.preheating_active)
+        if (toon_state.burner_on)
             ui_obj_clear_flag(dim_img_flame, LV_OBJ_FLAG_HIDDEN);
         else
             ui_obj_add_flag(dim_img_flame, LV_OBJ_FLAG_HIDDEN);

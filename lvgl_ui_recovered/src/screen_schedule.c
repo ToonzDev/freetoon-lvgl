@@ -32,6 +32,7 @@ static lv_obj_t * timeline_now_line;
 static lv_obj_t * hour_labels[5] = {NULL};
 static lv_obj_t * day_list;       /* parent of switch-point rows */
 static lv_timer_t * refresh_timer = NULL;
+static lv_obj_t * box_preheat = NULL;   /* label + switch, right-aligned row */
 static lv_obj_t * sw_preheat = NULL;
 static lv_obj_t * lbl_preheat = NULL;
 
@@ -523,21 +524,34 @@ static void show_edit_modal(int idx) {
     lv_obj_center(l);
 }
 
-/* Periodic timer just to refresh the "now" indicator. */
+/* Pre-heating toggle in the header. Mirrors qt-gui's week-program tab: the
+ * checkbox shows happ_thermstat's own setting (maxPreheatTime > 0) and is only
+ * shown while the program runs. Hidden in client mode — the slave cannot
+ * change the master's setting. Widgets are touched only when a value changes,
+ * so the 1 s refresh doesn't redraw the header every tick. */
+static int ph_last_en = -1, ph_last_act = -1, ph_last_vis = -1;
+
 static void update_preheat_ui(void) {
-    if (!sw_preheat || !lbl_preheat) return;
-    int en = (settings.preheat_enabled >= 0) ? settings.preheat_enabled : toon_state.preheating_enabled;
-    if (en) {
-        lv_obj_add_state(sw_preheat, LV_STATE_CHECKED);
-    } else {
-        lv_obj_clear_state(sw_preheat, LV_STATE_CHECKED);
+    if (!box_preheat || !sw_preheat || !lbl_preheat) return;
+    int vis = !settings.client_mode && toon_state.program_state != PROG_MANUAL;
+    if (vis != ph_last_vis) {
+        if (vis) lv_obj_clear_flag(box_preheat, LV_OBJ_FLAG_HIDDEN);
+        else     lv_obj_add_flag(box_preheat, LV_OBJ_FLAG_HIDDEN);
+        ph_last_vis = vis;
     }
-    if (toon_state.preheating_active) {
-        lv_label_set_text(lbl_preheat, tr("Voorverwarmen (actief)", "Pre-heating (active)"));
-        lv_obj_set_style_text_color(lbl_preheat, lv_color_hex(0xffaa44), 0);
-    } else {
-        lv_label_set_text(lbl_preheat, tr("Voorverwarmen", "Pre-heating"));
-        lv_obj_set_style_text_color(lbl_preheat, lv_color_hex(THEME_TEXT_HI), 0);
+    int en = toon_state.preheating_enabled ? 1 : 0;
+    if (en != ph_last_en) {
+        if (en) lv_obj_add_state(sw_preheat, LV_STATE_CHECKED);
+        else    lv_obj_clear_state(sw_preheat, LV_STATE_CHECKED);
+        ph_last_en = en;
+    }
+    int act = boxtalk_preheat_shown() ? 1 : 0;
+    if (act != ph_last_act) {
+        lv_label_set_text(lbl_preheat, act ? tr("Voorverwarmen (actief)", "Pre-heating (active)")
+                                           : tr("Voorverwarmen", "Pre-heating"));
+        lv_obj_set_style_text_color(lbl_preheat,
+            lv_color_hex(act ? THEME_WARN_ORANGE : THEME_TEXT_HI), 0);
+        ph_last_act = act;
     }
 }
 
@@ -545,12 +559,13 @@ static void on_preheat_toggle(lv_event_t * e) {
     (void)e;
     if (!sw_preheat) return;
     int en = lv_obj_has_state(sw_preheat, LV_STATE_CHECKED) ? 1 : 0;
-    settings.preheat_enabled = en;
-    settings_save();
     boxtalk_set_preheating(en);
+    /* If the send failed, toon_state is unchanged and this flips it back. */
+    ph_last_en = -1;
     update_preheat_ui();
 }
 
+/* Tapping the label toggles too (bigger touch target). */
 static void on_preheat_label_tap(lv_event_t * e) {
     (void)e;
     if (!sw_preheat) return;
@@ -561,6 +576,7 @@ static void on_preheat_label_tap(lv_event_t * e) {
     on_preheat_toggle(NULL);
 }
 
+/* 1 s timer: pre-heating status + the "now" indicator. */
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
     if (!scr_root || lv_scr_act() != scr_root || !timeline_box) return;
@@ -596,8 +612,10 @@ lv_obj_t * screen_schedule_create(void) {
     scr_light_mode = settings.home_light_mode;
     memset(hour_labels, 0, sizeof(hour_labels));
     timeline_now_line = NULL;
+    box_preheat = NULL;
     sw_preheat = NULL;
     lbl_preheat = NULL;
+    ph_last_en = ph_last_act = ph_last_vis = -1;
 
     schedule_load();
 
@@ -636,18 +654,32 @@ lv_obj_t * screen_schedule_create(void) {
     }
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, SX(30), (DISP_VER < 550) ? 14 : SY(18));
 
-    /* Pre-heating toggle */
-    sw_preheat = lv_switch_create(scr_root);
+    /* Pre-heating toggle: label + switch packed to the RIGHT of a fixed-width
+     * flex row that ends left of the close button. The label used to be
+     * align_to'd while still empty, so its left edge sat 12 px left of the
+     * switch and the text grew rightwards over it; here a longer text
+     * ("... (actief)") grows to the left. */
+    box_preheat = lv_obj_create(scr_root);
+    lv_obj_remove_style_all(box_preheat);
+    lv_obj_set_size(box_preheat, SX(440), x_h);
+    lv_obj_set_flex_flow(box_preheat, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(box_preheat, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(box_preheat, SX(12), 0);
+    lv_obj_clear_flag(box_preheat, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(box_preheat, LV_OBJ_FLAG_CLICKABLE);   /* only label + switch take taps */
+    lv_obj_align(box_preheat, LV_ALIGN_TOP_RIGHT, SX(-12) - x_w - SX(20), SY(12));
+
+    lbl_preheat = lv_label_create(box_preheat);
+    lv_obj_set_style_text_font(lbl_preheat, (DISP_VER < 550) ? SF(16) : SF(20), 0);
+    lv_label_set_text(lbl_preheat, tr("Voorverwarmen", "Pre-heating"));
+    lv_obj_add_flag(lbl_preheat, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_ext_click_area(lbl_preheat, 10);
+    lv_obj_add_event_cb(lbl_preheat, on_preheat_label_tap, LV_EVENT_CLICKED, NULL);
+
+    sw_preheat = lv_switch_create(box_preheat);
     lv_obj_set_size(sw_preheat, (DISP_VER < 550) ? SX(50) : SX(58), (DISP_VER < 550) ? 26 : 30);
-    lv_obj_align(sw_preheat, LV_ALIGN_TOP_RIGHT, SX(-95), (DISP_VER < 550) ? 16 : SY(20));
     lv_obj_set_ext_click_area(sw_preheat, 15);
     lv_obj_add_event_cb(sw_preheat, on_preheat_toggle, LV_EVENT_VALUE_CHANGED, NULL);
-
-    lbl_preheat = lv_label_create(scr_root);
-    lv_obj_set_style_text_font(lbl_preheat, (DISP_VER < 550) ? SF(16) : SF(20), 0);
-    lv_obj_align_to(lbl_preheat, sw_preheat, LV_ALIGN_OUT_LEFT_MID, SX(-12), 0);
-    lv_obj_add_flag(lbl_preheat, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(lbl_preheat, on_preheat_label_tap, LV_EVENT_CLICKED, NULL);
 
     update_preheat_ui();
 

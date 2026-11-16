@@ -695,40 +695,39 @@ static void on_boiler_switch(lv_event_t * e) {
     lv_obj_center(b_yes_l);
 }
 
+/* Pre-heating row: shows happ_thermstat's own setting (maxPreheatTime > 0),
+ * nothing is stored locally. Widgets are only touched when the shown state
+ * changes (0 = off, 1 = on, 2 = active). */
+static int s_preheat_shown = -1;
+
+static void preheat_row_sync(void) {
+    if (!lbl_preheat_val || !sw_preheat_settings || settings.client_mode) return;
+    int en = toon_state.preheating_enabled ? 1 : 0;
+    int st = (en && boxtalk_preheat_shown()) ? 2 : en;
+    if (st == s_preheat_shown) return;
+    s_preheat_shown = st;
+    if (en) lv_obj_add_state(sw_preheat_settings, LV_STATE_CHECKED);
+    else    lv_obj_clear_state(sw_preheat_settings, LV_STATE_CHECKED);
+    lv_label_set_text(lbl_preheat_val, st == 2 ? tr("Actief", "Active")
+                                     : st == 1 ? tr("Aan", "On") : tr("Uit", "Off"));
+    lv_obj_set_style_text_color(lbl_preheat_val,
+        lv_color_hex(st == 2 ? THEME_WARN_ORANGE : THEME_TEXT_DIM), 0);
+}
+
 static void on_preheat_settings_toggle(lv_event_t * e) {
     (void)e;
     if (!sw_preheat_settings) return;
-    int en = lv_obj_has_state(sw_preheat_settings, LV_STATE_CHECKED) ? 1 : 0;
-    settings.preheat_enabled = en;
-    settings_save();
-    boxtalk_set_preheating(en);
-    if (lbl_preheat_val) {
-        if (toon_state.preheating_active) {
-            lv_label_set_text(lbl_preheat_val, tr("Actief", "Active"));
-            lv_obj_set_style_text_color(lbl_preheat_val, lv_color_hex(0xffaa44), 0);
-        } else {
-            lv_label_set_text(lbl_preheat_val, en ? tr("Aan", "On") : tr("Uit", "Off"));
-            lv_obj_set_style_text_color(lbl_preheat_val, lv_color_hex(0xffffff), 0);
-        }
-    }
+    boxtalk_set_preheating(lv_obj_has_state(sw_preheat_settings, LV_STATE_CHECKED));
+    /* If the send failed, toon_state is unchanged and this flips it back. */
+    s_preheat_shown = -1;
+    preheat_row_sync();
 }
 
 /* ============================ live ticks ============================ */
 
 static void heating_tick(void) {
     offset_sync();
-    if (lbl_preheat_val && sw_preheat_settings) {
-        int en = (settings.preheat_enabled >= 0) ? settings.preheat_enabled : toon_state.preheating_enabled;
-        if (en) lv_obj_add_state(sw_preheat_settings, LV_STATE_CHECKED);
-        else    lv_obj_clear_state(sw_preheat_settings, LV_STATE_CHECKED);
-        if (toon_state.preheating_active) {
-            lv_label_set_text(lbl_preheat_val, tr("Actief", "Active"));
-            lv_obj_set_style_text_color(lbl_preheat_val, lv_color_hex(0xffaa44), 0);
-        } else {
-            lv_label_set_text(lbl_preheat_val, en ? tr("Aan", "On") : tr("Uit", "Off"));
-            lv_obj_set_style_text_color(lbl_preheat_val, lv_color_hex(0xffffff), 0);
-        }
-    }
+    preheat_row_sync();
     if (s_ot_err_display_countdown > 0) {
         s_ot_err_display_countdown--;
         if (lbl_boiler_mode) {
@@ -1376,13 +1375,16 @@ static void open_heating_modal(lv_event_t * e) {
 
     /* pre-heating (aanwarmvervroeging) */
     lv_obj_t * r_ph = panel_row(p, y, tr("Voorverwarmen (aanwarmen)", "Pre-heating (optimal start)"), &lbl_preheat_val);
-    sw_preheat_settings = lv_switch_create(r_ph);
-    lv_obj_set_size(sw_preheat_settings, SX(64), SY(30));
-    lv_obj_align(sw_preheat_settings, LV_ALIGN_RIGHT_MID, SX(-10), 0);
-    int ph_en = (settings.preheat_enabled >= 0) ? settings.preheat_enabled : toon_state.preheating_enabled;
-    if (ph_en) lv_obj_add_state(sw_preheat_settings, LV_STATE_CHECKED);
-    else       lv_obj_clear_state(sw_preheat_settings, LV_STATE_CHECKED);
-    lv_obj_add_event_cb(sw_preheat_settings, on_preheat_settings_toggle, LV_EVENT_VALUE_CHANGED, NULL);
+    /* row_switch also moves the value label left of the switch. */
+    sw_preheat_settings = row_switch(r_ph, toon_state.preheating_enabled, on_preheat_settings_toggle);
+    s_preheat_shown = -1;
+    if (settings.client_mode) {
+        /* The slave's own happ_thermstat doesn't drive the boiler. */
+        lv_obj_add_state(sw_preheat_settings, LV_STATE_DISABLED);
+        lv_label_set_text(lbl_preheat_val, tr("Beheerd door Master", "Managed by Master"));
+    } else {
+        preheat_row_sync();
+    }
     y += 75;
 
     /* boiler control type */
