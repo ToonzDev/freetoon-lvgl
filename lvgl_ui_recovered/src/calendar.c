@@ -887,7 +887,13 @@ static int calendar_refresh_locked(void) {
              * starting the UI and other fetches timed out at 20 s (curl exit
              * 28), dropping that whole feed. */
             int frc = http_fetch_to(target_url, buf, CAL_SCRATCH, 45);
-            if (frc != 0 || !strstr(buf, "VEVENT")) {
+            /* A valid calendar without events (empty / only past events
+             * exported) is a success with 0 events, not a failed feed — it
+             * used to make every refresh "incomplete" and retry each minute. */
+            if (frc == 0 && !strstr(buf, "VEVENT") && strstr(buf, "BEGIN:VCALENDAR")) {
+                fprintf(stderr, "[calendar] feed %d: %u bytes, no events\n", feed_no, (unsigned)strlen(buf));
+                ok = 1;
+            } else if (frc != 0 || !strstr(buf, "VEVENT")) {
                 failed++;
                 /* Never log the URL: private iCal links carry a secret token. */
                 fprintf(stderr, "[calendar] feed %d: %s (%u bytes)\n", feed_no,
@@ -1030,6 +1036,7 @@ static void * cal_thread(void * arg) {
     (void)arg;
     sleep(5);                            /* initial settling delay for WiFi at boot */
     int since_refresh = 100000;          /* force a full fetch on the first tick */
+    int partial_streak = 0;              /* quick retries for a missing feed */
     for (;;) {
         int has_source = settings.calendar_enabled &&
                          (settings.calendar_ha_entity[0] || settings.calendar_ics_url[0]);
@@ -1039,7 +1046,11 @@ static void * cal_thread(void * arg) {
             g_cal_wake = 0;
             calendar_refresh_now();
             since_refresh = 0;
-            if (g_cal_partial) since_refresh = 1800 - 60;   /* retry the missing feed(s) soon */
+            /* Retry a missing feed in a minute — but only 3 times in a row: a
+             * feed that keeps failing (dead link) otherwise re-downloaded every
+             * feed every minute, forever. Then back to the 30-min cycle. */
+            if (g_cal_partial && ++partial_streak <= 3) since_refresh = 1800 - 60;
+            else if (!g_cal_partial) partial_streak = 0;
             if (has_source && !g_cal_last_ok) {
                 /* WiFi still connecting or temporary network hiccup at boot:
                  * retry quickly (every 10s) until initial data is acquired */
