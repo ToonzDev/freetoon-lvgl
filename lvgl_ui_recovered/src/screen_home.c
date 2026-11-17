@@ -5255,9 +5255,11 @@ lv_obj_t * screen_home_create(void) {
      * overlapped the thermostat tile. Round button right next to the gear;
      * the envelope + update envelope shift one slot left while it shows
      * (see the refresh tick). Opens the Devices hub, like swipe-right. Not
-     * created when a visible Verlichting tile (LT_LIGHTS) already offers it. */
+     * created when a visible Verlichting (LT_LIGHTS) or Slimme stekker
+     * (LT_SMARTPLUG) tile already leads to the hub. */
     const layout_tile_t * Llt = settings.custom_layout_enabled ? layout_find(LT_LIGHTS) : NULL;
-    int have_lights_tile = (Llt && Llt->visible);
+    const layout_tile_t * Lsp = settings.custom_layout_enabled ? layout_find(LT_SMARTPLUG) : NULL;
+    int have_lights_tile = (Llt && Llt->visible) || (Lsp && Lsp->visible);
     devices_btn = NULL;
     if (!have_lights_tile) {
         devices_btn = lv_btn_create(scr_root);
