@@ -42,7 +42,6 @@ static const char * vent_user_preset(const char * wire_cmd);
 static char g_user[32] = "";   /* filled from /mnt/data/vent.conf */
 static char g_pass[32] = "";
 
-static char g_settings_json[8192];
 
 static void load_conf(void) {
     FILE * f = fopen(CONF_PATH, "r");
@@ -145,21 +144,6 @@ static void parse_status_json(const char * body) {
     }
 }
 
-/* HTTP fallback. Calls the parser if it gets a valid body. */
-static int fetch_status(void) {
-    char url[256], body[4096];
-    snprintf(url, sizeof(url),
-        "http://%s/api.html?get=ithostatus&username=%s&password=%s",
-        VENT_HOST, g_user, g_pass);
-    int rc = http_fetch(url, body, sizeof(body));
-    if (rc != 0 || strstr(body, "AUTHENTICATION FAILED")) {
-        vent_state.connected = 0;
-        return -1;
-    }
-    parse_status_json(body);
-    return 0;
-}
-
 /* Low/High wire-label swap. Was needed 2026-05-18 because the unit's virtual
  * remote was MISCONFIGURED (wrong type "RFT CO2", never joined) so vremote
  * preset commands behaved backwards/inconsistently — "High" gave less airflow
@@ -247,19 +231,6 @@ static void parse_lastcmd_json(const char * body) {
             vent_state.last_source, vent_state.last_cmd);
 }
 
-static void fetch_lastcmd(void) {
-    char url[256], body[512];
-    snprintf(url, sizeof(url),
-        "http://%s/api.html?get=lastcmd&username=%s&password=%s",
-        VENT_HOST, g_user, g_pass);
-    int rc = http_fetch(url, body, sizeof(body));
-    if (rc != 0) {
-        fprintf(stderr, "[vent] fetch_lastcmd rc=%d\n", rc);
-        return;
-    }
-    parse_lastcmd_json(body);
-}
-
 /* Thread entry — strdup'd cmd, freed here. */
 static void * vremote_thread(void * arg) {
     char * cmd = (char *)arg;
@@ -333,18 +304,6 @@ int vent_set_speed(int pwm) {
     return (rc == 0 && !strstr(body, "AUTHENTICATION FAILED")) ? 0 : -1;
 }
 
-int vent_bump_speed(int delta) {
-    char url[256], body[64];
-    snprintf(url, sizeof(url),
-        "http://%s/api.html?get=currentspeed&username=%s&password=%s",
-        VENT_HOST, g_user, g_pass);
-    if (http_fetch(url, body, sizeof(body)) != 0
-        || strstr(body, "AUTHENTICATION FAILED"))
-        return -1;
-    int cur = atoi(body);
-    return vent_set_speed(cur + delta);
-}
-
 /* Detached-thread wrapper around vent_set_speed so the slider's release
  * handler returns instantly (the HTTP GET to the Itho takes ~0.5-1 s and
  * must never run on the LVGL thread). Writes an optimistic % into vent_state
@@ -380,24 +339,6 @@ void vent_set_speed_async(int pwm) {
     pthread_t t;
     if (pthread_create(&t, NULL, setspeed_thread, dup) != 0) { free(dup); return; }
     pthread_detach(t);
-}
-
-int vent_refresh_settings(void) {
-    char url[256];
-    snprintf(url, sizeof(url),
-        "http://%s/api.html?get=ithosettings&username=%s&password=%s",
-        VENT_HOST, g_user, g_pass);
-    int rc = http_fetch(url, g_settings_json, sizeof(g_settings_json));
-    if (rc != 0 || strstr(g_settings_json, "AUTHENTICATION FAILED")) {
-        snprintf(g_settings_json, sizeof(g_settings_json),
-                 "(fetch failed: rc=%d)", rc);
-        return -1;
-    }
-    return 0;
-}
-
-const char * vent_settings_json(void) {
-    return g_settings_json;
 }
 
 /* --- Per-index settings (getsetting=N / setsetting=N&value=V) --- */

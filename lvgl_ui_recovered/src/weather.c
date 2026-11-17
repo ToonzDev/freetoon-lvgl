@@ -858,7 +858,7 @@ static void * wx_thread(void * arg) {
         }
 
         /* Fetch the radar image every 5 minutes, waking early on
-           weather_refresh_async(); confirm the place name meanwhile. */
+           a wake-up (g_wx_wake); confirm the place name meanwhile. */
         int refetch = weather_check_name();
         for (int i = 0; i < 3 && !g_wx_wake && !refetch; i++) {
             if (fetch_radar_image() == 0)
@@ -872,9 +872,6 @@ static void * wx_thread(void * arg) {
         g_wx_wake = 0;
     }
     return NULL;
-}
-void weather_refresh_async(void) {
-    g_wx_wake = 1;
 }
 
 void weather_relocate_async(void) {

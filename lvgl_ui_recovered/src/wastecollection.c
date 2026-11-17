@@ -37,16 +37,6 @@ static int json_str(const char * json, const char * key,
     out[n] = 0;
     return 1;
 }
-/* Find "key":NUMBER or "key":"NUMBER", parse int. */
-static int json_int(const char * json, const char * key, int dflt) {
-    char tmp[24];
-    if (json_str(json, key, tmp, sizeof(tmp))) return atoi(tmp);
-    char needle[40];
-    snprintf(needle, sizeof(needle), "\"%s\":", key);
-    const char * p = strstr(json, needle);
-    if (!p) return dflt;
-    return atoi(p + strlen(needle));
-}
 
 static int read_config(char * postcode, int psz, char * huis, int hsz) {
     /* Prefer freetoon's own Settings (toonui.cfg) so the postcode/house-number
@@ -434,17 +424,6 @@ static void ymd_today(char * out, int sz) {
     time_t now = time(NULL);
     struct tm tm; localtime_r(&now, &tm);
     strftime(out, sz, "%Y-%m-%d", &tm);
-}
-
-/* Lowercased SUMMARY → slot index, or -1. Slots: 0 GFT, 1 Plastic, 2 Papier,
- * 3 Restafval (same order/labels as the HVC path). */
-static int ics_slot(const char * s) {
-    if (strstr(s, "gft") || strstr(s, "groente") || strstr(s, "tuin"))     return 0;
-    if (strstr(s, "pmd") || strstr(s, "plastic") || strstr(s, "pbd") ||
-        strstr(s, "verpakk") || strstr(s, "drankk"))                       return 1;
-    if (strstr(s, "papier") || strstr(s, "karton"))                        return 2;
-    if (strstr(s, "rest"))                                                 return 3;
-    return -1;
 }
 
 static void ics_label_from_uid(const char * uid, char * out, size_t outsz) {

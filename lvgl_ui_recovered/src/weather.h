@@ -74,7 +74,6 @@ void weather_unlock(void);
 void weather_get_snapshot(weather_state_t * out);
 
 int  weather_start(void);
-void weather_refresh_async(void);
 /* Location settings changed: re-resolve lat/lon (manual Lat/Lon, else the city)
  * and refetch. */
 void weather_relocate_async(void);

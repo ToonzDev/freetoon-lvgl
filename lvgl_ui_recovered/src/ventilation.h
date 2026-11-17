@@ -63,15 +63,7 @@ int vent_set_speed(int pwm);
  * MQTT poll confirms. On this CVE the speed= path is the reliable control. */
 void vent_set_speed_async(int pwm);
 
-/* Bump current speed by `delta` PWM steps (clamped to 0..255).
- * Reads /api.html?get=currentspeed first, then issues vent_set_speed. */
-int vent_bump_speed(int delta);
 
-/* Read all settings (returns NUL-terminated JSON string). Caller does not
- * free. Updated by vent_refresh_settings(). Legacy — kept for callers that
- * already exist; the new flow is the per-index API below. */
-const char * vent_settings_json(void);
-int vent_refresh_settings(void);
 
 /* One Itho i2c-settings entry, fetched via /api.html?getsetting=N. */
 typedef struct {

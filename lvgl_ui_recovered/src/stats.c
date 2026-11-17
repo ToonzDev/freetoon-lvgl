@@ -254,10 +254,6 @@ int stats_fetch(const char * logger_name, const char * rra,
     return stats_fetch_range(logger_name, rra, 0, 0, max_samples, series);
 }
 
-int stats_elec_flow_5min(stats_series_t * out)  { return stats_fetch("elec_flow",  "5min", 0, STATS_MAX_SAMPLES, out); }
-int stats_gas_flow_5min(stats_series_t * out)   { return stats_fetch("gas_flow",   "5min", 0, STATS_MAX_SAMPLES, out); }
-int stats_water_flow_5min(stats_series_t * out) { return stats_fetch("water_flow", "5min", 0, STATS_MAX_SAMPLES, out); }
-
 int stats_http_get(const char * path_qs, char * out, size_t outsz) {
     if (!out || outsz < 2) return -1;
     out[0] = 0;
