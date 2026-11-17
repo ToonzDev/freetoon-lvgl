@@ -95,7 +95,9 @@ typedef struct {
 } metric_t;
 static const metric_t metrics[6] = {
     {"Electricity", "W",     "kWh",  "elec_flow",                  "elec_quantity_nt",      "elec_quantity_lt",      0xaa77ff, 0},
-    {"Solar",       "W",     "kWh",  "elec_flow_prod",             "elec_quantity_nt_prod", "elec_quantity_lt_prod", 0xeeaa22, 0},
+    /* Solar: the stock solar-meter loggers (analog S0 sensor on the meter
+     * adapter); fallback = P1 return delivery (*_produ), see solar_produ(). */
+    {"Solar",       "W",     "kWh",  "elec_solar_flow",            "elec_solar_quantity",   NULL,                    0xeeaa22, 0},
     {"Gas",         "m3/h",  "m3",   "gas_flow",                   "gas_quantity",          NULL,                    0xffaa44, 0},
     {"Water",       "l/min", "m3",   "water_flow",                 "water_quantity",        NULL,                    0x44aaff, 0},
     {"CV bar",      "bar",   "bar",  "thermstat_boilerChPressure", "thermstat_boilerChPressure", NULL,          0x5fb3ff, 0},
@@ -132,6 +134,17 @@ static int      selected_metric = 0;
 static period_t selected_period = PERIOD_NOW;
 static stats_series_t  series;
 static stats_series_t  series2;   /* for elec second tariff */
+
+/* Solar tab without a solar meter: fall back to the P1 return-delivery
+ * counters (two tariffs, summed like electricity). Sets g_solar_produ so the
+ * diff/sum step treats series2 as the second tariff. */
+static int g_solar_produ = 0;
+static int solar_produ(const char * rra, long from, long to, int n) {
+    g_solar_produ = 1;
+    if (stats_fetch_range("elec_quantity_lt_produ", rra, from, to, n, &series2) != 0)
+        series2.n = 0;
+    return stats_fetch_range("elec_quantity_nt_produ", rra, from, to, n, &series);
+}
 
 /* Interactive tooltip balloon for bar values */
 static lv_obj_t   * s_tooltip_box = NULL;
@@ -738,6 +751,7 @@ static int load_for_period(void) {
 
     g_current_start_t = from;
     g_current_end_t = to;
+    g_solar_produ = 0;
 
     if (strcmp(m->label, "CV bar") == 0) {
         series2.n = 0;
@@ -814,7 +828,7 @@ static int load_for_period(void) {
             /* Live 5-minute flow: 12 samples over 1 hour */
             int rc = stats_fetch_range(m->flow_logger, "5min", from, to, 12, &series);
             if ((rc != 0 || series.n == 0) && is_solar) {
-                rc = stats_fetch_range("solar_flow", "5min", from, to, 12, &series);
+                rc = stats_fetch_range("elec_produ_flow", "5min", from, to, 12, &series);
             }
             int valid_cnt = 0;
             for (int i = 0; i < series.n; i++) {
@@ -843,7 +857,7 @@ static int load_for_period(void) {
                 int rc = stats_fetch_range(m->cum_logger, cum_rra_hours(), from - 3600, to, 26, &series);
                 if ((rc != 0 || series.n == 0) && is_solar) {
                     series2.n = 0;
-                    rc = stats_fetch_range("solar_quantity", "5yrhours", from - 3600, to, 26, &series);
+                    rc = solar_produ("5yrhours", from - 3600, to, 26);
                 }
                 return rc;
             }
@@ -861,7 +875,7 @@ static int load_for_period(void) {
                        : stats_fetch_range(m->cum_logger, "10yrdays", from - DAY, to, 34, &series);
                 if ((rc != 0 || series.n == 0) && is_solar) {
                     series2.n = 0;
-                    rc = stats_fetch_range("solar_quantity", "10yrdays", from - DAY, to, 34, &series);
+                    rc = solar_produ("10yrdays", from - DAY, to, 34);
                 }
                 return rc;
             }
@@ -880,7 +894,7 @@ static int load_for_period(void) {
                        : stats_fetch_range(m->cum_logger, "10yrdays", from - DAY, to, 88, &series);
                 if ((rc != 0 || series.n == 0) && is_solar) {
                     series2.n = 0;
-                    rc = stats_fetch_range("solar_quantity", "10yrdays", from - DAY, to, 88, &series);
+                    rc = solar_produ("10yrdays", from - DAY, to, 88);
                 }
                 return rc;
             }
@@ -899,7 +913,7 @@ static int load_for_period(void) {
                        : stats_fetch_range(m->cum_logger, "10yrdays", from - DAY, to, 370, &series);
                 if ((rc != 0 || series.n == 0) && is_solar) {
                     series2.n = 0;
-                    rc = stats_fetch_range("solar_quantity", "10yrdays", from - DAY, to, 370, &series);
+                    rc = solar_produ("10yrdays", from - DAY, to, 370);
                 }
                 return rc;
             }
@@ -915,7 +929,7 @@ static int load_for_period(void) {
                 int rc = stats_fetch_range(m->cum_logger, metric_is_water() ? "10yrhours" : "10yrdays", 0, 0, 120, &series);
                 if ((rc != 0 || series.n == 0) && is_solar) {
                     series2.n = 0;
-                    rc = stats_fetch_range("solar_quantity", "10yrdays", 0, 0, 120, &series);
+                    rc = solar_produ("10yrdays", 0, 0, 120);
                 }
                 return rc;
             }
@@ -1084,7 +1098,7 @@ static void render_chart(void) {
             default:            cap = 200000.0; break;
         }
         diff_in_place(&series, n, cap);
-        if (m->cum_logger_extra && series2.n >= n) {
+        if ((m->cum_logger_extra || g_solar_produ) && series2.n >= n) {
             diff_in_place(&series2, n, cap);
             for (int i = 0; i < n; i++) {
                 if (isnan(series.samples[i]) && !isnan(series2.samples[i]))
