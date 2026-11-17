@@ -101,17 +101,3 @@ void backlight_set(int level) {
     fprintf(f, "%d\n", hw_val);
     fclose(f);
 }
-
-int backlight_get(void) {
-    bl_init_paths();
-    FILE * f = fopen(g_bl_path, "r");
-    if (!f) return -1;
-    int v = -1;
-    if (fscanf(f, "%d", &v) != 1) v = -1;
-    fclose(f);
-    if (v < 0) return -1;
-    if (g_bl_max <= 0) return v;
-    int level = (int)(((long long)v * 1000 + (g_bl_max / 2)) / g_bl_max);
-    if (level > 1000) level = 1000;
-    return level;
-}

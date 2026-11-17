@@ -87,7 +87,6 @@ void homewizard_ensure_started(void);
 /* Thread safety primitives */
 void homewizard_lock(void);
 void homewizard_unlock(void);
-void homewizard_get_snapshot(hw_state_t * out);
 
 int homewizard_start(void);
 

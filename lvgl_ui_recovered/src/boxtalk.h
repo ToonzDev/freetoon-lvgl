@@ -109,7 +109,6 @@ int boxtalk_resume_schedule(void);
  * +/- nudge is outstanding and the schedule's "current preset" rolls
  * over (next switch point passed), this auto-calls resume_schedule. */
 void boxtalk_tick(void);
-int  boxtalk_temp_override_active(void);
 /* Returns the preset (0..3) the schedule was on when the override armed,
  * or -1 when no override is in flight. Used by the UI to keep the right
  * preset button highlighted while active_state is parked at -1. */
@@ -123,12 +122,6 @@ int  boxtalk_temp_override_origin(void);
 int boxtalk_get_state_value(int state);
 int boxtalk_set_state_value(int state, int centi);
 
-/* Request an RRD archive from hcb_rrd. Response arrives asynchronously
-   and is stored in rrd_response_buf (NUL-terminated XML). Caller polls
-   rrd_response_ready (0/1). After consuming, clear ready by writing 0. */
-extern volatile int rrd_response_ready;
-extern char         rrd_response_buf[16384];
-int boxtalk_get_rra_data(const char * uuid, const char * rra_name);
 
 /* Low-level send wrapper for callers that need to issue ad-hoc BoxTalk
    action XML (e.g. inbox.c's DeleteNotification). */
@@ -176,7 +169,6 @@ int boxtalk_set_temp_offset(float deg);
 /* ---- hcb_config (ConfigProvider) plumbing ---- */
 extern volatile int config_response_ready;
 extern char         config_response_buf[65536];
-int boxtalk_get_object_config(const char * internal_address);
 int boxtalk_set_object_config(const char * config_xml);
 
 /* Program/scheme switching. state in 0..3 (Comfort/Home/Sleep/Away).
@@ -196,8 +188,6 @@ extern volatile int zwave_response_ready;
 extern char         zwave_response_buf[16384];
 int boxtalk_zwave_get_devices(void);
 int boxtalk_zwave_heal(void);
-int boxtalk_zwave_include(int start);   /* 1=begin add, 0=stop */
-int boxtalk_zwave_exclude(int start);   /* 1=begin remove, 0=stop */
 int boxtalk_zwave_basic_set(const char * uuid, int node_id, int state);
 int boxtalk_zwave_set_name(const char * uuid, const char * name);
 

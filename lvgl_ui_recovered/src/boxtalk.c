@@ -841,15 +841,6 @@ static void handle_msg(const char* xml) {
                         toon_state.boiler_type == 1 ? "On/Off" : "OpenTherm");
             }
         }
-        /* GetRraData response — stash so the stats screen can parse it */
-        if (strstr(xml, "GetRraDataResponse") && strstr(xml, "class=\"response\"")) {
-            size_t n = strlen(xml);
-            if (n >= sizeof(rrd_response_buf)) n = sizeof(rrd_response_buf) - 1;
-            memcpy(rrd_response_buf, xml, n);
-            rrd_response_buf[n] = 0;
-            rrd_response_ready = 1;
-            fprintf(stderr, "[bxt] GetRraData response %zu bytes\n", n);
-        }
         /* hdrv_zwave GetDevices response — capture the device set for the
          * Z-Wave screen. Match on the device-list markers so we catch it
          * regardless of the exact response verb wrapper. */
@@ -886,10 +877,6 @@ static void handle_msg(const char* xml) {
     boxtalk_unlock();
 }
 
-/* ---- RRD GetRraData request/response plumbing ---- */
-volatile int rrd_response_ready = 0;
-char         rrd_response_buf[16384];
-
 /* ---- hdrv_zwave (built-in Z-Wave controller) plumbing ---- */
 volatile int zwave_response_ready = 0;
 char         zwave_response_buf[16384];
@@ -916,22 +903,6 @@ int boxtalk_zwave_get_devices(void) {
 /* Network heal — routing/neighbour update for all nodes. */
 int boxtalk_zwave_heal(void) {
     return zwave_action("NodeNeighborUpdate", "<timeout>300</timeout>", "zwh");
-}
-
-/* Inclusion (add). start!=0 begins add mode; start==0 stops it. */
-int boxtalk_zwave_include(int start) {
-    if (start)
-        return zwave_action("IncludeDevice",
-            "<event>add</event><lowPower>0</lowPower><timeout>60</timeout>", "zwi");
-    return zwave_action("IncludeDevice", "<event>stop</event>", "zwi");
-}
-
-/* Exclusion (remove). start!=0 begins delete mode; start==0 stops it. */
-int boxtalk_zwave_exclude(int start) {
-    if (start)
-        return zwave_action("ExcludeDevice",
-            "<event>delete</event><timeout>30</timeout>", "zwe");
-    return zwave_action("ExcludeDevice", "<event>stop</event>", "zwe");
 }
 
 /* ---- hcb_netcon (WiFi / network manager) plumbing ---- */
@@ -1067,22 +1038,6 @@ int boxtalk_subscribe_service(const char * service_id) {
 /* ---- hcb_config (ConfigProvider) plumbing ---- */
 volatile int config_response_ready = 0;
 char         config_response_buf[65536];
-
-int boxtalk_get_object_config(const char * internal_address) {
-    if (!internal_address || !internal_address[0] || sock_fd < 0) return -1;
-    config_response_ready = 0;
-    config_response_buf[0] = 0;
-    char req[512];
-    snprintf(req, sizeof req,
-        "<action class=\"invoke\" uuid=\"%s\" destuuid=\"%s\" "
-        "serviceid=\"urn:hcb-hae-com:serviceId:ConfigProvider\" requestid=\"%d-goc\">"
-        "<u:GetObjectConfig xmlns:u=\"urn:hcb-hae-com:service:ConfigProvider:1\">"
-        "<package>happ_thermstat</package>"
-        "<internalAddress>%s</internalAddress>"
-        "</u:GetObjectConfig></action>",
-        OUR_UUID, CONFIG_UUID, getpid(), internal_address);
-    return send_msg(req);
-}
 
 int boxtalk_set_object_config(const char * config_xml) {
     if (!config_xml || !config_xml[0] || sock_fd < 0) return -1;
@@ -1232,19 +1187,6 @@ int boxtalk_set_temp_offset(float deg) {
     if (rc == 0) { toon_state.temp_offset = tenths / 10.0f; toon_state.temp_offset_valid = 1; }
     boxtalk_get_temp_offset();   /* no response to Adjust: read it back */
     return rc;
-}
-
-int boxtalk_get_rra_data(const char * uuid, const char * rra_name) {
-    char buf[1024];
-    snprintf(buf, sizeof(buf),
-        "<action class=\"invoke\" uuid=\"%s\" destuuid=\"%s\" "
-        "serviceid=\"urn:hcb-hae-com:serviceId:specific1\" requestid=\"%d-rra\">"
-        "<u:GetRraData xmlns:u=\"urn:hcb-hae-com:service:specific1:1\">"
-        "<rraName>%s</rraName><uuid>%s</uuid>"
-        "</u:GetRraData></action>",
-        OUR_UUID, RRD_UUID, getpid(), rra_name, uuid);
-    rrd_response_ready = 0;
-    return send_msg(buf);
 }
 
 static int next_req = 1;
@@ -2126,8 +2068,6 @@ void boxtalk_tick(void) {
         boxtalk_resume_schedule();
     }
 }
-
-int boxtalk_temp_override_active(void) { return temp_override_active; }
 
 int boxtalk_temp_override_origin(void) {
     return temp_override_active ? temp_override_origin : -1;

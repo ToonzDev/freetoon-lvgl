@@ -43,13 +43,6 @@ extern "C" {
 void fbdev_init(void);
 void fbdev_exit(void);
 void fbdev_flush(lv_disp_drv_t * drv, const lv_area_t * area, lv_color_t * color_p);
-void fbdev_get_sizes(uint32_t *width, uint32_t *height, uint32_t *dpi);
-/**
- * Set the X and Y offset in the variable framebuffer info.
- * @param xoffset horizontal offset
- * @param yoffset vertical offset
- */
-void fbdev_set_offset(uint32_t xoffset, uint32_t yoffset);
 
 /* Toon 1 live-video cutout: LVGL skips repainting this rect so vpu_stream's
  * direct-to-fb0 video isn't clobbered (fb0 + cutout mode). No-op until set. */

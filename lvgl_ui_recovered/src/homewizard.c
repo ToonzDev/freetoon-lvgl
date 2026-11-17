@@ -37,13 +37,6 @@ void homewizard_unlock(void) {
     pthread_mutex_unlock(&g_hw_state_mtx);
 }
 
-void homewizard_get_snapshot(hw_state_t * out) {
-    if (!out) return;
-    pthread_mutex_lock(&g_hw_state_mtx);
-    *out = hw_state;
-    pthread_mutex_unlock(&g_hw_state_mtx);
-}
-
 hw_socket_t hw_sockets[HW_SOCKET_MAX];
 
 /* Plain HTTP/1.0 to a HomeWizard device (local API v1, port 80). `ip` must be

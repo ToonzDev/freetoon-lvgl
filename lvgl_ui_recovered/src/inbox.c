@@ -33,18 +33,6 @@ static void add_to_read_list(const char * uuid) {
     read_list_n++;
 }
 
-void inbox_load(void) {
-    FILE * f = fopen(READ_FILE, "r");
-    if (!f) return;
-    char line[80];
-    while (fgets(line, sizeof(line), f)) {
-        /* strip trailing newline */
-        char * nl = strchr(line, '\n'); if (nl) *nl = 0;
-        if (line[0]) add_to_read_list(line);
-    }
-    fclose(f);
-}
-
 void inbox_persist(void) {
     FILE * f = fopen(READ_FILE, "w");
     if (!f) return;

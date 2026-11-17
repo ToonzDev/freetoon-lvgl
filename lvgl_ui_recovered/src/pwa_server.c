@@ -74,19 +74,6 @@ static int sock_send_all(int fd, const char * buf, size_t n) {
     return 0;
 }
 
-static const char * mime_for(const char * path) {
-    const char * dot = strrchr(path, '.');
-    if (!dot) return "application/octet-stream";
-    if (!strcmp(dot, ".html")) return "text/html; charset=utf-8";
-    if (!strcmp(dot, ".js"))   return "application/javascript";
-    if (!strcmp(dot, ".css"))  return "text/css";
-    if (!strcmp(dot, ".json")) return "application/json";
-    if (!strcmp(dot, ".png"))  return "image/png";
-    if (!strcmp(dot, ".svg"))  return "image/svg+xml";
-    if (!strcmp(dot, ".wasm")) return "application/wasm";    /* freetoon-WASM bundle */
-    return "application/octet-stream";
-}
-
 static int send_status(int fd, int code, const char * status, const char * body) {
     char hdr[256];
     int n = snprintf(hdr, sizeof(hdr),

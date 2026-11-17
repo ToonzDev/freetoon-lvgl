@@ -143,12 +143,6 @@ int airhist_series_range(int which, long from_ts, long to_ts, int max_samples, s
     return out->n > 0 ? 0 : -1;
 }
 
-int airhist_series(int which, long window_seconds, int max_samples, stats_series_t * out) {
-    long now = (long)time(NULL);
-    long from = window_seconds ? now - window_seconds : 0;
-    return airhist_series_range(which, from, now, max_samples, out);
-}
-
 int airhist_pres_series_range(long from_ts, long to_ts, int max_samples, stats_series_t * out) {
     out->n = 0; out->min = 1e30; out->max = -1e30;
     if (max_samples > STATS_MAX_SAMPLES) max_samples = STATS_MAX_SAMPLES;
@@ -179,10 +173,4 @@ int airhist_pres_series_range(long from_ts, long to_ts, int max_samples, stats_s
     }
     pthread_mutex_unlock(&ph_mtx);
     return out->n > 0 ? 0 : -1;
-}
-
-int airhist_pres_series(long window_seconds, int max_samples, stats_series_t * out) {
-    long now = (long)time(NULL);
-    long from = window_seconds ? now - window_seconds : 0;
-    return airhist_pres_series_range(from, now, max_samples, out);
 }

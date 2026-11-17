@@ -371,22 +371,6 @@ void fbdev_flush(lv_disp_drv_t * drv, const lv_area_t * area, lv_color_t * color
     lv_disp_flush_ready(drv);
 }
 
-void fbdev_get_sizes(uint32_t *width, uint32_t *height, uint32_t *dpi) {
-    if (width)
-        *width = vinfo.xres;
-
-    if (height)
-        *height = vinfo.yres;
-
-    if (dpi && vinfo.height)
-        *dpi = DIV_ROUND_UP(vinfo.xres * 254, vinfo.width * 10);
-}
-
-void fbdev_set_offset(uint32_t xoffset, uint32_t yoffset) {
-    vinfo.xoffset = xoffset;
-    vinfo.yoffset = yoffset;
-}
-
 /**********************
  *   STATIC FUNCTIONS
  **********************/

@@ -45,6 +45,5 @@ int  domoticz_probe(void);
 
 /* Fire-and-forget control (async; HTTP runs on a detached thread). */
 void domoticz_switch_async(int idx, const char * cmd);   /* "On"/"Off"/"Toggle"/"Open"/"Close"/"Stop" */
-void domoticz_set_level_async(int idx, int level);        /* 0..100 */
 
 #endif

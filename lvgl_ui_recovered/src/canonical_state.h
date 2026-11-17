@@ -77,11 +77,7 @@ typedef struct {
 /* Observer Callback Signature */
 typedef void (*canonical_state_cb_t)(uint32_t mask, void * user_data);
 
-/* Subscribe to state updates. Returns 0 on success, -1 if registry full. */
-int canonical_state_subscribe(canonical_state_cb_t cb, void * user_data);
 
-/* Unsubscribe an existing callback. */
-int canonical_state_unsubscribe(canonical_state_cb_t cb);
 
 /* Notify all subscribers that specific subsystems changed. */
 void canonical_state_notify(uint32_t mask);

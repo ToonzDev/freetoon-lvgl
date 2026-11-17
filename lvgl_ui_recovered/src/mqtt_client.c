@@ -363,12 +363,3 @@ int mqtt_client_start(mqtt_on_message_cb cb, void * arg) {
     pthread_detach(t);
     return 0;
 }
-
-/* Legacy entry point: still respected — but we route through the same
- * shared callback + settings-driven loop, ignoring the passed topics list
- * (settings.mqtt_topics is now the source of truth). */
-int mqtt_subscribe_async(const char ** topics, int n_topics,
-                         mqtt_on_message_cb cb, void * arg) {
-    (void)topics; (void)n_topics;
-    return mqtt_client_start(cb, arg);
-}

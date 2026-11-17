@@ -60,10 +60,6 @@ typedef struct {
 
 extern ha_state_t ha_state;
 
-/* Thread safety primitives */
-void ha_lock(void);
-void ha_unlock(void);
-void ha_get_snapshot(ha_state_t * out);
 
 /* Opens the Life360/tracker location-map modal (defined in screen_home.c).
  * Used by the native Family tile and the stock-theme Trackers tile. */
@@ -123,16 +119,12 @@ int          hadev_type_from_str(const char * s);
  * settings UI after an edit; the poller picks up the new list on its next
  * pass. */
 void ha_devices_load(void);
-/* Persist the current ha_devices[] back to ha_devices.conf. */
-void ha_devices_save(void);
 
 /* ha_devices[] is shared with the HA threads. The list layout is only
  * changed on the UI thread (add/remove/load), so UI code may read entity_id,
  * name, type and the int state fields directly; the state[] string is
  * written by the HA threads — read it with ha_device_get_state(). Code on
- * other threads must hold ha_devices_lock() while touching the array. */
-void ha_devices_lock(void);
-void ha_devices_unlock(void);
+ * other threads (all inside homeassistant.c) hold its g_dev_mtx. */
 void ha_device_get_state(int idx, char * out, size_t outsz);
 /* Same for the area (Devices hub rooms). ha_device_area_gen bumps whenever
  * the HA thread has (re)filled the areas, so the hub knows to regroup. */
@@ -163,14 +155,10 @@ void ha_curtain_close_async(void);
 void ha_curtain_stop_async(void);
 
 /* Per-light + group actions. */
-void ha_light_toggle_async(const char * entity_id);
-void ha_lights_all_on_async(void);
-void ha_lights_all_off_async(void);
 void ha_light_set_brightness_async(const char * entity_id, int brightness_pct);
 
 /* Cover position setter (generic — works for curtains and blinds). */
 void ha_cover_set_position_async(const char * entity_id, int position_pct);
-void ha_cover_stop_async(const char * entity_id);
 
 /* GET /api/calendars/<entity>?start=&end= (Bearer auth) → HA event-array JSON
  * into `out`. Returns 0 on success. Used by calendar.c. */

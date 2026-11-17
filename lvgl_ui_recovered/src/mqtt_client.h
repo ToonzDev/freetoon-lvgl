@@ -37,9 +37,5 @@ int mqtt_discover_topics(const char * host, int port,
                          const char * wildcard, int duration_ms,
                          mqtt_topic_cb cb, void * arg);
 
-/* Legacy entry point — kept so callers that still pass their own topic
- * list compile. New code should use mqtt_client_start() + settings. */
-int mqtt_subscribe_async(const char ** topics, int n_topics,
-                         mqtt_on_message_cb cb, void * arg);
 
 #endif

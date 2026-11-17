@@ -1004,12 +1004,6 @@ int client_link_socket_set(int i, int on) {
     return 0;
 }
 
-int client_link_curtain(const char * action) {
-    char b[48];
-    snprintf(b, sizeof b, "{\"action\":\"%s\"}", action);
-    return post_json("/api/curtain", b);
-}
-
 int client_link_start(void) {
     if (!settings.client_mode) return 0;
     toon_state.connected = 0;

@@ -24,38 +24,6 @@ static pthread_mutex_t    s_state_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /* --- Observer Registry --- */
 
-int canonical_state_subscribe(canonical_state_cb_t cb, void * user_data) {
-    if (!cb) return -1;
-    pthread_mutex_lock(&s_state_lock);
-    for (int i = 0; i < MAX_SUBSCRIBERS; i++) {
-        if (!s_subscribers[i].in_use) {
-            s_subscribers[i].cb = cb;
-            s_subscribers[i].user_data = user_data;
-            s_subscribers[i].in_use = 1;
-            pthread_mutex_unlock(&s_state_lock);
-            return 0;
-        }
-    }
-    pthread_mutex_unlock(&s_state_lock);
-    return -1; /* Table full */
-}
-
-int canonical_state_unsubscribe(canonical_state_cb_t cb) {
-    if (!cb) return -1;
-    pthread_mutex_lock(&s_state_lock);
-    for (int i = 0; i < MAX_SUBSCRIBERS; i++) {
-        if (s_subscribers[i].in_use && s_subscribers[i].cb == cb) {
-            s_subscribers[i].in_use = 0;
-            s_subscribers[i].cb = NULL;
-            s_subscribers[i].user_data = NULL;
-            pthread_mutex_unlock(&s_state_lock);
-            return 0;
-        }
-    }
-    pthread_mutex_unlock(&s_state_lock);
-    return -1; /* Not found */
-}
-
 void canonical_state_notify(uint32_t mask) {
     subscriber_entry_t copy[MAX_SUBSCRIBERS];
     pthread_mutex_lock(&s_state_lock);

@@ -572,4 +572,3 @@ static void fire(int idx, const char * cmd, int level) {
 }
 
 void domoticz_switch_async(int idx, const char * cmd) { fire(idx, cmd, 0); }
-void domoticz_set_level_async(int idx, int level)     { fire(idx, NULL, level); }

@@ -31,6 +31,5 @@ void inbox_mark_read(const char * uuid);
 void inbox_delete(const char * uuid);   /* removes locally + sends DeleteNotification */
 
 void inbox_persist(void);
-void inbox_load(void);
 
 #endif

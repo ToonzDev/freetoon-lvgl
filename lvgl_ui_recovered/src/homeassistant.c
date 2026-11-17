@@ -88,22 +88,6 @@ static int ha_token_safe(const char * t) {
 
 ha_state_t ha_state = {0};
 
-static pthread_mutex_t g_ha_state_mtx = PTHREAD_MUTEX_INITIALIZER;
-
-void ha_lock(void) {
-    pthread_mutex_lock(&g_ha_state_mtx);
-}
-
-void ha_unlock(void) {
-    pthread_mutex_unlock(&g_ha_state_mtx);
-}
-
-void ha_get_snapshot(ha_state_t * out) {
-    if (!out) return;
-    pthread_mutex_lock(&g_ha_state_mtx);
-    *out = ha_state;
-    pthread_mutex_unlock(&g_ha_state_mtx);
-}
 
 static char g_token[256] = "";
 static volatile int g_ha_reconnect = 0;   /* ha_start() on a running client: drop the WS and reconnect */
@@ -299,10 +283,6 @@ static int ha_call_cover_service_only(const char * action) {
     return ha_call_service("cover", action, CURTAIN_GROUP, NULL);
 }
 
-static int ha_call_light_service_only(const char * action, const char * entity_id) {
-    return ha_call_service("light", action, entity_id, NULL);
-}
-
 /* Room lights for the home Lights screen — loaded at runtime from
  * /mnt/data/ha_lights.conf (one "entity_id|Name|Area" per line, '#' or
  * blank lines ignored) so no personal entity ids ship in the binary.
@@ -366,38 +346,6 @@ static void poll_lights(void) {
     }
 }
 
-/* Async helpers for the screen handlers. Each runs the actual REST POST
- * on a detached thread so LVGL stays responsive; the next poll picks up
- * the new state within a few seconds. */
-static void * light_action_thread(void * arg) {
-    char ** p = (char **)arg;       /* [action, entity_id] */
-    ha_call_light_service_only(p[0], p[1]);
-    poll_lights();
-    free(p[0]); free(p[1]); free(p);
-    return NULL;
-}
-
-static void fire_light_action(const char * action, const char * entity_id) {
-    char ** p = malloc(2 * sizeof(char *));
-    if (!p) return;
-    p[0] = strdup(action);
-    p[1] = strdup(entity_id);
-    if (!p[0] || !p[1]) { free(p[0]); free(p[1]); free(p); return; }
-    pthread_t t;
-    if (pthread_create(&t, NULL, light_action_thread, p) != 0) {
-        free(p[0]); free(p[1]); free(p);
-        return;
-    }
-    pthread_detach(t);
-}
-
-void ha_light_toggle_async(const char * entity_id) {
-    fire_light_action("toggle", entity_id);
-}
-
-void ha_lights_all_on_async(void)  { fire_light_action("turn_on",  "light.all_lights"); }
-void ha_lights_all_off_async(void) { fire_light_action("turn_off", "light.all_lights"); }
-
 /* ======================= Unified dynamic device list =======================
  * One user-managed list (lights, covers, switches, scripts, scenes) loaded
  * from /mnt/data/ha_devices.conf. Replaces the old fixed cover slots; the
@@ -433,8 +381,6 @@ int hadev_type_from_str(const char * s) {
  * the UI could read a half-written state string. The plain int fields are
  * volatile word writes and may be read without the lock. */
 static pthread_mutex_t g_dev_mtx = PTHREAD_MUTEX_INITIALIZER;
-void ha_devices_lock(void)   { pthread_mutex_lock(&g_dev_mtx); }
-void ha_devices_unlock(void) { pthread_mutex_unlock(&g_dev_mtx); }
 
 /* Copy a device's state string under the lock (for UI readers). */
 void ha_device_get_state(int idx, char * out, size_t outsz) {
@@ -465,12 +411,6 @@ static void devices_save_unlocked(void) {
                 D->entity_id, D->name, D->pin_home ? 1 : 0);
     }
     fclose(f);
-}
-
-void ha_devices_save(void) {
-    pthread_mutex_lock(&g_dev_mtx);
-    devices_save_unlocked();
-    pthread_mutex_unlock(&g_dev_mtx);
 }
 
 static void devices_add(int type, const char * entity, const char * name, int pin) {
@@ -1599,21 +1539,6 @@ void ha_cover_set_position_async(const char * entity_id, int position_pct) {
 /* Generic cover stop — same fire-and-forget pattern as the curtain stop
  * but takes an entity_id so blinds can use it too. */
 struct cover_stop_arg { char entity_id[64]; };
-static void * cover_stop_thread(void * arg) {
-    struct cover_stop_arg * a = (struct cover_stop_arg *)arg;
-    ha_call_service("cover", "stop_cover", a->entity_id, NULL);
-    poll_once();
-    free(a);
-    return NULL;
-}
-void ha_cover_stop_async(const char * entity_id) {
-    struct cover_stop_arg * a = malloc(sizeof *a);
-    if (!a) return;
-    snprintf(a->entity_id, sizeof a->entity_id, "%s", entity_id);
-    pthread_t t;
-    if (pthread_create(&t, NULL, cover_stop_thread, a) != 0) { free(a); return; }
-    pthread_detach(t);
-}
 
 /* --- entity discovery --------------------------------------------------- */
 int ha_discover_entities(const char * domain_prefix,
