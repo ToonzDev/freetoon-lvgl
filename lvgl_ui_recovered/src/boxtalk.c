@@ -348,12 +348,36 @@ static void update_burner_state(int bi) {
     }
 }
 
-static inline void set_water_pressure(float v) {
+/* CH water pressure age-out. A boiler that doesn't report pressure (e.g.
+ * after a boiler swap) left the old boiler's last value on screen forever —
+ * with a "pressure low" banner. So a reading is only trusted while live
+ * sources keep confirming it: BoxTalk notifies / query answers from
+ * happ_thermstat and the OTGW. The hcb_rrd log (only a 30days RRA of
+ * ~week-long bins, no way to tell its age) may seed the value at start-up
+ * but never refreshes it. Nothing live for PRESS_MAX_AGE -> unknown (0):
+ * tile "-- bar", no banner. */
+#define PRESS_MAX_AGE   (6 * 3600)
+#define PRESS_QUERY_S   600            /* re-ask happ_thermstat every 10 min */
+static volatile time_t g_press_live_at = 0;   /* last live reading */
+static volatile time_t g_press_seed_at = 0;   /* hcb_rrd seed (no live yet) */
+static volatile int    g_press_expired = 0;   /* aged out: no more rrd seeding */
+
+static inline void set_water_pressure_raw(float v) {
     if (v <= 0.05f) return;
     if (v >= 50.0f) toon_state.water_pressure = v / 100.0f;       /* centibar: 180 -> 1.80 */
     else if (v >= 5.0f) toon_state.water_pressure = v / 10.0f;    /* decibar:  15  -> 1.50 */
     else toon_state.water_pressure = v;                           /* bar:      1.5 -> 1.50 */
 }
+/* A live reading (BoxTalk / OTGW). */
+static void set_water_pressure(float v) {
+    if (v <= 0.05f) return;
+    set_water_pressure_raw(v);
+    if (!g_press_live_at)
+        fprintf(stderr, "[bxt] live CH pressure %.2f bar - age-out armed\n", toon_state.water_pressure);
+    g_press_live_at = time(NULL);
+    g_press_expired = 0;
+}
+void boxtalk_set_water_pressure_live(float bar) { set_water_pressure(bar); }
 
 /* ---- BoxTalk message handlers ---- */
 /* Sensor uuids on this Toon. UUID_AMBIENT is the hardware sensor block on
@@ -1607,9 +1631,33 @@ static void* http_poll_thread(void* arg) {
          * BoilerInfo arrives). Use the BoxTalk query mechanism, which is the
          * protocol's intended path for query-only state-vars. A query is one
          * small XML round-trip; not the same as HTTP polling. */
-        /* Periodically fetch central heating water pressure from hcb_rrd (logger thermstat_boilerChPressure) */
+        /* CH water pressure: re-query happ_thermstat (the live source), and
+         * age the value out when nothing live has confirmed it for
+         * PRESS_MAX_AGE (see set_water_pressure). */
+        {
+            time_t now = time(NULL);
+            static time_t last_q = 0;
+            if (now - last_q >= PRESS_QUERY_S) {
+                last_q = now;
+                send_query(g_therm_pub[0] ? g_therm_pub : THERMSTAT_UUID, "ThermostatInfo", "BoilerChPressure");
+            }
+            time_t ref = g_press_live_at ? g_press_live_at : g_press_seed_at;
+            if (toon_state.water_pressure > 0.05f && ref && now - ref > PRESS_MAX_AGE) {
+                fprintf(stderr, "[bxt] CH pressure %.2f bar not confirmed for %ld h (%s) - now unknown\n",
+                        toon_state.water_pressure, (long)((now - ref) / 3600),
+                        g_press_live_at ? "live source stopped" : "only the hcb_rrd log had it");
+                toon_state.water_pressure = 0.0f;
+                g_press_live_at = g_press_seed_at = 0;
+                g_press_expired = 1;
+            }
+        }
+        /* Seed from hcb_rrd (logger thermstat_boilerChPressure) until a live
+         * reading arrives; never after one (its week-long bins would overwrite
+         * the live value) or after an age-out (it would bring the stale value
+         * back). */
         static int press_poll_cnt = 0;
-        if (++press_poll_cnt >= 5 || toon_state.water_pressure <= 0.05f) {
+        if (!g_press_live_at && !g_press_expired &&
+            (++press_poll_cnt >= 5 || toon_state.water_pressure <= 0.05f)) {
             press_poll_cnt = 0;
             char rrd_buf[256];
             int rrc = http_fetch_to("http://127.0.0.1:10080/hcb_rrd?action=getRrdData&loggerName=thermstat_boilerChPressure&rra=30days&samples=1",
@@ -1632,7 +1680,8 @@ static void* http_poll_thread(void* arg) {
                     if (strncmp(col, "NaN", 3) != 0 && strncmp(col, "nan", 3) != 0 && strncmp(col, "null", 4) != 0) {
                         float bp = (float)atof(col);
                         if (bp > 0.05f) {
-                            set_water_pressure(bp);
+                            set_water_pressure_raw(bp);          /* a seed, not live */
+                            if (!g_press_seed_at) g_press_seed_at = time(NULL);
                         }
                     }
                 }

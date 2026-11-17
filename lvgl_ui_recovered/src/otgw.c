@@ -66,10 +66,10 @@ static void poll_otgw(void) {
         toon_state.burner_on = (strcmp(v, "On") == 0);
     /* Pressure: fallback only — happ_thermstat's BoxTalk value wins when it has
      * one, so we don't fight it. Fills the gap if happ ever reports 0. */
-    if (toon_state.water_pressure <= 0.05f &&
-        otmon_val(body, "chwaterpressure", v, sizeof v)) {
+    /* A live OTGW reading also keeps the value from aging out (boxtalk.c). */
+    if (otmon_val(body, "chwaterpressure", v, sizeof v)) {
         float f = (float)atof(v);
-        if (f > 0) toon_state.water_pressure = f;
+        if (f > 0.05f) boxtalk_set_water_pressure_live(f);   /* same OT data as happ's */
     }
 }
 

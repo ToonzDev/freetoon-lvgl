@@ -85,6 +85,9 @@ int boxtalk_setpoint_increase(void);
 int boxtalk_setpoint_decrease(void);
 
 void boxtalk_request_setpoint_refresh(void);
+/* A live CH water pressure reading (bar) from another source (OTGW): sets the
+ * value and keeps it from aging out (6 h without live readings -> unknown). */
+void boxtalk_set_water_pressure_live(float bar);
 
 /* Force a fresh CurrentTemperature pull from happ_thermstat so the dim
    screen doesn't show a stale value when the TemperatureSensor notify
