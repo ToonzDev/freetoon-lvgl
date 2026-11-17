@@ -637,3 +637,14 @@
   2. **Solar tile ignores the adapter.** `energy_have_solar()/energy_solar_w()` only know a HomeWizard kWh meter and the HA sensor; happ_pwrusage's `powerProduction` is only used to compute the net grid power.
   3. **Statistics → Zon reads loggers that don't exist.** `screen_stats.c` asks hcb_rrd for `elec_flow_prod`, `elec_quantity_nt_prod/lt_prod`, `solar_flow`, `solar_quantity` — "unknown logger" on .18. Stock/community names are `elec_solar_flow` (5min) + `elec_solar_quantity` (5yrhours/10yrdays) for a solar meter, `elec_produ_flow` + `elec_quantity_nt_produ/lt_produ` for P1 return delivery (seen in a user's config_hcb_rrd.xml and on .18).
 - **Plan**: (a) divider field in the adapter editor for analog elec/gas/solar (read from usageDeviceInfo, write with SetMeterConfiguration, stock units/defaults); (b) meter adapter as third solar source for the tile; (c) fix the Zon logger names (try elec_solar_*, then *_produ). (c) can be checked on any Toon; (a) on .52 with the spare adapter's analog input; real numbers need a tester.
+
+### 55. "Klok Studio": configurable clock faces as home tile and dim block
+- **Status**: Open (user request, 2026-11-17).
+- **Inspiration**: ReToon app Clock Studio by Nomzi Design (https://github.com/Vibestar/ReToon-apps/tree/clock-studio-duo, `clock-studio/`). That app is GPL-2.0-or-later and FreeToon is MIT, so this is a **native LVGL implementation written from scratch** — use the app only for the feature list, copy no code or assets.
+- **Scope** (no world-map face — user decision):
+  - Faces: classic analog, minimal analog, square analog (small/large), LED digital (chamfered segments), stacked (HH over MM), calendar (clock + upcoming appointments from FreeToon's existing calendar data: HA calendar / iCal feeds), auto (picks a face that fits the cell; small cells fall back to simpler faces).
+  - Themes: blue, purple, white, red, green + per-tile colour overrides (background, foreground, accent, hour / minute / second hand).
+  - Per-tile settings: face, theme, colours, seconds (second hand / blinking colon), date on/off, title, 12/24 h, scale (65–100 %), corner radius (0 = square).
+  - Available as a home grid tile (layout editor) and as a dim block (dim layout editor), each with its own settings; tap on the home tile opens a full-screen view with the same settings.
+- **Implementation notes**: retained objects, update only what changes each second (hands via rotation / line points, LED segments recoloured, not rebuilt) — keep Toon 1 CPU low (see ui_lazy.h). Settings per tile stored with the layout entry. Existing clock tile / dim clock (incl. moon phase) stay; Klok Studio is an additional tile type.
+- **Later (separate)**: option B — a ReToon app host on QuickJS (ReToon app API levels 1–10) so ReToon apps run unchanged as separate downloads; large and a moving target, not planned.
