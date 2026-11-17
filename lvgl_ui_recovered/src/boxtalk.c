@@ -370,16 +370,23 @@ static inline void set_water_pressure_raw(float v) {
     else if (v >= 5.0f) toon_state.water_pressure = v / 10.0f;    /* decibar:  15  -> 1.50 */
     else toon_state.water_pressure = v;                           /* bar:      1.5 -> 1.50 */
 }
-/* A live reading (BoxTalk / OTGW). */
-static void set_water_pressure(float v) {
+/* A live reading (BoxTalk / OTGW). src: 0 notify, 1 query answer,
+ * 2 thermostatInfo dataset, 3 OTGW — the first reading per source is
+ * logged, so the log shows which path keeps a Toon's pressure fresh. */
+static void set_water_pressure(float v, int src) {
+    static const char * const names[] = { "notify", "query answer", "thermostatInfo dataset", "OTGW" };
+    static unsigned seen = 0;
     if (v <= 0.05f) return;
     set_water_pressure_raw(v);
-    if (!g_press_live_at)
-        fprintf(stderr, "[bxt] live CH pressure %.2f bar - age-out armed\n", toon_state.water_pressure);
+    if (src >= 0 && src < 4 && !(seen & (1u << src))) {
+        seen |= 1u << src;
+        fprintf(stderr, "[bxt] live CH pressure %.2f bar via %s%s\n", toon_state.water_pressure,
+                names[src], g_press_live_at ? "" : " - age-out armed");
+    }
     g_press_live_at = time(NULL);
     g_press_expired = 0;
 }
-void boxtalk_set_water_pressure_live(float bar) { set_water_pressure(bar); }
+void boxtalk_set_water_pressure_live(float bar) { set_water_pressure(bar, 3);   /* OTGW */ }
 
 /* ---- BoxTalk message handlers ---- */
 /* Sensor uuids on this Toon. UUID_AMBIENT is the hardware sensor block on
@@ -488,7 +495,7 @@ static void handle_notify(const char* xml) {
         if (elem_text_float(xml, "BoilerChPressure", &v)) {
             /* Auto-detect bar, decibar, or centibar by magnitude. */
             if (v > 0.05f)
-                set_water_pressure(v);
+                set_water_pressure(v, 0);   /* notify */
             toon_state.msg_count++;
         }
     } else if (strcasecmp(tail, "ElectricityFlowMeter") == 0 ||
@@ -608,7 +615,7 @@ static void handle_query_response(const char* xml) {
         }
         if (elem_text_float(xml, "BoilerChPressure", &v)) {
             if (v > 0.05f)
-                set_water_pressure(v);
+                set_water_pressure(v, 1);   /* query answer */
             toon_state.msg_count++;
             fprintf(stderr, "[bxt] query response BoilerChPressure = %.2f (stored %.2f)\n", v, toon_state.water_pressure);
             return;
@@ -775,7 +782,7 @@ static void handle_msg(const char* xml) {
             if ((elem_text_float(xml, "boilerChPressure", &v) ||
                  elem_text_float(xml, "BoilerChPressure", &v) ||
                  elem_text_float(xml, "chPressure", &v)) && v > 0.05f)
-                set_water_pressure(v);
+                set_water_pressure(v, 2);   /* dataset */
             /* Once per run: what the dataset holds, to find a live pressure
              * source on real boilers (#pressure age-out). */
             static int ds_logged = 0;
