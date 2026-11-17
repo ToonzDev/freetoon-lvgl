@@ -1258,8 +1258,9 @@ lv_obj_t * screen_dim_grid_create(void) {
         dim_rain_chart = lv_chart_create(bx_r);
         int label_w = (rbw > 180) ? 44 : 0;
         int chart_w = rbw - 8 - label_w;
+        /* Grows with the block, like the home Neerslag tile (was capped at
+         * 65 px, leaving a tall block mostly empty). 54 = header + times row. */
         int chart_h = rbh - 54;
-        if (chart_h > 65) chart_h = 65;
         if (chart_h < 38) chart_h = 38;
         lv_obj_set_size(dim_rain_chart, chart_w, chart_h);
         ui_obj_align(dim_rain_chart, LV_ALIGN_BOTTOM_RIGHT, -4, -20);

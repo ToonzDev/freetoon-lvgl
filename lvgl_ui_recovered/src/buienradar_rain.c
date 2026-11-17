@@ -304,3 +304,12 @@ void buienradar_rain_get_snapshot(buienradar_rain_snapshot_t * out) {
     pthread_mutex_unlock(&s_rain_mtx);
 }
 
+
+#ifdef SIM
+/* Headless sim: install a rain snapshot (SIM_RAIN in sim.c). */
+void buienradar_rain_sim_set(const buienradar_rain_snapshot_t * in) {
+    pthread_mutex_lock(&s_rain_mtx);
+    s_rain_data = *in;
+    pthread_mutex_unlock(&s_rain_mtx);
+}
+#endif

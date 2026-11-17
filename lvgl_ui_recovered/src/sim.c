@@ -14,6 +14,7 @@
 #include "lvgl/lvgl.h"
 #include "display.h"
 #include "screens.h"
+#include "buienradar_rain.h"
 #include "settings.h"
 #include "homeassistant.h"
 #include "layout.h"
@@ -470,6 +471,26 @@ static void mock_state(void) {
     weather_state.current_temp = 22.6f;
     weather_state.feel_temp    = 22.0f;
     if (getenv("SIM_OUT_TEMP")) weather_state.current_temp = weather_state.feel_temp = (float)atof(getenv("SIM_OUT_TEMP"));
+    /* SIM_RAIN=1: a 3-hour Buienradar curve (a shower around +1 h) for the
+     * Neerslag tile / dim block. */
+    if (getenv("SIM_RAIN")) {
+        extern void buienradar_rain_sim_set(const buienradar_rain_snapshot_t * in);
+        static buienradar_rain_snapshot_t r;
+        memset(&r, 0, sizeof r);
+        r.count_3h = 36;
+        for (int i = 0; i < r.count_3h; i++) {
+            int d = i - 12;
+            int v = 70 - d * d * 3;
+            r.points_3h[i].value = v > 0 ? v : 0;
+            r.points_3h[i].mm = r.points_3h[i].value / 20.0f;
+            snprintf(r.points_3h[i].time_str, sizeof r.points_3h[i].time_str, "%02d:%02d", 16 + (i * 5) / 60, (i * 5) % 60);
+        }
+        snprintf(r.summary_3h, sizeof r.summary_3h, "Bui rond 17:00");
+        r.has_rain_3h = 1;
+        r.is_valid = 1;
+        r.last_updated = time(NULL);
+        buienradar_rain_sim_set(&r);
+    }
     strcpy(weather_state.current_desc, "Zonnig");
     strcpy(weather_state.current_icon, "a");
     static const char * hlbl[] = { "Nu", "16:00", "19:00", "22:00", "01:00", "04:00" };
