@@ -1158,6 +1158,13 @@ lv_obj_t * screen_zwave_create(void) {
  * g_dev[] into the SSE frame and the slave applies it here so the admin
  * screen's list view (build_rows() → g_dev) shows the same nodes. */
 int zwave_dev_count(void) { return g_dev_count; }
+/* Switch count of the current list without polling (zwave_switch_count polls
+ * when the list is empty — too costly for a per-tick check). */
+int zwave_switch_count_cached(void) {
+    int c = 0;
+    for (int i = 0; i < g_dev_count; i++) if (g_dev[i].is_switch) c++;
+    return c;
+}
 int zwave_dev_at(int i, zwave_dev_t * out) {
     if (!out || i < 0 || i >= g_dev_count) return 0;
     *out = g_dev[i];

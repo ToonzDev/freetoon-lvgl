@@ -446,6 +446,15 @@ void ha_device_get_state(int idx, char * out, size_t outsz) {
     pthread_mutex_unlock(&g_dev_mtx);
 }
 
+void ha_device_get_area(int idx, char * out, size_t outsz) {
+    if (!out || !outsz) return;
+    out[0] = 0;
+    pthread_mutex_lock(&g_dev_mtx);
+    if (idx >= 0 && idx < ha_device_count)
+        snprintf(out, outsz, "%s", ha_devices[idx].area);
+    pthread_mutex_unlock(&g_dev_mtx);
+}
+
 static void devices_save_unlocked(void) {
     FILE * f = fopen(HA_DEVICES_CONF, "w");
     if (!f) return;
@@ -1365,6 +1374,86 @@ static void * doorbell_thread(void * arg) {
     return NULL;
 }
 
+/* ---- HA areas for the Devices hub ----------------------------------------
+ * One POST /api/template renders "entity|area" for every configured device
+ * (area_name() falls back to the device's area). Runs whenever the device
+ * list changes, else every 30 min; a failed fetch is retried after 2 min. */
+volatile int ha_device_area_gen = 0;
+#define HA_AREA_REQ "/tmp/toonui_ha_area.json"
+
+static unsigned long devices_sig_unlocked(void) {
+    unsigned long h = 5381u + (unsigned long)ha_device_count;
+    for (int i = 0; i < ha_device_count; i++)
+        for (const char * c = ha_devices[i].entity_id; *c; c++) h = h * 33u + (unsigned char)*c;
+    return h;
+}
+
+static void maybe_fetch_device_areas(void) {
+    static unsigned long last_sig = 0;
+    static time_t next_at = 0;
+    static char ents[HA_DEVICE_MAX][64];
+    static char body[8 * 1024];
+
+    pthread_mutex_lock(&g_dev_mtx);
+    unsigned long sig = devices_sig_unlocked();
+    int n = ha_device_count;
+    for (int i = 0; i < n; i++) snprintf(ents[i], sizeof ents[i], "%s", ha_devices[i].entity_id);
+    pthread_mutex_unlock(&g_dev_mtx);
+
+    time_t now = time(NULL);
+    if (sig == last_sig && now < next_at) return;
+    last_sig = sig;
+    next_at  = now + 120;                         /* until proven otherwise */
+    if (!g_token[0] || n == 0) return;
+
+    FILE * f = fopen(HA_AREA_REQ, "w");
+    if (!f) return;
+    fprintf(f, "{\"template\":\"{%% for e in [");
+    int k = 0;
+    for (int i = 0; i < n; i++)
+        if (ha_id_safe(ents[i])) fprintf(f, "%s\\\"%s\\\"", k++ ? "," : "", ents[i]);
+    fprintf(f, "] %%}{{ e }}|{{ area_name(e) or '' }}\\n{%% endfor %%}\"}");
+    fclose(f);
+
+    char cmd[768], hp[192];
+    snprintf(cmd, sizeof cmd,
+        "/usr/bin/curl -s %s--max-time 8 --connect-timeout 3 "
+        "-X POST -H 'Authorization: Bearer %s' "
+        "-H 'Content-Type: application/json' "
+        "--data-binary @" HA_AREA_REQ " "
+        "'%s://%s/api/template' 2>/dev/null",
+        ha_tls_opt(), g_token, ha_scheme(), ha_hostport(hp, sizeof hp));
+    FILE * p = popen(cmd, "r");
+    if (!p) { unlink(HA_AREA_REQ); return; }
+    size_t len = fread(body, 1, sizeof body - 1, p);
+    body[len] = 0;
+    pclose(p);
+    unlink(HA_AREA_REQ);
+
+    int matched = 0;
+    pthread_mutex_lock(&g_dev_mtx);
+    for (char * line = body; line && *line; ) {
+        char * nl = strchr(line, '\n');
+        if (nl) *nl = 0;
+        char * bar = strchr(line, '|');
+        if (bar) {
+            *bar = 0;
+            for (int i = 0; i < ha_device_count; i++) {
+                if (strcmp(ha_devices[i].entity_id, line) != 0) continue;
+                snprintf(ha_devices[i].area, sizeof ha_devices[i].area, "%s", bar + 1);
+                matched++;
+            }
+        }
+        line = nl ? nl + 1 : NULL;
+    }
+    pthread_mutex_unlock(&g_dev_mtx);
+    if (matched) {
+        next_at = now + 1800;
+        ha_device_area_gen++;
+        fprintf(stderr, "[ha] areas fetched for %d devices\n", matched);
+    }
+}
+
 static void * ha_thread(void * arg) {
     (void)arg;
     srand((unsigned)time(NULL) ^ (unsigned)getpid());
@@ -1388,7 +1477,7 @@ static void * ha_thread(void * arg) {
                 rest_up = up;
             }
             ha_state.connected = up;
-            if (up) seed_all();
+            if (up) { seed_all(); maybe_fetch_device_areas(); }
             sleep(HA_POLL_S);
             continue;
         }
@@ -1401,6 +1490,7 @@ static void * ha_thread(void * arg) {
             fprintf(stderr, "[ha] WS auth failed\n"); close(fd); sleep(15); continue;
         }
         seed_all();
+        maybe_fetch_device_areas();
         const char * sub = "{\"id\":1,\"type\":\"subscribe_events\",\"event_type\":\"state_changed\"}";
         if (ws_send(fd, 0x1, (unsigned char *)sub, strlen(sub)) < 0) { close(fd); continue; }
         fprintf(stderr, "[ha] WebSocket connected + subscribed to state_changed\n");
@@ -1418,6 +1508,7 @@ static void * ha_thread(void * arg) {
                     if (ws_send(fd, 0x9, NULL, 0) < 0) break;
                     last_ping = time(NULL);
                 }
+                maybe_fetch_device_areas();   /* list edited in Settings / 30-min refresh */
                 continue;
             }
             int n = ws_recv_msg(fd, msg, sizeof msg);

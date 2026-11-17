@@ -28,6 +28,7 @@ typedef struct {
     volatile int any_on;   /* at least one lamp on */
     volatile int all_on;
     volatile int bri_pct;  /* last group brightness 0..100 */
+    char light_ids[96];    /* member lamp ids as ",1,2,5," (Devices hub room lookup) */
 } hue_group_t;
 
 typedef struct {
@@ -66,5 +67,8 @@ void hue_group_set_bri_async(const char * id, int pct);   /* 1..100, switches th
 /* Group shown on the home "Hue" tile (settings.hue_tile_group, "" = all
  * lamps). Returns its index in hue_state.groups or -1 (= all lamps). */
 int  hue_tile_group_index(void);
+/* Name of the Hue *room* (not zone) that lamp `light_id` belongs to, or NULL.
+ * UI thread only (reads hue_state the way the Hue screen does). */
+const char * hue_light_room(const char * light_id);
 
 #endif

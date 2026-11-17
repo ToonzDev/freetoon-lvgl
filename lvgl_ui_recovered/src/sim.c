@@ -398,9 +398,9 @@ static void mock_state(void) {
         }
         settings.hue_enabled = 1;
         /* A room and a zone ("everything except the reading lamp"). */
-        static const struct { const char * id, * name; int zone, n, any, all, pct; } G[] = {
-            { "1", "Woonkamer",                  0, 2, 1, 0, 70 },
-            { "7", "Woonkamer zonder leeslamp",  1, 1, 1, 1, 70 },
+        static const struct { const char * id, * name; int zone, n, any, all, pct; const char * ids; } G[] = {
+            { "1", "Woonkamer",                  0, 2, 1, 0, 70, ",1,2," },
+            { "7", "Woonkamer zonder leeslamp",  1, 1, 1, 1, 70, ",1," },
         };
         hue_state.group_count = (int)(sizeof G / sizeof G[0]);
         for (int i = 0; i < hue_state.group_count; i++) {
@@ -409,6 +409,7 @@ static void mock_state(void) {
             snprintf(g->name, sizeof g->name, "%s", G[i].name);
             g->is_zone = G[i].zone; g->n_lights = G[i].n;
             g->any_on = G[i].any; g->all_on = G[i].all; g->bri_pct = G[i].pct;
+            snprintf(g->light_ids, sizeof g->light_ids, "%s", G[i].ids);
         }
         if (!settings.hue_tile_group[0]) snprintf(settings.hue_tile_group, sizeof settings.hue_tile_group, "7");
     }
@@ -562,13 +563,13 @@ static void mock_state(void) {
         efanlamp.connected = 1; efanlamp.fan_on = 1; efanlamp.fan_speed = 3;
         efanlamp.light_on = 1;  efanlamp.light_brightness = 50;
     }
-    struct { int type; const char * ent; const char * name; int on; int bri; int pos; int pin; } d[] = {
-        { HADEV_LIGHT,  "light.woonkamer",  "Woonkamer",   1, 200, -1, 0 },
-        { HADEV_LIGHT,  "light.keuken",      "Keuken",      0,  -1, -1, 0 },
-        { HADEV_COVER,  "cover.gordijnen",   "Gordijnen",   0,  -1, 60, 1 },
-        { HADEV_SWITCH, "switch.tuinpomp",   "Tuinpomp",    1,  -1, -1, 0 },
-        { HADEV_SCRIPT, "script.avondmodus", "Avondmodus",  0,  -1, -1, 0 },
-        { HADEV_SCENE,  "scene.film",        "Filmavond",   0,  -1, -1, 0 },
+    struct { int type; const char * ent; const char * name; int on; int bri; int pos; int pin; const char * area; } d[] = {
+        { HADEV_LIGHT,  "light.woonkamer",  "Woonkamer",   1, 200, -1, 0, "woonkamer" },
+        { HADEV_LIGHT,  "light.keuken",      "Keuken",      0,  -1, -1, 0, "Keuken" },
+        { HADEV_COVER,  "cover.gordijnen",   "Gordijnen",   0,  -1, 60, 1, "Woonkamer" },
+        { HADEV_SWITCH, "switch.tuinpomp",   "Tuinpomp",    1,  -1, -1, 0, "Tuin" },
+        { HADEV_SCRIPT, "script.avondmodus", "Avondmodus",  0,  -1, -1, 0, "" },
+        { HADEV_SCENE,  "scene.film",        "Filmavond",   0,  -1, -1, 0, "" },
     };
     ha_device_count = (int)(sizeof(d)/sizeof(d[0]));
     for (int i = 0; i < ha_device_count; i++) {
@@ -579,6 +580,7 @@ static void mock_state(void) {
         snprintf(D->name, sizeof D->name, "%s", d[i].name);
         D->available = 1; D->on = d[i].on; D->brightness = d[i].bri;
         D->position = d[i].pos; D->pin_home = d[i].pin;
+        snprintf(D->area, sizeof D->area, "%s", d[i].area);
         if (d[i].type == HADEV_COVER) snprintf(D->state, sizeof D->state, "%s", d[i].pos > 0 ? "open" : "closed");
     }
 }
@@ -598,6 +600,7 @@ static const struct { const char * name; create_fn fn; } SCREENS[] = {
     { "vent_remote", screen_vent_remote_create },
     { "vent_adv",    screen_vent_advanced_create },
     { "lights",      screen_lights_create },
+    { "devices",     screen_devices_create },
     { "marketplace", screen_marketplace_create },
     { "zwave",       screen_zwave_create },
     { "wifi",        screen_wifi_create },
@@ -666,6 +669,7 @@ static void * soak_cal_thread(void * arg) {
 static int sim_soak(int rounds) {
     static const struct { const char * name; create_fn fn; } OWNED[] = {
         { "efanlamp",    screen_efanlamp_create },
+        { "devices",     screen_devices_create },
         { "chart_24h",   soak_chart },
         { "hue",         screen_hue_create },
         { "crypto_pick", screen_crypto_picker_create },

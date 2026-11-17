@@ -107,6 +107,7 @@ typedef struct {
     volatile int brightness;     /* 0..255, -1 if not reported (light) */
     volatile int position;       /* 0..100 (cover) */
     char         state[16];      /* raw HA state ("open"/"closing"/…) (cover) */
+    char         area[32];       /* HA area (area_name()), "" if none — fetched by the HA thread */
 } ha_device_t;
 
 #define HA_DEVICE_MAX 32
@@ -133,6 +134,10 @@ void ha_devices_save(void);
 void ha_devices_lock(void);
 void ha_devices_unlock(void);
 void ha_device_get_state(int idx, char * out, size_t outsz);
+/* Same for the area (Devices hub rooms). ha_device_area_gen bumps whenever
+ * the HA thread has (re)filled the areas, so the hub knows to regroup. */
+void ha_device_get_area(int idx, char * out, size_t outsz);
+extern volatile int ha_device_area_gen;
 
 /* Device control (async, fire-and-forget). `type` selects the HA domain. */
 void ha_device_toggle_async(int type, const char * entity_id);      /* light/switch */

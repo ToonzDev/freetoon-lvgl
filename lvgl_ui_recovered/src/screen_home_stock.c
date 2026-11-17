@@ -221,10 +221,10 @@ static void on_apps_grid_longpress(lv_event_t * e) { (void)e; ui_dim_now(); }
 static lv_obj_t * s_lights_handle     = NULL;
 static lv_obj_t * s_lights_handle_lbl = NULL;
 
+/* The stock theme has no swipe-right and no status-bar buttons, so its
+ * handle stays — it opens the Devices hub (#53) like the LVGL home does. */
 static void open_lights_backend(void) {
-    if (settings.enable_domoticz)              ui_push(screen_domoticz_create());
-    else if (settings.hue_enabled || hue_state.count > 0) ui_push_owned(screen_hue_create());
-    else                                       ui_push(screen_lights_create());
+    ui_push_owned(screen_devices_create());
 }
 static void s_lights_handle_set(bool open) {
     if (!s_lights_handle) return;

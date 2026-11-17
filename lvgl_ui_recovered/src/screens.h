@@ -90,6 +90,8 @@ lv_obj_t * screen_heater_advanced_create(void);
 lv_obj_t * screen_vent_remote_create(void);
 lv_obj_t * screen_vent_advanced_create(void);
 lv_obj_t * screen_lights_create(void);
+lv_obj_t * screen_devices_create(void);   /* Devices hub: all backends, by room (#53) */
+int        devices_hub_available(void);   /* any device backend configured (home button) */
 lv_obj_t * screen_marketplace_create(void);
 lv_obj_t * screen_zwave_create(void);
 lv_obj_t * screen_wifi_create(void);

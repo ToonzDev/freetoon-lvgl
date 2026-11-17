@@ -607,7 +607,9 @@
     - As with the original QML app, ensure direct inverter polling is disabled if a hardware meter adapter or HomeWizard solar meter is already bound, preventing double counting.
 
 ### 53. Unified Devices hub — one entry point for lights & plugs
-- **Status**: Open (design proposal, 2026-11-17). Decisions pending (see below).
+- **Status**: Stage 1 implemented 2026-11-17 (hub + swipe/status-bar entry, handle removed), sim-tested, awaiting on-device test. Stages 2-3 open.
+- **Decisions (2026-11-17)**: handle removed entirely from the LVGL home (the stock theme keeps its handle — no other entry there — but it now opens the hub); hub grouped **by room** (Hue rooms + HA areas merged by name, case-insensitive; devices without a room grouped per source); tile migration in stage 2 = silent conversion **plus** a one-time notice.
+- **Stage 1 notes**: `screen_devices.c` (owned screen, max 96 rows); HA areas via one `POST /api/template` (`area_name()`) on list change / every 30 min (`ha_devices[].area`, not persisted); Hue room membership from `/groups` `lights` (`hue_group_t.light_ids`, `hue_light_room()`); backend screens via chips at the top; Verlichting + Slimme stekker tile taps open the hub; devices button left of the gear, envelopes shift one slot. Client (slave) Toons: HA devices are not mirrored, so they do not appear in the hub there (same as the old HA screen).
 - **Problem**: Five entry points reach different things:
   - left-edge handle (Domoticz / HA logo or ⚡) and swipe-right on the thermostat half open **one** backend by fixed priority Domoticz → Hue → HA → Z-Wave (`open_lights_backend()` in `screen_home.c`) — a second system (e.g. HA next to Hue) is unreachable from home;
   - the handle floats left-middle and overlaps tiles;

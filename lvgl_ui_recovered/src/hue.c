@@ -328,14 +328,30 @@ static int parse_hue_groups(const char * body) {
             snprintf(G->id, sizeof G->id, "%s", id_buf);
             json_extract_str(brace, obj_end, "name", G->name, sizeof G->name);
             G->is_zone = (type[0] == 'Z');
-            /* lamps: count the quoted ids in "lights":[...] */
+            /* lamps: the quoted ids in "lights":[...] — counted, and kept as
+             * ",1,2,5," so the Devices hub can file a lamp under its room. */
             const char * lp = strstr(brace, "\"lights\"");
             if (lp && lp < obj_end) {
                 const char * a = strchr(lp, '[');
                 const char * b = a ? strchr(a, ']') : NULL;
-                if (a && b && b < obj_end)
-                    for (const char * q = a; q < b; q++) if (*q == '"') G->n_lights++;
-                G->n_lights /= 2;
+                if (a && b && b < obj_end) {
+                    size_t ln = 0;
+                    G->light_ids[ln++] = ',';
+                    for (const char * q = a; q < b; q++) {
+                        if (*q != '"') continue;
+                        const char * qe = memchr(q + 1, '"', (size_t)(b - q - 1));
+                        if (!qe) break;
+                        size_t idl = (size_t)(qe - q - 1);
+                        if (ln + idl + 2 < sizeof G->light_ids) {
+                            memcpy(G->light_ids + ln, q + 1, idl);
+                            ln += idl;
+                            G->light_ids[ln++] = ',';
+                        }
+                        G->n_lights++;
+                        q = qe;
+                    }
+                    G->light_ids[ln] = 0;
+                }
             }
             const char * st = strstr(brace, "\"state\"");
             if (st && st < obj_end) {
@@ -373,6 +389,17 @@ int hue_tile_group_index(void) {
     for (int i = 0; i < hue_state.group_count; i++)
         if (strcmp(hue_state.groups[i].id, settings.hue_tile_group) == 0) return i;
     return -1;
+}
+
+const char * hue_light_room(const char * light_id) {
+    if (!light_id || !light_id[0]) return NULL;
+    char needle[20];
+    snprintf(needle, sizeof needle, ",%s,", light_id);
+    for (int i = 0; i < hue_state.group_count; i++) {
+        const hue_group_t * G = &hue_state.groups[i];
+        if (!G->is_zone && strstr(G->light_ids, needle)) return G->name;
+    }
+    return NULL;
 }
 
 /* Probe connection to Hue Bridge */

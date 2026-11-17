@@ -270,9 +270,7 @@ static lv_chart_series_t * rain_ser = NULL;
 static lv_obj_t * rain_lbl_times[5] = {0};
 static int rain_mode_24h            = 0;
 static int s_rain_compact           = 0;
-static lv_obj_t * lights_handle     = NULL;
-static lv_obj_t * lights_handle_lbl = NULL;
-static lv_obj_t * lights_handle_img = NULL;   /* backend logo (HA / Domoticz) */
+static lv_obj_t * devices_btn       = NULL;   /* top-right, opens the Devices hub */
 
 /* Swipeable tile pages. The five built-in tiles (Waste/Energy/Vent/Family/
  * Water) are "page 0". Swiping left in the tile zone reveals page 1 — an
@@ -2058,7 +2056,7 @@ static void update_tile_smartplug(void);
 
 static void on_lt_smartplug_tap(lv_event_t * e) {
     (void)e;
-    ui_push(screen_zwave_create());
+    ui_push_owned(screen_devices_create());   /* hub (#53); Z-Wave management via its chip */
 }
 
 static void on_lt_sp_toggle(lv_event_t * e) {
@@ -3407,53 +3405,33 @@ static void refresh_cb(lv_timer_t * t) {
         }
     }
 
-    /* Refresh lights handle logo dynamically if backend becomes active or changes */
-    if (lights_handle) {
-        const lv_img_dsc_t * want_logo = (settings.enable_domoticz || (settings.client_mode && domoticz_state.count > 0)) ? &icon_domoticz
-                                       : (settings.enable_ha || (settings.client_mode && ha_light_count > 0)) ? &icon_ha
-                                       : NULL;
-        if (want_logo) {
-            if (!lights_handle_img) {
-                lights_handle_img = lv_img_create(lights_handle);
-                lv_img_set_zoom(lights_handle_img, 224);   /* 48px -> ~42px */
-                lv_obj_center(lights_handle_img);
-            }
-            if (lv_img_get_src(lights_handle_img) != want_logo) {
-                ui_img_set_src(lights_handle_img, want_logo);
-            }
-            if (lv_obj_get_width(lights_handle) <= 60) {   /* collapsed state */
-                ui_obj_clear_flag(lights_handle_img, LV_OBJ_FLAG_HIDDEN);
-                if (lights_handle_lbl) ui_obj_add_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
-            }
-        } else if (lights_handle_img) {
-            ui_obj_add_flag(lights_handle_img, LV_OBJ_FLAG_HIDDEN);
-            if (lights_handle_lbl && lv_obj_get_width(lights_handle) <= 60)
-                ui_obj_clear_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
+    /* Devices button: only once some device backend is configured (Hue and
+     * Z-Wave lists arrive asynchronously, so this is decided per tick). */
+    {
+        int dv = devices_btn && devices_hub_available();
+        if (devices_btn) {
+            if (dv) ui_obj_clear_flag(devices_btn, LV_OBJ_FLAG_HIDDEN);
+            else    ui_obj_add_flag(devices_btn, LV_OBJ_FLAG_HIDDEN);
         }
+        int off = dv ? 52 : 0;                    /* envelopes one slot left of it */
+        if (envelope_btn)   ui_obj_align(envelope_btn,   LV_ALIGN_TOP_RIGHT,  -66 - off, 4);
+        if (envelope_badge) ui_obj_align(envelope_badge, LV_ALIGN_TOP_RIGHT,  -60 - off, 2);
+        if (update_env_btn) ui_obj_align(update_env_btn, LV_ALIGN_TOP_RIGHT, -118 - off, 4);
     }
     /* No lv_obj_invalidate(scr_root) here: with the ui_lazy.h setters an
      * idle tick changes nothing, and LVGL already invalidates what does. */
 }
 
 /* ---------- screen builder ---------- */
-/* Push the Lights page. Used by both the swipe-right gesture and the
- * lightbulb button in the top-right. */
-/* Route to whichever lights backend is enabled: Domoticz if configured,
- * otherwise the Home Assistant lights page. */
-static void open_lights_backend(void) {
-    if (settings.enable_domoticz || (settings.client_mode && domoticz_state.count > 0))
-        ui_push(screen_domoticz_create());
-    else if (settings.hue_enabled || hue_state.count > 0)
-        ui_push_owned(screen_hue_create());
-    else if (settings.enable_ha || (settings.client_mode && ha_light_count > 0))
-        ui_push(screen_lights_create());
-    else if (zwave_switch_count() > 0)
-        ui_push(screen_zwave_create());
-    else
-        ui_push(screen_lights_create());
+/* Open the Devices hub (#53): every backend's lights/plugs in one list.
+ * Used by the swipe-right gesture, the devices button next to the envelope
+ * and the Verlichting / Slimme stekker tiles. */
+static void open_devices_hub(void) {
+    ui_push_owned(screen_devices_create());
 }
 /* Click handler for the optional LT_LIGHTS grid tile (custom layout). */
-static void on_lights_tile(lv_event_t * e) { (void)e; open_lights_backend(); }
+static void on_lights_tile(lv_event_t * e) { (void)e; open_devices_hub(); }
+static void on_devices_btn(lv_event_t * e) { (void)e; open_devices_hub(); }
 
 /* ---- swipeable tile pages ---- */
 static void home_set_dot(int active) {
@@ -3570,44 +3548,7 @@ void screen_home_reset_to_main(void) {
 void screen_home_force_page(int n) { home_show_page(n); }
 static void on_home_gesture_to_lights(lv_event_t * e) {
     (void)e;
-    open_lights_backend();
-}
-
-/* Collapsible lights handle: idles as a slim half-circle tab peeking from the
- * left edge, expands into a horizontal "Lights" button while pressed, and
- * opens the lights backend on release. */
-static void lights_handle_set(bool open) {
-    if (!lights_handle) return;
-    lv_obj_set_size(lights_handle, open ? 160 : 56, open ? 56 : 80);
-    ui_obj_align(lights_handle, LV_ALIGN_LEFT_MID, open ? 4 : -4, 0);
-    lv_obj_set_style_radius(lights_handle, open ? 16 : LV_RADIUS_CIRCLE, 0);
-    if (open) {
-        /* Expanded: word label, hide the logo. */
-        if (lights_handle_img) ui_obj_add_flag(lights_handle_img, LV_OBJ_FLAG_HIDDEN);
-        if (lights_handle_lbl) {
-            ui_label_set_text(lights_handle_lbl, tr("Apparaten", "Devices"));
-            ui_obj_set_style_text_font(lights_handle_lbl, SF(22), 0);
-            ui_obj_clear_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
-        }
-    } else {
-        /* Collapsed: the backend logo if we have one, else the charge glyph. */
-        if (lights_handle_img) {
-            ui_obj_clear_flag(lights_handle_img, LV_OBJ_FLAG_HIDDEN);
-            if (lights_handle_lbl) ui_obj_add_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
-        } else if (lights_handle_lbl) {
-            ui_label_set_text(lights_handle_lbl, LV_SYMBOL_CHARGE);
-            ui_obj_set_style_text_font(lights_handle_lbl, SF(28), 0);
-            ui_obj_clear_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
-        }
-    }
-}
-static void on_lights_handle(lv_event_t * e) {
-    switch (lv_event_get_code(e)) {
-        case LV_EVENT_PRESSED:                            lights_handle_set(true);  break;
-        case LV_EVENT_RELEASED: case LV_EVENT_PRESS_LOST: lights_handle_set(false); break;
-        case LV_EVENT_CLICKED:  lights_handle_set(false); open_lights_backend();    break;
-        default: break;
-    }
+    open_devices_hub();
 }
 
 static void on_home_gesture(lv_event_t * e) {
@@ -3636,7 +3577,7 @@ static void on_home_gesture(lv_event_t * e) {
         }
     } else if (dir == LV_DIR_RIGHT) {
         lv_indev_wait_release(indev);
-        open_lights_backend();
+        open_devices_hub();
     }
 }
 
@@ -5419,52 +5360,28 @@ lv_obj_t * screen_home_create(void) {
     ui_obj_add_flag(envelope_btn,   LV_OBJ_FLAG_HIDDEN);
     ui_obj_add_flag(envelope_badge, LV_OBJ_FLAG_HIDDEN);
 
-    /* (Old top-right lights button removed — superseded by the left-edge
-     * collapsible lights handle and the swipe-right gesture.) */
-
-    /* Lights handle — a slim half-circle tab on the left edge that auto-hides.
-     * Touch it and it expands into a horizontal "Lights" button; releasing
-     * opens the lights backend (Domoticz if enabled, else Home Assistant).
-     * Same target as the swipe-right gesture, but discoverable.
-     * Hidden if a visible Verlichting tile (LT_LIGHTS) exists on page 0. */
+    /* Devices button (#53) — replaces the old left-edge lights handle, which
+     * overlapped the thermostat tile. Round button right next to the gear;
+     * the envelope + update envelope shift one slot left while it shows
+     * (see the refresh tick). Opens the Devices hub, like swipe-right. Not
+     * created when a visible Verlichting tile (LT_LIGHTS) already offers it. */
     const layout_tile_t * Llt = settings.custom_layout_enabled ? layout_find(LT_LIGHTS) : NULL;
     int have_lights_tile = (Llt && Llt->visible);
-    lights_handle = NULL;
-    lights_handle_img = NULL;
-    lights_handle_lbl = NULL;
+    devices_btn = NULL;
     if (!have_lights_tile) {
-        lights_handle = lv_btn_create(scr_root);
-        lv_obj_set_size(lights_handle, 56, 80);
-        ui_obj_align(lights_handle, LV_ALIGN_LEFT_MID, -4, 0);
-        ui_obj_set_style_bg_color(lights_handle, lv_color_hex(settings.home_light_mode ? 0xccdaea : 0x2a4060), 0);
-        ui_obj_set_style_bg_color(lights_handle, lv_color_hex(settings.home_light_mode ? 0xb0c4de : 0x3a5688), LV_STATE_PRESSED);
-        ui_obj_set_style_bg_opa(lights_handle, LV_OPA_70, 0);
-        lv_obj_set_style_radius(lights_handle, LV_RADIUS_CIRCLE, 0);
-        lv_obj_set_style_pad_all(lights_handle, 0, 0);
-        lv_obj_set_ext_click_area(lights_handle, 24);   /* generous touch target */
-        lv_obj_add_event_cb(lights_handle, on_lights_handle, LV_EVENT_PRESSED,    NULL);
-        lv_obj_add_event_cb(lights_handle, on_lights_handle, LV_EVENT_RELEASED,   NULL);
-        lv_obj_add_event_cb(lights_handle, on_lights_handle, LV_EVENT_PRESS_LOST, NULL);
-        lv_obj_add_event_cb(lights_handle, on_lights_handle, LV_EVENT_CLICKED,    NULL);
-        lights_handle_lbl = lv_label_create(lights_handle);
-        ui_obj_set_style_text_color(lights_handle_lbl, lv_color_hex(settings.home_light_mode ? 0xd97706 : 0xffe08a), 0);
-        ui_obj_set_style_text_font(lights_handle_lbl, SF(28), 0);
-        ui_label_set_text(lights_handle_lbl, LV_SYMBOL_CHARGE);
-        lv_obj_center(lights_handle_lbl);
-
-        /* Collapsed handle shows the active backend's logo: Domoticz if that's
-         * configured (matches open_lights_backend's priority), else HA. The
-         * charge glyph stays as the fallback when neither is enabled. */
-        const lv_img_dsc_t * logo = (settings.enable_domoticz || (settings.client_mode && domoticz_state.count > 0)) ? &icon_domoticz
-                                  : (settings.enable_ha || (settings.client_mode && ha_light_count > 0)) ? &icon_ha
-                                  : NULL;
-        if (logo) {
-            lights_handle_img = lv_img_create(lights_handle);
-            ui_img_set_src(lights_handle_img, logo);
-            lv_img_set_zoom(lights_handle_img, 224);   /* 48px -> ~42px */
-            lv_obj_center(lights_handle_img);
-            ui_obj_add_flag(lights_handle_lbl, LV_OBJ_FLAG_HIDDEN);
-        }
+        devices_btn = lv_btn_create(scr_root);
+        lv_obj_set_size(devices_btn, 44, 44);
+        ui_obj_align(devices_btn, LV_ALIGN_TOP_RIGHT, -66, 4);
+        ui_obj_set_style_bg_color(devices_btn, lv_color_hex(settings.home_light_mode ? 0xd0d8e2 : 0x335577), 0);
+        lv_obj_set_style_radius(devices_btn, 22, 0);
+        lv_obj_set_ext_click_area(devices_btn, 14);
+        lv_obj_add_event_cb(devices_btn, on_devices_btn, LV_EVENT_CLICKED, NULL);
+        lv_obj_t * dl = lv_label_create(devices_btn);
+        ui_label_set_text(dl, LV_SYMBOL_CHARGE);
+        ui_obj_set_style_text_color(dl, lv_color_hex(settings.home_light_mode ? 0xd97706 : 0xffe08a), 0);
+        ui_obj_set_style_text_font(dl, SF(20), 0);
+        lv_obj_center(dl);
+        ui_obj_add_flag(devices_btn, LV_OBJ_FLAG_HIDDEN);   /* refresh shows it once a backend is up */
     }
 
     /* --- Buienradar rain forecast tile (LT_RAINFALL) --- */
@@ -5765,9 +5682,7 @@ void screen_home_destroy(void) {
         news_ticker = NULL;
         news_last_first[0] = '\0';
         news_last_nn = 0;
-        lights_handle = NULL;
-        lights_handle_img = NULL;
-        lights_handle_lbl = NULL;
+        devices_btn = NULL;
         tile_rain = NULL;
         rain_lbl_title = NULL;
         rain_lbl_summary = NULL;
