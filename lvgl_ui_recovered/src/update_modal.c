@@ -72,10 +72,6 @@ bool update_modal_already_installed(void) {
     return (tn == bn && strncmp(t, BUILD_VERSION, tn) == 0);
 }
 
-bool update_modal_is_open(void) {
-    return (s_update_modal != NULL);
-}
-
 bool update_modal_is_minimized(void) {
     return s_update_minimized;
 }

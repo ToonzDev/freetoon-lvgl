@@ -384,15 +384,3 @@ void screen_weather_hourly_show(int day_idx) {
     ui_push(scr_root);
 }
 
-void screen_weather_hourly_close(void) {
-    if (scr_root) {
-        lv_obj_del(scr_root);
-        scr_root = NULL;
-        lbl_day_title = NULL;
-        lbl_day_summary = NULL;
-        btn_prev_day = NULL;
-        btn_next_day = NULL;
-        hourly_list = NULL;
-    }
-}
-

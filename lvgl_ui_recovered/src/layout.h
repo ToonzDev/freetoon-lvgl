@@ -89,14 +89,11 @@ void dim_layout_load(void);          /* load toonui_dim_layout.cfg or seed defau
 void dim_layout_save(void);
 void dim_layout_reset_default(void);
 const char * dim_block_name(int id); /* human label for the dim editor */
-dim_block_t  dim_block_default(int id); /* built-in default cell for block id */
 
-void layout_load(void);            /* load the default preset, or seed defaults */
-void layout_save(void);            /* save g_layout to the default preset file */
 void layout_reset_default(void);   /* overwrite g_layout with the built-in default */
 
 /* Named presets — files at <data>/toonui_layout_<name>.cfg. An empty name maps
- * to the default toonui_layout.cfg (same file layout_load/layout_save use). */
+ * to the default toonui_layout.cfg. */
 void layout_load_named(const char * name);
 void layout_save_named(const char * name);
 int  layout_list_presets(char out[][LAYOUT_NAME_MAX], int max);  /* -> count */

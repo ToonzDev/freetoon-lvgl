@@ -807,27 +807,6 @@ static void heating_tick(void) {
     }
 }
 
-/* Language selector — OFF = Nederlands (LANG_NL), ON = English (LANG_EN).
-   Switching takes effect on the next modal/screen build (tr() reads
-   settings.language live); no restart needed. */
-static lv_obj_t * lbl_lang_val __attribute__((unused)) = NULL;
-static void on_language_change(lv_event_t * e) __attribute__((unused));
-static void on_language_change(lv_event_t * e) {
-    int on = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
-    settings.language = on ? LANG_EN : LANG_NL;
-    if (lbl_lang_val)
-        lv_label_set_text(lbl_lang_val, on ? "English" : "Nederlands");
-    settings_save();
-}
-
-/* Home theme — OFF = freetoon dark dashboard, ON = stock light tile-carousel.
-   Applies on the next home build (return-to-home / restart); tr() & ui_init
-   read settings.home_theme live. */
-static void on_stock_big_indoor_change(lv_event_t * e) __attribute__((unused));
-static void on_stock_big_indoor_change(lv_event_t * e) {
-    settings.stock_big_indoor = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
-    settings_save();
-}
 static lv_obj_t * lbl_theme_val = NULL;
 static lv_obj_t * lbl_light_mode_val = NULL;
 static lv_obj_t * sw_light_mode = NULL;
@@ -945,12 +924,6 @@ static void on_home_light_mode_change(lv_event_t * e) {
     settings_apply_theme();
     ui_refresh_theme();
     scr_light_mode = -1;
-}
-
-static void on_clock_moon_phase_change(lv_event_t * e) __attribute__((unused));
-static void on_clock_moon_phase_change(lv_event_t * e) {
-    settings.clock_moon_phase = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
-    settings_save();
 }
 
 static lv_obj_t * lbl_vnc_val = NULL;

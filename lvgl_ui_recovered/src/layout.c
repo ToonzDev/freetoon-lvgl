@@ -165,9 +165,6 @@ void layout_save_named(const char * name) {
     fclose(f);
 }
 
-void layout_load(void) { layout_load_named(""); }
-void layout_save(void) { layout_save_named(""); }
-
 int layout_list_presets(char out[][LAYOUT_NAME_MAX], int max) {
     DIR * d = opendir(layout_dir());
     if (!d) return 0;
@@ -446,11 +443,6 @@ static const dim_block_t DIM_DEFAULTS[DB_COUNT] = {
 
 void dim_layout_reset_default(void) {
     memcpy(g_dim_blocks, DIM_DEFAULTS, sizeof g_dim_blocks);
-}
-
-dim_block_t dim_block_default(int id) {
-    if (id < 0 || id >= DB_COUNT) { dim_block_t z = { 0, 0, 1, 1, 1 }; return z; }
-    return DIM_DEFAULTS[id];
 }
 
 static const char * dim_layout_file(char * buf, int bufsz) {

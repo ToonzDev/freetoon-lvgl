@@ -23,7 +23,6 @@ int zwave_dev_count(void);
 int zwave_dev_at(int i, zwave_dev_t * out);
 
 /* Switch / plug helpers used by screen_home (Verlichting tile & Slimme stekkers tile) */
-int  zwave_switch_count(void);
 int  zwave_switch_count_cached(void);   /* no poll; 0 until the list is loaded */
 int  zwave_get_switch(int idx, zwave_dev_t * out);
 int  zwave_toggle_switch(int idx);

@@ -143,12 +143,6 @@ static lv_obj_t * fc_wind_lbl[WEATHER_FORECAST_DAYS];
 static lv_obj_t * fc_desc_lbl[WEATHER_FORECAST_DAYS];
 static lv_obj_t * fc_wind_arrow[WEATHER_FORECAST_DAYS];
 static lv_obj_t * fc_icon[WEATHER_FORECAST_DAYS];
-/* Set when the forecast tile is too short for the (un-zoomable) weather icons
- * — e.g. a grid-placed "Weer" tile only 1 row tall on the 480-px Toon 1 panel.
- * In that case the column renders compact/text-only (time + temp + wind, no
- * icon) so nothing overlaps. set_forecast_icon() honours this to keep the
- * icon hidden across refreshes. */
-static int fc_compact = 0;
 static lv_obj_t * envelope_btn;
 static lv_obj_t * envelope_badge;
 static lv_obj_t * envelope_badge_lbl;
@@ -422,47 +416,7 @@ static void sp_down_apply(void * ctx) { (void)ctx; boxtalk_setpoint_decrease(); 
 static void on_tile_sp_up(lv_event_t * e)   { (void)e; pin_gate(sp_up_apply,   NULL); }
 static void on_tile_sp_down(lv_event_t * e) { (void)e; pin_gate(sp_down_apply, NULL); }
 
-/* ---------- program-picker modal ---------- */
-typedef struct {
-    int        state_value;   /* 0..3 = named scheme, -1 = Manual */
-    lv_obj_t * modal;
-} picker_entry_t;
-static picker_entry_t picker_entries[5];
-
-static void picker_close_cb(lv_event_t * e) {
-    lv_obj_t * modal = lv_event_get_user_data(e);
-    if (modal) lv_obj_del(modal);
-}
-
-/* Inner action — runs after pin_gate clears (or immediately when PIN
- * is off). The modal is closed by picker_close_cb on the same tap event,
- * so by the time pin_gate's modal opens picker_entries[].modal is the
- * picker that we want to dismiss. We dismiss it before the BoxTalk call
- * to keep the visible UI in sync. */
-static void picker_apply_action(void * ctx) {
-    picker_entry_t * pe = ctx;
-    if (!pe) return;
-    if (pe->modal) { lv_obj_del(pe->modal); pe->modal = NULL; }
-    if (pe->state_value < 0) boxtalk_set_manual();
-    else                     boxtalk_set_program(pe->state_value);
-}
-static void picker_apply_cb(lv_event_t * e) {
-    picker_entry_t * pe = lv_event_get_user_data(e);
-    pin_gate(picker_apply_action, pe);
-}
-
-/* Mode-toggle taps. Kept for program modal / compatibility. */
-static void mode_manual_apply(void * ctx)  __attribute__((unused));
-static void mode_manual_apply(void * ctx)  { (void)ctx; boxtalk_set_manual();      }
-static void mode_program_apply(void * ctx) __attribute__((unused));
-static void mode_program_apply(void * ctx) { (void)ctx; boxtalk_resume_schedule(); }
-static void on_mode_manual(lv_event_t * e)  __attribute__((unused));
-static void on_mode_manual(lv_event_t * e)  { (void)e; pin_gate(mode_manual_apply,  NULL); }
-static void on_mode_program(lv_event_t * e) __attribute__((unused));
-static void on_mode_program(lv_event_t * e) { (void)e; pin_gate(mode_program_apply, NULL); }
-
 /* Direct preset tap on one of the four pill-side buttons. */
-static void preset_apply(void * ctx) __attribute__((unused));
 static void preset_apply(void * ctx) {
     int s = (int)(intptr_t)ctx;
     int ps = toon_state.program_state;
@@ -474,63 +428,11 @@ static void preset_apply(void * ctx) {
         boxtalk_set_program(s);
     }
 }
-static void on_tile_preset(lv_event_t * e) __attribute__((unused));
 static void on_tile_preset(lv_event_t * e) {
     int s = (int)(intptr_t)lv_event_get_user_data(e);
     pin_gate(preset_apply, (void *)(intptr_t)s);
 }
 
-static void on_program_tap(lv_event_t * e) {
-    (void)e;
-    lv_obj_t * modal = lv_obj_create(lv_scr_act());
-    lv_obj_set_size(modal, LV_HOR_RES, LV_VER_RES);
-    lv_obj_set_pos(modal, 0, 0);
-    ui_obj_set_style_bg_color(modal, lv_color_hex(0x000000), 0);
-    ui_obj_set_style_bg_opa(modal, 200, 0);
-    ui_obj_set_style_border_width(modal, 0, 0);
-    lv_obj_set_style_radius(modal, 0, 0);
-    lv_obj_set_style_pad_all(modal, 0, 0);
-    ui_obj_clear_flag(modal, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t * title = lv_label_create(modal);
-    ui_label_set_text(title, tr("Programma kiezen", "Select program"));
-    ui_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
-    ui_obj_set_style_text_font(title, SF(28), 0);
-    ui_obj_align(title, LV_ALIGN_TOP_MID, 0, SY(50));
-
-    const char* names[]  = {tr("Comfort", "Comfort"), tr("Thuis", "Home"),
-                            tr("Slapen", "Sleep"), tr("Weg", "Away"),
-                            tr("Handmatig", "Manual")};
-    int         values[] = {0, 1, 2, 3, -1};
-    uint32_t    colors[] = {0xff8866, 0x66cc88, 0x4466cc, 0xaa66ff, 0xffaa44};
-    for (int i = 0; i < 5; i++) {
-        picker_entries[i].state_value = values[i];
-        picker_entries[i].modal       = modal;
-        lv_obj_t * btn = lv_btn_create(modal);
-        lv_obj_set_size(btn, SX(170), SY(220));
-        lv_obj_set_pos(btn, SX(30 + i * 195), SY(160));
-        ui_obj_set_style_bg_color(btn, lv_color_hex(colors[i]), 0);
-        lv_obj_set_style_radius(btn, 16, 0);
-        lv_obj_add_event_cb(btn, picker_apply_cb, LV_EVENT_CLICKED, &picker_entries[i]);
-        lv_obj_t * lbl = lv_label_create(btn);
-        ui_label_set_text(lbl, names[i]);
-        ui_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
-        ui_obj_set_style_text_font(lbl, SF(28), 0);
-        lv_obj_center(lbl);
-    }
-
-    lv_obj_t * cancel = lv_btn_create(modal);
-    lv_obj_set_size(cancel, SX(220), SY(70));
-    ui_obj_align(cancel, LV_ALIGN_BOTTOM_MID, 0, SY(-40));
-    ui_obj_set_style_bg_color(cancel, lv_color_hex(0x444444), 0);
-    lv_obj_set_style_radius(cancel, 14, 0);
-    lv_obj_add_event_cb(cancel, picker_close_cb, LV_EVENT_CLICKED, modal);
-    lv_obj_t * cancel_lbl = lv_label_create(cancel);
-    ui_label_set_text(cancel_lbl, tr("Annuleren", "Cancel"));
-    ui_obj_set_style_text_color(cancel_lbl, lv_color_hex(0xffffff), 0);
-    ui_obj_set_style_text_font(cancel_lbl, SF(22), 0);
-    lv_obj_center(cancel_lbl);
-}
 /* Long-press on any of the four right-column tiles. We don't yet know
  * which tile triggered this — the modal lets the user pick the slot
  * anyway — so the handler just opens the shared picker. Cheaper UI and
@@ -636,13 +538,6 @@ static void open_vent(lv_event_t * e) {
     (void)e;
     if (check_slot_integration_open(2)) return;
     ui_push(screen_vent_remote_create());
-}
-
-/* +/- buttons send a direct PWM bump (~15/255 ≈ 6%-step). e->user_data is
- * the int delta cast to a pointer. */
-static void on_vent_bump(lv_event_t * e) {
-    intptr_t d = (intptr_t)lv_event_get_user_data(e);
-    vent_bump_speed((int)d);
 }
 
 /* Forward-declared here because on_vent_mode (next) writes to it but the
@@ -3546,10 +3441,6 @@ void screen_home_reset_to_main(void) {
 }
 /* Headless-sim helper: page 2 is gesture-only, so the sim can't swipe to it. */
 void screen_home_force_page(int n) { home_show_page(n); }
-static void on_home_gesture_to_lights(lv_event_t * e) {
-    (void)e;
-    open_devices_hub();
-}
 
 static void on_home_gesture(lv_event_t * e) {
     (void)e;

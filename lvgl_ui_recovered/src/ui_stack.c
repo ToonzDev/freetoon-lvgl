@@ -418,28 +418,3 @@ void ui_init(void) {
     ui_mark_activity();
     apply_active_brightness();
 }
-
-/* ---- clock-colon pulse -------------------------------------------------------
- * Shared by the dim + home clocks: a gentle ~1.1s opacity pulse on a separate
- * ":" overlay label so the divider blinks like a real clock. The colon is its
- * own label (the HH/MM digits render with a space between them) so the digits
- * never jitter as the colon fades. */
-static void clock_colon_anim_cb(void * obj, int32_t v) {
-    lv_obj_set_style_text_opa((lv_obj_t *)obj, (lv_opa_t)v, 0);
-}
-void clock_colon_pulse(lv_obj_t * colon) {
-    if (!colon) return;
-    lv_anim_t a;
-    lv_anim_init(&a);
-    lv_anim_set_var(&a, colon);
-    lv_anim_set_exec_cb(&a, clock_colon_anim_cb);
-    /* Pulse between full and ~45% so the tick is clearly visible but the colon
-     * never vanishes (255->40 read as off/invisible, esp. on the small home
-     * clock). ~1 s period, like a real clock. */
-    lv_anim_set_values(&a, 255, 115);
-    lv_anim_set_time(&a, 500);
-    lv_anim_set_playback_time(&a, 500);
-    lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
-    lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
-    lv_anim_start(&a);
-}

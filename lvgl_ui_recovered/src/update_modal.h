@@ -15,8 +15,6 @@ void update_modal_open(lv_obj_t * parent);
 /* Close the About / Update modal if currently visible. */
 void update_modal_close(void);
 
-/* Check if the modal is currently open. */
-bool update_modal_is_open(void);
 
 /* Refresh the modal status & buttons if open.
  * Can be called from screen tick / timer loops. */
