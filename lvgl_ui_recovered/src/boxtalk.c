@@ -355,14 +355,17 @@ static void update_burner_state(int bi) {
  * happ_thermstat and the OTGW. The hcb_rrd log (only a 30days RRA of
  * ~week-long bins, no way to tell its age) supplies the value until a live
  * reading arrives, then stops. Nothing live for PRESS_MAX_AGE -> unknown
- * (0): tile "-- bar", no banner. Toons that never get a live reading keep
- * the hcb_rrd value (on a Toon 2 with a real boiler that is the only
- * source), so they don't age out. */
+ * (0): tile "-- bar", no banner. The hcb_rrd value itself ages out only when
+ * happ_thermstat answers our BoilerChPressure query without a value (the
+ * boiler doesn't report pressure); Toons whose happ never answers keep it.
+ * (A pressure-reporting boiler answers with the value every 10 min — seen on
+ * a Toon 2 with an OpenTherm boiler.) */
 #define PRESS_MAX_AGE   (6 * 3600)
 #define PRESS_QUERY_S   600            /* re-ask happ_thermstat every 10 min */
 static volatile time_t g_press_live_at = 0;   /* last live reading */
 static volatile time_t g_press_seed_at = 0;   /* hcb_rrd seed (no live yet) */
 static volatile int    g_press_expired = 0;   /* aged out: no more rrd seeding */
+static volatile int    g_thermstat_answers = 0; /* BoilerChPressure answers WITHOUT a value */
 
 static inline void set_water_pressure_raw(float v) {
     if (v <= 0.05f) return;
@@ -418,7 +421,8 @@ static void handle_notify(const char* xml) {
     if (tail) tail++; else tail = sid;
 
     if (strstr(sid, "Flow") || strstr(sid, "Meter") || strstr(sid, "Usage") || strstr(sid, "usage") || strstr(sid, "Power") || strstr(sid, "power")) {
-        fprintf(stderr, "[bxt-meter] notify sid='%s' tail='%s' uuid='%s': %.250s\n",
+        static int n_raw = 0;   /* first few only: meters notify every few seconds */
+        if (n_raw < 3 && ++n_raw) fprintf(stderr, "[bxt-meter] notify sid='%s' tail='%s' uuid='%s': %.250s\n",
                 sid, tail, src_uuid, xml);
     }
 
@@ -512,11 +516,13 @@ static void handle_notify(const char* xml) {
             got = 1;
         }
         if (got) {
-            fprintf(stderr, "[bxt-meter] flow accepted: %.1f W (svc='%s' uuid='%s')\n", (double)v, tail, src_uuid);
+            static int n_flow = 0;
+            if (n_flow < 3 && ++n_flow) fprintf(stderr, "[bxt-meter] flow accepted: %.1f W (svc='%s' uuid='%s')\n", (double)v, tail, src_uuid);
             meteradapter_on_flow(v);
             toon_state.msg_count++;
         } else {
-            fprintf(stderr, "[bxt-meter] warning: matched service '%s' but no flow tag found in xml: %.350s\n", tail, xml);
+            static int n_warn = 0;
+            if (n_warn < 3 && ++n_warn) fprintf(stderr, "[bxt-meter] warning: matched service '%s' but no flow tag found in xml: %.350s\n", tail, xml);
         }
     } else if (strcasecmp(tail, "ElectricityQuantityMeter") == 0) {
         /* Analog electricity meter (pulse counter / optical sensor) */
@@ -528,7 +534,8 @@ static void handle_notify(const char* xml) {
             got = 1;
         }
         if (got) {
-            fprintf(stderr, "[bxt-meter] analog pulse notify: quantity=%.3f kWh (svc='%s')\n", (double)q, tail);
+            static int n_pulse = 0;
+            if (n_pulse < 3 && ++n_pulse) fprintf(stderr, "[bxt-meter] analog pulse notify: quantity=%.3f kWh (svc='%s')\n", (double)q, tail);
             toon_state.msg_count++;
             extern void probe_happ_pwrusage(void);
             probe_happ_pwrusage();
@@ -618,6 +625,13 @@ static void handle_query_response(const char* xml) {
                 set_water_pressure(v, 1);   /* query answer */
             toon_state.msg_count++;
             fprintf(stderr, "[bxt] query response BoilerChPressure = %.2f (stored %.2f)\n", v, toon_state.water_pressure);
+            return;
+        }
+        /* Answered, but without a pressure value: the boiler doesn't report
+         * one. Counted for the age-out of a leftover hcb_rrd value. */
+        if (strstr(xml, "BoilerChPressure")) {
+            if (g_thermstat_answers++ == 0)
+                fprintf(stderr, "[bxt] query response BoilerChPressure without value: %.600s\n", xml);
             return;
         }
     }
@@ -1664,14 +1678,21 @@ static void* http_poll_thread(void* arg) {
                 last_q = now;
                 send_query(g_therm_pub[0] ? g_therm_pub : THERMSTAT_UUID, "ThermostatInfo", "BoilerChPressure");
             }
-            /* Only Toons that have a live source at all age out: on a Toon 2
-             * with a real OpenTherm boiler the hcb_rrd log turned out to be
-             * the ONLY source (queries unanswered, no notifies), and expiring
-             * it would blank a correct reading after 6 h. */
-            if (toon_state.water_pressure > 0.05f && g_press_live_at &&
-                now - g_press_live_at > PRESS_MAX_AGE) {
-                fprintf(stderr, "[bxt] CH pressure %.2f bar not confirmed for %ld h (live source stopped) - now unknown\n",
-                        toon_state.water_pressure, (long)((now - g_press_live_at) / 3600));
+            /* Age out when the live source stopped, or — for the hcb_rrd seed —
+             * when happ_thermstat demonstrably answers our queries (on a Toon 2
+             * with a pressure-reporting OpenTherm boiler the BoilerChPressure
+             * answer carries the value every 10 min) yet never gave a pressure
+             * in PRESS_MAX_AGE: then the boiler doesn't report it and the log
+             * value is a leftover (e.g. from a previous boiler). Toons whose
+             * happ never answers keep the hcb_rrd value. */
+            int seed_stale = !g_press_live_at && g_press_seed_at &&
+                             g_thermstat_answers >= 3 && now - g_press_seed_at > PRESS_MAX_AGE;
+            int live_stale = g_press_live_at && now - g_press_live_at > PRESS_MAX_AGE;
+            if (toon_state.water_pressure > 0.05f && (seed_stale || live_stale)) {
+                time_t ref = live_stale ? g_press_live_at : g_press_seed_at;
+                fprintf(stderr, "[bxt] CH pressure %.2f bar not confirmed for %ld h (%s) - now unknown\n",
+                        toon_state.water_pressure, (long)((now - ref) / 3600),
+                        live_stale ? "live source stopped" : "boiler gives no pressure, only the hcb_rrd log had it");
                 toon_state.water_pressure = 0.0f;
                 g_press_live_at = g_press_seed_at = 0;
                 g_press_expired = 1;
