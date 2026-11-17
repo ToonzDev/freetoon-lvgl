@@ -571,7 +571,7 @@
 - **Scope**: both the classic dim layout (screen_dim.c) and the custom grid (screen_dim_grid.c, forecast block); check Toon 1 (800x480) as well.
 
 ### 50. Dead-Code Check After 250+ Commits
-- **Status**: Open (user request, 2026-11-14).
+- **Status**: Done 2026-11-17 (1cfafc2, 4eca8df, 94af246, 4acd392): the 9 statics + 46 globals below and the orphans they exposed removed, `screen_dim_stock.c` deleted; `boxtalk_lock`, `boxtalk_zwave_basic_set` and `fbdev_set/clear_cutout` (Toon 1 video) turned out to be used and stay. Verified: all 4 targets + ABI, sim renders, soak. Open follow-ups: `icon_ha`/`icon_domoticz` data, `sonos_port`/`vnc_pass` load/save, ~25 functions that could become static.
 - **Description**: After many features, rewrites and removed paths, find code that is no longer used and remove it.
 - **Approach**:
   - Compiler/linker: build with `-Wunused-function -Wunused-variable` (+ `-ffunction-sections -fdata-sections -Wl,--gc-sections -Wl,--print-gc-sections`) for both targets and the sim; list functions the linker drops.
