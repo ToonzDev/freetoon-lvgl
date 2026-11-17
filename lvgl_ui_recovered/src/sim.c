@@ -487,7 +487,7 @@ static void mock_state(void) {
     hw_state.power_w      = 384.0f;
     hw_state.gas_hour_m3  = 0.0f;   /* boiler idle → empty gas channel (visible track) */
 
-    /* Itho ventilation so the dim_stock fan spinner renders ("Low 31%"). */
+    /* Itho ventilation so the vent tiles render ("Low 31%"). */
     vent_state.connected     = 1;
     vent_state.itho_online   = 1;
     vent_state.speed_pct     = 31;
@@ -495,7 +495,7 @@ static void mock_state(void) {
     vent_state.remaining_min = 0;
     snprintf(vent_state.fan_info, sizeof vent_state.fan_info, "%s", "low");
 
-    /* ESPHome BLE fan+lamp so the dim_stock BLE spinner renders. */
+    /* ESPHome BLE fan+lamp so the efan tiles render. */
     efanlamp.connected = 1;
     efanlamp.fan_on    = 1;
     efanlamp.fan_speed = 3;
@@ -590,7 +590,6 @@ static const struct { const char * name; create_fn fn; } SCREENS[] = {
     { "home",        screen_home_create },
     { "home_stock",  screen_home_stock_create },
     { "dim",         screen_dim_create },
-    { "dim_stock",   screen_dim_stock_create },
     { "thermostat",  screen_thermostat_create },
     { "settings",    screen_settings_create },
     { "schedule",    screen_schedule_create },

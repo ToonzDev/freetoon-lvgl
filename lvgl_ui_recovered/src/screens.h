@@ -22,15 +22,11 @@ void ui_refresh_theme(void);
 void ui_request_restart(void);   /* clean _exit(0) restart; drops the launcher crash-guard marker */
 void ui_request_reboot(void);    /* full device reboot (sync + /sbin/reboot) */
 
-/* Start a gentle ~1.1s opacity pulse on a clock-colon overlay label so the ":"
- * blinks like a real clock. Call once after creating the colon label. */
-void clock_colon_pulse(lv_obj_t * colon);
 
 /* Per-screen builders. Each returns a freshly created screen object. */
 lv_obj_t * screen_home_create(void);
 void screen_home_destroy(void);
 lv_obj_t * screen_home_stock_create(void);   /* light tile-carousel "stock theme" home */
-lv_obj_t * screen_dim_stock_create(void);    /* stock-style standby (dim) for the stock theme */
 /* Auto-home: drop the home screen's swipe page back to page 1 (the main page)
  * when idle. No-op if already there. */
 void screen_home_reset_to_main(void);
@@ -69,11 +65,9 @@ void screen_home_dismiss_modals(void);
 void screen_settings_close_modals(void);
 /* Home-tile layout editor ("Indeling"). */
 void screen_layout_editor_show(void);
-void screen_layout_editor_close(void);
 lv_obj_t * screen_layout_editor_create(void);
 /* Dim-screen block layout editor ("Dim indeling"). */
 void screen_dim_layout_editor_show(void);
-void screen_dim_layout_editor_close(void);
 lv_obj_t * screen_dim_layout_editor_create(void);
 /* Boot picker layout (headless-sim render only; device path is bootpick_run). */
 lv_obj_t * screen_bootpick_create(void);
