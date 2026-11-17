@@ -395,6 +395,17 @@ static void parse_devices_json_buf(const char * body) {
         const char * next = strstr(p + 5, "\"dev_");
         const char * dend = next ? next : p + strlen(p);
 
+        /* Only real nodes ("dev_4"): skip a node's endpoints ("dev_4.1" — a
+         * meter adapter has one per meter) and "dev_settings_device". The
+         * BoxTalk GetDevices list the Z-Wave screen shows has only nodes, so
+         * these used to flash up in the list and vanish on its first refresh. */
+        {
+            const char * k = p + 5;
+            int numeric = (*k >= '0' && *k <= '9');
+            while (numeric && *k && *k != '"') { if (*k < '0' || *k > '9') numeric = 0; k++; }
+            if (!numeric) { p = next ? next : dend; continue; }
+        }
+
         zw_dev_t * d = &g_dev[g_dev_count];
         memset(d, 0, sizeof *d);
 
