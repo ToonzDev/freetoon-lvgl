@@ -10,6 +10,7 @@
 #include "settings.h"
 #include "canonical_state.h"
 #include "http.h"
+#include "ma_admin.h"
 #include <pthread.h>
 #include <unistd.h>
 #include <time.h>
@@ -194,6 +195,44 @@ void probe_happ_pwrusage(void) {
     }
 }
 
+/* "<obj>": {"value":N, "avgValue":M} — value, or avgValue between pulses
+ * (analog meters report null there). Returns 1 when a number was found. */
+static int usage_val(const char * buf, const char * obj, float * out) {
+    char key[40]; snprintf(key, sizeof key, "\"%s\"", obj);
+    const char * o = strstr(buf, key);
+    if (!o) return 0;
+    const char * close = strchr(o, '}');
+    static const char * const fields[] = { "\"value\"", "\"avgValue\"" };
+    for (int i = 0; i < 2; i++) {
+        const char * p = strstr(o, fields[i]);
+        if (!p || (close && p > close)) continue;
+        p += strlen(fields[i]);
+        while (*p == ' ' || *p == ':' || *p == '\t') p++;
+        if (*p == 'n' || *p == 'N') continue;
+        if (sscanf(p, "%f", out) == 1) return 1;
+    }
+    return 0;
+}
+
+/* Solar meter on the adapter: happ_pwrusage powerProduction (W). Only polled
+ * while an adapter reports a "solar" usage, so P1-only setups (where
+ * powerProduction is the export) don't show it as solar. */
+static void poll_solar(void) {
+    char buf[512];
+    if (http_fetch_to("http://127.0.0.1:10080/happ_pwrusage?action=GetCurrentUsage", buf, sizeof buf, 2) != 0) return;
+    float w;
+    if (usage_val(buf, "powerProduction", &w) && w >= 0) {
+        if (!meter_state.solar_at) fprintf(stderr, "[meteradapter] solar meter: %.0f W\n", (double)w);
+        meter_state.solar_w  = w;
+        meter_state.solar_at = (long)time(NULL);
+    }
+}
+
+int meteradapter_have_solar(void) {
+    return !settings.client_mode && meter_state.solar_at &&
+           (long)time(NULL) - meter_state.solar_at < 60 && ma_has_usage("solar");
+}
+
 static int parse_rrd_delta(const char * body, float * out_delta, float * out_latest) {
     if (!body || !out_delta) return 0;
     const char * p = strchr(body, '{');
@@ -243,6 +282,12 @@ static void *watchdog_thread(void *arg) {
         /* On standalone/master with native meteradapter:
          * If BoxTalk flow notifies haven't arrived in the last 4 seconds,
          * poll happ_pwrusage (enables analog pulse meters and acts as failsafe). */
+        /* Solar meter on the adapter (any energy source: the S0 sensor can sit
+         * next to a HomeWizard P1). Every 10 s. */
+        static int solar_tick = 0;
+        if (!settings.client_mode && (++solar_tick & 1) == 0 && ma_has_usage("solar"))
+            poll_solar();
+
         if (!settings.client_mode && settings.energy_source == 0) {
             if (meter_state.last_flow_s == 0 || (now - meter_state.last_flow_s) >= 4) {
                 probe_happ_pwrusage();

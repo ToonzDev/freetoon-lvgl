@@ -26,6 +26,11 @@ typedef struct {
     volatile double reading_prod_normal_wh;
     volatile double reading_prod_low_wh;
     volatile double reading_gas_l;
+    /* Solar production from a solar meter on the adapter (analog S0 pulse
+     * sensor): happ_pwrusage powerProduction, polled while an adapter
+     * reports a "solar" usage. solar_at = time() of the last reading. */
+    volatile float solar_w;
+    volatile long  solar_at;
     /* NILM — step-change device detection */
     char   nilm_device[40];      /* matched device name + direction, e.g. "Fridge ON" */
     int    nilm_direction;       /* +1 = on, -1 = off */
@@ -40,5 +45,7 @@ int  meteradapter_start(void);
 void meteradapter_on_flow(float watts);
 /* Query happ_pwrusage via local HTTP daemon (fallback / analog pulse meters) */
 void probe_happ_pwrusage(void);
+/* 1 while a solar meter on the adapter delivers readings (master only). */
+int  meteradapter_have_solar(void);
 
 #endif

@@ -647,7 +647,8 @@ static int tile_is_available(int t) {
         case TT_EFAN:
             return settings.efanlamp_host[0] || efanlamp.connected;
         case TT_SOLAR:
-            return settings.hw_kwh_host[0] || settings.hw_kwh2_host[0] || (settings.enable_ha && (settings.ha_solar_entity[0] || ha_state.have_solar));
+            return settings.hw_kwh_host[0] || settings.hw_kwh2_host[0] || (settings.enable_ha && (settings.ha_solar_entity[0] || ha_state.have_solar))
+                || meteradapter_have_solar();   /* S0 solar sensor on the meter adapter */
         default:
             return 1;
     }
