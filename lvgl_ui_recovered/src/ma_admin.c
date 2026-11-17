@@ -22,6 +22,7 @@ static ma_sensconf_t g_sens;
 static ma_caps_t     g_caps;
 static char          g_caps_want[48];
 static int           g_set_seq, g_set_ok;
+static int           g_mc_seq, g_mc_ok;  /* SetMeterConfiguration replies */
 static char          g_admin_rid[32];   /* requestid of the pending admin call */
 static int           g_rid_n;
 
@@ -183,9 +184,14 @@ static void parse_usage_devices(const char * xml) {
             const char * ub = strstr(ua, "</usage>");
             if (!ub || ub > b) break;
             ma_usage_t * us = &d->usage[d->n_usage];
+            us->meter_type = us->divider_type = -1;
+            us->divider = -1;
             elem(ua, ub, "type", us->type, sizeof us->type);
             if (elem(ua, ub, "measureType", v, sizeof v)) us->measure = atoi(v);
             if (elem(ua, ub, "status", v, sizeof v)) us->status = atoi(v);
+            if (elem(ua, ub, "meterType", v, sizeof v) && v[0])   us->meter_type = atoi(v);
+            if (elem(ua, ub, "dividerType", v, sizeof v) && v[0]) us->divider_type = atoi(v);
+            if (elem(ua, ub, "divider", v, sizeof v) && v[0])     us->divider = atof(v);
             if (us->type[0]) d->n_usage++;
             u = ub + 8;
         }
@@ -335,15 +341,50 @@ void ma_handle_action(const char * xml) {
         pthread_mutex_unlock(&g_mtx);
         fprintf(stderr, "[ma] SetSensorConfiguration -> %s: %.300s\n", ok ? "ok" : "FAILED", xml);
     }
+    else if (strstr(xml, "SetMeterConfigurationResponse")) {
+        int ok = !strstr(xml, "false") && !strstr(xml, "rror");
+        pthread_mutex_lock(&g_mtx);
+        g_mc_ok = ok; g_mc_seq++;
+        pthread_mutex_unlock(&g_mtx);
+        fprintf(stderr, "[ma] SetMeterConfiguration -> %s: %.300s\n", ok ? "ok" : "FAILED", xml);
+    }
 }
 
 /* -------------------------------------------------------------- public */
 
 void ma_get_info(ma_info_t * out)           { pthread_mutex_lock(&g_mtx); *out = g_info;  pthread_mutex_unlock(&g_mtx); }
+int ma_has_usage(const char * type) {
+    int found = 0;
+    pthread_mutex_lock(&g_mtx);
+    for (int i = 0; i < g_info.n && !found; i++)
+        for (int u = 0; u < g_info.dev[i].n_usage; u++)
+            if (!strcmp(g_info.dev[i].usage[u].type, type)) { found = 1; break; }
+    pthread_mutex_unlock(&g_mtx);
+    return found;
+}
 void ma_get_admin(ma_admin_t * out)         { pthread_mutex_lock(&g_mtx); *out = g_admin; pthread_mutex_unlock(&g_mtx); }
 void ma_get_sensor_config(ma_sensconf_t * o){ pthread_mutex_lock(&g_mtx); *o = g_sens;    pthread_mutex_unlock(&g_mtx); }
 void ma_get_caps(ma_caps_t * out)           { pthread_mutex_lock(&g_mtx); *out = g_caps;  pthread_mutex_unlock(&g_mtx); }
 void ma_get_set_result(int * seq, int * ok) { pthread_mutex_lock(&g_mtx); *seq = g_set_seq; *ok = g_set_ok; pthread_mutex_unlock(&g_mtx); }
+void ma_get_meter_result(int * seq, int * ok) { pthread_mutex_lock(&g_mtx); *seq = g_mc_seq; *ok = g_mc_ok; pthread_mutex_unlock(&g_mtx); }
+
+/* Stock eMetersSettings setMeterConfiguration(): the device uuid is an
+ * attribute here (unlike SetSensorConfiguration's <deviceUuid> element):
+ *   <devices><device uuid="…"><solar><divider>10000</divider>
+ *   <dividerType>0</dividerType></solar></device></devices> */
+int ma_set_meter_config(const char * dev_uuid, const char * resource,
+                        int meter_type, double divider, int divider_type) {
+    if (!safe_token(dev_uuid) || !safe_token(resource) || !(divider > 0)) return -1;
+    char mt[48] = "";
+    if (meter_type >= 0) snprintf(mt, sizeof mt, "<meterType>%d</meterType>", meter_type);
+    char inner[512];
+    snprintf(inner, sizeof inner,
+             "<devices><device uuid=\"%s\"><%s>%s<divider>%.10g</divider>"
+             "<dividerType>%d</dividerType></%s></device></devices>",
+             dev_uuid, resource, mt, divider, divider_type, resource);
+    fprintf(stderr, "[ma] SetMeterConfiguration %s\n", inner);
+    return send_p1("SetMeterConfiguration", inner, "masmc");
+}
 
 static int admin_start(int op, const char * verb, const char * inner) {
     pthread_mutex_lock(&g_mtx);

@@ -354,12 +354,22 @@ static void sim_boiler_tick(void) {
  * hdrv_p1 sends on a real Toon 2; the config/caps replies are re-sent every
  * second so a "Meters" request in the sim gets an answer. */
 #include "ma_admin.h"
+/* SIM_MA=solar: the adapter also reads an analog (S0) solar meter, 1000 imp/kWh. */
+static int sim_ma_solar(void) { const char * v = getenv("SIM_MA"); return v && !strcmp(v, "solar"); }
 static void sim_ma_replies(lv_timer_t * t) {
     (void)t;
-    ma_handle_action("<action class=\"response\"><u:GetSensorConfigurationResponse><devices>"
-        "<device><sensors><sensor>p1Elec</sensor><sensor>p1Gas</sensor></sensors>"
-        "<deviceUuid>a0835b8f-9b1e-439c-9f59-c96019142247</deviceUuid></device>"
-        "</devices></u:GetSensorConfigurationResponse></action>");
+    ma_handle_action(sim_ma_solar()
+        ? "<action class=\"response\"><u:GetSensorConfigurationResponse><devices>"
+          "<device><sensors><sensor>p1Elec</sensor><sensor>p1Gas</sensor><sensor>analogSolar</sensor></sensors>"
+          "<deviceUuid>a0835b8f-9b1e-439c-9f59-c96019142247</deviceUuid></device>"
+          "</devices></u:GetSensorConfigurationResponse></action>"
+        : "<action class=\"response\"><u:GetSensorConfigurationResponse><devices>"
+          "<device><sensors><sensor>p1Elec</sensor><sensor>p1Gas</sensor></sensors>"
+          "<deviceUuid>a0835b8f-9b1e-439c-9f59-c96019142247</deviceUuid></device>"
+          "</devices></u:GetSensorConfigurationResponse></action>");
+    if (sim_ma_solar())
+        ma_handle_action("<action class=\"response\"><u:SetSensorConfigurationResponse><success>true</success>"
+                         "</u:SetSensorConfigurationResponse></action>");
     ma_handle_action("<action class=\"response\"><u:GetMeasureCapabilitiesResponse>"
         "<device><deviceUuid>a0835b8f-9b1e-439c-9f59-c96019142247</deviceUuid><capabilities>"
         "<capability>p1Elec</capability><capability>analogElec</capability><capability>laserElec</capability>"
@@ -368,13 +378,19 @@ static void sim_ma_replies(lv_timer_t * t) {
         "</capabilities></device></u:GetMeasureCapabilitiesResponse></action>");
 }
 static void sim_ma_mock(void) {
-    ma_handle_action("<action class=\"invoke\"><u:UpdateDataSet><usageDevicesInfo><usageDeviceInfo>"
+    static char xml[1200];
+    snprintf(xml, sizeof xml,
+        "<action class=\"invoke\"><u:UpdateDataSet><usageDevicesInfo><usageDeviceInfo>"
         "<usage><type>elec</type><measureType>1</measureType><status>1</status></usage>"
         "<usage><type>gas</type><measureType>1</measureType><status>1</status></usage>"
+        "%s"
         "<deviceUuid>a0835b8f-9b1e-439c-9f59-c96019142247</deviceUuid><deviceIdentifier>Meetmodule 1</deviceIdentifier>"
         "<deviceStatus>2</deviceStatus><showErrorIndicator>0</showErrorIndicator><statusString>Verbonden</statusString>"
         "</usageDeviceInfo><statusString>Verbonden</statusString><showErrorIndicator>0</showErrorIndicator>"
-        "</usageDevicesInfo></u:UpdateDataSet></action>");
+        "</usageDevicesInfo></u:UpdateDataSet></action>",
+        sim_ma_solar() ? "<usage><type>solar</type><measureType>0</measureType><status>1</status>"
+                         "<divider>1000</divider><dividerType>0</dividerType></usage>" : "");
+    ma_handle_action(xml);
     lv_timer_create(sim_ma_replies, 1000, NULL);
 }
 
@@ -1214,6 +1230,12 @@ int main(int argc, char ** argv) {
     for (int a = 3; a < argc; a++) {
         int x, y;
         if (sscanf(argv[a], "%d,%d", &x, &y) == 2) { sim_tap(x, y); taps++; continue; }
+        if (!strcmp(argv[a], "mapulse")) {     /* meteradapters: open the pulse step (SIM_MA mock) */
+            extern void screen_meteradapters_sim_pulse(const char * uuid);
+            screen_meteradapters_sim_pulse("a0835b8f-9b1e-439c-9f59-c96019142247");
+            pump(20);
+            continue;
+        }
         if (!strncmp(argv[a], "scroll:", 7)) {
             lv_coord_t best = 0;
             lv_obj_t * sc = sb_find_scroller(lv_layer_top(), &best);   /* open modal first */

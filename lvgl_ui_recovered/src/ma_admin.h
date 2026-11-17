@@ -30,6 +30,11 @@ typedef struct {
     char type[8];      /* elec / gas / solar / heat / water */
     int  measure;      /* 0 analog, 1 p1, 2 laser */
     int  status;
+    /* Analog meters: pulse configuration as the driver reports it (stock
+     * eMetersSettings units, see screen_meteradapters.c). -1 = not reported. */
+    int    meter_type;     /* elec: 0 pulse, 1 disk; gas: 0 */
+    int    divider_type;   /* unit id: 0 imp/kWh, 4 Wh/imp, 5 rev/kWh, 9 a=, 10 rev/m3, 11 L/pulse */
+    double divider;        /* pulses per unit after conversion (driver value) */
 } ma_usage_t;
 
 typedef struct {
@@ -86,6 +91,8 @@ void ma_handle_action(const char * xml);   /* every <action> message */
 
 /* status */
 void ma_get_info(ma_info_t * out);
+/* 1 when any adapter in usageDevicesInfo measures `type` ("solar", ...). */
+int  ma_has_usage(const char * type);
 
 /* add / remove */
 int  ma_include_start(void);
@@ -113,5 +120,12 @@ void ma_get_caps(ma_caps_t * out);
 /* Send the full configuration (all adapters). Result via ma_get_set_result. */
 int  ma_set_sensor_config(const ma_sensconf_t * all);
 void ma_get_set_result(int * seq, int * ok);
+
+/* Pulse configuration of one analog meter (stock SetMeterConfiguration):
+ * resource "elec"/"gas"/"solar"; meter_type < 0 = leave out (as stock does
+ * for solar). Result via ma_get_meter_result. */
+int  ma_set_meter_config(const char * dev_uuid, const char * resource,
+                         int meter_type, double divider, int divider_type);
+void ma_get_meter_result(int * seq, int * ok);
 
 #endif

@@ -11,6 +11,9 @@
  *   meters    : pick per resource which input the adapter reads (P1 /
  *               analog / laser), limited to what GetMeasureCapabilities
  *               offers; saved with SetSensorConfiguration for all adapters.
+ *   pulses    : for analog elec / gas / solar, the pulse rate (imp/kWh,
+ *               Wh/imp, rev/kWh, rev/m3, L/pulse — stock units) with
+ *               SetMeterConfiguration; the overview shows what the driver has.
  *   remove    : Z-Wave exclusion (user presses the adapter button); on
  *               failure "Geforceerd verwijderen" (RemoveDevice) after a
  *               confirm.
@@ -40,7 +43,7 @@ static int  g_info_seq = -1;
 enum {
     F_NONE, F_ADD_INTRO, F_ADD_BUSY, F_ADD_RESULT,
     F_REM_INTRO, F_REM_BUSY, F_REM_RESULT, F_FORCE_CONFIRM, F_REM_VERIFY,
-    F_CFG_LOADING, F_CFG_EDIT, F_CFG_SAVING, F_CFG_RESULT
+    F_CFG_LOADING, F_CFG_EDIT, F_CFG_SAVING, F_CFG_RESULT, F_CFG_PULSE, F_CFG_PSAVING
 };
 static int  g_flow = F_NONE;
 static int  g_admin_seq;
@@ -179,6 +182,203 @@ static const char * editor_apply(void) {
     return NULL;
 }
 
+/* --------------------------------------------- pulses (analog meters) */
+/* Stock eMetersSettings Constants.js cValueUnits. The driver stores one
+ * number ("divider", pulses per kWh / m3); a unit converts what the user
+ * types: divisor ? divisor/value : multi ? value*multi : value. meter_type
+ * goes along for elec (0 pulse, 1 disk) and gas; solar sends none, like the
+ * stock solar wizard. Driver range: 30 .. max. */
+typedef struct { int id, meter_type; const char * name; double divisor, multi, def; int max; } punit_t;
+static const punit_t U_ELEC[]  = { { 0, 0, "imp/kWh", 0, 0, 1000, 10000 }, { 4, 0, "Wh/imp", 1000, 0, 1000, 10000 },
+                                   { 5, 1, "omw/kWh", 0, 0, 300, 1000 } };
+static const punit_t U_GAS[]   = { { 10, 0, "omw/m3", 0, 0, 100, 10000 }, { 11, 0, "L/puls", 0, 10, 100, 10000 } };
+static const punit_t U_SOLAR[] = { { 0, -1, "imp/kWh", 0, 0, 10000, 10000 }, { 4, -1, "Wh/imp", 1000, 0, 10000, 10000 } };
+typedef struct { const char * res, * sensor, * nl, * en; const punit_t * u; int nu; } pres_t;
+static const pres_t PRES[] = {
+    { "elec",  "analogElec",  "Elektriciteit", "Electricity", U_ELEC,  3 },
+    { "gas",   "analogGas",   "Gas",           "Gas",         U_GAS,   2 },
+    { "solar", "analogSolar", "Zon",           "Solar",       U_SOLAR, 2 },
+};
+#define NPRES (int)(sizeof PRES / sizeof PRES[0])
+
+static double punit_to_divider(const punit_t * u, double v) {
+    return u->divisor ? u->divisor / v : u->multi ? v * u->multi : v;
+}
+static double punit_from_divider(const punit_t * u, double d) {
+    return u->divisor ? u->divisor / d : u->multi ? d / u->multi : d;
+}
+/* Unit of a resource by the driver's dividerType; NULL if unknown. */
+static const punit_t * punit_by_id(const pres_t * r, int id) {
+    for (int i = 0; i < r->nu; i++) if (r->u[i].id == id) return &r->u[i];
+    return NULL;
+}
+static const pres_t * pres_by_type(const char * type) {
+    for (int i = 0; i < NPRES; i++) if (!strcmp(PRES[i].res, type)) return &PRES[i];
+    return NULL;
+}
+/* "1000 imp/kWh" for the overview; "" when the driver gave nothing usable. */
+static void pulse_text(const ma_usage_t * us, char * out, size_t sz) {
+    out[0] = 0;
+    const pres_t * r = pres_by_type(us->type);
+    if (!r || us->measure != 0 || !(us->divider > 0)) return;
+    const punit_t * u = punit_by_id(r, us->divider_type);
+    if (!u) u = &r->u[0];
+    snprintf(out, sz, "%.6g %s", punit_from_divider(u, us->divider), u->name);
+}
+
+/* Pulse step: one row per analog meter the adapter now reads. */
+static int  g_prow_n;
+static int  g_prow_res[NPRES];             /* index into PRES */
+static int  g_prow_unit[NPRES];            /* selected unit index */
+static lv_obj_t * g_prow_ta[NPRES];
+static const char * g_prow_map[NPRES][5];
+static lv_obj_t * g_kb;
+static int  g_mc_seq0, g_mc_sent;
+
+static int conf_has_sensor(const char * uuid, const char * sensor) {
+    for (int i = 0; i < g_conf.n; i++) {
+        if (strcmp(g_conf.dev[i].uuid, uuid)) continue;
+        for (int s = 0; s < g_conf.dev[i].n; s++) if (!strcmp(g_conf.dev[i].sensor[s], sensor)) return 1;
+    }
+    return 0;
+}
+static int pulse_rows_wanted(void) {
+    int n = 0;
+    for (int r = 0; r < NPRES; r++) if (conf_has_sensor(g_uuid, PRES[r].sensor)) n++;
+    return n;
+}
+
+static void on_ta(lv_event_t * e) {
+    lv_event_code_t c = lv_event_get_code(e);
+    lv_obj_t * ta = lv_event_get_target(e);
+    if (c == LV_EVENT_FOCUSED || c == LV_EVENT_CLICKED) {
+        lv_keyboard_set_textarea(g_kb, ta);
+        lv_obj_clear_flag(g_kb, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+static void on_kb(lv_event_t * e) {
+    lv_event_code_t c = lv_event_get_code(e);
+    if (c == LV_EVENT_READY || c == LV_EVENT_CANCEL) {
+        lv_obj_add_flag(g_kb, LV_OBJ_FLAG_HIDDEN);
+        lv_keyboard_set_textarea(g_kb, NULL);
+    }
+}
+static void on_punit(lv_event_t * e) {
+    int r = (int)(intptr_t)lv_event_get_user_data(e);
+    uint16_t b = lv_btnmatrix_get_selected_btn(lv_event_get_target(e));
+    if (b == LV_BTNMATRIX_BTN_NONE || b == g_prow_unit[r]) return;
+    /* convert what is typed to the new unit, so the meter value stays the
+     * same (1000 imp/kWh <-> 1 Wh/imp) */
+    const pres_t * p = &PRES[g_prow_res[r]];
+    char t[16]; snprintf(t, sizeof t, "%s", lv_textarea_get_text(g_prow_ta[r]));
+    for (char * c = t; *c; c++) if (*c == ',') *c = '.';
+    double v = atof(t);
+    const punit_t * from = &p->u[g_prow_unit[r]], * to = &p->u[b];
+    g_prow_unit[r] = b;
+    if (v > 0 && from->meter_type == to->meter_type) {
+        char vb[24];
+        snprintf(vb, sizeof vb, "%.6g", punit_from_divider(to, punit_to_divider(from, v)));
+        lv_textarea_set_text(g_prow_ta[r], vb);
+    }
+}
+
+static void build_pulse_editor(void) {
+    lv_obj_clean(ov_rows);
+    g_prow_n = 0;
+    ma_info_t inf; ma_get_info(&inf);
+    const ma_dev_t * dev = NULL;
+    for (int i = 0; i < inf.n; i++) if (!strcmp(inf.dev[i].uuid, g_uuid)) dev = &inf.dev[i];
+    int y = 0;
+    for (int r = 0; r < NPRES; r++) {
+        if (!conf_has_sensor(g_uuid, PRES[r].sensor)) continue;
+        const pres_t * p = &PRES[r];
+        int k = g_prow_n++;
+        g_prow_res[k] = r;
+        /* current value from the driver, else the stock default of unit 0 */
+        int ui = 0;
+        double val = p->u[0].def;
+        if (dev) for (int u = 0; u < dev->n_usage; u++) {
+            const ma_usage_t * us = &dev->usage[u];
+            if (strcmp(us->type, p->res) || !(us->divider > 0)) continue;
+            for (int j = 0; j < p->nu; j++)
+                if (p->u[j].id == us->divider_type &&
+                    (p->u[j].meter_type < 0 || us->meter_type < 0 || p->u[j].meter_type == us->meter_type)) ui = j;
+            val = punit_from_divider(&p->u[ui], us->divider);
+        }
+        g_prow_unit[k] = ui;
+
+        lv_obj_t * l = lv_label_create(ov_rows);
+        lv_obj_set_style_text_font(l, SF(18), 0);
+        lv_obj_set_style_text_color(l, lv_color_hex(THEME_TEXT_HI), 0);
+        lv_label_set_text(l, tr(p->nl, p->en));
+        lv_obj_set_pos(l, 0, y + SY(12));
+
+        lv_obj_t * ta = lv_textarea_create(ov_rows);
+        lv_textarea_set_one_line(ta, true);
+        lv_textarea_set_accepted_chars(ta, "0123456789.,");
+        lv_textarea_set_max_length(ta, 8);
+        char vb[24]; snprintf(vb, sizeof vb, "%.6g", val);
+        lv_textarea_set_text(ta, vb);
+        lv_obj_set_size(ta, SX(150), SY(48));
+        lv_obj_set_pos(ta, SX(170), y);
+        lv_obj_set_style_text_font(ta, SF(18), 0);
+        lv_obj_add_event_cb(ta, on_ta, LV_EVENT_FOCUSED, NULL);
+        lv_obj_add_event_cb(ta, on_ta, LV_EVENT_CLICKED, NULL);
+        g_prow_ta[k] = ta;
+
+        for (int j = 0; j < p->nu; j++) g_prow_map[k][j] = p->u[j].name;
+        g_prow_map[k][p->nu] = "";
+        lv_obj_t * bm = lv_btnmatrix_create(ov_rows);
+        lv_btnmatrix_set_map(bm, g_prow_map[k]);
+        lv_btnmatrix_set_btn_ctrl_all(bm, LV_BTNMATRIX_CTRL_CHECKABLE);
+        lv_btnmatrix_set_one_checked(bm, true);
+        lv_btnmatrix_set_btn_ctrl(bm, ui, LV_BTNMATRIX_CTRL_CHECKED);
+        lv_obj_set_size(bm, SX(140) * p->nu, SY(48));
+        lv_obj_set_pos(bm, SX(335), y);
+        lv_obj_set_style_text_font(bm, SF(16), 0);
+        lv_obj_set_style_pad_all(bm, 4, 0);
+        lv_obj_set_style_pad_column(bm, 6, 0);
+        lv_obj_set_style_bg_opa(bm, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_set_style_border_width(bm, 0, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(bm, lv_color_hex(THEME_BTN_BG), LV_PART_ITEMS);
+        lv_obj_set_style_text_color(bm, lv_color_hex(THEME_TEXT_HI), LV_PART_ITEMS);
+        lv_obj_set_style_bg_color(bm, lv_color_hex(0x2a7ad8), LV_PART_ITEMS | LV_STATE_CHECKED);
+        lv_obj_set_style_text_color(bm, lv_color_hex(0xffffff), LV_PART_ITEMS | LV_STATE_CHECKED);
+        lv_obj_add_event_cb(bm, on_punit, LV_EVENT_VALUE_CHANGED, (void *)(intptr_t)k);
+        y += SY(58);
+    }
+}
+
+/* Validate all rows, then send one SetMeterConfiguration per meter.
+ * Returns NULL when sent, else a message. */
+static const char * pulse_apply(void) {
+    static char err[160];
+    double div[NPRES];
+    for (int k = 0; k < g_prow_n; k++) {
+        const pres_t * p = &PRES[g_prow_res[k]];
+        const punit_t * u = &p->u[g_prow_unit[k]];
+        char t[16]; snprintf(t, sizeof t, "%s", lv_textarea_get_text(g_prow_ta[k]));
+        for (char * c = t; *c; c++) if (*c == ',') *c = '.';
+        double v = atof(t);
+        div[k] = v > 0 ? punit_to_divider(u, v) : 0;
+        if (!(div[k] >= 30 && div[k] <= u->max)) {
+            snprintf(err, sizeof err, tr("%s: waarde buiten bereik (%.6g - %.6g %s).",
+                                         "%s: value out of range (%.6g - %.6g %s)."),
+                     tr(p->nl, p->en),
+                     punit_from_divider(u, u->divisor ? u->max : 30), punit_from_divider(u, u->divisor ? 30 : u->max), u->name);
+            return err;
+        }
+    }
+    int seq, ok; ma_get_meter_result(&seq, &ok); g_mc_seq0 = seq;
+    g_mc_sent = 0;
+    for (int k = 0; k < g_prow_n; k++) {
+        const pres_t * p = &PRES[g_prow_res[k]];
+        const punit_t * u = &p->u[g_prow_unit[k]];
+        if (ma_set_meter_config(g_uuid, p->res, u->meter_type, div[k], u->id) == 0) g_mc_sent++;
+    }
+    return g_mc_sent ? NULL : tr("Versturen mislukt.", "Sending failed.");
+}
+
 /* ------------------------------------------------------------- overview */
 static const char * usage_name(const char * t) {
     if (!strcmp(t, "elec"))  return tr("Elektriciteit", "Electricity");
@@ -267,11 +467,15 @@ static void build_list(const ma_info_t * inf) {
                           d->dev_status == 1 ? tr("Niet verbonden", "Not connected") : tr("Niet geconfigureerd", "Not configured"));
         lv_obj_align(s, LV_ALIGN_TOP_LEFT, 0, SY(36));
 
-        char m[160] = "";
+        char m[256] = "";
         size_t o = 0;
-        for (int u = 0; u < d->n_usage && o < sizeof m; u++)
-            o += snprintf(m + o, sizeof m - o, "%s%s: %s", u ? "   " : "",
-                          usage_name(d->usage[u].type), measure_name(d->usage[u].measure));
+        for (int u = 0; u < d->n_usage && o < sizeof m; u++) {
+            char pt[32];
+            pulse_text(&d->usage[u], pt, sizeof pt);
+            o += snprintf(m + o, sizeof m - o, "%s%s: %s%s%s", u ? "   " : "",
+                          usage_name(d->usage[u].type), measure_name(d->usage[u].measure),
+                          pt[0] ? ", " : "", pt);
+        }
         lv_obj_t * ml = lv_label_create(c);
         lv_obj_set_style_text_font(ml, SF(16), 0);
         lv_obj_set_style_text_color(ml, lv_color_hex(THEME_TEXT_DIM), 0);
@@ -301,6 +505,9 @@ static ma_admin_t g_res;   /* last admin result shown */
 
 static void flow_set(int f) {
     g_flow = f;
+    if (g_kb) { lv_obj_add_flag(g_kb, LV_OBJ_FLAG_HIDDEN); lv_keyboard_set_textarea(g_kb, NULL); }
+    /* the pulse step has a two-line explanation above its rows */
+    if (ov_rows) lv_obj_align(ov_rows, LV_ALIGN_TOP_LEFT, 0, f == F_CFG_PULSE ? SY(120) : SY(84));
     if (f == F_NONE) { lv_obj_add_flag(ov, LV_OBJ_FLAG_HIDDEN); return; }
     lv_obj_clear_flag(ov, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(ov_rows, LV_OBJ_FLAG_HIDDEN);
@@ -440,8 +647,18 @@ static void flow_set(int f) {
         ov_buttons(tr("Opslaan", "Save"), NULL, tr("Annuleren", "Cancel"));
         break;
     case F_CFG_SAVING:
+    case F_CFG_PSAVING:
         ov_text(T_CFG, NULL, tr("Opslaan...", "Saving..."), COL_AMBER);
         ov_buttons(NULL, NULL, NULL);
+        break;
+    case F_CFG_PULSE:
+        ov_text(T_CFG, tr("Hoeveel pulsen geeft de meter? Dit staat op de meter of de pulssensor "
+                          "(bijv. 1000 imp/kWh, of bij een draaischijfmeter C = 600 omw/kWh).",
+                          "How many pulses does the meter give? It is printed on the meter or the "
+                          "pulse sensor (e.g. 1000 imp/kWh, or C = 600 rev/kWh on a disc meter)."), NULL, 0);
+        lv_obj_clear_flag(ov_rows, LV_OBJ_FLAG_HIDDEN);
+        build_pulse_editor();
+        ov_buttons(tr("Opslaan", "Save"), NULL, tr("Overslaan", "Skip"));
         break;
     default: break;
     }
@@ -492,6 +709,15 @@ static void on_ov_btn(lv_event_t * e) {
                 ov_text(tr("Meters instellen", "Set up meters"), NULL, tr("Versturen mislukt", "Sending failed"), COL_RED);
                 g_flow = F_CFG_RESULT; ov_buttons(NULL, NULL, tr("Sluiten", "Close"));
             }
+        } else flow_set(F_NONE);
+        break;
+    case F_CFG_PULSE:
+        if (g_kb) { lv_obj_add_flag(g_kb, LV_OBJ_FLAG_HIDDEN); lv_keyboard_set_textarea(g_kb, NULL); }
+        if (i == 0) {
+            const char * err = pulse_apply();
+            if (err) { lv_label_set_text(ov_status, err); lv_obj_set_style_text_color(ov_status, lv_color_hex(COL_RED), 0); break; }
+            g_busy_since = time(NULL);
+            flow_set(F_CFG_PSAVING);
         } else flow_set(F_NONE);
         break;
     default:
@@ -561,6 +787,7 @@ static void tick(lv_timer_t * t) {
         int seq, ok; ma_get_set_result(&seq, &ok);
         if (seq != g_set_seq0 || time(NULL) - g_busy_since > 10) {
             int done = seq != g_set_seq0 && ok;
+            if (done && pulse_rows_wanted()) { flow_set(F_CFG_PULSE); return; }   /* analog: pulses next */
             ov_text(tr("Meters instellen", "Set up meters"),
                     done ? tr("Opgeslagen. Het kan een paar minuten duren voor het verbruik binnenkomt.",
                               "Saved. It can take a few minutes before usage comes in.") : NULL,
@@ -568,8 +795,36 @@ static void tick(lv_timer_t * t) {
                     done ? COL_GREEN : COL_RED);
             g_flow = F_CFG_RESULT; ov_buttons(NULL, NULL, tr("Sluiten", "Close"));
         }
+    } else if (g_flow == F_CFG_PSAVING) {
+        /* one reply per meter; not every driver version may answer, so a
+         * timeout reports "sent" and the overview shows what the driver took */
+        int seq, ok; ma_get_meter_result(&seq, &ok);
+        int got = seq - g_mc_seq0;
+        if (got >= g_mc_sent || time(NULL) - g_busy_since > 10) {
+            int all = got >= g_mc_sent && ok;
+            ma_subscribe();                          /* fresh usageDevicesInfo with the new values */
+            ov_text(tr("Meters instellen", "Set up meters"),
+                    all ? tr("Opgeslagen. Het kan een paar minuten duren voor het verbruik binnenkomt.",
+                             "Saved. It can take a few minutes before usage comes in.")
+                        : tr("Verstuurd, maar de meetadapter-driver bevestigde niet. Controleer de waarde in het overzicht.",
+                             "Sent, but the meter adapter driver did not confirm. Check the value in the overview."),
+                    all ? tr("Opgeslagen", "Saved") : tr("Niet bevestigd", "Not confirmed"),
+                    all ? COL_GREEN : COL_AMBER);
+            g_flow = F_CFG_RESULT; ov_buttons(NULL, NULL, tr("Sluiten", "Close"));
+        }
     }
 }
+
+#ifdef SIM
+/* Headless sim: BoxTalk can't send, so jump straight to the pulse step for
+ * adapter `uuid` with the (mocked) sensor configuration. */
+void screen_meteradapters_sim_pulse(const char * uuid) {
+    snprintf(g_uuid, sizeof g_uuid, "%s", uuid);
+    snprintf(g_name, sizeof g_name, "Meetmodule 1");
+    ma_get_sensor_config(&g_conf);
+    flow_set(F_CFG_PULSE);
+}
+#endif
 
 /* ------------------------------------------------------------- screen */
 static void back_async(void * u) { (void)u; ui_pop(); }
@@ -687,6 +942,14 @@ lv_obj_t * screen_meteradapters_create(void) {
     lv_obj_align(ov_btn[0], LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     lv_obj_align(ov_btn[1], LV_ALIGN_BOTTOM_RIGHT, -SX(280), 0);
     lv_obj_align(ov_btn[2], LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    /* number pad for the pulse step (shown while a value field is active) */
+    g_kb = lv_keyboard_create(ov);
+    lv_keyboard_set_mode(g_kb, LV_KEYBOARD_MODE_NUMBER);
+    lv_obj_set_size(g_kb, DISP_HOR, DISP_VER / 2);
+    lv_obj_align(g_kb, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_add_event_cb(g_kb, on_kb, LV_EVENT_READY, NULL);
+    lv_obj_add_event_cb(g_kb, on_kb, LV_EVENT_CANCEL, NULL);
+    lv_obj_add_flag(g_kb, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(ov, LV_OBJ_FLAG_HIDDEN);
 
     g_info_seq = -1;
