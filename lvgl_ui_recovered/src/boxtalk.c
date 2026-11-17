@@ -353,9 +353,11 @@ static void update_burner_state(int bi) {
  * with a "pressure low" banner. So a reading is only trusted while live
  * sources keep confirming it: BoxTalk notifies / query answers from
  * happ_thermstat and the OTGW. The hcb_rrd log (only a 30days RRA of
- * ~week-long bins, no way to tell its age) may seed the value at start-up
- * but never refreshes it. Nothing live for PRESS_MAX_AGE -> unknown (0):
- * tile "-- bar", no banner. */
+ * ~week-long bins, no way to tell its age) supplies the value until a live
+ * reading arrives, then stops. Nothing live for PRESS_MAX_AGE -> unknown
+ * (0): tile "-- bar", no banner. Toons that never get a live reading keep
+ * the hcb_rrd value (on a Toon 2 with a real boiler that is the only
+ * source), so they don't age out. */
 #define PRESS_MAX_AGE   (6 * 3600)
 #define PRESS_QUERY_S   600            /* re-ask happ_thermstat every 10 min */
 static volatile time_t g_press_live_at = 0;   /* last live reading */
@@ -767,6 +769,20 @@ static void handle_msg(const char* xml) {
             }
             if (elem_text_float(xml, "nextSetpoint", &v) && v > 0)
                 toon_state.next_setpoint = v / 100.0f;
+            /* CH pressure, if this firmware publishes it in the dataset (a
+             * live source for the age-out). Not seen yet: queries are not
+             * answered with a value and no notifies arrive on a Toon 2. */
+            if ((elem_text_float(xml, "boilerChPressure", &v) ||
+                 elem_text_float(xml, "BoilerChPressure", &v) ||
+                 elem_text_float(xml, "chPressure", &v)) && v > 0.05f)
+                set_water_pressure(v);
+            /* Once per run: what the dataset holds, to find a live pressure
+             * source on real boilers (#pressure age-out). */
+            static int ds_logged = 0;
+            if (!ds_logged) {
+                ds_logged = 1;
+                fprintf(stderr, "[bxt] thermostatInfo dataset: %.1500s\n", xml);
+            }
             /* nextTime not here: an epoch in a float loses ~2 min; the
              * HTTP poll reads it exactly. */
         }
@@ -1641,11 +1657,14 @@ static void* http_poll_thread(void* arg) {
                 last_q = now;
                 send_query(g_therm_pub[0] ? g_therm_pub : THERMSTAT_UUID, "ThermostatInfo", "BoilerChPressure");
             }
-            time_t ref = g_press_live_at ? g_press_live_at : g_press_seed_at;
-            if (toon_state.water_pressure > 0.05f && ref && now - ref > PRESS_MAX_AGE) {
-                fprintf(stderr, "[bxt] CH pressure %.2f bar not confirmed for %ld h (%s) - now unknown\n",
-                        toon_state.water_pressure, (long)((now - ref) / 3600),
-                        g_press_live_at ? "live source stopped" : "only the hcb_rrd log had it");
+            /* Only Toons that have a live source at all age out: on a Toon 2
+             * with a real OpenTherm boiler the hcb_rrd log turned out to be
+             * the ONLY source (queries unanswered, no notifies), and expiring
+             * it would blank a correct reading after 6 h. */
+            if (toon_state.water_pressure > 0.05f && g_press_live_at &&
+                now - g_press_live_at > PRESS_MAX_AGE) {
+                fprintf(stderr, "[bxt] CH pressure %.2f bar not confirmed for %ld h (live source stopped) - now unknown\n",
+                        toon_state.water_pressure, (long)((now - g_press_live_at) / 3600));
                 toon_state.water_pressure = 0.0f;
                 g_press_live_at = g_press_seed_at = 0;
                 g_press_expired = 1;
