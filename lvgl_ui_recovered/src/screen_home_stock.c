@@ -209,7 +209,10 @@ static void on_scene(lv_event_t * e) {
     int ps = toon_state.program_state;
     int on_program = (ps == 1 || ps == 2 || ps == 3 || ps == 8) || (boxtalk_temp_override_origin() >= 0);
     if (!on_program || ps == 0) {
-        boxtalk_resume_schedule();
+        /* Program off: take the preset's temperature and stay manual, like
+         * the FreeToon home and thermostat screens (this used to resume the
+         * schedule, switching the program back on). */
+        boxtalk_set_manual_preset(s);
     } else {
         boxtalk_set_program(s);
     }
