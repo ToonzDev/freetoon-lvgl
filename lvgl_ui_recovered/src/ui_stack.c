@@ -19,6 +19,7 @@
 #ifdef SIM
 #include "layout.h"
 #include "clock_studio.h"
+#include "energy_prices.h"
 #endif
 
 #define STACK_MAX 8
@@ -218,6 +219,7 @@ void ui_idle_tick(void) {
     /* Bring in calendar data published by worker threads; calendar_state is
      * only written here, on the UI thread (see calendar.c). */
     calendar_apply_pending();
+    ep_tick();
 
     /* Process any queued wake first so a touch immediately undims, even
        if the on-screen click handler couldn't run for some reason. */

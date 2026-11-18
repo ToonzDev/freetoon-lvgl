@@ -22,6 +22,7 @@
 #include "theme.h"
 #include "boxtalk.h"
 #include "plugs.h"
+#include "energy_prices.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -168,8 +169,16 @@ static void tooltip_timer_cb(lv_timer_t * t) {
     lv_timer_pause(t);
 }
 
+/* dynamic-price refresh (defined further down) */
+static lv_timer_t * g_price_timer;
+static lv_obj_t *   btn_prices;
+static void on_price_news(void);
+
 static void on_scr_delete(lv_event_t * e) {
     (void)e;
+    if (g_price_timer) { lv_timer_del(g_price_timer); g_price_timer = NULL; }
+    ep_remove_listener(on_price_news);
+    btn_prices = NULL;
     if (s_tooltip_timer) {
         lv_timer_del(s_tooltip_timer);
         s_tooltip_timer = NULL;
@@ -344,6 +353,8 @@ static void on_meter_open(lv_event_t * e) {
     lv_label_set_text(bl, tr("Sluiten", "Close"));
     lv_obj_center(bl);
 }
+
+static void on_prices_open(lv_event_t * e) { (void)e; ui_push_owned(screen_prices_create()); }
 
 static void on_back(lv_event_t * e) {
     (void)e;
@@ -1077,6 +1088,101 @@ static double calculate_nice_top(double hi) {
     return step * 4.0;
 }
 
+/* ---- dynamic contract (#44) ---------------------------------------------
+ * With settings.dyn_tariff the Euro view prices every sample at its own
+ * hour's (or day's usage-weighted) all-in price instead of one fixed rate. */
+static int g_dyn_applied = 0;     /* samples already in EUR (x1000) */
+static int g_dyn_pending = 0;     /* some prices still loading: fixed rate used */
+
+static int metric_com(void) { return selected_metric == 2 ? EP_GAS : EP_ELEC; }
+static float fixed_rate(void) {
+    return selected_metric == 2 ? settings.rate_gas_m3 : settings.rate_elec_kwh;
+}
+/* EUR per kWh / m3 right now: the all-in hour price, or the fixed rate. */
+static double rate_now(void) {
+    if (ep_dynamic()) {
+        double mk;
+        if (ep_market_at(metric_com(), (long)time(NULL), &mk)) return ep_allin(metric_com(), mk);
+        g_dyn_pending = 1;
+    }
+    return fixed_rate();
+}
+
+/* epoch of a series label "DD-MM HH:MM" + 2-digit year (local time) */
+static long sample_epoch(const char * lab, const char * yy) {
+    if (!lab || strlen(lab) < 11 || !yy || !yy[0]) return 0;
+    struct tm tm;
+    memset(&tm, 0, sizeof tm);
+    tm.tm_mday = atoi(lab);
+    tm.tm_mon  = atoi(lab + 3) - 1;
+    tm.tm_hour = atoi(lab + 6);
+    tm.tm_min  = atoi(lab + 9);
+    tm.tm_year = 100 + atoi(yy);
+    tm.tm_isdst = -1;
+    return (long)mktime(&tm);
+}
+
+/* the price kind + hourly loggers for the usage weighting */
+static int dyn_kind(const char ** l1, const char ** l2) {
+    *l1 = NULL; *l2 = NULL;
+    if (is_plug()) return EP_K_AVG_E;
+    switch (selected_metric) {
+        case 0: *l1 = "elec_quantity_nt"; *l2 = "elec_quantity_lt"; return EP_K_ELEC;
+        case 1:
+            if (g_solar_produ) { *l1 = "elec_quantity_nt_produ"; *l2 = "elec_quantity_lt_produ"; }
+            else                 *l1 = "elec_solar_quantity";
+            return EP_K_SOLAR;
+        default: *l1 = "gas_quantity"; return EP_K_GAS;
+    }
+}
+
+/* All-in price for usage in [t0, t1): the hour price for an hourly sample,
+ * the mean of the days' usage-weighted prices for a longer one. */
+static double dyn_factor(int kind, long t0, long t1) {
+    int com = metric_com();
+    double mk;
+    if (t1 - t0 <= 2 * 3600) {
+        if (ep_market_at(com, t0, &mk)) return ep_allin(com, mk);
+        if (ep_day_market(kind, t0 / 86400, &mk)) return ep_allin(com, mk);
+    } else {
+        double s = 0; int n = 0;
+        for (long d = t0 / 86400; d <= (t1 - 1) / 86400 && n < 400; d++)
+            if (ep_day_market(kind, d, &mk)) { s += mk; n++; }
+        if (n > 0) return ep_allin(com, s / n);
+    }
+    g_dyn_pending = 1;
+    return fixed_rate();
+}
+
+/* Turn per-sample usage deltas (Wh / L) into EUR x 1000 in place. */
+static void apply_dynamic_prices(int n) {
+    const char * l1, * l2;
+    int kind = dyn_kind(&l1, &l2);
+    long * t = malloc(sizeof *t * (size_t)(n ? n : 1));
+    if (!t) return;
+    long tmin = 0, tmax = 0;
+    for (int i = 0; i < n; i++) {
+        t[i] = isnan(series.samples[i]) ? 0 : sample_epoch(series.labels[i], series.year2[i]);
+        if (t[i] && (!tmin || t[i] < tmin)) tmin = t[i];
+        if (t[i] > tmax) tmax = t[i];
+    }
+    if (tmin) ep_request_days(kind, l1, l2, tmin / 86400, tmax / 86400 + 1);
+    for (int i = 0; i < n; i++) {
+        if (!t[i]) continue;
+        long t1 = 0;                          /* start of the next sample */
+        for (int k = i + 1; k < n && !t1; k++) if (t[k] > t[i]) t1 = t[k];
+        if (!t1) {                            /* last one: guess from the period */
+            long step = (selected_period == PERIOD_HOURS || selected_period == PERIOD_NOW) ? 3600 : 86400;
+            if (i > 0 && t[i - 1] && t[i] > t[i - 1]) step = t[i] - t[i - 1];
+            t1 = t[i] + step;
+            if (t1 > (long)time(NULL) && t[i] < (long)time(NULL)) t1 = (long)time(NULL) + 1;
+        }
+        series.samples[i] *= dyn_factor(kind, t[i], t1);
+    }
+    free(t);
+    g_dyn_applied = 1;
+}
+
 static void render_chart(void) {
     const metric_t * m = &metrics[selected_metric];
     int n = series.n > STATS_MAX_SAMPLES ? STATS_MAX_SAMPLES : series.n;
@@ -1108,6 +1214,11 @@ static void render_chart(void) {
             }
         }
     }
+
+    g_dyn_applied = 0;
+    g_dyn_pending = 0;
+    if (is_cum && settings.stats_show_euro && metric_has_euro() && ep_dynamic())
+        apply_dynamic_prices(n);
 
     g_bar_count = 0;
 
@@ -1228,8 +1339,8 @@ static void render_chart(void) {
     }
 
     /* If Euro mode is enabled, convert bar values for Electricity, Solar and Gas */
-    if (settings.stats_show_euro && metric_has_euro()) {
-        float rate = (selected_metric == 2) ? settings.rate_gas_m3 : settings.rate_elec_kwh;
+    if (settings.stats_show_euro && metric_has_euro() && !g_dyn_applied) {
+        double rate = rate_now();     /* fixed rate, or the current hour price (Nu view) */
         for (int i = 0; i < g_bar_count; i++) {
             if (selected_period == PERIOD_NOW && !is_plug()) {   /* plugs: kWh bars */
                 if (selected_metric == 0 || selected_metric == 1) {
@@ -1323,7 +1434,7 @@ static void render_chart(void) {
         double w = g_plugs[g_plug_sel].power_w;
         lv_label_set_text(lbl_unit, tr("Huidig", "Current"));
         if (show_euro)
-            lv_label_set_text_fmt(lbl_value, "€ %.2f/u", (w / 1000.0) * settings.rate_elec_kwh);
+            lv_label_set_text_fmt(lbl_value, "€ %.2f/u", (w / 1000.0) * rate_now());
         else if (w < 100.0)
             lv_label_set_text_fmt(lbl_value, "%.1f W", w);
         else
@@ -1363,7 +1474,7 @@ static void render_chart(void) {
         if (isnan(cur)) {
             lv_label_set_text(lbl_value, "--");
         } else if (show_euro) {
-            float rate = (selected_metric == 2) ? settings.rate_gas_m3 : settings.rate_elec_kwh;
+            double rate = rate_now();
             double eur_h;
             if (selected_metric == 2 && g_gas_now_hourly_fallback && g_bar_count > 0 && cur == g_bar_val[g_bar_count - 1]) {
                 eur_h = cur;
@@ -1400,6 +1511,61 @@ static void render_chart(void) {
     }
 }
 
+/* Rate buttons: the fixed rates, or (dynamic contract) the all-in price of
+ * the current hour. The caption says which, and when prices are loading. */
+static lv_obj_t * btn_prices = NULL;
+static void update_rate_labels(void) {
+    char b[64];
+    double mk;
+    if (ep_dynamic()) {
+        if (lbl_rate_elec) {
+            if (ep_market_at(EP_ELEC, (long)time(NULL), &mk))
+                snprintf(b, sizeof b, tr("Stroom nu: € %.2f/kWh", "Power now: € %.2f/kWh"), ep_allin(EP_ELEC, mk));
+            else
+                snprintf(b, sizeof b, "%s", tr("Stroom: dynamisch", "Power: dynamic"));
+            lv_label_set_text(lbl_rate_elec, b);
+        }
+        if (lbl_rate_gas) {
+            if (ep_market_at(EP_GAS, (long)time(NULL), &mk))
+                snprintf(b, sizeof b, tr("Gas nu: € %.2f/m3", "Gas now: € %.2f/m3"), ep_allin(EP_GAS, mk));
+            else
+                snprintf(b, sizeof b, "%s", tr("Gas: dynamisch", "Gas: dynamic"));
+            lv_label_set_text(lbl_rate_gas, b);
+        }
+        if (lbl_rates_title)
+            lv_label_set_text(lbl_rates_title,
+                (g_dyn_pending && settings.stats_show_euro)
+                    ? tr("Prijzen laden... (tijdelijk vast tarief)", "Loading prices... (fixed rate for now)")
+                    : tr("Dynamisch tarief (tik = wijzig):", "Dynamic rate (tap = edit):"));
+        if (btn_prices) lv_obj_clear_flag(btn_prices, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        if (lbl_rate_elec) lv_label_set_text_fmt(lbl_rate_elec, "Stroom: € %.2f/kWh", (double)settings.rate_elec_kwh);
+        if (lbl_rate_gas)  lv_label_set_text_fmt(lbl_rate_gas, "Gas: € %.2f/m3", (double)settings.rate_gas_m3);
+        if (lbl_rates_title) lv_label_set_text(lbl_rates_title, tr("Tarieven (tik = wijzig):", "Rates (tap = edit):"));
+        if (btn_prices) lv_obj_add_flag(btn_prices, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+/* New prices / day factors from the worker: redraw once it is idle (or at
+ * most every 10 s while a long first calculation runs). The chart data is
+ * diffed in place, so a redraw is a full reload. */
+static void reload_and_render(void);
+static int  g_price_news = 0;
+static long g_price_redraw = 0;
+static lv_timer_t * g_price_timer = NULL;
+static void on_price_news(void) { g_price_news = 1; }
+static void price_timer_cb(lv_timer_t * t) {
+    (void)t;
+    if (!g_price_news || !scr_root || lv_scr_act() != scr_root) return;
+    if (!ep_dynamic()) { g_price_news = 0; return; }
+    long now = (long)time(NULL);
+    if (ep_busy() && now - g_price_redraw < 10) return;
+    g_price_news = 0;
+    g_price_redraw = now;
+    if (settings.stats_show_euro && metric_has_euro()) reload_and_render();
+    else update_rate_labels();
+}
+
 static void reload_and_render(void) {
     hide_tooltip();
     lv_chart_set_series_color(chart, cs, lv_color_hex(metrics[selected_metric].color));
@@ -1434,10 +1600,7 @@ static void reload_and_render(void) {
             lv_obj_set_style_bg_color(btn_mode_euro, lv_color_hex(THEME_BTN_BG), 0);
         }
     }
-    if (lbl_rate_elec)
-        lv_label_set_text_fmt(lbl_rate_elec, "Stroom: € %.2f/kWh", (double)settings.rate_elec_kwh);
-    if (lbl_rate_gas)
-        lv_label_set_text_fmt(lbl_rate_gas, "Gas: € %.2f/m3", (double)settings.rate_gas_m3);
+    update_rate_labels();
 }
 
 static void on_metric_tap(lv_event_t * e) {
@@ -1465,21 +1628,51 @@ static void on_period_tap(lv_event_t * e) {
     reload_and_render();
 }
 
+/* Rate modal state: the Vast / Dynamisch switch is applied on Save. */
+static int        g_rate_dyn = 0;
+static lv_obj_t * g_rate_title = NULL;
+static lv_obj_t * g_rate_hint = NULL;
+
+static void rate_modal_texts(void) {
+    int gas = (g_rate_edit_target != 0);
+    char cur[32];
+    if (g_rate_dyn) {
+        lv_label_set_text(g_rate_title, gas ? tr("Gas: opslag + belasting", "Gas: surcharge + tax")
+                                            : tr("Stroom: opslag + belasting", "Power: surcharge + tax"));
+        lv_label_set_text(g_rate_hint, gas
+            ? tr("€ per m3 incl. btw, bovenop de marktprijs x 1,21", "€ per m3 incl. VAT, on top of market price x 1.21")
+            : tr("€ per kWh incl. btw, bovenop de marktprijs x 1,21", "€ per kWh incl. VAT, on top of market price x 1.21"));
+        snprintf(cur, sizeof cur, "%.4f", (double)(gas ? settings.dyn_gas_surcharge : settings.dyn_elec_surcharge));
+    } else {
+        lv_label_set_text(g_rate_title, gas ? tr("Gastarief (€ / m3)", "Gas rate (€ / m3)")
+                                            : tr("Stroomtarief (€ / kWh)", "Electricity rate (€ / kWh)"));
+        lv_label_set_text(g_rate_hint, tr("Vast tarief, incl. btw", "Fixed rate, incl. VAT"));
+        snprintf(cur, sizeof cur, "%.2f", (double)(gas ? settings.rate_gas_m3 : settings.rate_elec_kwh));
+    }
+    lv_textarea_set_text(g_rate_ta, cur);
+}
+
+static void on_rate_dyn_switch(lv_event_t * e) {
+    g_rate_dyn = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    rate_modal_texts();
+}
+
 static void on_rate_save(lv_event_t * e) {
     (void)e;
     if (g_rate_ta) {
         const char * txt = lv_textarea_get_text(g_rate_ta);
-        if (txt && *txt) {
-            float val = strtof(txt, NULL);
-            if (val > 0.0001f) {
-                if (g_rate_edit_target == 0) {
-                    settings.rate_elec_kwh = val;
-                } else {
-                    settings.rate_gas_m3 = val;
-                }
-                settings_save();
+        float val = (txt && *txt) ? strtof(txt, NULL) : -1.0f;
+        int gas = (g_rate_edit_target != 0);
+        if (g_rate_dyn) {
+            if (val >= 0.0f && val < 10.0f) {
+                if (gas) settings.dyn_gas_surcharge = val; else settings.dyn_elec_surcharge = val;
             }
+        } else if (val > 0.0001f) {
+            if (gas) settings.rate_gas_m3 = val; else settings.rate_elec_kwh = val;
         }
+        settings.dyn_tariff = g_rate_dyn;
+        settings_save();
+        if (g_rate_dyn) ep_start();
     }
     close_rate_modal();
     reload_and_render();
@@ -1503,7 +1696,7 @@ static void open_rate_modal(int target) {
     lv_obj_clear_flag(g_rate_backdrop, LV_OBJ_FLAG_SCROLLABLE);
 
     int panel_w = (DISP_HOR < 800) ? DISP_HOR - 40 : 440;
-    int panel_h = (DISP_VER < 600) ? DISP_VER - 40 : 360;
+    int panel_h = (DISP_VER < 600) ? DISP_VER - 40 : 430;
     lv_obj_t * panel = lv_obj_create(g_rate_backdrop);
     lv_obj_set_size(panel, panel_w, panel_h);
     lv_obj_center(panel);
@@ -1514,30 +1707,47 @@ static void open_rate_modal(int target) {
     lv_obj_set_style_pad_all(panel, 12, 0);
     lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t * title = lv_label_create(panel);
-    lv_label_set_text(title, target == 0 ? tr("Stroomtarief (€ / kWh)", "Electricity rate (€ / kWh)")
-                                         : tr("Gastarief (€ / m3)", "Gas rate (€ / m3)"));
-    lv_obj_set_style_text_color(title, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(title, SF(20), 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
+    g_rate_dyn = settings.dyn_tariff;
+
+    g_rate_title = lv_label_create(panel);
+    lv_obj_set_style_text_color(g_rate_title, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(g_rate_title, SF(20), 0);
+    lv_obj_align(g_rate_title, LV_ALIGN_TOP_MID, 0, 0);
+
+    /* Vast / Dynamisch (hourly EnergyZero prices, #44) */
+    lv_obj_t * dl = lv_label_create(panel);
+    lv_label_set_text(dl, tr("Dynamisch contract (uurprijzen)", "Dynamic contract (hourly prices)"));
+    lv_obj_set_style_text_color(dl, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(dl, SF(16), 0);
+    lv_obj_align(dl, LV_ALIGN_TOP_LEFT, 0, SY(42));
+    lv_obj_t * sw = lv_switch_create(panel);
+    lv_obj_set_size(sw, SX(60), SY(30));
+    lv_obj_align(sw, LV_ALIGN_TOP_RIGHT, 0, SY(36));
+    if (g_rate_dyn) lv_obj_add_state(sw, LV_STATE_CHECKED);
+    lv_obj_add_event_cb(sw, on_rate_dyn_switch, LV_EVENT_VALUE_CHANGED, NULL);
+
+    g_rate_hint = lv_label_create(panel);
+    lv_obj_set_style_text_color(g_rate_hint, lv_color_hex(THEME_TEXT_DIM), 0);
+    lv_obj_set_style_text_font(g_rate_hint, SF(13), 0);
+    lv_obj_set_width(g_rate_hint, panel_w - 24);
+    lv_obj_set_style_text_align(g_rate_hint, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(g_rate_hint, LV_ALIGN_TOP_MID, 0, SY(78));
 
     g_rate_ta = lv_textarea_create(panel);
     lv_textarea_set_one_line(g_rate_ta, true);
     lv_textarea_set_max_length(g_rate_ta, 10);
-    char cur_str[32];
-    snprintf(cur_str, sizeof cur_str, "%.2f", (double)(target == 0 ? settings.rate_elec_kwh : settings.rate_gas_m3));
-    lv_textarea_set_text(g_rate_ta, cur_str);
     lv_obj_set_width(g_rate_ta, panel_w - 60);
-    lv_obj_align(g_rate_ta, LV_ALIGN_TOP_MID, 0, 36);
+    lv_obj_align(g_rate_ta, LV_ALIGN_TOP_MID, 0, SY(100));
     lv_obj_set_style_text_font(g_rate_ta, SF(22), 0);
     lv_obj_set_style_text_align(g_rate_ta, LV_TEXT_ALIGN_CENTER, 0);
+    rate_modal_texts();
 
     /* Numeric keyboard */
     lv_obj_t * kb = lv_keyboard_create(panel);
     lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_NUMBER);
     lv_keyboard_set_textarea(kb, g_rate_ta);
-    lv_obj_set_size(kb, panel_w - 24, SY(180));
-    lv_obj_align(kb, LV_ALIGN_TOP_MID, 0, 85);
+    lv_obj_set_size(kb, panel_w - 24, SY(170));
+    lv_obj_align(kb, LV_ALIGN_TOP_MID, 0, SY(152));
     lv_obj_add_event_cb(kb, on_rate_save, LV_EVENT_READY, NULL);
     lv_obj_add_event_cb(kb, on_rate_cancel, LV_EVENT_CANCEL, NULL);
 
@@ -1607,6 +1817,7 @@ lv_obj_t * screen_stats_create(void) {
     btn_rate_gas = NULL;
     lbl_rate_gas = NULL;
     scr_light_mode = settings.home_light_mode;
+    btn_prices = NULL;
 
     scr_root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(THEME_BG), 0);
@@ -1643,6 +1854,23 @@ lv_obj_t * screen_stats_create(void) {
     lv_obj_set_style_text_color(mbl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(mbl, SF(18), 0);
     lv_obj_center(mbl);
+
+    /* "Energieprijzen" (dynamic contract only): hourly price chart */
+    btn_prices = lv_btn_create(scr_root);
+    lv_obj_set_size(btn_prices, SX(210), x_h);
+    lv_obj_align(btn_prices, LV_ALIGN_TOP_RIGHT, SX(-12) - x_w - SX(14) - SX(210) - SX(14), SY(12));
+    lv_obj_set_style_bg_color(btn_prices, lv_color_hex(THEME_BTN_BG), 0);
+    lv_obj_set_style_radius(btn_prices, 12, 0);
+    lv_obj_set_ext_click_area(btn_prices, 10);
+    lv_obj_add_event_cb(btn_prices, on_prices_open, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * pbl = lv_label_create(btn_prices);
+    lv_label_set_text(pbl, tr("Energieprijzen", "Energy prices"));
+    lv_obj_set_style_text_color(pbl, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(pbl, SF(18), 0);
+    lv_obj_center(pbl);
+    if (!ep_dynamic()) lv_obj_add_flag(btn_prices, LV_OBJ_FLAG_HIDDEN);
+    ep_add_listener(on_price_news);
+    if (!g_price_timer) g_price_timer = lv_timer_create(price_timer_cb, 1000, NULL);
 
     lv_obj_t * title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(title, lv_color_hex(THEME_TEXT_HI), 0);
@@ -1822,7 +2050,7 @@ lv_obj_t * screen_stats_create(void) {
     lv_obj_set_style_radius(btn_rate_elec, 6, 0);
     lv_obj_add_event_cb(btn_rate_elec, on_rate_elec_click, LV_EVENT_CLICKED, NULL);
     lbl_rate_elec = lv_label_create(btn_rate_elec);
-    lv_label_set_text_fmt(lbl_rate_elec, "Stroom: € %.2f/kWh", (double)settings.rate_elec_kwh);
+    lv_label_set_text(lbl_rate_elec, "");
     lv_obj_set_style_text_color(lbl_rate_elec, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_rate_elec, SF(14), 0);
     lv_obj_center(lbl_rate_elec);
@@ -1836,7 +2064,8 @@ lv_obj_t * screen_stats_create(void) {
     lv_obj_set_style_radius(btn_rate_gas, 6, 0);
     lv_obj_add_event_cb(btn_rate_gas, on_rate_gas_click, LV_EVENT_CLICKED, NULL);
     lbl_rate_gas = lv_label_create(btn_rate_gas);
-    lv_label_set_text_fmt(lbl_rate_gas, "Gas: € %.2f/m3", (double)settings.rate_gas_m3);
+    lv_label_set_text(lbl_rate_gas, "");
+    update_rate_labels();
     lv_obj_set_style_text_color(lbl_rate_gas, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_rate_gas, SF(14), 0);
     lv_obj_center(lbl_rate_gas);

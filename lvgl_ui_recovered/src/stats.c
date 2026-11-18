@@ -138,6 +138,12 @@ static int http_get_body(const char * path_qs, char * out, size_t outsz) {
 }
 #endif
 
+/* Raw hcb_rrd GET ("hcb_rrd?action=..."), headers included. Reentrant
+ * (no static buffers), so usable from a worker thread. */
+int stats_fetch_raw(const char * path_qs, char * out, size_t outsz) {
+    return http_get_body(path_qs, out, outsz);
+}
+
 int stats_fetch_range(const char * logger_name, const char * rra,
                       long from_ts, long to_ts, int max_samples,
                       stats_series_t * series) {

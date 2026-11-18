@@ -31,6 +31,7 @@
 #include "anim_overlay.h"
 #include "hue.h"
 #include "calendar.h"
+#include "energy_prices.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -649,6 +650,7 @@ static const struct { const char * name; create_fn fn; } SCREENS[] = {
     { "settings",    screen_settings_create },
     { "schedule",    screen_schedule_create },
     { "stats",       screen_stats_create },
+    { "prices",      screen_prices_create },
     { "forecast",    screen_forecast_create },
     { "heater",      screen_heater_advanced_create },
     { "vent_remote", screen_vent_remote_create },
@@ -1244,7 +1246,7 @@ int main(int argc, char ** argv) {
             int x, y;
             if (sscanf(argv[a], "%d,%d", &x, &y) == 2) sim_tap(x, y);
             else if (!strncmp(argv[a], "wait:", 5))   /* let background fetches land */
-                for (int ms = atoi(argv[a] + 5); ms > 0; ms -= 20) { lv_timer_handler(); lv_tick_inc(20); usleep(20000); }
+                for (int ms = atoi(argv[a] + 5); ms > 0; ms -= 20) { lv_timer_handler(); lv_tick_inc(20); usleep(20000); ep_tick(); }
         }
         pump(60);
         dump_ppm(out);
@@ -1324,7 +1326,7 @@ int main(int argc, char ** argv) {
         if (!strncmp(argv[a], "shot:", 5)) { pump(30); dump_ppm(argv[a] + 5); continue; }
         /* "wait:<ms>": keep the UI running that long (background fetches) */
         if (!strncmp(argv[a], "wait:", 5)) {
-            for (int ms = atoi(argv[a] + 5); ms > 0; ms -= 20) { lv_timer_handler(); lv_tick_inc(20); usleep(20000); }
+            for (int ms = atoi(argv[a] + 5); ms > 0; ms -= 20) { lv_timer_handler(); lv_tick_inc(20); usleep(20000); ep_tick(); }
             continue;
         }
     }

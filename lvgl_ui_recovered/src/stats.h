@@ -44,4 +44,9 @@ int stats_fetch_range(const char * logger_name, const char * rra,
                       stats_series_t * out);
 
 
+/* Raw hcb_rrd GET ("hcb_rrd?action=..."), HTTP headers included in `out`.
+ * Reentrant (no static buffers): safe from a worker thread. 0 on success. */
+#include <stddef.h>
+int stats_fetch_raw(const char * path_qs, char * out, size_t outsz);
+
 #endif

@@ -53,6 +53,7 @@ lv_obj_t * screen_black_create(void);      /* pure black standby screen when Sla
 lv_obj_t * screen_settings_create(void);
 lv_obj_t * screen_schedule_create(void);
 lv_obj_t * screen_stats_create(void);
+lv_obj_t * screen_prices_create(void);   /* dynamic contract: hourly energy prices (#44) */
 lv_obj_t * screen_forecast_create(void);
 void screen_weather_hourly_show(int day_idx);
 

@@ -31,6 +31,7 @@
 #include "tile_slots.h"
 #include "layout.h"
 #include "clock_studio.h"
+#include "energy_prices.h"
 #include "update_check.h"
 #include "pin_modal.h"
 #include "update_modal.h"
@@ -2753,13 +2754,44 @@ static void refresh_cb(lv_timer_t * t) {
             else
                 ui_label_set_text(lbl_energy_w, energy_offline_label());
         }
+        /* Dynamic contract (#44): the current all-in price, top right,
+         * coloured cheap / normal / expensive against today's quartiles,
+         * plus the start of the cheapest 2-hour block. */
+        if (lbl_energy_today) {
+            double mk, q1, q3;
+            if (ep_dynamic() && ep_market_at(EP_ELEC, (long)time(NULL), &mk)) {
+                double p = ep_allin(EP_ELEC, mk);
+                char pb[48];
+                long cs; double ca;
+                if (tile_energy && lv_obj_get_width(tile_energy) >= SX(300) &&
+                    ep_cheapest(2, &cs, &ca) && cs / 3600 != (long)time(NULL) / 3600) {
+                    time_t ct = (time_t)cs; struct tm ctm; localtime_r(&ct, &ctm);
+                    snprintf(pb, sizeof pb, tr("€ %.2f | laag %02du", "€ %.2f | low %02dh"), p, ctm.tm_hour);
+                } else {
+                    snprintf(pb, sizeof pb, "€ %.2f", p);
+                }
+                if (settings.language != LANG_EN) { char * d = strchr(pb, '.'); if (d) *d = ','; }
+                uint32_t c = COL_TEXT_DIM;
+                if (ep_today_quartiles(&q1, &q3)) {
+                    if (p <= q1) c = 0x3ccf7a;
+                    else if (p >= q3) c = 0xff9a3c;
+                }
+                ui_obj_set_style_text_color(lbl_energy_today, lv_color_hex(c), 0);
+                ui_label_set_text(lbl_energy_today, pb);
+            } else {
+                ui_label_set_text(lbl_energy_today, "");
+            }
+        }
         /* Gas used today, under the watts. Was removed (CR10) when it showed
          * the meter total; users missed seeing their gas use here. */
         if (lbl_energy_gas) {
             float g = energy_gas_today_m3();
             if (g >= 0) {
                 char gb[40];
-                snprintf(gb, sizeof gb, tr("Gas vandaag %.2f m3", "Gas today %.2f m3"), g);
+                if (ep_dynamic())   /* shorter: the price shares the bottom line */
+                    snprintf(gb, sizeof gb, tr("Gas %.2f m3", "Gas %.2f m3"), g);
+                else
+                    snprintf(gb, sizeof gb, tr("Gas vandaag %.2f m3", "Gas today %.2f m3"), g);
                 if (settings.language != LANG_EN) { char * d = strchr(gb, '.'); if (d) *d = ','; }
                 ui_label_set_text(lbl_energy_gas, gb);
                 ui_obj_clear_flag(lbl_energy_gas, LV_OBJ_FLAG_HIDDEN);
@@ -4536,7 +4568,9 @@ lv_obj_t * screen_home_create(void) {
     ui_obj_set_style_text_color(lbl_energy_today, lv_color_hex(COL_TEXT_DIM), 0);
     ui_obj_set_style_text_font(lbl_energy_today, SF(14), 0);
     ui_label_set_text(lbl_energy_today, "");
-    ui_obj_align(lbl_energy_today, LV_ALIGN_TOP_RIGHT, -4, 4);
+    /* bottom right: the dynamic price (#44); top right sits under the
+     * floating status buttons when the tile is in the top-right corner */
+    ui_obj_align(lbl_energy_today, LV_ALIGN_BOTTOM_RIGHT, 0, -6);
 
     /* NILM transient event — device name shown briefly above the watt number. */
     lbl_nilm_event = lv_label_create(energy_t.tile);

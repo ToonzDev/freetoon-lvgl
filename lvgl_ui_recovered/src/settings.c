@@ -168,6 +168,9 @@ settings_t settings = {
     .rate_elec_kwh       = 0.30f,
     .rate_gas_m3         = 1.35f,
     .stats_show_euro     = 0,
+    .dyn_tariff          = 0,
+    .dyn_elec_surcharge  = 0.15f,
+    .dyn_gas_surcharge   = 0.75f,
 
     /* Toon 1 panel mounting orientation — TSC2007 reports Y flipped vs the
      * framebuffer on EVERY Toon 1 (not a per-device tweak). Default this
@@ -247,6 +250,9 @@ void settings_load(void) {
         else if (strcmp(k, "dim_bars_vertical") == 0) settings.dim_bars_vertical = iv;
         else if (strcmp(k, "dim_elec_max_kwh")  == 0) settings.dim_elec_max_kwh  = (iv < 5 ? 5 : (iv > 100 ? 100 : iv));
         else if (strcmp(k, "dim_thin_font")     == 0) settings.dim_thin_font     = iv ? 1 : 0;
+        else if (strcmp(k, "dyn_tariff")        == 0) settings.dyn_tariff        = iv ? 1 : 0;
+        else if (strcmp(k, "dyn_elec_surcharge") == 0) settings.dyn_elec_surcharge = strtof(v, NULL);
+        else if (strcmp(k, "dyn_gas_surcharge")  == 0) settings.dyn_gas_surcharge  = strtof(v, NULL);
         else if (strcmp(k, "dim_waste_lead_days") == 0) settings.dim_waste_lead_days = iv;
         else if (strcmp(k, "dim_waste_hour") == 0)      settings.dim_waste_hour = iv < 0 ? 0 : (iv > 23 ? 23 : iv);
         else if (strcmp(k, "waste_postcode")    == 0)
