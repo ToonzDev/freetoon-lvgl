@@ -131,6 +131,11 @@ void ui_replace_screen(lv_obj_t * old_scr, lv_obj_t * new_scr) {
 void ui_refresh_theme(void) {
     if (is_dimmed) { theme_refresh_pending = 1; return; }   /* after wake */
     theme_refresh_pending = 0;
+    /* Home modals live on the top layer and point into the home screen that
+     * is about to be rebuilt: close them first, as ui_dim_now() does. */
+    screen_calendar_close();
+    screen_waste_close();
+    screen_home_dismiss_modals();
     ui_theme_install();                /* LVGL widget accent */
     screen_dim_destroy();
     screen_dim_grid_destroy();
@@ -270,6 +275,7 @@ void ui_idle_tick(void) {
     if (theme_request && !is_dimmed) {
         theme_request = 0;
         theme_set(settings.ui_theme);
+        screen_settings_close_modals();
         while (sp > 1) ui_pop();
         ui_refresh_theme();
     } else if (theme_refresh_pending && !is_dimmed) {
