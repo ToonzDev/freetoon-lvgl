@@ -24,6 +24,7 @@
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <sys/stat.h>
+#include <sys/wait.h>  /* WEXITSTATUS of the curl popen */
 #include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -1587,10 +1588,23 @@ int ha_discover_entities(const char * domain_prefix,
         if (r == 0) break;
         n += r;
     }
-    pclose(p);
+    int prc = pclose(p);
     if (n == 0) {
-        fprintf(stderr, "[ha] discover: no response from %s://%s/api/states\n",
-                ha_scheme(), hp);
+        /* Zero bytes = no HTTP reply at all (a bad token still gets a 401
+         * body). curl's exit code says why; spell out the common ones. */
+        int cc = (prc != -1 && WIFEXITED(prc)) ? WEXITSTATUS(prc) : -1;
+        const char * why =
+            cc == 6  ? "host not found" :
+            cc == 7  ? "connection refused - wrong IP or port?" :
+            cc == 28 ? "timed out - HA unreachable or too slow" :
+            cc == 35 || cc == 60 ? "TLS handshake failed - try http://" :
+            cc == 52 ? "empty reply - HA may expect https://" :
+            cc == 56 ? "connection reset - http vs https mismatch?" : "see curl exit code";
+        fprintf(stderr, "[ha] discover: no response from %s://%s/api/states "
+                        "(curl exit %d: %s)\n", ha_scheme(), hp, cc, why);
+        if (!strchr(hp, ':'))
+            fprintf(stderr, "[ha] discover: ha_host has no port - Home Assistant "
+                            "normally listens on :8123 (e.g. 192.168.1.10:8123)\n");
         free(body);
         return -1;
     }
