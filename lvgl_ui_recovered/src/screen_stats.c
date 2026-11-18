@@ -457,7 +457,7 @@ static void show_tooltip(int b, int bar_screen_x, int bar_screen_y) {
 
         s_tooltip_lbl = lv_label_create(s_tooltip_box);
         lv_obj_set_style_text_color(s_tooltip_lbl, lv_color_hex(THEME_TEXT_HI), 0);
-        lv_obj_set_style_text_font(s_tooltip_lbl, SF(15), 0);
+        lv_obj_set_style_text_font(s_tooltip_lbl, SF_EUR(15), 0);   /* "€" */
         lv_obj_center(s_tooltip_lbl);
     }
 
@@ -1528,7 +1528,7 @@ static void open_rate_modal(int target) {
     lv_label_set_text(title, target == 0 ? tr("Stroomtarief (€ / kWh)", "Electricity rate (€ / kWh)")
                                          : tr("Gastarief (€ / m3)", "Gas rate (€ / m3)"));
     lv_obj_set_style_text_color(title, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(title, SF(20), 0);
+    lv_obj_set_style_text_font(title, SF_EUR(20), 0);   /* "€" */
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
 
     g_rate_ta = lv_textarea_create(panel);
@@ -1791,7 +1791,7 @@ lv_obj_t * screen_stats_create(void) {
 
     lbl_value = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_value, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(lbl_value, SF(36), 0);
+    lv_obj_set_style_text_font(lbl_value, SF_EUR(36), 0);   /* "€" */
     lv_label_set_text(lbl_value, "--");
     lv_obj_align(lbl_value, LV_ALIGN_TOP_LEFT, SX(30), SY(310));
 
@@ -1834,7 +1834,7 @@ lv_obj_t * screen_stats_create(void) {
     lbl_rate_elec = lv_label_create(btn_rate_elec);
     lv_label_set_text_fmt(lbl_rate_elec, "Stroom: € %.2f/kWh", (double)settings.rate_elec_kwh);
     lv_obj_set_style_text_color(lbl_rate_elec, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(lbl_rate_elec, SF(14), 0);
+    lv_obj_set_style_text_font(lbl_rate_elec, SF_EUR(14), 0);
     lv_obj_center(lbl_rate_elec);
 
     btn_rate_gas = lv_btn_create(scr_root);
@@ -1848,7 +1848,7 @@ lv_obj_t * screen_stats_create(void) {
     lbl_rate_gas = lv_label_create(btn_rate_gas);
     lv_label_set_text_fmt(lbl_rate_gas, "Gas: € %.2f/m3", (double)settings.rate_gas_m3);
     lv_obj_set_style_text_color(lbl_rate_gas, lv_color_hex(THEME_TEXT_HI), 0);
-    lv_obj_set_style_text_font(lbl_rate_gas, SF(14), 0);
+    lv_obj_set_style_text_font(lbl_rate_gas, SF_EUR(14), 0);
     lv_obj_center(lbl_rate_gas);
 
     /* Chart */
@@ -1863,6 +1863,8 @@ lv_obj_t * screen_stats_create(void) {
     lv_obj_set_style_pad_column(chart, 3, LV_PART_MAIN);
     /* Y axis tick labels — 5 major divisions, draw_size 60 reserves space. */
     lv_chart_set_axis_tick(chart, LV_CHART_AXIS_PRIMARY_Y, 8, 4, 5, 2, true, 60);
+    /* Tick labels show "€" in euro mode; Montserrat alone has no euro sign. */
+    lv_obj_set_style_text_font(chart, &lv_font_euro_14, LV_PART_TICKS);
     /* X axis: short tick marks only, no built-in labels — we draw our own
      * labels (place_x_labels) under the chart since lv_chart's bar tick
      * labels never rendered reliably. */

@@ -75,4 +75,20 @@ static inline const lv_font_t * disp_font(int design_px) {
 }
 #define SF(px) disp_font(px)
 
+/* Same sizes as SF() for 14/18/22/36 px, but with the euro sign: Montserrat has no
+ * U+20AC, these single-glyph fonts add it and fall back to Montserrat for
+ * everything else. Use for any label that shows "€". */
+LV_FONT_DECLARE(lv_font_euro_14)
+LV_FONT_DECLARE(lv_font_euro_18)
+LV_FONT_DECLARE(lv_font_euro_22)
+LV_FONT_DECLARE(lv_font_euro_36)
+static inline const lv_font_t * disp_font_eur(int design_px) {
+    int px = (design_px * DISP_HOR) / DESIGN_HOR;
+    if (px >= 32) return &lv_font_euro_36;
+    if (px >= 21) return &lv_font_euro_22;
+    if (px >= 16) return &lv_font_euro_18;
+    return &lv_font_euro_14;
+}
+#define SF_EUR(px) disp_font_eur(px)
+
 #endif /* DISPLAY_H */
