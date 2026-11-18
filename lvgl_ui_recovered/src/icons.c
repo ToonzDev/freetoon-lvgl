@@ -99,14 +99,22 @@ const lv_img_dsc_t * waste_icon_for_label_lg(const char * label) {
 }
 
 #include "settings.h"
+#include "theme.h"
+
+/* Identity colours (bin colours): same meaning in every theme; only the
+ * light-surface / dark-surface variant differs, for contrast. */
+#define WASTE_REST   (THEME_IS_LIGHT ? 0x4b5563 : 0x888888)   /* Restafval grey */
+#define WASTE_PAPER  (THEME_IS_LIGHT ? 0x1d4ed8 : 0x44aaff)   /* Papier blue */
+#define WASTE_PMD    (THEME_IS_LIGHT ? 0xc25e00 : 0xffaa44)   /* PMD / plastic orange */
+#define WASTE_GFT    (THEME_IS_LIGHT ? 0x15803d : 0x88dd66)   /* GFT green */
 
 unsigned int waste_accent_for_label(const char * label) {
-    if (!label) return settings.home_light_mode ? 0x4b5563 : 0x888888;
-    if (!strncasecmp(label, "Pap",  3)) return settings.home_light_mode ? 0x1d4ed8 : 0x44aaff;     /* blue */
-    if (!strncasecmp(label, "PMD",  3)) return settings.home_light_mode ? 0xc25e00 : 0xffaa44;     /* orange */
-    if (!strncasecmp(label, "Plas", 4)) return settings.home_light_mode ? 0xc25e00 : 0xffaa44;
-    if (!strncasecmp(label, "GFT",  3) || !strncasecmp(label, "Groen", 5)) return settings.home_light_mode ? 0x15803d : 0x88dd66;     /* green */
-    return settings.home_light_mode ? 0x4b5563 : 0x888888;                                          /* Restafval */
+    if (!label) return WASTE_REST;
+    if (!strncasecmp(label, "Pap",  3)) return WASTE_PAPER;     /* blue */
+    if (!strncasecmp(label, "PMD",  3)) return WASTE_PMD;       /* orange */
+    if (!strncasecmp(label, "Plas", 4)) return WASTE_PMD;
+    if (!strncasecmp(label, "GFT",  3) || !strncasecmp(label, "Groen", 5)) return WASTE_GFT;     /* green */
+    return WASTE_REST;                                          /* Restafval */
 }
 
 /* Buienradar code → icon. Mapping from their public documentation

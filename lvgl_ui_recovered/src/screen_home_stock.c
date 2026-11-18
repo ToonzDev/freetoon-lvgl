@@ -31,21 +31,31 @@
 #include "tile_slots.h"
 #include "templogger.h"
 #include "wastecollection.h"
+#include "theme.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
 /* ---- stock palette ------------------------------------------------------- */
-#define C_CANVAS   0xDCDCDC
-#define C_CARD     0xFFFFFF
-#define C_HEADER   0xF0F0F0
-#define C_TITLE    0x565656
-#define C_TEXT     0x000000
-#define C_ACCENT   0xE64F0A
-#define C_ALERT    0xFF1744
-#define C_SECOND   0x8C8C8C
-#define C_PRESSED  0xA8A8A8
+/* The classic Toon look follows the active theme (Licht reproduces the original
+ * Eneco colours; the other themes recolour it). */
+#define C_CANVAS   THEME_CLASSIC_CANVAS
+#define C_CARD     THEME_CARD_BG
+#define C_HEADER   THEME_CLASSIC_HEADER
+#define C_TITLE    THEME_CLASSIC_TITLE
+#define C_TEXT     THEME_TEXT_HI
+#define C_ACCENT   THEME_CLASSIC_ACCENT
+#define C_ALERT    THEME_DANGER
+#define C_SECOND   THEME_TEXT_MUTED
+#define C_PRESSED  THEME_BTN_ACCENT
+
+/* Identity colours, same in every theme: real-world / quantity colours. */
+#define SPROUT_STEM  0x2E7D32   /* sprout icon stem */
+#define SPROUT_LEAF  0x689F38   /* sprout icon leaves */
+#define GAUGE_GREEN  0x689F38   /* power gauge, low usage */
+#define GAUGE_YELLOW 0xCCCC33   /* power gauge, high usage */
+#define SUN_AMBER    0xF5A623   /* solar tile sun */
 
 #define G_X0       64
 #define G_COLW     293
@@ -184,10 +194,10 @@ static lv_obj_t * make_sprout_icon(lv_obj_t * par) {
     lv_canvas_set_buffer(cv, buf, 24, 24, LV_IMG_CF_TRUE_COLOR_ALPHA);
     lv_canvas_fill_bg(cv, lv_color_hex(C_CARD), LV_OPA_TRANSP);
     lv_draw_rect_dsc_t st; lv_draw_rect_dsc_init(&st);
-    st.bg_color = lv_color_hex(0x2E7D32); st.bg_opa = LV_OPA_COVER;
+    st.bg_color = lv_color_hex(SPROUT_STEM); st.bg_opa = LV_OPA_COVER;
     lv_canvas_draw_rect(cv, 11, 9, 2, 13, &st);
     lv_draw_rect_dsc_t lf; lv_draw_rect_dsc_init(&lf);
-    lf.bg_color = lv_color_hex(0x689F38); lf.bg_opa = LV_OPA_COVER;
+    lf.bg_color = lv_color_hex(SPROUT_LEAF); lf.bg_opa = LV_OPA_COVER;
     lv_point_t left[4]  = { {12, 12}, {2, 9}, {5, 3}, {12, 8} };
     lv_point_t right[4] = { {12, 12}, {22, 9}, {19, 3}, {12, 8} };
     lv_canvas_draw_polygon(cv, left, 4, &lf);
@@ -256,7 +266,7 @@ static void render_slot(slot_t * s) {
     for (int i = 0; i < N_ESEG; i++) s->gauge[i] = NULL;
     int t = s->type;
     if (t == TT_EMPTY) {   /* faint "+" — long-press (or tap) to add a tile */
-        lv_obj_t * plus = mklabel(s->card, "+", OSL(50), 0xCCCCCC);
+        lv_obj_t * plus = mklabel(s->card, "+", OSL(50), THEME_BORDER);
         lv_obj_align(plus, LV_ALIGN_CENTER, 0, SY(-10));
         lv_obj_t * add = mklabel(s->card, tr("Tegel toevoegen", "Add tile"), OSR(15), C_SECOND);
         lv_obj_align(add, LV_ALIGN_CENTER, 0, SY(28));
@@ -310,7 +320,7 @@ static void render_slot(slot_t * s) {
             lv_obj_align(s->gauge[i], LV_ALIGN_CENTER, 0, SY(-4 - th / 2 + i * (sh + gp) + sh / 2));
             lv_obj_set_style_radius(s->gauge[i], SX(1), 0);
             lv_obj_set_style_border_width(s->gauge[i], 0, 0);
-            lv_obj_set_style_bg_color(s->gauge[i], lv_color_hex(0xE0E0E0), 0);
+            lv_obj_set_style_bg_color(s->gauge[i], lv_color_hex(THEME_OFF), 0);
             lv_obj_set_style_pad_all(s->gauge[i], 0, 0);
             lv_obj_clear_flag(s->gauge[i], LV_OBJ_FLAG_SCROLLABLE);
             lv_obj_clear_flag(s->gauge[i], LV_OBJ_FLAG_CLICKABLE);
@@ -320,7 +330,7 @@ static void render_slot(slot_t * s) {
     case TT_SOLAR:
         s->icon = lv_img_create(s->card);
         lv_img_set_src(s->icon, &icon_wx_sun_lg);
-        lv_obj_set_style_img_recolor(s->icon, lv_color_hex(0xF5A623), 0);
+        lv_obj_set_style_img_recolor(s->icon, lv_color_hex(SUN_AMBER), 0);
         lv_obj_set_style_img_recolor_opa(s->icon, LV_OPA_COVER, 0);
         lv_obj_align(s->icon, LV_ALIGN_CENTER, 0, SY(-26));   /* same as the weather tile */
         lv_obj_clear_flag(s->icon, LV_OBJ_FLAG_CLICKABLE);
@@ -409,7 +419,7 @@ static void refresh_slot(slot_t * s) {
         for (int i = 0; i < N_ESEG; i++) {
             if (!s->gauge[i]) continue;
             int fb = N_ESEG - 1 - i;
-            uint32_t c = (fb < lit) ? (fb < 7 ? 0x689F38 : 0xCCCC33) : 0xE0E0E0;
+            uint32_t c = (fb < lit) ? (fb < 7 ? GAUGE_GREEN : GAUGE_YELLOW) : THEME_OFF;
             lv_obj_set_style_bg_color(s->gauge[i], lv_color_hex(c), 0);
         }
         break; }
@@ -773,7 +783,7 @@ static void open_picker(int slot) {
     g_picker_keepalive = lv_timer_create(picker_keepalive, 2000, NULL);
     g_picker = lv_obj_create(lv_layer_top());
     lv_obj_set_size(g_picker, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_bg_color(g_picker, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_color(g_picker, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(g_picker, LV_OPA_50, 0);
     lv_obj_set_style_border_width(g_picker, 0, 0);
     lv_obj_set_style_pad_all(g_picker, 0, 0);
@@ -1012,7 +1022,7 @@ lv_obj_t * screen_home_stock_create(void) {
     lv_obj_set_pos(bplus, SX(SP_W - 100), SY(72));
     lv_obj_set_style_bg_color(bplus, lv_color_hex(C_CARD), 0);
     lv_obj_set_style_shadow_width(bplus, 0, 0);
-    lv_obj_set_style_border_color(bplus, lv_color_hex(0xE0E0E0), 0);
+    lv_obj_set_style_border_color(bplus, lv_color_hex(THEME_BORDER), 0);
     lv_obj_set_style_border_width(bplus, SX(1), 0);
     lv_obj_add_event_cb(bplus, on_sp_up, LV_EVENT_CLICKED, NULL);
     lv_obj_t * pl = mklabel(bplus, "+", OSL(40), C_TITLE); lv_obj_center(pl);
@@ -1021,7 +1031,7 @@ lv_obj_t * screen_home_stock_create(void) {
     lv_obj_set_pos(bminus, SX(SP_W - 100), SY(132));
     lv_obj_set_style_bg_color(bminus, lv_color_hex(C_CARD), 0);
     lv_obj_set_style_shadow_width(bminus, 0, 0);
-    lv_obj_set_style_border_color(bminus, lv_color_hex(0xE0E0E0), 0);
+    lv_obj_set_style_border_color(bminus, lv_color_hex(THEME_BORDER), 0);
     lv_obj_set_style_border_width(bminus, SX(1), 0);
     lv_obj_add_event_cb(bminus, on_sp_down, LV_EVENT_CLICKED, NULL);
     lv_obj_t * ml = mklabel(bminus, "-", OSL(40), C_TITLE); lv_obj_center(ml);
@@ -1043,7 +1053,7 @@ lv_obj_t * screen_home_stock_create(void) {
         lv_obj_set_pos(scene_btn[i], SX(10 + col * (sw_w + 5)), SY(256 + row * (sh + 5)));
         lv_obj_set_style_bg_color(scene_btn[i], lv_color_hex(C_CARD), 0);
         lv_obj_set_style_shadow_width(scene_btn[i], 0, 0);
-        lv_obj_set_style_border_color(scene_btn[i], lv_color_hex(0xE0E0E0), 0);
+        lv_obj_set_style_border_color(scene_btn[i], lv_color_hex(THEME_BORDER), 0);
         lv_obj_set_style_border_width(scene_btn[i], SX(1), 0);
         lv_obj_set_style_radius(scene_btn[i], SX(3), 0);
         lv_obj_add_event_cb(scene_btn[i], on_scene, LV_EVENT_CLICKED, (void*)(intptr_t)i);
@@ -1106,7 +1116,7 @@ lv_obj_t * screen_home_stock_create(void) {
     s_lights_handle_lbl = lv_label_create(s_lights_handle);
     lv_label_set_text(s_lights_handle_lbl, LV_SYMBOL_CHARGE);
     lv_obj_set_style_text_font(s_lights_handle_lbl, SF(24), 0);
-    lv_obj_set_style_text_color(s_lights_handle_lbl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(s_lights_handle_lbl, lv_color_hex(THEME_ON_ACCENT), 0);
     lv_obj_center(s_lights_handle_lbl);
 
     refresh_cb(NULL);

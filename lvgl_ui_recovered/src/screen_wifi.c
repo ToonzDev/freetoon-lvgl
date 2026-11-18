@@ -30,8 +30,8 @@
 #define COL_CARD     THEME_CARD_BG
 #define COL_TEXT_HI  THEME_TEXT_HI
 #define COL_TEXT_DIM THEME_TEXT_DIM
-#define COL_OK       (settings.home_light_mode ? 0x16a34a : 0x2e6e3a)
-#define COL_WARN     (settings.home_light_mode ? 0xdc2626 : 0x6e3a3a)
+#define COL_OK       THEME_SUCCESS_BG
+#define COL_WARN     THEME_DANGER_BG
 #define COL_OFF      THEME_OFF
 #define COL_ACCENT   THEME_BTN_ACCENT
 
@@ -228,6 +228,7 @@ static void open_connect_modal(ap_t * a) {
     lv_obj_set_style_bg_color(go, lv_color_hex(COL_OK), 0);
     lv_obj_add_event_cb(go, on_conn_go, LV_EVENT_CLICKED, NULL);
     lv_obj_t * gl = lv_label_create(go); lv_label_set_text(gl, tr("Verbind", "Connect"));
+    lv_obj_set_style_text_color(gl, lv_color_hex(THEME_ON_ACCENT), 0);
     lv_obj_center(gl);
 
     lv_obj_t * cancel = lv_btn_create(card);
@@ -304,6 +305,7 @@ static void on_disconnect(lv_event_t * e) {
     lv_obj_set_style_bg_color(yes, lv_color_hex(COL_WARN), 0);
     lv_obj_add_event_cb(yes, on_disc_confirm, LV_EVENT_CLICKED, NULL);
     lv_obj_t * yl = lv_label_create(yes); lv_label_set_text(yl, tr("Verbreek", "Disconnect"));
+    lv_obj_set_style_text_color(yl, lv_color_hex(THEME_ON_ACCENT), 0);
     lv_obj_center(yl);
 
     lv_obj_t * no = lv_btn_create(card);
@@ -339,9 +341,9 @@ static void build_rows(void) {
         lv_obj_t * row = lv_btn_create(list_box);
         lv_obj_set_size(row, SX(940), SY(64));
         lv_obj_set_style_bg_color(row, lv_color_hex(COL_CARD), 0);
-        lv_obj_set_style_bg_color(row, lv_color_hex(0x24385c), LV_STATE_PRESSED);
+        lv_obj_set_style_bg_color(row, lv_color_hex(THEME_ROW_BG), LV_STATE_PRESSED);
         lv_obj_set_style_border_color(row, lv_color_hex(THEME_BORDER), 0);
-        lv_obj_set_style_border_width(row, settings.home_light_mode ? 1 : 0, 0);
+        lv_obj_set_style_border_width(row, THEME_IS_LIGHT ? 1 : 0, 0);
         lv_obj_set_style_radius(row, 12, 0);
         lv_obj_set_style_pad_all(row, 10, 0);
         lv_obj_add_event_cb(row, on_ap_clicked, LV_EVENT_CLICKED, a);
@@ -350,7 +352,7 @@ static void build_rows(void) {
 
         lv_obj_t * nm = lv_label_create(row);
         lv_obj_set_style_text_font(nm, SF(22), 0);
-        lv_obj_set_style_text_color(nm, lv_color_hex(connected ? COL_OK : COL_TEXT_HI), 0);
+        lv_obj_set_style_text_color(nm, lv_color_hex(connected ? THEME_SUCCESS : COL_TEXT_HI), 0);
         lv_label_set_text_fmt(nm, "%s%s", a->ssid, connected ? tr("  (verbonden)", "  (connected)") : "");
         lv_obj_align(nm, LV_ALIGN_LEFT_MID, SX(4), 0);
 
@@ -427,15 +429,15 @@ static void on_scr_event(lv_event_t * e) {
     }
 }
 
-static int scr_light_mode = -1;
+static int scr_light_mode = -1;   /* cached UI theme (settings.ui_theme) */
 
 lv_obj_t * screen_wifi_create(void) {
-    if (scr_root && scr_light_mode == settings.home_light_mode) return scr_root;
+    if (scr_root && scr_light_mode == settings.ui_theme) return scr_root;
     if (scr_root) { lv_obj_del(scr_root); scr_root = NULL; }
     /* Rebuild (light-mode/theme toggle): the old timer must go too, or one
      * more paused timer leaks per toggle. */
     if (refresh_timer) { lv_timer_del(refresh_timer); refresh_timer = NULL; }
-    scr_light_mode = settings.home_light_mode;
+    scr_light_mode = settings.ui_theme;
 
     scr_root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(COL_BG), 0);
@@ -493,7 +495,7 @@ lv_obj_t * screen_wifi_create(void) {
     lv_obj_set_ext_click_area(disc, 8);
     lv_obj_add_event_cb(disc, on_disconnect, LV_EVENT_CLICKED, NULL);
     lv_obj_t * dl = lv_label_create(disc);
-    lv_obj_set_style_text_color(dl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(dl, lv_color_hex(THEME_ON_ACCENT), 0);
     lv_obj_set_style_text_font(dl, SF(22), 0);
     lv_label_set_text(dl, tr("Verbreek", "Disconnect"));
     lv_obj_center(dl);
