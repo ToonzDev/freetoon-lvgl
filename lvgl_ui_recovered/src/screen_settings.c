@@ -123,6 +123,11 @@ static void on_dim_sleep_away_black_change(lv_event_t * e) {
     settings.dim_sleep_away_black = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
     settings_save();
 }
+/* Applied by the dim screen itself on its next load (no restart needed). */
+static void on_dim_thin_font_change(lv_event_t * e) {
+    settings.dim_thin_font = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    settings_save();
+}
 static void on_forecast_mode_change(lv_event_t * e) {
     int daily = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
     settings.forecast_mode = daily ? FORECAST_DAILY : FORECAST_HOURLY;
@@ -1030,6 +1035,13 @@ static void open_display_modal(lv_event_t * e) {
     /* Screen off on sleep / away presets (pure black + backlight 0) */
     r = panel_row(p, y, tr("Scherm uit bij Slapen en Weg", "Screen off on Sleep and Away"), NULL);
     row_switch(r, settings.dim_sleep_away_black, on_dim_sleep_away_black_change);
+    y += 82;
+
+    /* Clock + indoor/outdoor temperature on the dim screen: thin (original
+     * Montserrat Regular) instead of Bold, same size. */
+    r = panel_row(p, y, tr("Dunne letters op dimscherm (klok en temperatuur)",
+                           "Thin font on dim screen (clock and temperature)"), NULL);
+    row_switch(r, settings.dim_thin_font, on_dim_thin_font_change);
     y += 82;
 
 #ifndef TOON1

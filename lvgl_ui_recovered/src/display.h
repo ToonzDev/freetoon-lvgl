@@ -52,6 +52,10 @@
 LV_FONT_DECLARE(lv_font_montserrat_64_custom)
 LV_FONT_DECLARE(lv_font_montserrat_76_bold)
 LV_FONT_DECLARE(lv_font_montserrat_96_custom)
+/* Thin (Montserrat Regular) twins of the 96/76 px Bold readout fonts, same
+ * glyph range — used by the dim screen when settings.dim_thin_font is on. */
+LV_FONT_DECLARE(lv_font_montserrat_96_thin)
+LV_FONT_DECLARE(lv_font_montserrat_76_thin)
 static inline const lv_font_t * disp_font(int design_px) {
     int px = (design_px * DISP_HOR) / DESIGN_HOR;
     if (px >= 80) return &lv_font_montserrat_96_custom;

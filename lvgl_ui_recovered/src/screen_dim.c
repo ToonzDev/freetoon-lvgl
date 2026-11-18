@@ -740,8 +740,31 @@ void dim_fc_paint(lv_obj_t * icon, lv_obj_t * day, lv_obj_t * temp, int i) {
     ui_obj_clear_flag(temp, LV_OBJ_FLAG_HIDDEN);
 }
 
+/* Big dim readouts (clock, indoor + outdoor temperature): Montserrat Bold by
+ * default, or the original thin Montserrat Regular at the same size when
+ * Instellingen -> Scherm -> "Dunne letters op dimscherm" is on. Shared with
+ * screen_dim_grid.c. */
+const lv_font_t * dim_big_font(void) {
+    const lv_font_t * f = SF(96);
+    if (!settings.dim_thin_font) return f;
+    if (f == &lv_font_montserrat_96_custom) return &lv_font_montserrat_96_thin;
+    if (f == &lv_font_montserrat_76_bold)   return &lv_font_montserrat_76_thin;
+    return f;
+}
+
+/* The dim screen is built once and kept, so a changed font setting is applied
+ * here on every load; refresh_cb() then re-aligns the clock and the icons. */
+static void apply_big_font(void) {
+    lv_obj_t * big[] = { lbl_clock_colon, lbl_clock_h, lbl_clock_m, lbl_temp, lbl_outside_temp };
+    const lv_font_t * f = dim_big_font();
+    for (unsigned i = 0; i < sizeof big / sizeof big[0]; i++)
+        if (big[i] && lv_obj_get_style_text_font(big[i], LV_PART_MAIN) != f)
+            ui_obj_set_style_text_font(big[i], f, 0);
+}
+
 static void on_screen_loaded(lv_event_t * e) {
     (void)e;
+    apply_big_font();
     refresh_cb(NULL);
 }
 
@@ -785,18 +808,18 @@ lv_obj_t * screen_dim_create(void) {
        to overlap the digits. */
     lbl_clock_colon = lv_label_create(scr_root);
     ui_obj_set_style_text_color(lbl_clock_colon, lv_color_hex(0xffffff), 0);
-    ui_obj_set_style_text_font(lbl_clock_colon, SF(96), 0);
+    ui_obj_set_style_text_font(lbl_clock_colon, dim_big_font(), 0);
     ui_label_set_text(lbl_clock_colon, ":");
     ui_obj_align(lbl_clock_colon, LV_ALIGN_CENTER, 0, SY(-130));
 
     lbl_clock_h = lv_label_create(scr_root);
     ui_obj_set_style_text_color(lbl_clock_h, lv_color_hex(0xffffff), 0);
-    ui_obj_set_style_text_font(lbl_clock_h, SF(96), 0);
+    ui_obj_set_style_text_font(lbl_clock_h, dim_big_font(), 0);
     ui_label_set_text(lbl_clock_h, "--");
 
     lbl_clock_m = lv_label_create(scr_root);
     ui_obj_set_style_text_color(lbl_clock_m, lv_color_hex(0xffffff), 0);
-    ui_obj_set_style_text_font(lbl_clock_m, SF(96), 0);
+    ui_obj_set_style_text_font(lbl_clock_m, dim_big_font(), 0);
     ui_label_set_text(lbl_clock_m, "--");
 
     lv_obj_update_layout(lbl_clock_colon);
@@ -831,7 +854,7 @@ lv_obj_t * screen_dim_create(void) {
        CR2: Setpoint + program state in small font (SF(22)) under room temp. */
     lbl_temp = lv_label_create(scr_root);
     ui_obj_set_style_text_color(lbl_temp, lv_color_hex(0xffffff), 0);
-    ui_obj_set_style_text_font(lbl_temp, SF(96), 0);
+    ui_obj_set_style_text_font(lbl_temp, dim_big_font(), 0);
     ui_label_set_text(lbl_temp, "--.-°C");
     ui_obj_align(lbl_temp, LV_ALIGN_CENTER, 0, SY(40));
 
@@ -927,7 +950,7 @@ lv_obj_t * screen_dim_create(void) {
      * across the room); icon + "Buiten" in a row underneath. */
     lbl_outside_temp = lv_label_create(scr_root);
     ui_obj_set_style_text_color(lbl_outside_temp, lv_color_hex(0xffffff), 0);
-    ui_obj_set_style_text_font(lbl_outside_temp, SF(96), 0);
+    ui_obj_set_style_text_font(lbl_outside_temp, dim_big_font(), 0);
     ui_label_set_text(lbl_outside_temp, "");
     ui_obj_align(lbl_outside_temp, LV_ALIGN_TOP_RIGHT, SX(-24), SY(28));
 

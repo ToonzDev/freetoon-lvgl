@@ -393,6 +393,8 @@ typedef struct {
      * 1.0.12 did exactly that with dim_elec_max_kwh (Sonos, Stocks refused).
      * plugin_loader.c checks the exported offsets at compile time. */
     int dim_elec_max_kwh;     /* 5..50 kWh — full scale for electricity day total bar (default 15) */
+    int dim_thin_font;        /* 1 = dim clock + indoor/outdoor temp in the original thin
+                                 Montserrat Regular (same size); 0 = Bold (default) */
 } settings_t;
 
 #define FORECAST_AUTO   0

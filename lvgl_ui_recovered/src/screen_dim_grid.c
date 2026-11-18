@@ -899,8 +899,19 @@ static void refresh_cb(lv_timer_t * t) {
     }
 }
 
+/* Built once and kept: re-apply the big font (thin/bold setting) on every
+ * load; refresh_cb() then re-aligns the clock and the icons. */
+static void apply_big_font(void) {
+    lv_obj_t * big[] = { lbl_clock_colon, lbl_clock_h, lbl_clock_m, lbl_temp, lbl_outside_temp };
+    const lv_font_t * f = dim_big_font();
+    for (unsigned i = 0; i < sizeof big / sizeof big[0]; i++)
+        if (big[i] && lv_obj_get_style_text_font(big[i], LV_PART_MAIN) != f)
+            ui_obj_set_style_text_font(big[i], f, 0);
+}
+
 static void on_screen_loaded(lv_event_t * e) {
     (void)e;
+    apply_big_font();
     refresh_cb(NULL);
 }
 
@@ -929,18 +940,18 @@ lv_obj_t * screen_dim_grid_create(void) {
     lv_obj_t * bx_clock = dim_box(DB_CLOCK, NULL, NULL);
     lbl_clock_colon = lv_label_create(bx_clock);
     ui_obj_set_style_text_color(lbl_clock_colon, lv_color_hex(0xffffff), 0);
-    ui_obj_set_style_text_font(lbl_clock_colon, SF(96), 0);
+    ui_obj_set_style_text_font(lbl_clock_colon, dim_big_font(), 0);
     ui_label_set_text(lbl_clock_colon, ":");
     ui_obj_align(lbl_clock_colon, LV_ALIGN_CENTER, 0, 0);
 
     lbl_clock_h = lv_label_create(bx_clock);
     ui_obj_set_style_text_color(lbl_clock_h, lv_color_hex(0xffffff), 0);
-    ui_obj_set_style_text_font(lbl_clock_h, SF(96), 0);
+    ui_obj_set_style_text_font(lbl_clock_h, dim_big_font(), 0);
     ui_label_set_text(lbl_clock_h, "--");
 
     lbl_clock_m = lv_label_create(bx_clock);
     ui_obj_set_style_text_color(lbl_clock_m, lv_color_hex(0xffffff), 0);
-    ui_obj_set_style_text_font(lbl_clock_m, SF(96), 0);
+    ui_obj_set_style_text_font(lbl_clock_m, dim_big_font(), 0);
     ui_label_set_text(lbl_clock_m, "--");
 
     lv_obj_update_layout(lbl_clock_colon);
@@ -988,7 +999,7 @@ lv_obj_t * screen_dim_grid_create(void) {
 
     lbl_outside_temp = lv_label_create(wcol);
     ui_obj_set_style_text_color(lbl_outside_temp, lv_color_hex(0xffffff), 0);
-    ui_obj_set_style_text_font(lbl_outside_temp, SF(96), 0);
+    ui_obj_set_style_text_font(lbl_outside_temp, dim_big_font(), 0);
     lv_label_set_long_mode(lbl_outside_temp, LV_LABEL_LONG_CLIP);
     lv_obj_set_width(lbl_outside_temp, LV_SIZE_CONTENT);
     ui_label_set_text(lbl_outside_temp, "--");
@@ -1045,7 +1056,7 @@ lv_obj_t * screen_dim_grid_create(void) {
     int tbw = 0, tbh = 0; lv_obj_t * bx_t = dim_box(DB_THERMO, &tbw, &tbh); (void)tbh;
     lbl_temp = lv_label_create(bx_t);
     ui_obj_set_style_text_color(lbl_temp, lv_color_hex(0xffffff), 0);
-    ui_obj_set_style_text_font(lbl_temp, SF(96), 0);
+    ui_obj_set_style_text_font(lbl_temp, dim_big_font(), 0);
     ui_label_set_text(lbl_temp, "--.-°C");
     ui_obj_align(lbl_temp, LV_ALIGN_CENTER, 0, -14);
 

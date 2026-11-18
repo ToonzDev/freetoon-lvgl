@@ -36,6 +36,9 @@ void screen_home_open_news(void);
 lv_obj_t * screen_thermostat_create(void);
 lv_obj_t * screen_dim_create(void);
 lv_obj_t * screen_dim_grid_create(void);   /* custom grid dim (opt-in); used by screen_dim_create */
+/* Dim screens: font for the big clock + indoor/outdoor temperature — Bold, or
+ * thin Regular (same size) when settings.dim_thin_font is set. */
+const lv_font_t * dim_big_font(void);
 /* Dim screens: outside temperature in the big room-temp font. Picks the
  * longest of "8.4°C" / "8.4°" / "8°" that fits max_w with the label's font. */
 void dim_set_outside_temp(lv_obj_t * lbl, float t, lv_coord_t max_w);
