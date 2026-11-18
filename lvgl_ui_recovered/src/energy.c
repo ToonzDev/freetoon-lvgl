@@ -87,6 +87,12 @@ static double g_gb_m3 = -1;            /* cumulative m3 at 00:00 */
 static int    g_gb_exact = 0;          /* 1 = from hcb_rrd at 00:00 */
 static int    g_gb_busy = 0;
 static long   g_gb_last_try = 0;
+static double g_gb_cur = -1;           /* latest reading, for the thread's sanity check */
+static long   g_gb_last_seen = 0;      /* time of the previous gas_since_midnight call */
+
+/* Most gas a household burns in one day; a 00:00 value further below the
+ * current reading than this is not ours. */
+#define GAS_MAX_DAY_M3 150.0
 
 static void * gas_baseline_thread(void * arg) {
     int day = (int)(intptr_t)arg;
@@ -111,10 +117,22 @@ static void * gas_baseline_thread(void * arg) {
         }
     }
     pthread_mutex_lock(&g_gb_mtx);
+    /* gas_quantity is the stock happ_pwrusage logger: hcb_rrd keeps sampling
+     * the meter adapter's (last known) counter into it next to our pushes.
+     * After a switch from the Toon meter adapter to a P1 that frozen old
+     * reading can be the 00:00 sample every day — "today" then shows the
+     * whole gap between the two counters. Only accept a plausible value. */
     if (v > 0 && day == g_gb_day && !g_gb_exact) {   /* not after a rebase */
-        g_gb_m3 = v / 1000.0;
-        g_gb_exact = 1;
-        fprintf(stderr, "[energy] gas at 00:00 from hcb_rrd: %.3f m3\n", g_gb_m3);
+        double m3 = v / 1000.0;
+        if (g_gb_cur > 0 && (m3 > g_gb_cur + 0.001 || g_gb_cur - m3 > GAS_MAX_DAY_M3)) {
+            fprintf(stderr, "[energy] gas at 00:00 from hcb_rrd %.3f m3 does not fit current "
+                            "reading %.3f m3 (old meter adapter data?): ignored\n", m3, g_gb_cur);
+            g_gb_exact = 1;                    /* don't keep asking today */
+        } else {
+            g_gb_m3 = m3;
+            g_gb_exact = 1;
+            fprintf(stderr, "[energy] gas at 00:00 from hcb_rrd: %.3f m3\n", g_gb_m3);
+        }
     }
     g_gb_busy = 0;
     pthread_mutex_unlock(&g_gb_mtx);
@@ -130,11 +148,16 @@ static float gas_since_midnight(float cum_m3) {
     float out;
     pthread_mutex_lock(&g_gb_mtx);
     if (day != g_gb_day) {                     /* new day (or first call) */
+        /* Running across midnight with a fresh reading: our own first value
+         * of the day IS the 00:00 reading — no need for hcb_rrd. */
+        int rolled = g_gb_day >= 0 && g_gb_last_seen > 0 && (long)now - g_gb_last_seen < 900;
         g_gb_day = day;
         g_gb_m3 = cum_m3;
-        g_gb_exact = 0;
+        g_gb_exact = rolled;
         g_gb_last_try = 0;
     }
+    g_gb_cur = cum_m3;
+    g_gb_last_seen = (long)now;
     /* Baseline above the current reading: the meter was replaced (a new one
      * restarts near 0) and the 00:00 value, or the first one seen today, is
      * the old meter's. Count from the new meter's reading instead of
@@ -182,6 +205,9 @@ static double g_eb_kwh = -1;
 static int    g_eb_exact = 0;
 static int    g_eb_busy = 0;
 static long   g_eb_last_try = 0;
+static double g_eb_cur = -1;
+static long   g_eb_last_seen = 0;
+#define ELEC_MAX_DAY_KWH 300.0
 
 static void * elec_baseline_thread(void * arg) {
     int day = (int)(intptr_t)arg;
@@ -216,9 +242,16 @@ static void * elec_baseline_thread(void * arg) {
     }
     pthread_mutex_lock(&g_eb_mtx);
     if ((v_nt > 0 || v_lt > 0) && day == g_eb_day && !g_eb_exact) {
-        g_eb_kwh = ((v_nt > 0 ? v_nt : 0) + (v_lt > 0 ? v_lt : 0)) / 1000.0;
+        double kwh = ((v_nt > 0 ? v_nt : 0) + (v_lt > 0 ? v_lt : 0)) / 1000.0;
+        /* Same stale-meter-adapter guard as the gas baseline. */
+        if (g_eb_cur > 0 && (kwh > g_eb_cur + 0.001 || g_eb_cur - kwh > ELEC_MAX_DAY_KWH)) {
+            fprintf(stderr, "[energy] elec at 00:00 from hcb_rrd %.3f kWh does not fit current "
+                            "reading %.3f kWh (old meter adapter data?): ignored\n", kwh, g_eb_cur);
+        } else {
+            g_eb_kwh = kwh;
+            fprintf(stderr, "[energy] elec at 00:00 from hcb_rrd: %.3f kWh\n", g_eb_kwh);
+        }
         g_eb_exact = 1;
-        fprintf(stderr, "[energy] elec at 00:00 from hcb_rrd: %.3f kWh\n", g_eb_kwh);
     }
     g_eb_busy = 0;
     pthread_mutex_unlock(&g_eb_mtx);
@@ -234,11 +267,14 @@ static float elec_since_midnight(double cum_kwh) {
     float out;
     pthread_mutex_lock(&g_eb_mtx);
     if (day != g_eb_day) {
+        int rolled = g_eb_day >= 0 && g_eb_last_seen > 0 && (long)now - g_eb_last_seen < 900;
         g_eb_day = day;
         g_eb_kwh = cum_kwh;
-        g_eb_exact = 0;
+        g_eb_exact = rolled;               /* see gas_since_midnight */
         g_eb_last_try = 0;
     }
+    g_eb_cur = cum_kwh;
+    g_eb_last_seen = (long)now;
     /* New meter (reading below the baseline): rebase, see gas_since_midnight. */
     if (cum_kwh < g_eb_kwh - 0.001) {
         fprintf(stderr, "[energy] elec reading %.3f below today's baseline %.3f kWh (new meter?): rebased\n",
