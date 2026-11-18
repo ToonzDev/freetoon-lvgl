@@ -25,10 +25,10 @@
 #define COL_CARD      THEME_CARD_BG
 #define COL_TEXT_HI   THEME_TEXT_HI
 #define COL_TEXT_DIM  THEME_TEXT_DIM
-#define COL_ON        THEME_ACCENT_BLUE   /* "on" = the app's accent blue, same on every device screen */
+#define COL_ON        THEME_ACCENT   /* "on" = the app's accent blue, same on every device screen */
 #define COL_OFF       THEME_OFF
-#define COL_OFFLINE   (settings.home_light_mode ? 0x94a3b8 : 0x6e6e6e)
-#define COL_ACCENT    THEME_ACCENT_BLUE
+#define COL_OFFLINE   THEME_OFFLINE
+#define COL_ACCENT    THEME_ACCENT
 
 /* Per-row widgets, kept so refresh_cb can repaint state without rebuilding.
  * dev_idx maps the row back to ha_devices[]. */
@@ -110,7 +110,7 @@ static lv_obj_t * mk_btn(lv_obj_t * c, const char * txt, uint32_t col, int w, in
     lv_obj_set_ext_click_area(b, 10);
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, (void *)(intptr_t)idx);
     lv_obj_t * l = lv_label_create(b);
-    lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(l, lv_color_hex(THEME_ON_ACCENT), 0);
     lv_obj_set_style_text_font(l, SF(14), 0);
     lv_label_set_text(l, txt);
     lv_obj_center(l);
@@ -122,7 +122,7 @@ static lv_obj_t * mk_slider(lv_obj_t * c, uint32_t ind_col, lv_event_cb_t cb, in
     lv_obj_align(s, LV_ALIGN_BOTTOM_MID, 0, -2);
     lv_slider_set_range(s, 0, 100);
     lv_slider_set_value(s, 0, LV_ANIM_OFF);
-    lv_obj_set_style_bg_color(s, lv_color_hex(0x223344), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s, lv_color_hex(THEME_BTN_BG), LV_PART_MAIN);
     lv_obj_set_style_bg_color(s, lv_color_hex(ind_col), LV_PART_INDICATOR);
     lv_obj_add_event_cb(s, cb, LV_EVENT_RELEASED, (void *)(intptr_t)idx);
     return s;
@@ -149,9 +149,9 @@ static void build_dev_row(int i) {
         lv_obj_t * c = make_card(86);
         card_name(c, D->name, LV_ALIGN_TOP_LEFT, 4, 2);
         R->lbl_state = mk_state(c, LV_ALIGN_TOP_LEFT, 4, 26);
-        mk_btn(c, tr("Open", "Open"),  0x2e6e3a, 58, 30, LV_ALIGN_TOP_RIGHT, -126, 2, on_cover_open,  i);
-        mk_btn(c, tr("Stop", "Stop"),  0x6a5424, 58, 30, LV_ALIGN_TOP_RIGHT,  -64, 2, on_cover_stop,  i);
-        mk_btn(c, tr("Dicht", "Close"), 0x6e3a3a, 58, 30, LV_ALIGN_TOP_RIGHT,   -2, 2, on_cover_close, i);
+        mk_btn(c, tr("Open", "Open"),  THEME_SUCCESS_BG, 58, 30, LV_ALIGN_TOP_RIGHT, -126, 2, on_cover_open,  i);
+        mk_btn(c, tr("Stop", "Stop"),  THEME_BTN_ACCENT, 58, 30, LV_ALIGN_TOP_RIGHT,  -64, 2, on_cover_stop,  i);
+        mk_btn(c, tr("Dicht", "Close"), THEME_DANGER_BG, 58, 30, LV_ALIGN_TOP_RIGHT,   -2, 2, on_cover_close, i);
         R->slider = mk_slider(c, COL_ACCENT, on_cover_pos, i);
         break;
     }
@@ -176,7 +176,7 @@ static void build_dev_row(int i) {
         lv_obj_t * c = make_card(56);
         card_name(c, D->name, LV_ALIGN_LEFT_MID, 4, 0);
         R->btn = mk_btn(c, D->type == HADEV_SCENE ? tr("Activeer", "Activate") : tr("Start", "Run"),
-                        0x2e5e8a, 96, 38, LV_ALIGN_RIGHT_MID, -2, 0, on_run, i);
+                        THEME_ACCENT_FILL, 96, 38, LV_ALIGN_RIGHT_MID, -2, 0, on_run, i);
         break;
     }
     }
@@ -343,16 +343,16 @@ static void refresh_cb(lv_timer_t * t) {
     }
 }
 
-static int scr_light_mode = -1;
+static int scr_theme = -1;
 
 lv_obj_t * screen_lights_create(void) {
     /* Singleton scaffold; rows are (re)built on SCREEN_LOADED. */
-    if (scr_root && scr_light_mode == settings.home_light_mode) return scr_root;
+    if (scr_root && scr_theme == settings.ui_theme) return scr_root;
     if (scr_root) { lv_obj_del(scr_root); scr_root = NULL; }
     /* Rebuild (light-mode/theme toggle): the old timer must go too, or one
      * more paused timer leaks per toggle. */
     if (refresh_timer) { lv_timer_del(refresh_timer); refresh_timer = NULL; }
-    scr_light_mode = settings.home_light_mode;
+    scr_theme = settings.ui_theme;
 
     scr_root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(COL_BG), 0);

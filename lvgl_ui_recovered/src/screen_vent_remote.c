@@ -19,6 +19,15 @@
 #include "ventilation.h"
 #include "settings.h"
 #include "theme.h"
+
+/* Identity colours, same in every theme: one colour per ventilation mode. */
+#define COL_VENT_AWAY   0x3a4a5a
+#define COL_VENT_LOW    0x224d70
+#define COL_VENT_MEDIUM 0x5a4a20
+#define COL_VENT_HIGH   0x804030
+#define COL_VENT_AUTO   0x2e6e3a
+#define COL_VENT_TIMER  0x6a5424
+#define COL_ON_IDENT    0xffffff   /* text on those fills */
 #include <stdio.h>
 #include <string.h>
 
@@ -147,13 +156,13 @@ static void on_scr_event(lv_event_t * e) {
 
 /* ── screen builder ─────────────────────────────────────────── */
 lv_obj_t * screen_vent_remote_create(void) {
-    static int scr_light_mode = -1;
-    if (scr_root && scr_light_mode == settings.home_light_mode) {
+    static int scr_light_mode = -1;   /* cached UI theme (settings.ui_theme) */
+    if (scr_root && scr_light_mode == settings.ui_theme) {
         last_user_ms = lv_tick_get();
         return scr_root;
     }
     if (scr_root) { lv_obj_del(scr_root); scr_root = NULL; }
-    scr_light_mode = settings.home_light_mode;
+    scr_light_mode = settings.ui_theme;
 
     scr_root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(THEME_BG), 0);
@@ -168,7 +177,7 @@ lv_obj_t * screen_vent_remote_create(void) {
     lv_obj_align(back, LV_ALIGN_TOP_LEFT, SX(8), SY(8));
     lv_obj_set_style_bg_color(back, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_set_style_border_color(back, lv_color_hex(THEME_BORDER), 0);
-    lv_obj_set_style_border_width(back, settings.home_light_mode ? 1 : 0, 0);
+    lv_obj_set_style_border_width(back, THEME_IS_LIGHT ? 1 : 0, 0);
     lv_obj_set_style_radius(back, 12, 0);
     lv_obj_set_ext_click_area(back, 25);
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
@@ -189,7 +198,7 @@ lv_obj_t * screen_vent_remote_create(void) {
     lv_obj_align(adv, LV_ALIGN_TOP_RIGHT, -SX(8), SY(8));
     lv_obj_set_style_bg_color(adv, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_set_style_border_color(adv, lv_color_hex(THEME_BORDER), 0);
-    lv_obj_set_style_border_width(adv, settings.home_light_mode ? 1 : 0, 0);
+    lv_obj_set_style_border_width(adv, THEME_IS_LIGHT ? 1 : 0, 0);
     lv_obj_set_style_radius(adv, 10, 0);
     lv_obj_add_event_cb(adv, on_open_advanced, LV_EVENT_CLICKED, NULL);
     lv_obj_t * advl = lv_label_create(adv);
@@ -217,12 +226,12 @@ lv_obj_t * screen_vent_remote_create(void) {
         const char * cmd;    /* NULL for timer */
         int row, col_idx;    /* grid position */
     } btns[] = {
-        { "Weg",    "Away",   0x3a4a5a, on_mode_btn, "away",   0, 0 },
-        { "Laag",   "Low",    0x224d70, on_mode_btn, "low",    0, 1 },
-        { "Middel", "Medium", 0x5a4a20, on_mode_btn, "medium", 0, 2 },
-        { "Hoog",   "High",   0x804030, on_mode_btn, "high",   0, 3 },
-        { "Auto",   "Auto",   0x2e6e3a, on_mode_btn, "auto",   1, 0 },
-        { "Timer",  "Timer",  0x6a5424, on_timer_btn, NULL,    1, 1 },
+        { "Weg",    "Away",   COL_VENT_AWAY,   on_mode_btn, "away",   0, 0 },
+        { "Laag",   "Low",    COL_VENT_LOW,    on_mode_btn, "low",    0, 1 },
+        { "Middel", "Medium", COL_VENT_MEDIUM, on_mode_btn, "medium", 0, 2 },
+        { "Hoog",   "High",   COL_VENT_HIGH,   on_mode_btn, "high",   0, 3 },
+        { "Auto",   "Auto",   COL_VENT_AUTO,   on_mode_btn, "auto",   1, 0 },
+        { "Timer",  "Timer",  COL_VENT_TIMER,  on_timer_btn, NULL,    1, 1 },
     };
 
     int btn_y0   = SY(100);
@@ -250,12 +259,12 @@ lv_obj_t * screen_vent_remote_create(void) {
         lv_obj_set_pos(b, x, y);
         lv_obj_set_style_bg_color(b, lv_color_hex(btns[i].col), 0);
         lv_obj_set_style_radius(b, 12, 0);
-        lv_obj_set_style_border_color(b, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_border_color(b, lv_color_hex(THEME_TEXT_HI), 0);
         lv_obj_set_style_border_width(b, 0, 0);
         lv_obj_add_event_cb(b, btns[i].cb, LV_EVENT_CLICKED,
                             (void *)(uintptr_t)btns[i].cmd);
         lv_obj_t * l = lv_label_create(b);
-        lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_color(l, lv_color_hex(COL_ON_IDENT), 0);
         lv_obj_set_style_text_font(l, SF(20), 0);
         lv_label_set_text(l, tr(btns[i].label_nl, btns[i].label_en));
         lv_obj_center(l);
@@ -280,12 +289,12 @@ lv_obj_t * screen_vent_remote_create(void) {
     lv_obj_set_pos(slider, SX(16), slider_y + SY(30));
     lv_slider_set_range(slider, 0, 100);
     lv_slider_set_value(slider, init_pct, LV_ANIM_OFF);
-    lv_obj_set_style_bg_color(slider, lv_color_hex(settings.home_light_mode ? 0xcfd8dc : 0x1d2c40), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(slider, lv_color_hex(0x3a9bdc), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(slider, lv_color_hex(THEME_OFF), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(slider, lv_color_hex(THEME_ACCENT), LV_PART_INDICATOR);
     lv_obj_set_style_radius(slider, SX(8), LV_PART_MAIN);
     lv_obj_set_style_radius(slider, SX(8), LV_PART_INDICATOR);
     lv_obj_set_style_pad_all(slider, SX(8), LV_PART_KNOB);
-    lv_obj_set_style_bg_color(slider, lv_color_hex(0xffffff), LV_PART_KNOB);
+    lv_obj_set_style_bg_color(slider, lv_color_hex(THEME_TEXT_HI), LV_PART_KNOB);
     lv_obj_add_event_cb(slider, on_slider_changed,  LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_event_cb(slider, on_slider_released, LV_EVENT_RELEASED,      NULL);
 

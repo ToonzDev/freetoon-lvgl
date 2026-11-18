@@ -366,3 +366,76 @@ float energy_solar_w(void) {
     if (settings.enable_ha && ha_state.have_solar) return ha_state.solar_w;
     return meteradapter_have_solar() ? meter_state.solar_w : 0.0f;
 }
+
+/* ---- cost today / yesterday ---------------------------------------------
+ * Fixed tariffs only (dynamic tariffs: BACKLOG #44). Yesterday's total is the
+ * last value computed before midnight; it survives a restart through a tiny
+ * file in the data dir, rewritten at most every 30 min:
+ *   y <yyyymmdd> <euro>   yesterday's final total
+ *   t <yyyymmdd> <euro>   today's running total (becomes "y" after midnight) */
+#include <time.h>
+#include <stdio.h>
+#include <stdlib.h>
+static float  s_cost_yday = -1.0f, s_cost_last = -1.0f;
+static int    s_cost_ymd = 0;           /* day s_cost_last belongs to */
+static time_t s_cost_saved = 0;
+static int    s_cost_loaded = 0;
+
+static int ymd_of(time_t t) {
+    struct tm tm;
+    localtime_r(&t, &tm);
+    return (tm.tm_year + 1900) * 10000 + (tm.tm_mon + 1) * 100 + tm.tm_mday;
+}
+static const char * cost_path(void) {
+    static char buf[256];
+    const char * d = getenv("TOONUI_DATA_DIR");
+    snprintf(buf, sizeof buf, "%s/toonui_cost.txt", (d && *d) ? d : "/mnt/data");
+    return buf;
+}
+static void cost_save(void) {
+    FILE * f = fopen(cost_path(), "w");
+    if (!f) return;
+    int yday = ymd_of(time(NULL) - 86400);
+    if (s_cost_yday >= 0) fprintf(f, "y %d %.3f\n", yday, s_cost_yday);
+    if (s_cost_last >= 0) fprintf(f, "t %d %.3f\n", s_cost_ymd, s_cost_last);
+    fclose(f);
+}
+static void cost_load(void) {
+    s_cost_loaded = 1;
+    FILE * f = fopen(cost_path(), "r");
+    if (!f) return;
+    int today = ymd_of(time(NULL)), yday = ymd_of(time(NULL) - 86400);
+    char k; int d; float v;
+    while (fscanf(f, " %c %d %f", &k, &d, &v) == 3) {
+        if (k == 'y' && d == yday) s_cost_yday = v;
+        if (k == 't' && d == yday && s_cost_yday < 0) s_cost_yday = v;   /* last save before midnight */
+        if (k == 't' && d == today) { s_cost_last = v; s_cost_ymd = d; }
+    }
+    fclose(f);
+}
+
+float energy_cost_today(void) {
+    if (!s_cost_loaded) cost_load();
+    time_t now = time(NULL);
+    int today = ymd_of(now);
+    if (s_cost_ymd && s_cost_ymd != today) {
+        /* midnight passed: the last total of the previous day is yesterday */
+        s_cost_yday = (s_cost_ymd == ymd_of(now - 86400)) ? s_cost_last : -1.0f;
+        s_cost_last = -1.0f;
+        s_cost_ymd = today;
+        cost_save();
+        s_cost_saved = now;
+    }
+    float e = energy_elec_today_kwh(), g = energy_gas_today_m3();
+    if (e < 0 && g < 0) return -1.0f;
+    float c = (e > 0 ? e * settings.rate_elec_kwh : 0.0f) + (g > 0 ? g * settings.rate_gas_m3 : 0.0f);
+    s_cost_last = c;
+    s_cost_ymd = today;
+    if (now - s_cost_saved > 1800) { cost_save(); s_cost_saved = now; }
+    return c;
+}
+
+float energy_cost_yesterday(void) {
+    if (!s_cost_loaded) cost_load();
+    return s_cost_yday;
+}

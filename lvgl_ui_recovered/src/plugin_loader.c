@@ -30,6 +30,7 @@ static int s_plugin_count = 0;
 static const ft_plugin_field_t s_exported_fields[] = {
     FT_SETTINGS_FIELD(language),
     FT_SETTINGS_FIELD(home_light_mode),
+    FT_SETTINGS_FIELD(ui_theme),
     FT_SETTINGS_FIELD(sonos_enabled),
     FT_SETTINGS_FIELD(sonos_host),
     FT_SETTINGS_FIELD(sonos_port),

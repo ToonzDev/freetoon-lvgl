@@ -241,7 +241,7 @@ lv_obj_t * screen_crypto_picker_create(void) {
     lv_obj_set_style_bg_color(save, lv_color_hex(THEME_BTN_ACCENT), 0);
     lv_obj_align(save, LV_ALIGN_TOP_RIGHT, SX(-8), SY(8));
     lv_obj_t * sl = lv_label_create(save);
-    lv_obj_set_style_text_color(sl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(sl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_label_set_text(sl, tr(LV_SYMBOL_SAVE " Opslaan", LV_SYMBOL_SAVE " Save"));
     lv_obj_add_event_cb(save, on_save, LV_EVENT_CLICKED, NULL);
 
@@ -265,7 +265,7 @@ lv_obj_t * screen_crypto_picker_create(void) {
     lv_obj_add_event_cb(ta_search, on_search_focus, LV_EVENT_DEFOCUSED, NULL);
 
     lbl_picked = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_picked, lv_color_hex(settings.home_light_mode ? 0x15803d : 0x88dd66), 0);
+    lv_obj_set_style_text_color(lbl_picked, lv_color_hex(THEME_SUCCESS), 0);
     lv_obj_align(lbl_picked, LV_ALIGN_TOP_MID, 0, SY(112));
 
     lst_results = lv_list_create(scr_root);
@@ -273,7 +273,7 @@ lv_obj_t * screen_crypto_picker_create(void) {
     lv_obj_align(lst_results, LV_ALIGN_TOP_MID, 0, SY(140));
     lv_obj_set_style_bg_color(lst_results, lv_color_hex(THEME_CARD_BG), 0);
     lv_obj_set_style_border_color(lst_results, lv_color_hex(THEME_BORDER), 0);
-    lv_obj_set_style_border_width(lst_results, settings.home_light_mode ? 1 : 0, 0);
+    lv_obj_set_style_border_width(lst_results, THEME_IS_LIGHT ? 1 : 0, 0);
 
     kb = lv_keyboard_create(lv_layer_top());
     lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);

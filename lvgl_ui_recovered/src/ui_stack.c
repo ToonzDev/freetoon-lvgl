@@ -13,9 +13,12 @@
 #include "backlight.h"
 #include "boxtalk.h"
 #include "calendar.h"
+#include "theme.h"
+#include "thermo_quick.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <time.h>
 #ifdef SIM
 #include "layout.h"
 #endif
@@ -98,13 +101,82 @@ void ui_refresh_home(void) {
     }
 }
 
-void ui_refresh_theme(void) {
-    ui_refresh_home();
-}
-
-static uint32_t last_activity_ms = 0;
 static int      is_dimmed = 0;
 static int      is_black_screen = 0;
+static int      theme_refresh_pending = 0;
+
+/* Delete a cached screen that is being rebuilt. LVGL cannot load a screen
+ * once the active one is gone (lv_scr_load_anim touches the old one), so an
+ * active screen first parks on a shared blank; the caller loads the rebuilt
+ * screen right after. */
+void ui_del_screen(lv_obj_t * scr) {
+    if (!scr) return;
+    if (scr == lv_scr_act()) {
+        static lv_obj_t * s_blank = NULL;
+        if (!s_blank) s_blank = lv_obj_create(NULL);
+        lv_scr_load(s_blank);
+    }
+    lv_obj_del(scr);
+}
+
+void ui_replace_screen(lv_obj_t * old_scr, lv_obj_t * new_scr) {
+    if (!old_scr || !new_scr || old_scr == new_scr) return;
+    for (int i = 0; i < sp; i++) {
+        if (stack[i] != old_scr) continue;
+        stack[i] = new_scr;
+        if (i == sp - 1) lv_scr_load(new_scr);
+    }
+}
+
+/* New colour theme: rebuild the cached home screens and drop the cached dim
+ * screens (rebuilt on the next dim). Other screens compare settings.ui_theme
+ * on their next create(). The caller rebuilds the screen it is on. */
+void ui_refresh_theme(void) {
+    /* Black screen: nothing visible, rebuild after wake. Dim screen showing:
+     * rebuild everything under it, then swap the dim screen itself. */
+    if (is_dimmed && is_black_screen) { theme_refresh_pending = 1; return; }
+    int dimmed = is_dimmed && sp > 1;
+    if (dimmed && sp > 2) {
+        /* drop sub-screens under the dim screen (they cache the old theme) */
+        lv_obj_t * dropped[STACK_MAX];
+        unsigned char dropped_own[STACK_MAX];
+        int nd = 0;
+        for (int i = 1; i < sp - 1; i++) { dropped[nd] = stack[i]; dropped_own[nd++] = owned[i]; owned[i] = 0; }
+        stack[1] = stack[sp - 1]; owned[1] = 0; sp = 2;
+        for (int i = 0; i < nd; i++) release_screen(dropped[i], dropped_own[i]);
+    }
+    theme_refresh_pending = 0;
+    /* Home modals live on the top layer and point into the home screen that
+     * is about to be rebuilt: close them first, as ui_dim_now() does. */
+    screen_calendar_close();
+    screen_waste_close();
+    screen_home_dismiss_modals();
+    ui_theme_install();                /* LVGL widget accent */
+    lv_obj_t * old_dim = dimmed ? stack[sp - 1] : NULL;
+    screen_dim_destroy();
+    screen_dim_grid_destroy();
+    if (settings.home_theme == 1) {
+        /* LVGL copes with deleting the active screen as long as another is
+         * loaded right after, which ui_replace_screen does. */
+        lv_obj_t * old = screen_home_stock_create();
+        screen_home_stock_destroy();
+        ui_replace_screen(old, screen_home_stock_create());
+        screen_home_destroy();         /* the inactive freetoon home: rebuilt when picked */
+    } else {
+        screen_home_stock_destroy();
+        ui_refresh_home();
+    }
+    if (old_dim) {
+        lv_obj_t * nd = screen_dim_create();
+        stack[sp - 1] = nd;
+        lv_scr_load(nd);
+    }
+}
+
+static volatile int theme_request = 0;
+void ui_request_theme_refresh(void) { theme_request = 1; }
+
+static uint32_t last_activity_ms = 0;
 
 static lv_obj_t * scr_black = NULL;
 
@@ -126,6 +198,32 @@ lv_obj_t * screen_black_create(void) {
 
 static inline int is_sleep_or_away(void) {
     return (toon_state.active_state == 2 || toon_state.active_state == 3);
+}
+
+/* 1 when now (local time) lies in [from, to) minutes after midnight; the
+ * window may wrap past midnight (23:00-07:00). */
+int ui_time_in_window(int from, int to) {
+    time_t t = time(NULL);
+    struct tm tm;
+    localtime_r(&t, &tm);
+    int m = tm.tm_hour * 60 + tm.tm_min;
+    if (from == to) return 0;
+    return (from < to) ? (m >= from && m < to) : (m >= from || m < to);
+}
+
+static int night_rest_now(void) {
+    return settings.night_rest_enabled &&
+           ui_time_in_window(settings.night_rest_from, settings.night_rest_to);
+}
+
+/* Dimmed state wanted right now: black (backlight off) for Sleep/Away when
+ * that option is on, or during night rest in black mode. */
+static int want_black(void) {
+    return (settings.dim_sleep_away_black && is_sleep_or_away()) ||
+           (night_rest_now() && settings.night_rest_black);
+}
+static int dim_level(void) {
+    return night_rest_now() ? settings.night_rest_brightness : settings.dim_brightness;
 }
 
 static void push_impl(lv_obj_t * scr, int own) {
@@ -178,12 +276,12 @@ void ui_dim_now(void) {
     screen_waste_close();
     screen_home_dismiss_modals();
     screen_settings_close_modals();
-    if (settings.dim_sleep_away_black && is_sleep_or_away()) {
+    if (want_black()) {
         backlight_set(0);
         ui_push(screen_black_create());
         is_black_screen = 1;
     } else {
-        backlight_set(settings.dim_brightness);
+        backlight_set(dim_level());
         ui_push(screen_dim_create());
         is_black_screen = 0;
     }
@@ -216,6 +314,38 @@ void ui_idle_tick(void) {
     /* Bring in calendar data published by worker threads; calendar_state is
      * only written here, on the UI thread (see calendar.c). */
     calendar_apply_pending();
+
+    /* Theme changed from the web API (another thread): back to home, then
+     * rebuild in the new palette. A rebuild deferred by the dim screen runs
+     * once it is gone. */
+    if (theme_request && !is_dimmed) {
+        theme_request = 0;
+        theme_set(settings.ui_theme);
+        screen_settings_close_modals();
+        while (sp > 1) ui_pop();
+        ui_refresh_theme();
+    } else if (theme_refresh_pending && !is_dimmed) {
+        ui_refresh_theme();
+    }
+
+    thermo_quick_tick();               /* end boost / holiday on time */
+
+    /* Automatic theme: check twice a minute, switch when the period changes
+     * (also while dimmed, so the night theme reaches the dim screen). */
+    {
+        static uint32_t last_auto_ms = 0;
+        uint32_t nt = lv_tick_get();
+        if (settings.theme_auto && nt - last_auto_ms > 30000) {
+            last_auto_ms = nt;
+            int want = theme_auto_pick();
+            if (want >= 0 && want != settings.ui_theme) {
+                fprintf(stderr, "[ui] automatic theme -> %d\n", want);
+                theme_set(want);
+                settings_save();
+                ui_refresh_theme();
+            }
+        }
+    }
 
     /* Process any queued wake first so a touch immediately undims, even
        if the on-screen click handler couldn't run for some reason. */
@@ -265,7 +395,7 @@ void ui_idle_tick(void) {
                 /* Screen is black because state was Slapen (2) or Weg (3).
                  * If state changed to something else (e.g. Thuis (1), Comfort (0), Manual (-1)),
                  * wake up automatically. */
-                if (!is_sleep_or_away()) {
+                if (!want_black()) {
                     fprintf(stderr, "[ui] active_state changed from %d to %d -> waking from black screen\n",
                             prev_as, toon_state.active_state);
                     ui_wake_now();
@@ -274,7 +404,7 @@ void ui_idle_tick(void) {
             } else {
                 /* Screen is dimmed on normal dim screen.
                  * If state changed to Slapen (2) or Weg (3), switch to black screen. */
-                if (settings.dim_sleep_away_black && is_sleep_or_away()) {
+                if (want_black()) {
                     fprintf(stderr, "[ui] active_state changed from %d to %d while dimmed -> switching to black screen\n",
                             prev_as, toon_state.active_state);
                     backlight_set(0);
@@ -290,14 +420,33 @@ void ui_idle_tick(void) {
         }
     }
 
-    /* Live settings change: if user disabled dim_sleep_away_black while dimmed black, switch back to normal dim */
-    if (is_dimmed && is_black_screen && !settings.dim_sleep_away_black) {
-        backlight_set(settings.dim_brightness);
+    /* Black no longer wanted while dimmed black (option switched off, night
+     * rest over): back to the normal dim screen. Night rest starting while
+     * dimmed: go black, or follow its brightness (checked every ~20 s). */
+    if (is_dimmed && is_black_screen && !want_black()) {
+        backlight_set(dim_level());
         if (sp > 1) {
             stack[sp - 1] = screen_dim_create();
             lv_scr_load(stack[sp - 1]);
         }
         is_black_screen = 0;
+    }
+    {
+        static uint32_t last_night_ms = 0;
+        uint32_t nt = lv_tick_get();
+        if (is_dimmed && !is_black_screen && nt - last_night_ms > 20000) {
+            last_night_ms = nt;
+            if (want_black()) {
+                backlight_set(0);
+                if (sp > 1) {
+                    stack[sp - 1] = screen_black_create();
+                    lv_scr_load(stack[sp - 1]);
+                }
+                is_black_screen = 1;
+            } else {
+                backlight_set(dim_level());
+            }
+        }
     }
 
     uint32_t now = lv_tick_get();
@@ -353,19 +502,20 @@ void ui_idle_tick(void) {
         }
     }
 
-    if (!settings.auto_dim_enabled) return;
+    /* Night rest dims after the idle time even when auto-dim is off. */
+    if (!settings.auto_dim_enabled && !night_rest_now()) return;
     uint32_t threshold = (uint32_t)settings.auto_dim_seconds * 1000u;
     if (!is_dimmed && elapsed_ms >= threshold) {
         fprintf(stderr, "[ui] dimming after %u ms idle\n", elapsed_ms);
         screen_calendar_close();
         screen_waste_close();
         screen_home_dismiss_modals();
-        if (settings.dim_sleep_away_black && is_sleep_or_away()) {
+        if (want_black()) {
             backlight_set(0);
             ui_push(screen_black_create());
             is_black_screen = 1;
         } else {
-            backlight_set(settings.dim_brightness);
+            backlight_set(dim_level());
             ui_push(screen_dim_create());
             is_black_screen = 0;
         }
@@ -374,14 +524,13 @@ void ui_idle_tick(void) {
     }
 }
 
-/* Toon 1 only: theme extension on top of LVGL's default theme that drops the
- * button shadow. The default theme gives every lv_btn a grey 50% shadow (the
- * light bottom edge on tiles), redrawn (blurred, LV_SHADOW_CACHE_SIZE 0) on
- * every frame: ~45% of a Settings scroll frame (sim scrollbench), which made
- * scrolling on a Toon 1 visibly heavy. The Toon 2 has CPU to spare and keeps
- * the look. Buttons that set their own shadow keep it (local styles win over
+/* Theme extension on top of LVGL's default theme that drops the button
+ * shadow. The default theme gives every lv_btn a grey 50% shadow (the light
+ * bottom edge on tiles), redrawn (blurred, LV_SHADOW_CACHE_SIZE 0) on every
+ * frame: ~45% of a Settings scroll frame (sim scrollbench), visibly heavy on
+ * a Toon 1. Since the 1.1 themes it applies to both Toons: flat cards read
+ * calmer. Buttons that set their own shadow keep it (local styles win over
  * theme styles). */
-#ifdef TOON1
 static void theme_noshadow_apply(lv_theme_t * th, lv_obj_t * obj) {
     (void)th;
     static lv_style_t st;
@@ -395,18 +544,25 @@ static void theme_noshadow_apply(lv_theme_t * th, lv_obj_t * obj) {
     if (lv_obj_check_type(obj, &lv_btn_class)) lv_obj_add_style(obj, &st, 0);
 }
 
-#endif
-
 void ui_theme_install(void) {
-#ifdef TOON1
+    lv_disp_t * d = lv_disp_get_default();
+    if (!d) return;
+    /* LVGL's own widget styles (switch, slider, checkbox, spinner, focus
+     * rings) take the theme accent instead of LVGL's default blue. Re-running
+     * this on a theme change re-inits those shared styles in place, so every
+     * existing widget picks up the new accent. */
+    lv_theme_t * def = lv_theme_default_init(d, lv_color_hex(THEME_ACCENT_FILL),
+                                             lv_color_hex(THEME_DANGER),
+                                             LV_THEME_DEFAULT_DARK, LV_FONT_DEFAULT);
+    /* Flat buttons everywhere (design 1.1): the default drop shadow made
+     * every card look raised. On the Toon 1 it also saves ~45% of a scroll
+     * frame. Buttons that set their own shadow keep it. */
     static lv_theme_t th;
-    lv_theme_t * base = lv_disp_get_theme(NULL);
-    if (!base || base == &th) return;
-    th = *base;
-    lv_theme_set_parent(&th, base);
+    if (lv_disp_get_theme(d) == &th) return;   /* wrapper already installed */
+    th = *def;
+    lv_theme_set_parent(&th, def);
     lv_theme_set_apply_cb(&th, theme_noshadow_apply);
-    lv_disp_set_theme(NULL, &th);
-#endif
+    lv_disp_set_theme(d, &th);
 }
 
 void ui_init(void) {
