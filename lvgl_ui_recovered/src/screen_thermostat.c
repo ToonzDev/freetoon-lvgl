@@ -14,6 +14,16 @@
 #include <stdio.h>
 #include <time.h>
 
+/* Identity colours, same in every theme: programme / mode buttons. */
+#define COL_PROG_SCHED   0x2f6b6b   /* "Scheduled" mode */
+#define COL_PROG_MANUAL  0x6a5424   /* "Manual" mode */
+#define COL_PROG_COMFORT 0xcc7733
+#define COL_PROG_HOME    0x3377cc
+#define COL_PROG_SLEEP   0x553388
+#define COL_PROG_AWAY    0x557788
+#define COL_ON_IDENT     0xffffff   /* text/border on those identity fills */
+#define COL_DROP_ICON    0xff3333   /* hidden legacy drop icon, real-world red */
+
 static lv_obj_t * scr_root = NULL;
 static lv_obj_t * lbl_temp;
 static lv_obj_t * lbl_humidity;
@@ -94,7 +104,7 @@ static void refresh_cb(lv_timer_t * t) {
         lv_obj_add_flag(lbl_conn, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_label_set_text(lbl_conn, tr("BoxTalk: verbinden...", "BoxTalk: connecting..."));
-        lv_obj_set_style_text_color(lbl_conn, lv_color_hex(0xff8866), 0);
+        lv_obj_set_style_text_color(lbl_conn, lv_color_hex(THEME_WARNING), 0);
         lv_obj_clear_flag(lbl_conn, LV_OBJ_FLAG_HIDDEN);
     }
 
@@ -119,8 +129,8 @@ static void refresh_cb(lv_timer_t * t) {
     }
     int preset_idx = (preset >= 0 && preset <= 3) ? (2 + preset) : -1;
     static const uint32_t prog_cols[6] = {
-        0x2f6b6b, 0x6a5424,
-        0xcc7733, 0x3377cc, 0x553388, 0x557788
+        COL_PROG_SCHED, COL_PROG_MANUAL,
+        COL_PROG_COMFORT, COL_PROG_HOME, COL_PROG_SLEEP, COL_PROG_AWAY
     };
     for (int i = 0; i < 6; i++) {
         if (!btn_prog[i]) continue;
@@ -135,12 +145,12 @@ static void refresh_cb(lv_timer_t * t) {
         int active = (i == mode_idx) || (i == preset_idx);
         lv_obj_set_style_border_width(btn_prog[i], active ? 2 : 0, 0);
         lv_obj_set_style_border_color(btn_prog[i],
-                                      lv_color_hex(settings.home_light_mode ? 0x1e2838 : 0xffffff), 0);
+                                      lv_color_hex(THEME_TEXT_HI), 0);
         lv_obj_set_style_bg_color(btn_prog[i],
-                                  lv_color_hex(active ? prog_cols[i] : (settings.home_light_mode ? 0xd0d8e2 : 0x243242)), 0);
+                                  lv_color_hex(active ? prog_cols[i] : THEME_ROW_BG), 0);
         lv_obj_t * bl = lv_obj_get_child(btn_prog[i], 0);
         if (bl) {
-            lv_obj_set_style_text_color(bl, lv_color_hex(active ? 0xffffff : (settings.home_light_mode ? 0x1e2838 : 0x88aabb)), 0);
+            lv_obj_set_style_text_color(bl, lv_color_hex(active ? COL_ON_IDENT : THEME_TEXT_DIM), 0);
         }
     }
     if (toon_state.humidity > 0)
@@ -173,16 +183,16 @@ static void refresh_cb(lv_timer_t * t) {
         boxtalk_preheat_eta(eta, sizeof eta);
         lv_label_set_text_fmt(lbl_burner, tr("Voorverwarmen naar %.1f°%s", "Pre-heating to %.1f°%s"),
                               boxtalk_preheat_target(), eta);
-        lv_obj_set_style_text_color(lbl_burner, lv_color_hex(0xffaa44), 0);
+        lv_obj_set_style_text_color(lbl_burner, lv_color_hex(THEME_WARNING), 0);
     } else if (toon_state.burner_on) {
         lv_label_set_text(lbl_burner, tr("Verwarmen", "Heating"));
-        lv_obj_set_style_text_color(lbl_burner, lv_color_hex(0xff6644), 0);
+        lv_obj_set_style_text_color(lbl_burner, lv_color_hex(THEME_GLOW), 0);
     } else if (toon_state.dhw_on) {
         lv_label_set_text(lbl_burner, tr("Warm water", "Hot water"));
-        lv_obj_set_style_text_color(lbl_burner, lv_color_hex(0x44aaff), 0);
+        lv_obj_set_style_text_color(lbl_burner, lv_color_hex(THEME_ACCENT), 0);
     } else {
         lv_label_set_text(lbl_burner, tr("Ketel rust", "Boiler idle"));
-        lv_obj_set_style_text_color(lbl_burner, lv_color_hex(0x88aabb), 0);
+        lv_obj_set_style_text_color(lbl_burner, lv_color_hex(THEME_TEXT_DIM), 0);
     }
     lv_obj_add_flag(img_flame,  LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(img_faucet, LV_OBJ_FLAG_HIDDEN);
@@ -216,15 +226,15 @@ static void refresh_cb(lv_timer_t * t) {
     lv_obj_invalidate(scr_root);
 }
 
-static int scr_light_mode = -1;
+static int scr_light_mode = -1;   /* cached UI theme (settings.ui_theme) */
 
 lv_obj_t * screen_thermostat_create(void) {
-    if (scr_root && scr_light_mode == settings.home_light_mode) return scr_root;  /* cached */
+    if (scr_root && scr_light_mode == settings.ui_theme) return scr_root;  /* cached */
     if (scr_root) {
         lv_obj_del(scr_root);
         scr_root = NULL;
     }
-    scr_light_mode = settings.home_light_mode;
+    scr_light_mode = settings.ui_theme;
 
     scr_root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(THEME_BG), 0);
@@ -274,7 +284,7 @@ lv_obj_t * screen_thermostat_create(void) {
 
     /* Connection indicator just under the Schedule button (hidden during normal operation) */
     lbl_conn = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_conn, lv_color_hex(0xff8866), 0);
+    lv_obj_set_style_text_color(lbl_conn, lv_color_hex(THEME_WARNING), 0);
     lv_obj_set_style_text_font(lbl_conn, SF(18), 0);
     lv_obj_align(lbl_conn, LV_ALIGN_TOP_RIGHT, -20, 95);
     lv_label_set_text(lbl_conn, tr("BoxTalk: verbinden...", "BoxTalk: connecting..."));
@@ -295,7 +305,7 @@ lv_obj_t * screen_thermostat_create(void) {
     img_temp_flame = lv_img_create(scr_root);
     lv_img_set_src(img_temp_flame, &icon_radiator);
     lv_img_set_zoom(img_temp_flame, 256);
-    lv_obj_set_style_img_recolor(img_temp_flame, lv_color_hex(0xff6644), 0);
+    lv_obj_set_style_img_recolor(img_temp_flame, lv_color_hex(THEME_GLOW), 0);
     lv_obj_set_style_img_recolor_opa(img_temp_flame, 255, 0);
     lv_obj_align(img_temp_flame, LV_ALIGN_CENTER, SX(145), SY(-75));
     lv_obj_add_flag(img_temp_flame, LV_OBJ_FLAG_HIDDEN);
@@ -308,8 +318,8 @@ lv_obj_t * screen_thermostat_create(void) {
         const char * names[6] = {tr("Programma", "Scheduled"), tr("Handmatig", "Manual"),
                                  tr("Comfort", "Comfort"), tr("Thuis", "Home"),
                                  tr("Slapen", "Sleep"), tr("Weg", "Away")};
-        uint32_t     cols[6]  = {0x2f6b6b, 0x6a5424,
-                                 0xcc7733, 0x3377cc, 0x553388, 0x557788};
+        uint32_t     cols[6]  = {COL_PROG_SCHED, COL_PROG_MANUAL,
+                                 COL_PROG_COMFORT, COL_PROG_HOME, COL_PROG_SLEEP, COL_PROG_AWAY};
 
         /* Row 1: Mode buttons (0..1) */
         const int bw_mode = SX(170), bh_mode = SY(44), gap_mode = SX(14);
@@ -321,13 +331,13 @@ lv_obj_t * screen_thermostat_create(void) {
                          -total_mode / 2 + i * (bw_mode + gap_mode) + bw_mode / 2, SY(-20));
             lv_obj_set_style_bg_color(b, lv_color_hex(cols[i]), 0);
             lv_obj_set_style_radius(b, 10, 0);
-            lv_obj_set_style_border_color(b, lv_color_hex(0xffffff), 0);
+            lv_obj_set_style_border_color(b, lv_color_hex(THEME_TEXT_HI), 0);
             lv_obj_set_style_border_width(b, 0, 0);
             lv_obj_add_event_cb(b, on_program_tap, LV_EVENT_CLICKED,
                                 (void *)(intptr_t)i);
             lv_obj_t * bl = lv_label_create(b);
             lv_label_set_text(bl, names[i]);
-            lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+            lv_obj_set_style_text_color(bl, lv_color_hex(COL_ON_IDENT), 0);
             lv_obj_set_style_text_font(bl, SF(18), 0);
             lv_obj_center(bl);
             btn_prog[i] = b;
@@ -343,13 +353,13 @@ lv_obj_t * screen_thermostat_create(void) {
                          -total_pre / 2 + (i - 2) * (bw_pre + gap_pre) + bw_pre / 2, SY(36));
             lv_obj_set_style_bg_color(b, lv_color_hex(cols[i]), 0);
             lv_obj_set_style_radius(b, 10, 0);
-            lv_obj_set_style_border_color(b, lv_color_hex(0xffffff), 0);
+            lv_obj_set_style_border_color(b, lv_color_hex(THEME_TEXT_HI), 0);
             lv_obj_set_style_border_width(b, 0, 0);
             lv_obj_add_event_cb(b, on_program_tap, LV_EVENT_CLICKED,
                                 (void *)(intptr_t)i);
             lv_obj_t * bl = lv_label_create(b);
             lv_label_set_text(bl, names[i]);
-            lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+            lv_obj_set_style_text_color(bl, lv_color_hex(COL_ON_IDENT), 0);
             lv_obj_set_style_text_font(bl, SF(18), 0);
             lv_obj_center(bl);
             btn_prog[i] = b;
@@ -375,7 +385,7 @@ lv_obj_t * screen_thermostat_create(void) {
     lv_label_set_text(lbl_voc, tr("eCO2 -- ppm", "eCO2 -- ppm"));
 
     lbl_water = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_water, lv_color_hex(settings.home_light_mode ? 0x0284c7 : 0x66aaff), 0);
+    lv_obj_set_style_text_color(lbl_water, lv_color_hex(THEME_INFO), 0);
     lv_obj_set_style_text_font(lbl_water, SF(22), 0);
     lv_obj_align(lbl_water, LV_ALIGN_BOTTOM_LEFT, 30,
                  SY(-190) - (DISP_VER < 600 ? 8 : 0));
@@ -435,14 +445,14 @@ lv_obj_t * screen_thermostat_create(void) {
        to their right and is the only thing that ever fills its area. */
     img_flame = lv_img_create(scr_root);
     lv_img_set_src(img_flame, &icon_flame);
-    lv_obj_set_style_img_recolor(img_flame, lv_color_hex(0xff6644), 0);
+    lv_obj_set_style_img_recolor(img_flame, lv_color_hex(THEME_GLOW), 0);
     lv_obj_set_style_img_recolor_opa(img_flame, 255, 0);
     lv_obj_align(img_flame, LV_ALIGN_BOTTOM_LEFT, 30, -340);
     lv_obj_add_flag(img_flame, LV_OBJ_FLAG_HIDDEN);
 
     img_faucet = lv_img_create(scr_root);
     lv_img_set_src(img_faucet, &icon_faucet);
-    lv_obj_set_style_img_recolor(img_faucet, lv_color_hex(0xcccccc), 0);
+    lv_obj_set_style_img_recolor(img_faucet, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_img_recolor_opa(img_faucet, 255, 0);
     lv_obj_align(img_faucet, LV_ALIGN_BOTTOM_LEFT, 26, -344);
     lv_obj_add_flag(img_faucet, LV_OBJ_FLAG_HIDDEN);
@@ -450,7 +460,7 @@ lv_obj_t * screen_thermostat_create(void) {
     /* Red drop overlapping the faucet spout */
     img_drop = lv_img_create(scr_root);
     lv_img_set_src(img_drop, &icon_drop);
-    lv_obj_set_style_img_recolor(img_drop, lv_color_hex(0xff3333), 0);
+    lv_obj_set_style_img_recolor(img_drop, lv_color_hex(COL_DROP_ICON), 0);
     lv_obj_set_style_img_recolor_opa(img_drop, 255, 0);
     lv_obj_align(img_drop, LV_ALIGN_BOTTOM_LEFT, 48, -320);
     lv_obj_add_flag(img_drop, LV_OBJ_FLAG_HIDDEN);
@@ -471,14 +481,14 @@ lv_obj_t * screen_thermostat_create(void) {
     lv_label_set_text(lbl_ch_hdr, tr("CV-water", "CH water"));
 
     lbl_flow = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_flow, lv_color_hex(0xff8866), 0);
+    lv_obj_set_style_text_color(lbl_flow, lv_color_hex(THEME_GLOW), 0);
     lv_obj_set_style_text_font(lbl_flow, SF(22), 0);
     lv_obj_align(lbl_flow, LV_ALIGN_BOTTOM_RIGHT, -40,
                  SY(-220) - (DISP_VER < 600 ? 8 : 0));
     lv_label_set_text(lbl_flow, tr("Aanvoer  -- C", "Flow  -- C"));
 
     lbl_return = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_return, lv_color_hex(0x66aaff), 0);
+    lv_obj_set_style_text_color(lbl_return, lv_color_hex(THEME_INFO), 0);
     lv_obj_set_style_text_font(lbl_return, SF(22), 0);
     lv_obj_align(lbl_return, LV_ALIGN_BOTTOM_RIGHT, -40,
                  SY(-192) - (DISP_VER < 600 ? 8 : 0));

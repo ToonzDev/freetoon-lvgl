@@ -35,8 +35,8 @@
 #define COL_CARD     THEME_CARD_BG
 #define COL_TEXT_HI  THEME_TEXT_HI
 #define COL_TEXT_DIM THEME_TEXT_DIM
-#define COL_OK       (settings.home_light_mode ? 0x16a34a : 0x2e6e3a)
-#define COL_WARN     (settings.home_light_mode ? 0xdc2626 : 0x6e3a3a)
+#define COL_OK       THEME_SUCCESS_BG
+#define COL_WARN     THEME_DANGER_BG
 #define COL_OFF      THEME_OFF
 
 #include "screen_zwave.h"
@@ -732,6 +732,7 @@ static void on_row_rename(lv_event_t * e) {
     lv_obj_set_style_bg_color(save, lv_color_hex(COL_OK), 0);
     lv_obj_add_event_cb(save, on_rename_save, LV_EVENT_CLICKED, NULL);
     lv_obj_t * sl = lv_label_create(save); lv_label_set_text(sl, tr("Opslaan", "Save"));
+    lv_obj_set_style_text_color(sl, lv_color_hex(THEME_ON_ACCENT), 0);
     lv_obj_center(sl);
 
     lv_obj_t * kb = lv_keyboard_create(g_rename_modal);
@@ -818,6 +819,7 @@ static void on_row_delete(lv_event_t * e) {
     lv_obj_set_style_bg_color(del, lv_color_hex(COL_WARN), 0);
     lv_obj_add_event_cb(del, on_delete_confirm, LV_EVENT_CLICKED, NULL);
     lv_obj_t * dl = lv_label_create(del); lv_label_set_text(dl, tr("Forceer verwijder", "Force remove"));
+    lv_obj_set_style_text_color(dl, lv_color_hex(THEME_ON_ACCENT), 0);
     lv_obj_center(dl);
 }
 
@@ -887,7 +889,7 @@ static void build_rows(void) {
         lv_obj_set_size(row, SX(940), SY(84));
         lv_obj_set_style_bg_color(row, lv_color_hex(COL_CARD), 0);
         lv_obj_set_style_border_color(row, lv_color_hex(THEME_BORDER), 0);
-        lv_obj_set_style_border_width(row, settings.home_light_mode ? 1 : 0, 0);
+        lv_obj_set_style_border_width(row, THEME_IS_LIGHT ? 1 : 0, 0);
         lv_obj_set_style_radius(row, 12, 0);
         lv_obj_set_style_pad_all(row, 10, 0);
         lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
@@ -913,6 +915,7 @@ static void build_rows(void) {
                 lv_obj_set_style_bg_color(del, lv_color_hex(COL_WARN), 0);
                 lv_obj_add_event_cb(del, on_row_delete, LV_EVENT_CLICKED, d);
                 lv_obj_t * dl = lv_label_create(del); lv_label_set_text(dl, tr("Verwijder", "Delete"));
+                lv_obj_set_style_text_color(dl, lv_color_hex(THEME_ON_ACCENT), 0);
                 lv_obj_center(dl);
                 x -= 120;
             }
@@ -920,7 +923,7 @@ static void build_rows(void) {
             lv_obj_t * ren = lv_btn_create(row);
             lv_obj_set_size(ren, SX(110), SY(48));
             lv_obj_align(ren, LV_ALIGN_RIGHT_MID, SX(x), 0);
-            lv_obj_set_style_bg_color(ren, lv_color_hex(0x2a4060), 0);
+            lv_obj_set_style_bg_color(ren, lv_color_hex(THEME_BTN_ACCENT), 0);
             lv_obj_add_event_cb(ren, on_row_rename, LV_EVENT_CLICKED, d);
             lv_obj_t * rl = lv_label_create(ren); lv_label_set_text(rl, tr("Hernoem", "Rename"));
             lv_obj_center(rl);
@@ -1060,7 +1063,8 @@ static lv_obj_t * mk_action_btn(lv_obj_t * parent, const char * txt,
     lv_obj_set_ext_click_area(b, 10);
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t * l = lv_label_create(b);
-    lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
+    /* neutral button: normal text; ok/remove fills: text on accent */
+    lv_obj_set_style_text_color(l, lv_color_hex(col == (uint32_t)THEME_BTN_ACCENT ? THEME_TEXT_HI : THEME_ON_ACCENT), 0);
     lv_obj_set_style_text_font(l, SF(18), 0);
     lv_label_set_text(l, txt);
     lv_obj_center(l);
@@ -1068,15 +1072,15 @@ static lv_obj_t * mk_action_btn(lv_obj_t * parent, const char * txt,
     return b;
 }
 
-static int scr_light_mode = -1;
+static int scr_light_mode = -1;   /* cached UI theme (settings.ui_theme) */
 
 lv_obj_t * screen_zwave_create(void) {
-    if (scr_root && scr_light_mode == settings.home_light_mode) return scr_root;
+    if (scr_root && scr_light_mode == settings.ui_theme) return scr_root;
     if (scr_root) { lv_obj_del(scr_root); scr_root = NULL; }
     /* Rebuild (light-mode/theme toggle): the old timer must go too, or one
      * more paused timer leaks per toggle. */
     if (refresh_timer) { lv_timer_del(refresh_timer); refresh_timer = NULL; }
-    scr_light_mode = settings.home_light_mode;
+    scr_light_mode = settings.ui_theme;
     g_rows_built = 0;
 
     scr_root = lv_obj_create(NULL);
@@ -1134,7 +1138,7 @@ lv_obj_t * screen_zwave_create(void) {
     lv_obj_clear_flag(bar_actions, LV_OBJ_FLAG_SCROLLABLE);
     mk_action_btn(bar_actions, tr("+ Apparaat toevoegen", "+ Add device"), COL_OK,   on_include, 0,   &btn_inc_lbl);
     mk_action_btn(bar_actions, tr("- Verwijderen", "- Remove"),     COL_WARN, on_exclude, 320, &btn_exc_lbl);
-    mk_action_btn(bar_actions, tr("Netwerk herstellen", "Heal network"), 0x2a4060, on_heal,    640, NULL);
+    mk_action_btn(bar_actions, tr("Netwerk herstellen", "Heal network"), THEME_BTN_ACCENT, on_heal,    640, NULL);
     if (!settings.enable_zwave) lv_obj_add_flag(bar_actions, LV_OBJ_FLAG_HIDDEN);
 
     lbl_status = lv_label_create(scr_root);
