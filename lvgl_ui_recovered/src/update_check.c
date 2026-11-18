@@ -91,7 +91,35 @@ static int json_extract_str(const char * src, const char * key,
                 p += 2;
                 continue;
             }
-            p++;   /* skip unknown escape */
+            if (p[1] == 'r') { p += 2; continue; }            /* CRLF notes: drop \r */
+            if (p[1] == 't') { out[n++] = ' '; p += 2; continue; }
+            if (p[1] == '/') { out[n++] = '/'; p += 2; continue; }
+            if (p[1] == 'u') {                                 /* \uXXXX -> UTF-8 */
+                unsigned cp = 0; int ok = 1;
+                for (int i = 2; i < 6; i++) {
+                    char c = p[i]; cp <<= 4;
+                    if (c >= '0' && c <= '9') cp |= (unsigned)(c - '0');
+                    else if (c >= 'a' && c <= 'f') cp |= (unsigned)(c - 'a' + 10);
+                    else if (c >= 'A' && c <= 'F') cp |= (unsigned)(c - 'A' + 10);
+                    else { ok = 0; break; }
+                }
+                if (!ok) { p += 2; continue; }
+                p += 6;
+                if (cp >= 0xD800 && cp <= 0xDFFF) continue;    /* surrogate half (emoji): drop */
+                if (cp < 0x80) out[n++] = (char)cp;
+                else if (cp < 0x800) {
+                    if (n + 2 >= outsz) break;
+                    out[n++] = (char)(0xC0 | (cp >> 6));
+                    out[n++] = (char)(0x80 | (cp & 0x3F));
+                } else {
+                    if (n + 3 >= outsz) break;
+                    out[n++] = (char)(0xE0 | (cp >> 12));
+                    out[n++] = (char)(0x80 | ((cp >> 6) & 0x3F));
+                    out[n++] = (char)(0x80 | (cp & 0x3F));
+                }
+                continue;
+            }
+            p += 2;   /* skip other escapes (\b, \f) entirely */
             continue;
         }
         out[n++] = *p++;
