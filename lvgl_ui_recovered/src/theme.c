@@ -44,7 +44,7 @@ static const ft_palette_t s_palettes[UI_THEME_COUNT] = {
         .danger = 0xd42f2f, .danger_bg = 0xd93a3a,
         .warning = 0xc96f04, .glow = 0xe8532f, .info = 0x0b7cc1,
         .divider = 0xe1e7ee, .input_bg = 0xf5f7fa, .offline = 0x9aa5b4,
-        .dim_bg = 0xdde3ea, .dim_text = 0x1b2533, .dim_text_dim = 0x5b6d84,
+        .dim_bg = 0xf1f4f8, .dim_text = 0x1b2533, .dim_text_dim = 0x5b6d84,
         /* the original Eneco Toon colours */
         .classic_canvas = 0xdcdcdc, .classic_header = 0xf0f0f0,
         .classic_title = 0x565656, .classic_accent = 0xe64f0a,
