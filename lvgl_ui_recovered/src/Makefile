@@ -137,7 +137,7 @@ $(shell grep -q has_gct lvgl/src/extra/libs/gif/gifdec.c 2>/dev/null || (cd lvgl
 
 # Sources
 LVGL_SRC      := $(shell find lvgl/src -name '*.c')
-APP_SRC       := $(ENTRY) $(GLIBC_SRC) boxtalk.c ui_stack.c screen_home.c screen_home_stock.c screen_thermostat.c \
+APP_SRC       := $(ENTRY) $(GLIBC_SRC) boxtalk.c ui_stack.c screen_home.c screen_home_stock.c screen_thermostat.c thermo_quick.c \
                  screen_dim.c screen_settings.c screen_schedule.c \
                  screen_stats.c screen_forecast.c screen_weather_hourly.c screen_inbox.c \
                  screen_heater_advanced.c \

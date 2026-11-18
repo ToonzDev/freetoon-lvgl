@@ -14,6 +14,7 @@
 #include "boxtalk.h"
 #include "calendar.h"
 #include "theme.h"
+#include "thermo_quick.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -326,6 +327,8 @@ void ui_idle_tick(void) {
     } else if (theme_refresh_pending && !is_dimmed) {
         ui_refresh_theme();
     }
+
+    thermo_quick_tick();               /* end boost / holiday on time */
 
     /* Automatic theme: check twice a minute, switch when the period changes
      * (also while dimmed, so the night theme reaches the dim screen). */

@@ -133,6 +133,8 @@ settings_t settings = {
     .theme_auto_evening       = 19 * 60,
     .theme_auto_night         = 23 * 60,
     .energy_cost_tile         = 0,
+    .boost_until              = 0,
+    .holiday_until            = 0,
     .stock_tiles              = "",
     .stock_big_indoor         = 1,
     .calendar_ha_entity  = "",
@@ -394,6 +396,11 @@ void settings_load(void) {
         else if (strcmp(k, "night_rest_enabled") == 0) settings.night_rest_enabled = iv;
         else if (strcmp(k, "theme_auto")         == 0) settings.theme_auto = (iv >= 0 && iv <= 2) ? iv : 0;
         else if (strcmp(k, "energy_cost_tile")   == 0) settings.energy_cost_tile = iv ? 1 : 0;
+        else if (strcmp(k, "boost_until")        == 0) settings.boost_until = iv;
+        else if (strcmp(k, "boost_target_centi") == 0) settings.boost_target_centi = iv;
+        else if (strcmp(k, "boost_prev_centi")   == 0) settings.boost_prev_centi = iv;
+        else if (strcmp(k, "boost_prev_manual")  == 0) settings.boost_prev_manual = iv;
+        else if (strcmp(k, "holiday_until")      == 0) settings.holiday_until = iv;
         else if (strcmp(k, "theme_auto_day")     == 0) settings.theme_auto_day = (iv == 2) ? 2 : 1;
         else if (strcmp(k, "theme_auto_morning") == 0) settings.theme_auto_morning = (iv >= 0 && iv < 1440) ? iv : 7 * 60;
         else if (strcmp(k, "theme_auto_evening") == 0) settings.theme_auto_evening = (iv >= 0 && iv < 1440) ? iv : 19 * 60;
@@ -1092,6 +1099,11 @@ static void settings_write_file(void) {
     fprintf(f, "night_rest_enabled=%d\n", settings.night_rest_enabled);
     fprintf(f, "theme_auto=%d\n", settings.theme_auto);
     fprintf(f, "energy_cost_tile=%d\n", settings.energy_cost_tile);
+    fprintf(f, "boost_until=%d\n", settings.boost_until);
+    fprintf(f, "boost_target_centi=%d\n", settings.boost_target_centi);
+    fprintf(f, "boost_prev_centi=%d\n", settings.boost_prev_centi);
+    fprintf(f, "boost_prev_manual=%d\n", settings.boost_prev_manual);
+    fprintf(f, "holiday_until=%d\n", settings.holiday_until);
     fprintf(f, "theme_auto_day=%d\n", settings.theme_auto_day);
     fprintf(f, "theme_auto_morning=%d\n", settings.theme_auto_morning);
     fprintf(f, "theme_auto_evening=%d\n", settings.theme_auto_evening);

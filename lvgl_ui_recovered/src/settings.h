@@ -420,6 +420,14 @@ typedef struct {
     /* Energy tile: show today's cost (electricity + gas at the fixed
      * tariffs) and yesterday's instead of the gas line. Off by default. */
     int   energy_cost_tile;
+
+    /* Quick thermostat actions (thermo_quick.c). Unix times, 0 = not active.
+     * Kept here so a UI restart does not forget to end them. */
+    int   boost_until;              /* Boost +1 °C ends */
+    int   boost_target_centi;       /* setpoint the boost set */
+    int   boost_prev_centi;         /* setpoint before the boost */
+    int   boost_prev_manual;        /* 1 = was manual: restore that setpoint */
+    int   holiday_until;            /* holiday (Away, held) ends, programme resumes */
 } settings_t;
 
 #define FORECAST_AUTO   0

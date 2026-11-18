@@ -10,6 +10,8 @@
 #include "icons.h"
 #include "settings.h"
 #include "theme.h"
+#include "thermo_quick.h"
+#include <time.h>
 #include "fonts_opensans.h"
 #include "pin_modal.h"
 #include <stdio.h>
@@ -56,6 +58,10 @@ static lv_timer_t * refresh_timer = NULL;
  * both get a white outline; the two highlights live on different buttons
  * so they don't clash. */
 static lv_obj_t * btn_prog[6] = {0};
+static lv_obj_t * btn_boost = NULL, * lbl_boost = NULL;
+static lv_obj_t * btn_holiday = NULL, * lbl_holiday = NULL;
+static lv_obj_t * hol_modal = NULL, * hol_lbl_date = NULL;
+static time_t     hol_until = 0;
 static const int  prog_state[6] = {-2, -1, 0, 1, 2, 3};
 
 static void on_open_advanced(lv_event_t * e) { (void)e; ui_push_owned(screen_heater_advanced_create()); }
@@ -85,6 +91,174 @@ static void on_program_tap(lv_event_t * e) {
     int idx = (int)(intptr_t)lv_event_get_user_data(e);
     int s = prog_state[idx];
     pin_gate(program_tap_apply, (void *)(intptr_t)s);
+}
+
+/* ---- quick actions: Boost, Holiday (thermo_quick.c) ----------------------- */
+static void quick_paint(void) {
+    if (lbl_boost) {
+        int on = thermo_boost_active();
+        if (on) {
+            struct tm tm; time_t u = (time_t)settings.boost_until;
+            localtime_r(&u, &tm);
+            lv_label_set_text_fmt(lbl_boost, tr("Boost tot %02d:%02d", "Boost to %02d:%02d"), tm.tm_hour, tm.tm_min);
+        } else {
+            lv_label_set_text(lbl_boost, tr("Boost +1\xC2\xB0", "Boost +1\xC2\xB0"));
+        }
+        lv_obj_set_style_bg_color(btn_boost, lv_color_hex(on ? THEME_ACCENT_FILL : THEME_BTN_BG), 0);
+        lv_obj_set_style_text_color(lbl_boost, lv_color_hex(on ? THEME_ON_ACCENT : THEME_TEXT_HI), 0);
+    }
+    if (lbl_holiday) {
+        int on = thermo_holiday_active();
+        if (on) {
+            struct tm tm; time_t u = (time_t)settings.holiday_until;
+            localtime_r(&u, &tm);
+            lv_label_set_text_fmt(lbl_holiday, tr("Terug %d %s", "Back %d %s"),
+                                  tm.tm_mday, i18n_month_short(tm.tm_mon));
+        } else {
+            lv_label_set_text(lbl_holiday, tr("Vakantie", "Holiday"));
+        }
+        lv_obj_set_style_bg_color(btn_holiday, lv_color_hex(on ? THEME_ACCENT_FILL : THEME_BTN_BG), 0);
+        lv_obj_set_style_text_color(lbl_holiday, lv_color_hex(on ? THEME_ON_ACCENT : THEME_TEXT_HI), 0);
+    }
+}
+
+static void on_boost(lv_event_t * e) {
+    (void)e;
+    if (thermo_boost_active()) thermo_boost_stop();
+    else                       thermo_boost_start();
+    quick_paint();
+}
+
+static void hol_paint(void) {
+    if (!hol_lbl_date) return;
+    struct tm tm;
+    localtime_r(&hol_until, &tm);
+    lv_label_set_text_fmt(hol_lbl_date, "%s %d %s  %02d:00", i18n_day_short(tm.tm_wday), tm.tm_mday,
+                          i18n_month_short(tm.tm_mon), tm.tm_hour);
+}
+static void hol_close(void) {
+    if (hol_modal) { lv_obj_del_async(hol_modal); hol_modal = NULL; hol_lbl_date = NULL; }
+}
+static void on_hol_step(lv_event_t * e) {
+    long d = (long)(intptr_t)lv_event_get_user_data(e);   /* seconds */
+    time_t n = hol_until + d, now = time(NULL);
+    if (n < now + 3600) return;                 /* at least an hour ahead */
+    if (n > now + 60L * 86400) return;          /* at most 60 days */
+    hol_until = n;
+    hol_paint();
+}
+static void on_hol_start(lv_event_t * e) { (void)e; thermo_holiday_start(hol_until); hol_close(); quick_paint(); }
+static void on_hol_stop(lv_event_t * e)  { (void)e; thermo_holiday_stop(); hol_close(); quick_paint(); }
+static void on_hol_cancel(lv_event_t * e) { (void)e; hol_close(); }
+
+static lv_obj_t * hol_btn(lv_obj_t * par, const char * txt, lv_coord_t w, uint32_t bg, uint32_t fg,
+                          lv_event_cb_t cb, intptr_t ud) {
+    lv_obj_t * b = lv_btn_create(par);
+    lv_obj_set_size(b, w, SY(52));
+    lv_obj_set_style_radius(b, THEME_RADIUS_BTN, 0);
+    lv_obj_set_style_shadow_width(b, 0, 0);
+    lv_obj_set_style_bg_color(b, lv_color_hex(bg), 0);
+    lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, (void *)ud);
+    lv_obj_t * l = lv_label_create(b);
+    lv_label_set_text(l, txt);
+    lv_obj_set_style_text_font(l, SF(18), 0);
+    lv_obj_set_style_text_color(l, lv_color_hex(fg), 0);
+    lv_obj_center(l);
+    return b;
+}
+
+static void on_holiday(lv_event_t * e) {
+    (void)e;
+    if (hol_modal) return;
+    int active = thermo_holiday_active();
+    if (active) {
+        hol_until = (time_t)settings.holiday_until;
+    } else {
+        /* default: back in a week, at 17:00 */
+        time_t t = time(NULL) + 7 * 86400;
+        struct tm tm; localtime_r(&t, &tm);
+        tm.tm_hour = 17; tm.tm_min = 0; tm.tm_sec = 0;
+        hol_until = mktime(&tm);
+    }
+    hol_modal = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(hol_modal);
+    lv_obj_set_size(hol_modal, LV_HOR_RES, LV_VER_RES);
+    lv_obj_set_style_bg_color(hol_modal, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(hol_modal, LV_OPA_60, 0);
+    lv_obj_add_flag(hol_modal, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(hol_modal, on_hol_cancel, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t * p = lv_obj_create(hol_modal);
+    lv_obj_set_size(p, SX(600), SY(340));
+    lv_obj_center(p);
+    lv_obj_set_style_bg_color(p, lv_color_hex(THEME_CARD_BG), 0);
+    lv_obj_set_style_border_width(p, 0, 0);
+    lv_obj_set_style_radius(p, THEME_RADIUS_PANEL, 0);
+    lv_obj_set_style_pad_all(p, SX(24), 0);
+    lv_obj_clear_flag(p, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(p, LV_OBJ_FLAG_CLICKABLE);          /* taps stay in the panel */
+
+    lv_obj_t * t = lv_label_create(p);
+    lv_label_set_text(t, tr("Vakantie", "Holiday"));
+    lv_obj_set_style_text_font(t, SF(28), 0);
+    lv_obj_set_style_text_color(t, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_align(t, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_t * h = lv_label_create(p);
+    lv_label_set_text(h, tr("Weg tot je terug bent, daarna weer het programma",
+                            "Away until you are back, then the programme again"));
+    lv_obj_set_style_text_font(h, SF(14), 0);
+    lv_obj_set_style_text_letter_space(h, THEME_LABEL_TRACK, 0);
+    lv_obj_set_style_text_color(h, lv_color_hex(THEME_TEXT_DIM), 0);
+    lv_obj_align(h, LV_ALIGN_TOP_LEFT, 0, SY(40));
+
+    lv_obj_t * tl = lv_label_create(p);
+    lv_label_set_text(tl, tr("Terug op", "Back on"));
+    lv_obj_set_style_text_font(tl, SF(14), 0);
+    lv_obj_set_style_text_letter_space(tl, THEME_LABEL_TRACK, 0);
+    lv_obj_set_style_text_color(tl, lv_color_hex(THEME_TEXT_DIM), 0);
+    lv_obj_align(tl, LV_ALIGN_TOP_MID, 0, SY(84));
+    hol_lbl_date = lv_label_create(p);
+    lv_obj_set_style_text_font(hol_lbl_date, SF(36), 0);
+    lv_obj_set_style_text_color(hol_lbl_date, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_align(hol_lbl_date, LV_ALIGN_TOP_MID, 0, SY(104));
+    hol_paint();
+
+    lv_coord_t sw = SX(118);
+    lv_obj_t * b;
+    b = hol_btn(p, tr("- dag", "- day"), sw, THEME_BTN_BG, THEME_TEXT_HI, on_hol_step, -86400);
+    lv_obj_align(b, LV_ALIGN_TOP_LEFT, 0, SY(160));
+    b = hol_btn(p, tr("+ dag", "+ day"), sw, THEME_BTN_BG, THEME_TEXT_HI, on_hol_step, 86400);
+    lv_obj_align(b, LV_ALIGN_TOP_LEFT, sw + SX(8), SY(160));
+    b = hol_btn(p, tr("- uur", "- hour"), sw, THEME_BTN_BG, THEME_TEXT_HI, on_hol_step, -3600);
+    lv_obj_align(b, LV_ALIGN_TOP_RIGHT, -(sw + SX(8)), SY(160));
+    b = hol_btn(p, tr("+ uur", "+ hour"), sw, THEME_BTN_BG, THEME_TEXT_HI, on_hol_step, 3600);
+    lv_obj_align(b, LV_ALIGN_TOP_RIGHT, 0, SY(160));
+
+    lv_coord_t bw = SX(268);
+    if (active) {
+        b = hol_btn(p, tr("Vakantie stoppen", "End holiday"), bw, THEME_BTN_BG, THEME_TEXT_HI, on_hol_stop, 0);
+        lv_obj_align(b, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+        b = hol_btn(p, tr("Datum opslaan", "Save date"), bw, THEME_ACCENT_FILL, THEME_ON_ACCENT, on_hol_start, 0);
+        lv_obj_align(b, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    } else {
+        b = hol_btn(p, tr("Annuleren", "Cancel"), bw, THEME_BTN_BG, THEME_TEXT_HI, on_hol_cancel, 0);
+        lv_obj_align(b, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+        b = hol_btn(p, tr("Vakantie starten", "Start holiday"), bw, THEME_ACCENT_FILL, THEME_ON_ACCENT, on_hol_start, 0);
+        lv_obj_align(b, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    }
+}
+
+static lv_obj_t * quick_pill(lv_coord_t y, lv_event_cb_t cb, lv_obj_t ** out_lbl) {
+    lv_obj_t * b = lv_btn_create(scr_root);
+    lv_obj_set_size(b, SX(180), SY(44));
+    lv_obj_align(b, LV_ALIGN_BOTTOM_RIGHT, -SX(20), y);
+    lv_obj_set_style_radius(b, THEME_RADIUS_BTN, 0);
+    lv_obj_set_style_shadow_width(b, 0, 0);
+    lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, NULL);
+    *out_lbl = lv_label_create(b);
+    lv_obj_set_style_text_font(*out_lbl, SF(18), 0);
+    lv_obj_center(*out_lbl);
+    return b;
 }
 
 static void refresh_cb(lv_timer_t * t) {
@@ -156,6 +330,7 @@ static void refresh_cb(lv_timer_t * t) {
             lv_obj_set_style_text_color(bl, lv_color_hex(active ? THEME_ON_ACCENT : THEME_TEXT_DIM), 0);
         }
     }
+    quick_paint();
     if (toon_state.humidity > 0)
         lv_label_set_text_fmt(lbl_humidity, tr("RV %.0f%%", "RH %.0f%%"), toon_state.humidity);
     if (toon_state.eco2 || toon_state.tvoc)
@@ -497,9 +672,14 @@ lv_obj_t * screen_thermostat_create(void) {
                  SY(-192) - (DISP_VER < 600 ? 8 : 0));
     lv_label_set_text(lbl_return, tr("Retour  -- C", "Return  -- C"));
 
+    /* Quick actions above "Advanced": Boost +1° for an hour, Holiday. */
+    btn_boost = quick_pill(SY(-76), on_boost, &lbl_boost);
+    btn_holiday = quick_pill(SY(-132), on_holiday, &lbl_holiday);
+    quick_paint();
+
     /* "Advanced" button */
     lv_obj_t * adv = lv_btn_create(scr_root);
-    lv_obj_set_size(adv, SX(140), SY(44));
+    lv_obj_set_size(adv, SX(180), SY(44));   /* same column as Boost / Holiday */
     lv_obj_align(adv, LV_ALIGN_BOTTOM_RIGHT, -SX(20), -SY(20));
     lv_obj_set_style_bg_color(adv, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_add_event_cb(adv, on_open_advanced, LV_EVENT_CLICKED, NULL);
