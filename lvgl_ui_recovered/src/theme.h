@@ -161,22 +161,22 @@ extern const ft_palette_t * ft_theme_cur __attribute__((weak));
 #define THEME_SP(n)         (8 * (n))
 
 /* --- shape + spacing tokens ---------------------------------------------
- * One radius per level of hierarchy, one gap. Design px (1024x600); Toon 1
- * code scales where it already does. */
+ * One radius per level of hierarchy, one gap. Design px (1024x600); wrap
+ * positions/sizes in SX()/SY() so the Toon 1 (800x480) scales. */
 #define THEME_RADIUS_PANEL  18   /* modal panels, dialogs */
 #define THEME_RADIUS_TILE   16   /* home tiles, settings tiles, cards */
 #define THEME_RADIUS_BTN    10   /* buttons, rows */
 #define THEME_RADIUS_SMALL   8   /* controls inside a tile, chips */
 #define THEME_GAP            8   /* between tiles */
 #define THEME_PAD           10   /* inside a tile */
-#define THEME_BAR_H          3   /* tile accent bar */
+#define THEME_BAR_H          3   /* thin accent mark (theme swatches); tiles have none */
 
 /* --- type scale ------------------------------------------------------------
  * A ~1.25 modular scale on the fonts that are compiled in (display.h SF()):
  * 14 / 18 / 22 / 28 / 36 / 48, plus the 64/96 readout subsets. Needs
  * display.h. */
 #define THEME_FONT_CAPTION  SF(14)   /* units, hints, secondary lines */
-#define THEME_FONT_BODY     SF(18)   /* tile titles, row labels */
+#define THEME_FONT_BODY     SF(18)   /* body text, row labels */
 #define THEME_FONT_TITLE    SF(22)   /* values on rows, button labels */
 #define THEME_FONT_HEADING  SF(28)   /* screen titles, tile values */
 #define THEME_FONT_LARGE    SF(36)
@@ -186,8 +186,10 @@ extern const ft_palette_t * ft_theme_cur __attribute__((weak));
 #define THEME_FONT_LABEL    SF(14)
 #define THEME_LABEL_TRACK   1
 /* Big numerals (clock, temperatures, power) in Open Sans Light. Needs
- * fonts_opensans.h. 90 px is a digit subset (0-9 : . , - / °) that falls back
- * to Light 50 for letters; below 70 px the full Light 50/40/30 is used. */
+ * fonts_opensans.h. These are readout subsets: 90 px has digits and
+ * ": . , - / °" (letters fall back to Light 50); Light 50/40/30 add a few
+ * unit letters (W, b, a, r, t, %) and fall back to Montserrat for the rest.
+ * Write temperatures as "20.5°" on big readouts. See docs/DESIGN.md. */
 #define THEME_FONT_NUM(px)  os_light(px)
 
 /* Host-only API (theme.c). */

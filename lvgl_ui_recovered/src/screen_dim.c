@@ -366,6 +366,8 @@ static void refresh_cb(lv_timer_t * t) {
             ui_label_set_text(lbl_setpoint, prog);
         }
         lv_obj_update_layout(lbl_setpoint);
+        /* Hang under the temperature, whatever its font height (Toon 1). */
+        lv_obj_align_to(lbl_setpoint, lbl_temp, LV_ALIGN_OUT_BOTTOM_MID, 0, -SY(6));
         if (dim_img_flame) lv_obj_align_to(dim_img_flame, lbl_setpoint, LV_ALIGN_OUT_BOTTOM_MID, 0, SY(8));
         if (dim_img_faucet) lv_obj_align_to(dim_img_faucet, lbl_setpoint, LV_ALIGN_OUT_BOTTOM_MID, -SX(10), SY(8));
         if (dim_img_drop) lv_obj_align_to(dim_img_drop, dim_img_faucet, LV_ALIGN_OUT_RIGHT_MID, SX(8), 0);
@@ -848,7 +850,7 @@ lv_obj_t * screen_dim_create(void) {
        CR2: Setpoint + program state in small font (SF(22)) under room temp. */
     lbl_temp = lv_label_create(scr_root);
     ui_obj_set_style_text_color(lbl_temp, lv_color_hex(THEME_DIM_TEXT), 0);
-    ui_obj_set_style_text_font(lbl_temp, THEME_FONT_NUM(96), 0);   /* light numerals */
+    ui_obj_set_style_text_font(lbl_temp, THEME_FONT_NUM(80), 0);   /* light numerals (Light 90 on a Toon 2, 50 on a Toon 1) */
     ui_label_set_text(lbl_temp, "--.-°C");
     ui_obj_align(lbl_temp, LV_ALIGN_CENTER, 0, SY(40));
 

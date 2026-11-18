@@ -359,6 +359,7 @@ static lv_obj_t * lbl_nilm_event = NULL;
 static lv_obj_t * lbl_boiler_state;
 static lv_obj_t * lbl_boiler_pressure;
 static lv_obj_t * vent_fan_img = NULL;
+static int        vent_fan_off = 0;   /* tile too short: no room for the fan between the button rows */
 static lv_obj_t * lbl_vent_offline = NULL;
 static int        vent_anim_period_ms = -1;
 
@@ -2806,7 +2807,7 @@ static void refresh_cb(lv_timer_t * t) {
             }
         } else {
             if (lbl_vent_offline) ui_obj_add_flag(lbl_vent_offline, LV_OBJ_FLAG_HIDDEN);
-            if (vent_fan_img)     ui_obj_clear_flag(vent_fan_img,     LV_OBJ_FLAG_HIDDEN);
+            if (vent_fan_img && !vent_fan_off) ui_obj_clear_flag(vent_fan_img, LV_OBJ_FLAG_HIDDEN);
             if (vent_btn_low)     ui_obj_clear_flag(vent_btn_low,     LV_OBJ_FLAG_HIDDEN);
             if (vent_btn_high)    ui_obj_clear_flag(vent_btn_high,    LV_OBJ_FLAG_HIDDEN);
             if (vent_btn_auto)    ui_obj_clear_flag(vent_btn_auto,    LV_OBJ_FLAG_HIDDEN);
@@ -4547,7 +4548,12 @@ lv_obj_t * screen_home_create(void) {
     vent_fan_img = lv_img_create(vent.tile);
     ui_img_set_src(vent_fan_img, &icon_fan);
     lv_img_set_pivot(vent_fan_img, 40, 40);
+    lv_obj_update_layout(vent.tile);
     lv_img_set_zoom(vent_fan_img, 160);            /* 160/256 ≈ 62 % */
+    /* A short tile (Toon 1, small custom layouts) has no room for the fan
+     * between the two button rows; the % / rpm line says the same. */
+    vent_fan_off = lv_obj_get_content_height(vent.tile) < 170;
+    if (vent_fan_off) ui_obj_add_flag(vent_fan_img, LV_OBJ_FLAG_HIDDEN);
     ui_obj_align(vent_fan_img, LV_ALIGN_CENTER, 0, -6);
     ui_obj_add_flag(vent_fan_img, LV_OBJ_FLAG_EVENT_BUBBLE);  /* tap → tile */
 
@@ -4564,9 +4570,15 @@ lv_obj_t * screen_home_create(void) {
         { LV_ALIGN_BOTTOM_LEFT,  4,  -4, 0, "auto", "Auto",  on_vent_mode  },
         { LV_ALIGN_BOTTOM_RIGHT,-4,  -4, 0, NULL,   "Timer", on_vent_timer },
     };
+    /* Two buttons per row must fit a narrow tile (Toon 1, small custom
+     * layouts): 60 px each overlapped there. */
+    lv_obj_update_layout(vent.tile);
+    int vb_w = (lv_obj_get_content_width(vent.tile) - 8 - 6) / 2;
+    if (vb_w > 60) vb_w = 60;
+    if (vb_w < 36) vb_w = 36;
     for (size_t i = 0; i < sizeof(btn)/sizeof(btn[0]); i++) {
         lv_obj_t * b = lv_btn_create(vent.tile);
-        lv_obj_set_size(b, 60, 28);
+        lv_obj_set_size(b, vb_w, 28);
         ui_obj_align(b, btn[i].a, btn[i].x, btn[i].y);
         (void)btn[i].col;   /* one button style: the active mode gets the accent */
         ui_obj_set_style_bg_color(b, lv_color_hex(THEME_BTN_BG), 0);
