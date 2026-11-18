@@ -648,3 +648,13 @@
   - Available as a home grid tile (layout editor) and as a dim block (dim layout editor), each with its own settings; tap on the home tile opens a full-screen view with the same settings.
 - **Implementation notes**: retained objects, update only what changes each second (hands via rotation / line points, LED segments recoloured, not rebuilt) — keep Toon 1 CPU low (see ui_lazy.h). Settings per tile stored with the layout entry. Existing clock tile / dim clock (incl. moon phase) stay; Klok Studio is an additional tile type.
 - **Later (separate)**: option B — a ReToon app host on QuickJS (ReToon app API levels 1–10) so ReToon apps run unchanged as separate downloads; large and a moving target, not planned.
+
+### 56. Indoor humidity from the Toon's own sensor on screen
+- **Status**: Open (user request, 2026-11-18).
+- **Situation**: `toon_state.humidity` is already filled from the Toon 2's own sensor (BoxTalk `HumiditySensor` / thermostatInfo `currentHumidity`) and exported over MQTT and the PWA, and the classic theme has a "Luchtvochtigheid" tile — but the FreeToon dashboard shows it nowhere (`lbl_t_humidity` is a leftover of the old thermostat tile and always NULL). Toon 1 has no humidity sensor.
+- **Options**: (1) add "RV 45%" to the dim screen's metrics row (TVOC / CO2 / CV bar / air quality) in `screen_dim.c` + `screen_dim_grid.c` — small; (2) small "RV 45%" on the home thermostat tile — small, but that tile is already full on Toon 1; (3) new "Binnenklimaat" layout tile (humidity + CO2 + TVOC + air-quality label) — append the LT_* value at the end of the enum. In all cases hide it when no value is reported (Toon 1).
+
+### 57. Layout editor: pick an integration directly on page 2
+- **Status**: Open (2026-11-18, parked after 85ff5df).
+- **Situation**: since 85ff5df page 2's "+ Tegel" offers only "Integratie" (and Neerslag); the integration itself (e.g. Teletekst) is chosen afterwards by tapping the empty tile on the home screen. A user expected to find Teletekst in the editor list.
+- **Options**: (a) clearer label, e.g. "Integratie (bijv. Teletekst - koppelen op het scherm)" plus one line of explanation; (b) list the installed integrations in "+ Tegel" on page 2 and place the tile already bound. Page-2 slots are bound by position (slot 4+i), so (b) must keep a binding with its tile when tiles are moved or deleted in the editor.
