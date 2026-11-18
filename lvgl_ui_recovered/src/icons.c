@@ -260,7 +260,10 @@ int sun_times_local(int * rise_min, int * set_min) {
         double RA = fmod(R2D * atan(0.91764 * tan(L * D2R)) + 360.0, 360.0);
         RA = (RA + (floor(L / 90.0) * 90.0) - (floor(RA / 90.0) * 90.0)) / 15.0;
         double sinDec = 0.39782 * sin(L * D2R), cosDec = cos(asin(sinDec));
-        double cosH = (cos(ZENITH * D2R) - (sinDec * sin(lat * D2R))) / (cosDec * cos(lat * D2R));
+        /* sin(lat) as cos(90 - lat): sin+cos of one argument becomes a
+         * sincos() import, which is not in the on-device ABI baseline. */
+        double sl = cos((90.0 - lat) * D2R), cl = cos(lat * D2R);
+        double cosH = (cos(ZENITH * D2R) - (sinDec * sl)) / (cosDec * cl);
         if (cosH > 1.0 || cosH < -1.0) return -1;
         double H = ((w == 0) ? (360.0 - R2D * acos(cosH)) : (R2D * acos(cosH))) / 15.0;
         double T = H + RA - (0.06571 * t) - 6.622;
