@@ -17,35 +17,35 @@
 <style>
 :root{
   --bg:#0e1828;--card:#182739;--row:#1e3048;--btn:#23354c;--btn-hi:#2f4a6a;
-  --text:#f2f6fa;--dim:#8fa8c0;--muted:#5e7189;--border:#2a3d56;
+  --text:#f2f6fa;--dim:#8fa8c0;--muted:#7d91a8;--border:#2a3d56;
   --warm:#ffc94d;--accent:#4aa8ff;--active:#2f74c8;--danger:#f0625a;--sel:#ffffff;
 }
 /* Themes mirror the Toon's (theme.c): dark = Nacht, light = Licht, warm, black = Zwart. */
 @media (prefers-color-scheme: light){
   :root:not([data-theme]){
   --bg:#e6ebf1;--card:#ffffff;--row:#f2f5f9;--btn:#dae2eb;--btn-hi:#cbd9ea;
-  --text:#1b2533;--dim:#5b6d84;--muted:#8a99ab;--border:#d3dce6;
-  --warm:#d27305;--accent:#1d5fd1;--active:#2266d8;--danger:#d42f2f;--sel:#1b2533;
+  --text:#1b2533;--dim:#5b6d84;--muted:#66768a;--border:#d3dce6;
+  --warm:#c06a04;--accent:#1d5fd1;--active:#2266d8;--danger:#d42f2f;--sel:#1b2533;
   }
 }
 :root[data-theme=light]{
   --bg:#e6ebf1;--card:#ffffff;--row:#f2f5f9;--btn:#dae2eb;--btn-hi:#cbd9ea;
-  --text:#1b2533;--dim:#5b6d84;--muted:#8a99ab;--border:#d3dce6;
-  --warm:#d27305;--accent:#1d5fd1;--active:#2266d8;--danger:#d42f2f;--sel:#1b2533;
+  --text:#1b2533;--dim:#5b6d84;--muted:#66768a;--border:#d3dce6;
+  --warm:#c06a04;--accent:#1d5fd1;--active:#2266d8;--danger:#d42f2f;--sel:#1b2533;
 }
 :root[data-theme=dark]{
   --bg:#0e1828;--card:#182739;--row:#1e3048;--btn:#23354c;--btn-hi:#2f4a6a;
-  --text:#f2f6fa;--dim:#8fa8c0;--muted:#5e7189;--border:#2a3d56;
+  --text:#f2f6fa;--dim:#8fa8c0;--muted:#7d91a8;--border:#2a3d56;
   --warm:#ffc94d;--accent:#4aa8ff;--active:#2f74c8;--danger:#f0625a;--sel:#ffffff;
 }
 :root[data-theme=warm]{
   --bg:#1c1c1e;--card:#29292c;--row:#313135;--btn:#37373b;--btn-hi:#4a4038;
-  --text:#f6f2ec;--dim:#b2aa9f;--muted:#7b746b;--border:#3b3a39;
-  --warm:#ffb257;--accent:#ff7a2e;--active:#e8641e;--danger:#f0624f;--sel:#f6f2ec;
+  --text:#f6f2ec;--dim:#b2aa9f;--muted:#9a9288;--border:#3b3a39;
+  --warm:#ffb257;--accent:#ff7a2e;--active:#c4511a;--danger:#f0624f;--sel:#f6f2ec;
 }
 :root[data-theme=black]{
   --bg:#000000;--card:#0f0f11;--row:#17171a;--btn:#1c1c20;--btn-hi:#22303f;
-  --text:#e2e4e8;--dim:#8a8f98;--muted:#55595f;--border:#232328;
+  --text:#e2e4e8;--dim:#8a8f98;--muted:#80848c;--border:#232328;
   --warm:#dcae52;--accent:#5e9fd8;--active:#2b5d91;--danger:#d65a52;--sel:#e2e4e8;
 }
 *{box-sizing:border-box}
@@ -55,7 +55,7 @@ body{min-height:100vh;padding:12px max(12px,env(safe-area-inset-right)) 24px max
 button{font:inherit;color:inherit;border:0;cursor:pointer}
 button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .top{display:flex;align-items:center;gap:10px;max-width:1240px;margin:0 auto 12px}
-.top h1{font-size:18px;font-weight:600;margin:0;letter-spacing:.2px}
+.top h1{font-size:18px;font-weight:500;margin:0;letter-spacing:.06em}
 .top .sp{flex:1}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--muted);display:inline-block}
 .dot.ok{background:#4c9}.dot.bad{background:var(--danger)}
@@ -66,14 +66,14 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .banner{max-width:1240px;margin:0 auto 12px;padding:10px 14px;border-radius:12px;background:var(--danger);color:#fff;font-size:14px;display:none}
 .banner.show{display:block}
 
-.grid{max-width:1240px;margin:0 auto;display:grid;gap:12px;grid-template-columns:minmax(0,1fr)}
+.grid{max-width:1240px;margin:0 auto;display:grid;gap:16px;grid-template-columns:minmax(0,1fr)}
 @media (min-width:640px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (min-width:1000px){.grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
-.card{background:var(--card);border-radius:14px;padding:14px 16px;min-width:0;position:relative}
-.card h2{margin:0 0 8px;font-size:17px;font-weight:500;color:var(--dim);display:flex;align-items:center;gap:8px}
+.card{background:var(--card);border-radius:16px;padding:16px;min-width:0;position:relative}
+.card h2{margin:0 0 8px;font-size:14px;font-weight:400;letter-spacing:.06em;color:var(--dim);display:flex;align-items:center;gap:8px}
 .card h2 .v{margin-left:auto;color:var(--text);font-size:15px}
-.card.bar::before{content:"";position:absolute;left:14px;right:14px;top:10px;height:4px;border-radius:2px;background:var(--bc,var(--accent))}
-.card.bar{padding-top:24px}
+/* Quiet luxury (as on the Toon since 1.1): no per-tile accent bars; the
+   --bc identity colours stay in the markup for the layout mirror. */
 .hidden{display:none!important}
 /* Layout mode: the Toon's home grid (12 columns x 8 rows per swipe page,
    pages stacked). Tiles get grid-column/grid-row/order inline from JS; below
@@ -114,8 +114,8 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .thermo .meta{font-size:13px;color:var(--dim);display:flex;justify-content:center;gap:12px;flex-wrap:wrap;min-height:18px}
 .thermo .meta svg{width:15px;height:15px;vertical-align:-3px}
 .presets{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:14px 0 12px}
-.presets button{background:var(--btn);border-radius:8px;padding:9px 2px;font-size:14px;color:var(--dim);border:2px solid transparent}
-.presets button.on{background:var(--active);color:#fff;border-color:var(--sel)}
+.presets button{background:var(--btn);border-radius:10px;padding:10px 2px;font-size:14px;color:var(--dim);border:0}
+.presets button.on{background:var(--active);color:#fff}
 .setp{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .setp button{width:56px;height:48px;border-radius:10px;background:var(--btn-hi);font-size:26px;line-height:1}
 .setp button:active{transform:scale(.96)}
@@ -259,7 +259,7 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
   <section class="card bar radar" id="t-radar" data-lt="15" style="--bc:#5a9bd3">
     <h2 data-t="radar">Buienradar</h2>
-    <img id="radar" alt="">
+    <img id="radar" src="/api/radar.gif" alt="Buienradar">
     <div class="sub hidden" id="radar-none"></div>
   </section>
 

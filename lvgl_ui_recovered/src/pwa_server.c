@@ -1699,8 +1699,8 @@ static int handle_settings_post(int fd, const char * body) {
         vent_mqtt_reload();
         ha_mqtt_reload();
     }
-    return send_status(fd, 200, "OK", "{\"ok\":1,\"note\":\"theme, client mode, OT bridge mode, "
-                                      "ventilation, HA on/off and the energy source apply after a toonui restart\"}");
+    return send_status(fd, 200, "OK", "{\"ok\":1,\"note\":\"client mode, OT bridge mode, ventilation, "
+                                      "HA on/off and the energy source apply after a toonui restart\"}");
 }
 
 /* GET /api/update/status — current build + whether the background poll has

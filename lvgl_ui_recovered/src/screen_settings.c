@@ -5245,7 +5245,7 @@ static const lv_img_dsc_t * get_scaled_icon(const lv_img_dsc_t * src) {
     return &cache[idx].dsc;
 }
 
-#define SETT_TILE_W 235
+#define SETT_TILE_W 232
 #define SETT_TILE_H 104
 static void make_tile(int x, int y, const lv_img_dsc_t * icon, const char * sym,
                       const char * title, const char * caption, lv_event_cb_t cb) {
@@ -5972,7 +5972,7 @@ lv_obj_t * screen_settings_create(void) {
     lv_obj_set_scrollbar_mode(scr_tiles_cont, LV_SCROLLBAR_MODE_AUTO);
 
     /* Category tiles in a compact 4-column grid, sorted alphabetically (CR9) */
-    const int COLS = 4, MX = 24, TOP = 8, GAPX = 12, GAPY = 12;   /* one gap both ways */
+    const int COLS = 4, MX = 24, TOP = 8, GAPX = 16, GAPY = 16;   /* 8 px grid, one gap both ways */
     #define GX(i) (SX(MX + ((i) % COLS) * (SETT_TILE_W + GAPX)))
     #define GY(i) (SY(TOP + ((i) / COLS) * (SETT_TILE_H + GAPY)))
     int n = 0;

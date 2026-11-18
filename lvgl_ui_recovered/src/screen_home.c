@@ -5218,7 +5218,7 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_size(update_banner, 380, 36);
     ui_obj_align(update_banner, LV_ALIGN_TOP_MID, 0, 6);
     ui_obj_set_style_bg_color(update_banner, lv_color_hex(THEME_SUCCESS_BG), 0);
-    lv_obj_set_style_radius(update_banner, 8, 0);
+    lv_obj_set_style_radius(update_banner, THEME_RADIUS_BTN, 0);
     lv_obj_set_ext_click_area(update_banner, 8);
     lv_obj_add_event_cb(update_banner, on_update_banner_click,
                         LV_EVENT_CLICKED, NULL);
@@ -5472,7 +5472,13 @@ lv_obj_t * screen_home_create(void) {
     for (int p = 0; p < home_pin_count; p++)
         if (home_pins[p].tile) lv_obj_move_foreground(home_pins[p].tile);
 
-    /* Ensure gear is always in the foreground so nothing intercepts touches */
+    /* Status row above every tile: tiles built after the update banner and
+     * the round buttons (rain, slot views) used to cover the banner, leaving
+     * a stray green sliver between two tiles. Gear last, so nothing
+     * intercepts its touches. */
+    lv_obj_t * const fg[] = { update_banner, update_env_btn, devices_btn, envelope_btn, envelope_badge };
+    for (size_t i = 0; i < sizeof fg / sizeof fg[0]; i++)
+        if (fg[i]) lv_obj_move_foreground(fg[i]);
     lv_obj_move_foreground(gear);
 
     if (!refresh_timer) refresh_timer = lv_timer_create(refresh_cb, 500, NULL);
