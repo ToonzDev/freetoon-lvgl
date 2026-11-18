@@ -114,7 +114,7 @@ BUILD_VERSION := $(shell cd ../.. && git describe --tags --always --dirty 2>/dev
 
 # LVGL needs LV_CONF_INCLUDE_SIMPLE so it picks up lv_conf.h from current dir
 CFLAGS  := $(SYSROOTFLAG) $(ARCHFLAGS) -O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function \
-           -DLV_CONF_INCLUDE_SIMPLE -DLV_LVGL_H_INCLUDE_SIMPLE $(TARGET_DEF) \
+           -DLV_CONF_INCLUDE_SIMPLE -DLV_LVGL_H_INCLUDE_SIMPLE -DFT_HOST $(TARGET_DEF) \
            -DBUILD_VERSION=\"$(BUILD_VERSION)\" \
            -I. -Ilvgl -Ilv_drivers -pthread $(GLIBC_CFLAGS) \
            -MMD -MP
@@ -150,7 +150,7 @@ APP_SRC       := $(ENTRY) $(GLIBC_SRC) boxtalk.c ui_stack.c screen_home.c screen
                  stats.c airhist.c homewizard.c p1esphome.c energy.c meteradapter.c domoticz.c hue.c weather.c buienradar_rain.c otgw.c http.c inbox.c rrd_push.c rrd_repair.c templogger.c \
                  wastecollection.c ventilation.c homeassistant.c ha_mqtt.c efanlamp.c monocypher.c sha2.c \
                  notify.c healthcheck.c pwa_server.c canonical_state.c packages.c mqtt_client.c \
-                 schedule.c icons.c backlight.c settings.c bootpick.c update_check.c app_updates.c telegram.c \
+                 schedule.c icons.c backlight.c settings.c theme.c bootpick.c update_check.c app_updates.c telegram.c \
                  tile_slots.c client_link.c news.c doorbell.c calendar.c layout.c \
                  toon1_touch.c pin_modal.c update_modal.c video.c ui_cmd.c anim_overlay.c \
                  lv_font_montserrat_96_custom.c lv_font_montserrat_64_custom.c lv_font_montserrat_76_bold.c \

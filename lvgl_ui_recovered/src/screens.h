@@ -19,6 +19,12 @@ int  ui_is_dimmed(void);
 void ui_apply_home_theme(void);
 void ui_refresh_home(void);
 void ui_refresh_theme(void);
+/* Rebuild for a new colour theme. Call on the UI thread after theme_set();
+ * from another thread use ui_request_theme_refresh() (applied on the next
+ * idle tick, after settings.ui_theme was set). */
+void ui_request_theme_refresh(void);
+/* Swap a cached screen in the stack for a freshly built one (theme change). */
+void ui_replace_screen(lv_obj_t * old_scr, lv_obj_t * new_scr);
 void ui_request_restart(void);   /* clean _exit(0) restart; drops the launcher crash-guard marker */
 void ui_request_reboot(void);    /* full device reboot (sync + /sbin/reboot) */
 
@@ -26,6 +32,9 @@ void ui_request_reboot(void);    /* full device reboot (sync + /sbin/reboot) */
 /* Per-screen builders. Each returns a freshly created screen object. */
 lv_obj_t * screen_home_create(void);
 void screen_home_destroy(void);
+void screen_home_stock_destroy(void);   /* theme change: rebuild on next show */
+void screen_dim_destroy(void);
+void screen_dim_grid_destroy(void);
 lv_obj_t * screen_home_stock_create(void);   /* light tile-carousel "stock theme" home */
 /* Auto-home: drop the home screen's swipe page back to page 1 (the main page)
  * when idle. No-op if already there. */

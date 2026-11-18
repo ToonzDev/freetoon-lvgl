@@ -1113,3 +1113,25 @@ lv_obj_t * screen_home_stock_create(void) {
     refresh_timer = lv_timer_create(refresh_cb, 1000, NULL);
     return scr_root;
 }
+
+/* Theme change: drop the cached classic home so it is rebuilt in the new palette. */
+void screen_home_stock_destroy(void) {
+    if (!scr_root) return;
+    if (refresh_timer) { lv_timer_del(refresh_timer); refresh_timer = NULL; }
+    if (g_picker_keepalive) { lv_timer_del(g_picker_keepalive); g_picker_keepalive = NULL; }
+    if (g_picker) picker_close();
+    lv_obj_t * s = scr_root;
+    scr_root = NULL;
+    tv = NULL;
+    lbl_setpoint = NULL;
+    lbl_setpoint_lo = NULL;
+    lbl_prog = NULL;
+    g_picker = NULL;
+    s_lights_handle = NULL;
+    s_lights_handle_lbl = NULL;
+    memset(pages, 0, sizeof pages);
+    memset(dots, 0, sizeof dots);
+    memset(scene_btn, 0, sizeof scene_btn);
+    memset(scene_lbl, 0, sizeof scene_lbl);
+    lv_obj_del(s);
+}
