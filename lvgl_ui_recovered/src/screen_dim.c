@@ -179,7 +179,9 @@ static void dim_layout_bars(void) {
     int bw = DIM_BAR_W;
     int x_single = SX(24);
     int x_outer  = SX(16);
-    int x_inner  = SX(16 + bw + 10);
+    /* bw is NOT scaled, so only the offsets go through SX(); scaling the
+     * whole sum made the pair overlap on the 800 px Toon 1 (58-12 < 48). */
+    int x_inner  = x_outer + bw + SX(10);
 
     int gas_side, gas_x;
     int act_side, act_x;
