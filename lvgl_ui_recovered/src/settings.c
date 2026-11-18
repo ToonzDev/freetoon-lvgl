@@ -3,6 +3,7 @@
  * No JSON parser dependency. Loads defaults if file missing.
  */
 #include "settings.h"
+#include "theme.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -120,6 +121,17 @@ settings_t settings = {
     .anim_duration_sec        = 25,
     .home_theme               = 0,
     .home_light_mode          = 0,
+    .ui_theme                 = 0,   /* UI_THEME_NIGHT */
+    .night_rest_enabled       = 0,
+    .night_rest_from          = 23 * 60,
+    .night_rest_to            = 7 * 60,
+    .night_rest_black         = 1,
+    .night_rest_brightness    = 20,
+    .theme_auto               = 0,
+    .theme_auto_day           = 1,   /* UI_THEME_LIGHT */
+    .theme_auto_morning       = 7 * 60,
+    .theme_auto_evening       = 19 * 60,
+    .theme_auto_night         = 23 * 60,
     .stock_tiles              = "",
     .stock_big_indoor         = 1,
     .calendar_ha_entity  = "",
@@ -213,6 +225,7 @@ void settings_load(void) {
      * step below — keeps existing installs from suddenly losing pollers
      * after the upgrade. */
     int seen_p1_elec = 0, seen_p1_water = 0, seen_vent = 0, seen_ha = 0;
+    int seen_ui_theme = 0;   /* cfg from before themes: derive from home_light_mode */
     int seen_domoticz = 0, seen_sonos = 0, seen_hue = 0;
     int cfg_existed = 0;
 
@@ -376,6 +389,17 @@ void settings_load(void) {
         else if (strcmp(k, "anim_duration_sec")     == 0) settings.anim_duration_sec = iv;
         else if (strcmp(k, "home_theme")         == 0) settings.home_theme = iv;
         else if (strcmp(k, "home_light_mode")    == 0) settings.home_light_mode = iv;
+        else if (strcmp(k, "ui_theme")           == 0) { settings.ui_theme = iv; seen_ui_theme = 1; }
+        else if (strcmp(k, "night_rest_enabled") == 0) settings.night_rest_enabled = iv;
+        else if (strcmp(k, "theme_auto")         == 0) settings.theme_auto = (iv >= 0 && iv <= 2) ? iv : 0;
+        else if (strcmp(k, "theme_auto_day")     == 0) settings.theme_auto_day = (iv == 2) ? 2 : 1;
+        else if (strcmp(k, "theme_auto_morning") == 0) settings.theme_auto_morning = (iv >= 0 && iv < 1440) ? iv : 7 * 60;
+        else if (strcmp(k, "theme_auto_evening") == 0) settings.theme_auto_evening = (iv >= 0 && iv < 1440) ? iv : 19 * 60;
+        else if (strcmp(k, "theme_auto_night")   == 0) settings.theme_auto_night = (iv >= 0 && iv < 1440) ? iv : 23 * 60;
+        else if (strcmp(k, "night_rest_from")    == 0) settings.night_rest_from = (iv >= 0 && iv < 1440) ? iv : 23 * 60;
+        else if (strcmp(k, "night_rest_to")      == 0) settings.night_rest_to = (iv >= 0 && iv < 1440) ? iv : 7 * 60;
+        else if (strcmp(k, "night_rest_black")   == 0) settings.night_rest_black = iv;
+        else if (strcmp(k, "night_rest_brightness") == 0) settings.night_rest_brightness = iv < 0 ? 0 : (iv > 400 ? 400 : iv);
         else if (strcmp(k, "stock_tiles")        == 0) snprintf(settings.stock_tiles, sizeof settings.stock_tiles, "%s", v);
         else if (strcmp(k, "stock_big_indoor")   == 0) settings.stock_big_indoor = iv;
         else if (strcmp(k, "calendar_ha_entity") == 0) snprintf(settings.calendar_ha_entity, sizeof settings.calendar_ha_entity, "%s", v);
@@ -792,6 +816,10 @@ autodetect:
     if (!settings.waste_plugin[0]) {
         snprintf(settings.waste_plugin, sizeof(settings.waste_plugin), "33");
     }
+    /* Themes (1.1): an older cfg only has home_light_mode. */
+    if (!seen_ui_theme) settings.ui_theme = settings.home_light_mode ? UI_THEME_LIGHT : UI_THEME_NIGHT;
+    theme_sync_settings();
+
     if (!cfg_existed) {
         settings_save();
     }
@@ -930,7 +958,7 @@ static void settings_write_file(void) {
         "\"weather_location\":\"%s\",\"weather_location_id\":%d,"
         "\"mqtt_enabled\":%d,\"mqtt_host\":\"%s\",\"mqtt_port\":%d,"
         "\"mqtt_user\":\"%s\",\"mqtt_pass\":\"%s\","
-        "\"home_theme\":%d}",
+        "\"home_theme\":%d,\"ui_theme\":%d}",
         settings.auto_dim_enabled, settings.auto_dim_seconds,
         settings.auto_home_enabled, settings.auto_home_seconds,
         settings.active_brightness, settings.dim_brightness, settings.dim_sleep_away_black,
@@ -938,7 +966,7 @@ static void settings_write_file(void) {
         settings.pin_enabled, ec,
         ewl, settings.weather_location_id,
         settings.mqtt_enabled, emh, settings.mqtt_port, emu, emp,
-        settings.home_theme);
+        settings.home_theme, settings.ui_theme);
     wasm_post_settings_blob(json);
     return;     /* don't try to fopen(CFG_PATH, "w") — no /mnt/data in WASM */
 #endif
@@ -1058,6 +1086,17 @@ static void settings_write_file(void) {
     fprintf(f, "anim_duration_sec=%d\n", settings.anim_duration_sec);
     fprintf(f, "home_theme=%d\n", settings.home_theme);
     fprintf(f, "home_light_mode=%d\n", settings.home_light_mode);
+    fprintf(f, "ui_theme=%d\n", settings.ui_theme);
+    fprintf(f, "night_rest_enabled=%d\n", settings.night_rest_enabled);
+    fprintf(f, "theme_auto=%d\n", settings.theme_auto);
+    fprintf(f, "theme_auto_day=%d\n", settings.theme_auto_day);
+    fprintf(f, "theme_auto_morning=%d\n", settings.theme_auto_morning);
+    fprintf(f, "theme_auto_evening=%d\n", settings.theme_auto_evening);
+    fprintf(f, "theme_auto_night=%d\n", settings.theme_auto_night);
+    fprintf(f, "night_rest_from=%d\n", settings.night_rest_from);
+    fprintf(f, "night_rest_to=%d\n", settings.night_rest_to);
+    fprintf(f, "night_rest_black=%d\n", settings.night_rest_black);
+    fprintf(f, "night_rest_brightness=%d\n", settings.night_rest_brightness);
     if (settings.stock_tiles[0]) fprintf(f, "stock_tiles=%s\n", settings.stock_tiles);
     fprintf(f, "stock_big_indoor=%d\n", settings.stock_big_indoor);
     fprintf(f, "calendar_notify_lead_min=%d\n", settings.calendar_notify_lead_min);

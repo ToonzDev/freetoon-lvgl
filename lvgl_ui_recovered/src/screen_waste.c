@@ -111,7 +111,7 @@ static void render_waste_page(void) {
         lv_obj_set_style_bg_color(card, lv_color_hex(THEME_CARD_BG), 0);
         lv_obj_set_style_radius(card, 12, 0);
         lv_obj_set_style_border_color(card, lv_color_hex(THEME_BORDER), 0);
-        lv_obj_set_style_border_width(card, settings.home_light_mode ? 1 : 0, 0);
+        lv_obj_set_style_border_width(card, THEME_IS_LIGHT ? 1 : 0, 0);
         lv_obj_set_style_pad_all(card, SX(10), 0);
         lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -147,7 +147,7 @@ static void render_waste_page(void) {
         lv_obj_set_style_text_font(b_lbl, SF(15), 0);
         if (days == 0) {
             lv_label_set_text(b_lbl, tr("Vandaag", "Today"));
-            lv_obj_set_style_text_color(b_lbl, lv_color_hex(0x22cc66), 0);
+            lv_obj_set_style_text_color(b_lbl, lv_color_hex(THEME_SUCCESS), 0);
         } else if (days == 1) {
             lv_label_set_text(b_lbl, tr("Morgen", "Tomorrow"));
             lv_obj_set_style_text_color(b_lbl, lv_color_hex(THEME_WARN_ORANGE), 0);
@@ -200,7 +200,7 @@ void screen_waste_show(void) {
     lv_obj_align(close, LV_ALIGN_TOP_RIGHT, SX(-12), SY(8));
     lv_obj_set_style_bg_color(close, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_set_style_border_color(close, lv_color_hex(THEME_BORDER), 0);
-    lv_obj_set_style_border_width(close, settings.home_light_mode ? 1 : 0, 0);
+    lv_obj_set_style_border_width(close, THEME_IS_LIGHT ? 1 : 0, 0);
     lv_obj_set_style_radius(close, 12, 0);
     lv_obj_set_ext_click_area(close, 30);
     lv_obj_add_event_cb(close, on_close, LV_EVENT_CLICKED, NULL);
@@ -223,7 +223,7 @@ void screen_waste_show(void) {
     lv_obj_align(s_btn_prev, LV_ALIGN_TOP_LEFT, SX(340), SY(17));
     lv_obj_set_style_bg_color(s_btn_prev, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_set_style_border_color(s_btn_prev, lv_color_hex(THEME_BORDER), 0);
-    lv_obj_set_style_border_width(s_btn_prev, settings.home_light_mode ? 1 : 0, 0);
+    lv_obj_set_style_border_width(s_btn_prev, THEME_IS_LIGHT ? 1 : 0, 0);
     lv_obj_set_style_radius(s_btn_prev, 8, 0);
     lv_obj_add_event_cb(s_btn_prev, on_waste_prev, LV_EVENT_CLICKED, NULL);
     lv_obj_t * pl = lv_label_create(s_btn_prev);
@@ -242,7 +242,7 @@ void screen_waste_show(void) {
     lv_obj_align(s_btn_next, LV_ALIGN_TOP_LEFT, SX(630), SY(17));
     lv_obj_set_style_bg_color(s_btn_next, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_set_style_border_color(s_btn_next, lv_color_hex(THEME_BORDER), 0);
-    lv_obj_set_style_border_width(s_btn_next, settings.home_light_mode ? 1 : 0, 0);
+    lv_obj_set_style_border_width(s_btn_next, THEME_IS_LIGHT ? 1 : 0, 0);
     lv_obj_set_style_radius(s_btn_next, 8, 0);
     lv_obj_add_event_cb(s_btn_next, on_waste_next, LV_EVENT_CLICKED, NULL);
     lv_obj_t * nl = lv_label_create(s_btn_next);

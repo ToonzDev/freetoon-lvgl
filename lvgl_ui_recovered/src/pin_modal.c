@@ -11,6 +11,7 @@
 #include "settings.h"
 #include "display.h"
 #include "i18n.h"
+#include "theme.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -68,7 +69,7 @@ static void on_ok(lv_event_t * e) {
         lv_label_set_text_fmt(g_err_lbl, tr("Onjuist - nog %d pogingen",
                                             "Incorrect - %d tries left"),
                               MAX_ATTEMPTS - g_attempts);
-        lv_obj_set_style_text_color(g_err_lbl, lv_color_hex(0xff6060), 0);
+        lv_obj_set_style_text_color(g_err_lbl, lv_color_hex(THEME_DANGER), 0);
     }
 }
 
@@ -100,7 +101,7 @@ void pin_gate(pin_action_cb action, void * ctx) {
     g_backdrop = lv_obj_create(lv_scr_act());
     lv_obj_remove_style_all(g_backdrop);
     lv_obj_set_size(g_backdrop, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_bg_color(g_backdrop, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_color(g_backdrop, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(g_backdrop, LV_OPA_70, 0);
     lv_obj_add_flag(g_backdrop, LV_OBJ_FLAG_CLICKABLE);  /* eat taps */
     lv_obj_clear_flag(g_backdrop, LV_OBJ_FLAG_SCROLLABLE);
@@ -113,16 +114,16 @@ void pin_gate(pin_action_cb action, void * ctx) {
     lv_obj_t * panel = lv_obj_create(g_backdrop);
     lv_obj_set_size(panel, panel_w, panel_h);
     lv_obj_center(panel);
-    lv_obj_set_style_bg_color(panel, lv_color_hex(0x202020), 0);
+    lv_obj_set_style_bg_color(panel, lv_color_hex(THEME_CARD_BG), 0);
     lv_obj_set_style_border_width(panel, 1, 0);
-    lv_obj_set_style_border_color(panel, lv_color_hex(0x404040), 0);
+    lv_obj_set_style_border_color(panel, lv_color_hex(THEME_BORDER), 0);
     lv_obj_set_style_radius(panel, 8, 0);
     lv_obj_set_style_pad_all(panel, 12, 0);
     lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t * title = lv_label_create(panel);
     lv_label_set_text(title, tr("Voer PIN in", "Enter PIN"));
-    lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(title, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(title, SF(22), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
 
@@ -135,10 +136,13 @@ void pin_gate(pin_action_cb action, void * ctx) {
     lv_obj_align(g_ta, LV_ALIGN_TOP_MID, 0, 38);
     lv_obj_set_style_text_font(g_ta, SF(22), 0);
     lv_obj_set_style_text_align(g_ta, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_bg_color(g_ta, lv_color_hex(THEME_INPUT_BG), 0);
+    lv_obj_set_style_text_color(g_ta, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_border_color(g_ta, lv_color_hex(THEME_BORDER), 0);
 
     g_err_lbl = lv_label_create(panel);
     lv_label_set_text(g_err_lbl, "");
-    lv_obj_set_style_text_color(g_err_lbl, lv_color_hex(0xaaaaaa), 0);
+    lv_obj_set_style_text_color(g_err_lbl, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(g_err_lbl, SF(14), 0);
     lv_obj_align_to(g_err_lbl, g_ta, LV_ALIGN_OUT_BOTTOM_MID, 0, 4);
 
@@ -151,6 +155,9 @@ void pin_gate(pin_action_cb action, void * ctx) {
     if (kb_h < 180) kb_h = 180;
     lv_obj_set_size(kb, panel_w - 24, kb_h);
     lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_bg_color(kb, lv_color_hex(THEME_INPUT_BG), 0);
+    lv_obj_set_style_bg_color(kb, lv_color_hex(THEME_BTN_BG), LV_PART_ITEMS);
+    lv_obj_set_style_text_color(kb, lv_color_hex(THEME_TEXT_HI), LV_PART_ITEMS);
     lv_obj_add_event_cb(kb, on_kb_event, LV_EVENT_READY,  NULL);
     lv_obj_add_event_cb(kb, on_kb_event, LV_EVENT_CANCEL, NULL);
 
