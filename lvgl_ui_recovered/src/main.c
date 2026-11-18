@@ -175,6 +175,9 @@ int main(int argc, char** argv) {
         extern int meteradapter_start(void);
         if (meteradapter_start() != 0)
             fprintf(stderr, "[main] meteradapter_start failed\n");
+        extern int rrd_meter_loggers_start(void);
+        if (rrd_meter_loggers_start() != 0)
+            fprintf(stderr, "[main] rrd_meter_loggers_start failed\n");
         if (otgw_start() != 0)
             fprintf(stderr, "[main] otgw_start failed\n");
     }

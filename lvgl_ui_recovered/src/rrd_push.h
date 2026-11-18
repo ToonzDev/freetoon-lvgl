@@ -18,4 +18,11 @@ int rrd_logger_exists(const char * name);
  * no device behind it: fed with rrd_push only. 0 = sent. */
 int rrd_create_counter_logger(const char * name);
 
+/* With a HomeWizard/ESPHome P1 as energy source, stop the stock meter
+ * loggers (gas_quantity, gas_flow, elec_quantity_nt/_lt, elec_flow) from
+ * sampling the meter adapter (deviceUuid -> placeholder, original saved);
+ * back on the meter adapter, restore the saved device. Master only. */
+void rrd_meter_loggers_sync(void);
+int  rrd_meter_loggers_start(void);   /* background: after 90 s, then every 10 min */
+
 #endif
