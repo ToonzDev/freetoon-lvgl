@@ -178,8 +178,49 @@ static void on_weather_apply(lv_event_t * e) {
      * the city is unchanged -- and also when the new name can't be found, which
      * used to silently put the OLD id back into the field (a misspelt name plus
      * a correct id came out as "Saved. De Bilt = 2757783"). */
+    /* Lat/Lon: swapped values are put right (a user had lat 4.14 / lon 51.84:
+     * empty rain graph, no message), impossible ones are refused, and changed
+     * coordinates pick the forecast place too (nearest Buienradar place) —
+     * they used to move only the rain tile and leave the forecast on De Bilt. */
+    char nlat[sizeof settings.weather_lat] = "", nlon[sizeof settings.weather_lon] = "";
+    if (ta_wx_lat) snprintf(nlat, sizeof nlat, "%s", lv_textarea_get_text(ta_wx_lat));
+    if (ta_wx_lon) snprintf(nlon, sizeof nlon, "%s", lv_textarea_get_text(ta_wx_lon));
+    int swapped = settings_coords_unswap(nlat, sizeof nlat, nlon, sizeof nlon);
+    if (swapped) {
+        if (ta_wx_lat) lv_textarea_set_text(ta_wx_lat, nlat);
+        if (ta_wx_lon) lv_textarea_set_text(ta_wx_lon, nlon);
+    }
+    double la = weather_coord_atof(nlat), lo = weather_coord_atof(nlon);
+    int have_coords = nlat[0] && nlon[0];
+    int coords_bad = (nlat[0] || nlon[0]) &&
+                     (!have_coords || la < -90 || la > 90 || lo < -180 || lo > 180 ||
+                      (la == 0.0 && lo == 0.0));
+    int coords_far = have_coords && !coords_bad && (la < 49 || la > 56 || lo < 2 || lo > 8);
+    int coords_changed = strcmp(nlat, settings.weather_lat) || strcmp(nlon, settings.weather_lon);
+    if (!coords_bad) {
+        snprintf(settings.weather_lat, sizeof settings.weather_lat, "%s", nlat);
+        snprintf(settings.weather_lon, sizeof settings.weather_lon, "%s", nlon);
+    }
+    int geo_by_coords = 0;
+    if (have_coords && !coords_bad && coords_changed) {
+        char nm[sizeof settings.weather_location];
+        int gid = weather_geocode_coords(la, lo, nm, sizeof nm);
+        if (gid > 0) {
+            geo_by_coords = 1;
+            settings.weather_location_id = gid;
+            if (nm[0]) snprintf(settings.weather_location, sizeof settings.weather_location, "%s", nm);
+            if (ta_wx_city) lv_textarea_set_text(ta_wx_city, settings.weather_location);
+            if (ta_wx_id) {
+                char idbuf[12]; snprintf(idbuf, sizeof idbuf, "%d", gid);
+                lv_textarea_set_text(ta_wx_id, idbuf);
+            }
+        }
+    }
+
     int geo_failed = 0;
-    if (city_changed && settings.weather_location[0]) {
+    if (geo_by_coords) {
+        /* place + id come from the coordinates */
+    } else if (city_changed && settings.weather_location[0]) {
         int gid = weather_geocode(settings.weather_location);
         if (gid > 0) settings.weather_location_id = gid;
         else {
@@ -195,28 +236,38 @@ static void on_weather_apply(lv_event_t * e) {
         int id = atoi(lv_textarea_get_text(ta_wx_id));
         if (id > 0) settings.weather_location_id = id;
     }
-    if (ta_wx_lat) {
-        snprintf(settings.weather_lat, sizeof settings.weather_lat, "%s", lv_textarea_get_text(ta_wx_lat));
-    }
-    if (ta_wx_lon) {
-        snprintf(settings.weather_lon, sizeof settings.weather_lon, "%s", lv_textarea_get_text(ta_wx_lon));
-    }
     settings_save();
     weather_relocate_async();
     extern void buienradar_rain_refresh_async(void);
     buienradar_rain_refresh_async();
     if (lbl_wx_status) {
-        if (geo_failed)
-            lv_label_set_text_fmt(lbl_wx_status,
-                tr("Opgeslagen, maar plaats '%s' niet gevonden: controleer de spelling%s.",
-                   "Saved, but '%s' was not found: check the spelling%s."),
-                settings.weather_location,
-                (settings.weather_lat[0] && settings.weather_lon[0])
-                    ? tr(" (Lat/Lon worden gebruikt)", " (using Lat/Lon)") : "");
+        char st[320]; int o = 0;
+        if (swapped)
+            o += snprintf(st + o, sizeof st - (size_t)o, "%s",
+                          tr("Lat en Lon waren omgewisseld - gecorrigeerd. ",
+                             "Lat and Lon were swapped - corrected. "));
+        if (coords_bad)
+            o += snprintf(st + o, sizeof st - (size_t)o, "%s",
+                          tr("Lat/Lon ongeldig, niet opgeslagen (NL: Lat ~51-53, Lon ~3-7). ",
+                             "Lat/Lon invalid, not saved (NL: Lat ~51-53, Lon ~3-7). "));
+        if (geo_by_coords)
+            o += snprintf(st + o, sizeof st - (size_t)o, tr("Opgeslagen. Lat/Lon: %s = %d", "Saved. Lat/Lon: %s = %d"),
+                          settings.weather_location, settings.weather_location_id);
+        else if (geo_failed)
+            o += snprintf(st + o, sizeof st - (size_t)o,
+                          tr("Opgeslagen, maar plaats '%s' niet gevonden: controleer de spelling%s.",
+                             "Saved, but '%s' was not found: check the spelling%s."),
+                          settings.weather_location,
+                          (settings.weather_lat[0] && settings.weather_lon[0])
+                              ? tr(" (Lat/Lon worden gebruikt)", " (using Lat/Lon)") : "");
         else
-            lv_label_set_text_fmt(lbl_wx_status,
-                tr("Opgeslagen. %s = %d", "Saved. %s = %d"), settings.weather_location,
-                settings.weather_location_id);
+            o += snprintf(st + o, sizeof st - (size_t)o, tr("Opgeslagen. %s = %d", "Saved. %s = %d"),
+                          settings.weather_location, settings.weather_location_id);
+        if (coords_far)
+            snprintf(st + o, sizeof st - (size_t)o, "%s",
+                     tr(" Let op: Lat/Lon liggen buiten Nederland/Belgie.",
+                        " Note: Lat/Lon are outside the Netherlands/Belgium."));
+        lv_label_set_text(lbl_wx_status, st);
     }
 }
 static void on_dim_waste_change(lv_event_t * e) {

@@ -741,6 +741,38 @@ int weather_geocode(const char * city) {
     return br_find_place(city, &lat, &lon);
 }
 
+double weather_coord_atof(const char * s) { return coord_atof(s); }
+
+/* Coordinate -> nearest place: location.buienradar.nl/1.1/location/geo
+ * answers with a redirect (curl -L follows it) to one object
+ *   {"id":2751073,"name":"Medemblik","countrycode":"NL","location":{…},…} */
+int weather_geocode_coords(double lat, double lon, char * name, size_t namesz) {
+    if (name && namesz) name[0] = 0;
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180 || (lat == 0.0 && lon == 0.0)) return 0;
+    char url[160];
+    snprintf(url, sizeof url,
+             "https://location.buienradar.nl/1.1/location/geo?lat=%.4f&lon=%.4f", lat, lon);
+    char body[8 * 1024];
+    if (http_fetch_to(url, body, sizeof body, 15) != 0) {
+        fprintf(stderr, "[wx] coords %.4f,%.4f: no response from location.buienradar.nl\n", lat, lon);
+        return 0;
+    }
+    const char * ob = strchr(body, '{');
+    if (!ob) return 0;
+    const char * oe = json_skip(ob, body + strlen(body));
+    int id = (int)obj_num(ob, oe, "id", 0);
+    if (id <= 0) {
+        fprintf(stderr, "[wx] coords %.4f,%.4f: no place found\n", lat, lon);
+        return 0;
+    }
+    char nm[64], cc[4];
+    obj_str(ob, oe, "name", nm, sizeof nm);
+    obj_str(ob, oe, "countrycode", cc, sizeof cc);
+    if (name && namesz) snprintf(name, namesz, "%s", nm);
+    fprintf(stderr, "[wx] coords %.4f,%.4f -> '%s' id %d (%s)\n", lat, lon, nm, id, cc[0] ? cc : "?");
+    return id;
+}
+
 /* The location in use: Buienradar id for the forecast, coordinates for the
  * rain tile (manual Lat/Lon win over the place's own).
  *
@@ -761,15 +793,48 @@ static int manual_coords(double * lat, double * lon) {
     return (*lat != 0.0 || *lon != 0.0);
 }
 
-/* (Re)start on the configured location: the stored id, or — without one —
- * the name lookup now, or De Bilt. */
+#define DEBILT_ID 2757783
+
+/* Keep a resolved location: without saving it, every restart depended on the
+ * start-up lookup again — the one that times out on a Toon 1. */
+static void persist_location(int id, const char * name) {
+    settings.weather_location_id = id;
+    if (name && name[0])
+        snprintf(settings.weather_location, sizeof settings.weather_location, "%s", name);
+    settings_save();
+}
+
+/* Manual Lat/Lon decide the forecast place when no own Buienradar id is set
+ * (none, or still the De Bilt default). Before, the coordinates only moved the
+ * rain tile and the forecast stayed on De Bilt. */
+static int coords_drive_location(double * lat, double * lon) {
+    if (!manual_coords(lat, lon)) return 0;
+    int id = settings.weather_location_id;
+    if (id > 0 && id != DEBILT_ID) return 0;         /* the user's own id wins */
+    double dlat = *lat - 52.10, dlon = *lon - 5.18;
+    if (dlat > -0.03 && dlat < 0.03 && dlon > -0.05 && dlon < 0.05) return 0;   /* is De Bilt */
+    return 1;
+}
+
+/* (Re)start on the configured location: Lat/Lon (see coords_drive_location),
+ * else the stored id, else the name lookup now, else De Bilt. A lookup that
+ * gets no answer (Toon 1 at start-up) is retried by weather_check_name. */
 static void weather_locate(void) {
-    double lat = 0, lon = 0;
+    double lat = 0, lon = 0, mlat, mlon;
     int id = settings.weather_location_id;
     g_loc_by_name = 0;
-    if (id <= 0 && settings.weather_location[0]) {
+    if (coords_drive_location(&mlat, &mlon)) {
+        char nm[sizeof settings.weather_location];
+        int gid = weather_geocode_coords(mlat, mlon, nm, sizeof nm);
+        if (gid > 0) {
+            id = gid;
+            g_loc_by_name = 1;
+            persist_location(gid, nm);
+        }
+    } else if (id <= 0 && settings.weather_location[0]) {
         id = br_find_place(settings.weather_location, &lat, &lon);
         g_loc_by_name = (id > 0);
+        if (id > 0) persist_location(id, NULL);
     }
     if (id <= 0) {
         id = 2757783;                        /* De Bilt */
@@ -786,7 +851,20 @@ static void weather_locate(void) {
 /* Confirms the place name (once per location). Returns 1 if it maps to a
  * different id than the one in use — the caller then refetches. */
 static int weather_check_name(void) {
-    if (g_loc_by_name || !settings.weather_location[0]) return 0;
+    if (g_loc_by_name) return 0;
+    double clat, clon;
+    if (coords_drive_location(&clat, &clon)) {
+        char nm[sizeof settings.weather_location];
+        int id = weather_geocode_coords(clat, clon, nm, sizeof nm);
+        if (id <= 0) return 0;               /* no answer: try again later */
+        g_loc_by_name = 1;
+        persist_location(id, nm);
+        if (id == g_loc_id) return 0;
+        fprintf(stderr, "[wx] Lat/Lon is '%s' id %d, not %d — switching\n", nm, id, g_loc_id);
+        g_loc_id = id;
+        return 1;
+    }
+    if (!settings.weather_location[0]) return 0;
     /* If the user has explicitly configured a custom location ID (different from
      * the default De Bilt 2757783), honour it! Never let a default or mismatched
      * place name string overwrite the user's configured ID. */
@@ -806,7 +884,7 @@ static int weather_check_name(void) {
     fprintf(stderr, "[wx] '%s' is id %d, not %d — switching\n",
             settings.weather_location, id, g_loc_id);
     g_loc_id = id;
-    settings.weather_location_id = id;
+    persist_location(id, NULL);
     return 1;
 }
 
@@ -865,9 +943,13 @@ static void * wx_thread(void * arg) {
                 fprintf(stderr, "[wx] radar refreshed (tick %d)\n", radar_tick++);
             else
                 fprintf(stderr, "[wx] radar fetch failed\n");
-            for (int s = 0; s < 5 * 60 && !g_wx_wake; s++)
+            /* A place lookup still pending (no answer at start-up, typical on a
+               Toon 1): retry every minute instead of every 5. */
+            for (int s = 1; s <= 5 * 60 && !g_wx_wake && !refetch; s++) {
                 sleep(1);
-            if (!g_wx_wake) refetch = weather_check_name();
+                if (!g_loc_by_name && s % 60 == 0 && s < 5 * 60) refetch = weather_check_name();
+            }
+            if (!g_wx_wake && !refetch) refetch = weather_check_name();
         }
         g_wx_wake = 0;
     }

@@ -405,5 +405,9 @@ void vnc_apply_state(int enabled);
 /* Strip control chars (<0x20) from a string in place — keeps user-entered
  * values from corrupting the cfg or injecting newlines. */
 void settings_sanitize_str(char * s);
+/* Weather Lat/Lon typed the wrong way round (lat ~2-8, lon ~49-56): swaps
+ * the two strings back and returns 1, else 0. */
+#include <stddef.h>
+int settings_coords_unswap(char * lat, size_t latsz, char * lon, size_t lonsz);
 
 #endif

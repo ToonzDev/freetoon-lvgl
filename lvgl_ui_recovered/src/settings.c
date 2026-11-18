@@ -780,6 +780,16 @@ autodetect:
         }
     }
 
+    /* Lat/Lon entered the wrong way round (user report: weather_lat=4.14,
+     * weather_lon=51.84 — a point off Somalia, so the rain graph stayed
+     * empty). Many sites list longitude first. Swap them back. */
+    if (settings_coords_unswap(settings.weather_lat, sizeof settings.weather_lat,
+                               settings.weather_lon, sizeof settings.weather_lon)) {
+        fprintf(stderr, "[settings] weather_lat/lon were swapped — corrected to lat %s, lon %s\n",
+                settings.weather_lat, settings.weather_lon);
+        settings_save();
+    }
+
     /* First boot: write the cfg now so users have an editable file even
      * before they ever open Settings. Especially important on Toon 1 —
      * if the resistive panel is mis-mapped, the GUI is unreachable and
@@ -795,6 +805,27 @@ autodetect:
     if (!cfg_existed) {
         settings_save();
     }
+}
+
+/* "51.83" or "51,83" -> 51.83 (Dutch decimal comma). */
+static double coord_val(const char * s) {
+    char b[24]; size_t i = 0;
+    for (; s && s[i] && i < sizeof b - 1; i++) b[i] = (s[i] == ',') ? '.' : s[i];
+    b[i] = 0;
+    return atof(b);
+}
+
+/* A latitude that looks like a Benelux longitude together with a longitude
+ * that looks like a Benelux latitude: swapped. Swaps the strings, returns 1. */
+int settings_coords_unswap(char * lat, size_t latsz, char * lon, size_t lonsz) {
+    if (!lat || !lon || !lat[0] || !lon[0]) return 0;
+    double a = coord_val(lat), o = coord_val(lon);
+    if (!(a >= 2.0 && a <= 8.0 && o >= 49.0 && o <= 56.0)) return 0;
+    char t[32];
+    snprintf(t, sizeof t, "%s", lat);
+    snprintf(lat, latsz, "%s", lon);
+    snprintf(lon, lonsz, "%s", t);
+    return 1;
 }
 
 /* Strip control characters (< 0x20: newline, CR, tab, etc.) in place. Keeps
