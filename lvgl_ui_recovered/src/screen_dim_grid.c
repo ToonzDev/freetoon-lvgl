@@ -1321,3 +1321,77 @@ lv_obj_t * screen_dim_grid_create(void) {
     if (!refresh_timer) refresh_timer = lv_timer_create(refresh_cb, 1000, NULL);
     return scr_root;
 }
+
+/* Theme change: drop the cached screen (see screen_dim_destroy). */
+void screen_dim_grid_destroy(void) {
+    if (!scr_root) return;
+    if (refresh_timer) { lv_timer_del(refresh_timer); refresh_timer = NULL; }
+    lv_obj_t * s = scr_root;
+    scr_root = NULL;
+    lbl_clock_h = NULL;
+    lbl_clock_m = NULL;
+    lbl_clock_colon = NULL;
+    lbl_date = NULL;
+    dim_moon_img = NULL;
+    lbl_temp = NULL;
+    lbl_setpoint = NULL;
+    lbl_outside_temp = NULL;
+    lbl_program = NULL;
+    lbl_metrics = NULL;
+    lbl_burner = NULL;
+    dim_img_flame = NULL;
+    dim_img_faucet = NULL;
+    dim_img_drop = NULL;
+    wx_icon = NULL;
+    lbl_outside = NULL;
+    waste_icon = NULL;
+    waste_icon_2 = NULL;
+    lbl_waste = NULL;
+    waste_box_ptr = NULL;
+    dim_lbl_city = NULL;
+    dim_lbl_life360_a = NULL;
+    dim_lbl_life360_b = NULL;
+    dim_rain_box = NULL;
+    dim_rain_hdr = NULL;
+    dim_rain_lbl_title = NULL;
+    dim_rain_lbl_status = NULL;
+    dim_rain_lbl_empty = NULL;
+    dim_rain_chart = NULL;
+    dim_rain_ser = NULL;
+    dim_vent_fan = NULL;
+    dim_vent_lbl = NULL;
+    dim_img_water = NULL;
+    dim_lbl_water = NULL;
+    en_pwr_track = NULL;
+    en_pwr_fill = NULL;
+    en_pwr_lbl = NULL;
+    en_gas_track = NULL;
+    en_gas_fill = NULL;
+    en_gas_lbl = NULL;
+    en_sol_track = NULL;
+    en_sol_fill = NULL;
+    en_sol_lbl = NULL;
+    en_eday_track = NULL;
+    en_eday_fill = NULL;
+    en_eday_lbl = NULL;
+    en_pwr_vlbl = NULL;
+    en_pwr_vunit = NULL;
+    en_gas_vlbl = NULL;
+    en_gas_vunit = NULL;
+    en_sol_vlbl = NULL;
+    en_sol_vunit = NULL;
+    en_eday_vlbl = NULL;
+    en_eday_vunit = NULL;
+    memset(dim_fc_icon, 0, sizeof dim_fc_icon);
+    memset(dim_fc_day, 0, sizeof dim_fc_day);
+    memset(dim_fc_temp, 0, sizeof dim_fc_temp);
+    memset(dim_lbl_agenda_time, 0, sizeof dim_lbl_agenda_time);
+    memset(dim_lbl_agenda_title, 0, sizeof dim_lbl_agenda_title);
+    memset(dim_thresh_lbl, 0, sizeof dim_thresh_lbl);
+    memset(dim_rain_lbl_times, 0, sizeof dim_rain_lbl_times);
+    memset(en_pwr_segs, 0, sizeof en_pwr_segs);
+    memset(en_gas_segs, 0, sizeof en_gas_segs);
+    memset(en_sol_segs, 0, sizeof en_sol_segs);
+    memset(en_eday_segs, 0, sizeof en_eday_segs);
+    lv_obj_del(s);
+}

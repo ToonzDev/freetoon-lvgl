@@ -1017,3 +1017,55 @@ lv_obj_t * screen_dim_create(void) {
     if (!refresh_timer) refresh_timer = lv_timer_create(refresh_cb, 1000, NULL);
     return scr_root;
 }
+
+/* Theme change: drop the cached screen so the next dim builds it in the new palette. Clears every widget pointer, so refresh code never touches a freed object. */
+void screen_dim_destroy(void) {
+    if (!scr_root) return;
+    if (refresh_timer) { lv_timer_del(refresh_timer); refresh_timer = NULL; }
+    lv_obj_t * s = scr_root;
+    scr_root = NULL;
+    lbl_clock_h = NULL;
+    lbl_clock_m = NULL;
+    lbl_clock_colon = NULL;
+    lbl_date = NULL;
+    dim_moon_img = NULL;
+    lbl_temp = NULL;
+    lbl_setpoint = NULL;
+    lbl_outside_temp = NULL;
+    lbl_program = NULL;
+    lbl_metrics = NULL;
+    lbl_burner = NULL;
+    dim_img_flame = NULL;
+    dim_img_faucet = NULL;
+    dim_img_drop = NULL;
+    wx_icon = NULL;
+    lbl_outside = NULL;
+    waste_icon = NULL;
+    waste_icon_2 = NULL;
+    lbl_waste = NULL;
+    waste_box_ptr = NULL;
+    dim_lbl_city = NULL;
+    dim_lbl_life360_a = NULL;
+    dim_lbl_life360_b = NULL;
+    dim_vent_fan = NULL;
+    dim_vent_lbl = NULL;
+    dim_img_water = NULL;
+    dim_lbl_water = NULL;
+    lbl_dim_nilm = NULL;
+    bar_gas_env = NULL;
+    bar_gas_fill = NULL;
+    bar_gas_cap = NULL;
+    bar_eact_env = NULL;
+    bar_eact_fill = NULL;
+    bar_eact_cap = NULL;
+    bar_eday_env = NULL;
+    bar_eday_fill = NULL;
+    bar_eday_cap = NULL;
+    memset(dim_fc_icon, 0, sizeof dim_fc_icon);
+    memset(dim_fc_day, 0, sizeof dim_fc_day);
+    memset(dim_fc_temp, 0, sizeof dim_fc_temp);
+    memset(bar_gas_segs, 0, sizeof bar_gas_segs);
+    memset(bar_eact_segs, 0, sizeof bar_eact_segs);
+    memset(bar_eday_segs, 0, sizeof bar_eday_segs);
+    lv_obj_del(s);
+}

@@ -114,6 +114,7 @@ target_include_directories(index PRIVATE
 target_compile_definitions(index PRIVATE
     LV_CONF_INCLUDE_SIMPLE
     LV_LVGL_H_INCLUDE_SIMPLE
+    FT_HOST                  # theme.h: read the palette directly (theme.c)
     # Enable LVGL's SDL display/input driver and give it the design resolution.
     # lv_drv_conf.h gates the SDL driver behind USE_SDL and the MONITOR_*_RES
     # defines behind USE_MONITOR; flip both on here rather than patching the
