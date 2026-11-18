@@ -80,7 +80,7 @@ alles ook via VNC of touch in te vullen is.
 | **Weather** | Stad (zoekt automatisch het Buienradar-id op), forecast-modus (auto/uur/dag) |
 | **Waste** | Afvalkalender: postcode+huisnummer (HVC) **of** een eigen ICS-kalender-URL |
 | **Heating** | Temperatuur-offset, keteltype |
-| **OT Bridge** | OpenTherm-brugmodus: Direct / Proxy / Wireless |
+| **OT Bridge** | OpenTherm-brugmodus: Direct / Draadloos |
 | **MQTT** | Broker host/poort/gebruiker + topics (banners) |
 | **Presets** | Setpoints per programma (Comfort/Home/Sleep/Away) |
 | **About** | Versie, status, diagnostiek, handmatige update-check |
