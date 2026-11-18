@@ -33,12 +33,12 @@
 #define COL_CARD     THEME_CARD_BG
 #define COL_TEXT_HI  THEME_TEXT_HI
 #define COL_TEXT_DIM THEME_TEXT_DIM
-#define COL_OK       (settings.home_light_mode ? 0x16a34a : 0x2e6e3a)
-#define COL_WARN     (settings.home_light_mode ? 0xdc2626 : 0x6e3a3a)
+#define COL_OK       THEME_SUCCESS_BG
+#define COL_WARN     THEME_DANGER_BG
 #define COL_OFF      THEME_OFF
-#define COL_GREEN    (settings.home_light_mode ? 0x16a34a : 0x36c46b)
-#define COL_RED      (settings.home_light_mode ? 0xdc2626 : 0xd4574f)
-#define COL_AMBER    (settings.home_light_mode ? 0xd97706 : 0xd9a23a)
+#define COL_GREEN    THEME_SUCCESS
+#define COL_RED      THEME_DANGER
+#define COL_AMBER    THEME_WARNING
 
 static lv_obj_t * scr_root      = NULL;
 static lv_obj_t * lbl_met_state = NULL;
@@ -188,7 +188,7 @@ static lv_obj_t * mk_btn(lv_obj_t * parent, const char * txt, uint32_t col,
     lv_obj_set_ext_click_area(b, 8);
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t * l = lv_label_create(b);
-    lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(l, lv_color_hex(col == (uint32_t)THEME_BTN_ACCENT ? THEME_TEXT_HI : THEME_ON_ACCENT), 0);
     lv_obj_set_style_text_font(l, SF(20), 0);
     lv_label_set_text(l, txt);
     lv_obj_center(l);
@@ -205,7 +205,7 @@ static lv_obj_t * mk_card(int y, const char * title, const char * kind,
     lv_obj_align(card, LV_ALIGN_TOP_LEFT, 22, y);
     lv_obj_set_style_bg_color(card, lv_color_hex(COL_CARD), 0);
     lv_obj_set_style_border_color(card, lv_color_hex(THEME_BORDER), 0);
-    lv_obj_set_style_border_width(card, settings.home_light_mode ? 1 : 0, 0);
+    lv_obj_set_style_border_width(card, THEME_IS_LIGHT ? 1 : 0, 0);
     lv_obj_set_style_radius(card, 14, 0);
     lv_obj_set_style_pad_all(card, 16, 0);
     lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
@@ -241,15 +241,15 @@ static lv_obj_t * mk_card(int y, const char * title, const char * kind,
     return card;
 }
 
-static int scr_light_mode = -1;
+static int scr_light_mode = -1;   /* cached UI theme (settings.ui_theme) */
 
 lv_obj_t * screen_adapters_create(void) {
-    if (scr_root && scr_light_mode == settings.home_light_mode) return scr_root;
+    if (scr_root && scr_light_mode == settings.ui_theme) return scr_root;
     if (scr_root) { lv_obj_del(scr_root); scr_root = NULL; }
     /* Rebuild (light-mode/theme toggle): the old timer must go too, or one
      * more paused timer leaks per toggle. */
     if (refresh_timer) { lv_timer_del(refresh_timer); refresh_timer = NULL; }
-    scr_light_mode = settings.home_light_mode;
+    scr_light_mode = settings.ui_theme;
 
     scr_root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(COL_BG), 0);
@@ -281,7 +281,7 @@ lv_obj_t * screen_adapters_create(void) {
     /* Meteradapter card + buttons. */
     lv_obj_t * mcard = mk_card(SY(86), tr("Meteradapter", "Meteradapter"), tr("Slimme meter - Z-Wave", "Smart meter - Z-Wave"),
                                &lbl_met_state, &lbl_met_sub);
-    mk_btn(mcard, tr("Test", "Test"), 0x2a4060, on_met_test, NULL);
+    mk_btn(mcard, tr("Test", "Test"), THEME_BTN_ACCENT, on_met_test, NULL);
     lv_obj_t * met_test = lv_obj_get_child(mcard, lv_obj_get_child_cnt(mcard) - 1);
     lv_obj_align(met_test, LV_ALIGN_TOP_RIGHT, 0, 0);
     mk_btn(mcard, tr("Beheren", "Manage"), COL_OK, on_manage_clicked, NULL);
@@ -291,7 +291,7 @@ lv_obj_t * screen_adapters_create(void) {
     /* Keteladapter card + button. */
     lv_obj_t * kcard = mk_card(SY(312), tr("Keteladapter", "Keteladapter"), tr("Ketel - bedraad (OpenTherm)", "Boiler - wired (OpenTherm)"),
                                &lbl_ket_state, &lbl_ket_sub);
-    mk_btn(kcard, tr("Test", "Test"), 0x2a4060, on_ket_test, NULL);
+    mk_btn(kcard, tr("Test", "Test"), THEME_BTN_ACCENT, on_ket_test, NULL);
     lv_obj_t * ket_test = lv_obj_get_child(kcard, lv_obj_get_child_cnt(kcard) - 1);
     lv_obj_align(ket_test, LV_ALIGN_TOP_RIGHT, 0, 0);
 

@@ -291,7 +291,7 @@ typedef struct {
     int  anim_dim_enabled;           /* 1 = allow animations to remain visible in dim mode (default 0) */
     int  anim_duration_sec;          /* animation display duration in seconds (default 25) */
     int  home_theme;                 /* 0 = freetoon dark dashboard, 1 = stock light tile-carousel */
-    int  home_light_mode;            /* 0 = dark tiles (default), 1 = light tiles for freetoon dashboard */
+    int  home_light_mode;            /* 1 = Light theme active (derived from ui_theme; kept for plugins) */
     char stock_tiles[200];           /* stock-theme carousel layout: comma-sep tile keys per slot */
     int  stock_big_indoor;           /* stock theme: 1 = big readout is indoor temp, 0 = setpoint */
 
@@ -389,6 +389,11 @@ typedef struct {
 #define HW_SOCKET_MAX 4
     char  hw_socket_name[HW_SOCKET_MAX][24];
     char  hw_socket_host[HW_SOCKET_MAX][24];
+
+    /* Colour theme, UI_THEME_* in theme.h (0 Night, 1 Light, 2 Warm, 3 Black).
+     * home_light_mode above stays in step (1 exactly when Light) for plugins
+     * that only know light/dark; set both through theme_set(). */
+    int   ui_theme;
 } settings_t;
 
 #define FORECAST_AUTO   0

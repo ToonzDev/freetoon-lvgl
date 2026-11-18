@@ -18,10 +18,16 @@
 #include "ventilation.h"
 #include "meteradapter.h"   /* meter_state — for the restored dim energy bar */
 #include "icons.h"
+#include "theme.h"
+#include "fonts_opensans.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
+/* identity colours, same in every theme: Life360 person tints */
+#define DIM_COL_LIFE360_A 0x88aaff
+#define DIM_COL_LIFE360_B 0xff88cc
 
 LV_FONT_DECLARE(lv_font_montserrat_96_custom);
 
@@ -141,7 +147,7 @@ static void dim_make_bar(lv_obj_t ** env, lv_obj_t ** fill,
     lv_obj_remove_style_all(*fill);
     lv_obj_set_width(*fill, bw);
     lv_obj_set_height(*fill, 0);
-    ui_obj_set_style_bg_color(*fill, lv_color_hex(0xffffff), 0);
+    ui_obj_set_style_bg_color(*fill, lv_color_hex(THEME_DIM_TEXT), 0);
     ui_obj_set_style_bg_opa(*fill, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(*fill, 4, 0);
     ui_obj_clear_flag(*fill, LV_OBJ_FLAG_CLICKABLE);
@@ -161,13 +167,13 @@ static void dim_make_bar(lv_obj_t ** env, lv_obj_t ** fill,
         lv_obj_set_pos(segs[i], 4, y0 + i * (seg_h + seg_gap));
         lv_obj_set_style_radius(segs[i], 2, 0);
         ui_obj_set_style_border_width(segs[i], 0, 0);
-        ui_obj_set_style_bg_color(segs[i], lv_color_hex(0x2A3540), 0);
+        ui_obj_set_style_bg_color(segs[i], lv_color_hex(THEME_OFF), 0);
         ui_obj_set_style_bg_opa(segs[i], LV_OPA_COVER, 0);
         ui_obj_clear_flag(segs[i], LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
     }
 
     *cap = lv_label_create(scr_root);
-    ui_obj_set_style_text_color(*cap, lv_color_hex(0xffffff), 0);
+    ui_obj_set_style_text_color(*cap, lv_color_hex(THEME_DIM_TEXT), 0);
     ui_obj_set_style_text_font(*cap, (DISP_VER < 600) ? &lv_font_montserrat_14 : &lv_font_montserrat_18, 0);
     lv_obj_set_style_text_align(*cap, LV_TEXT_ALIGN_CENTER, 0);
     ui_label_set_text(*cap, "");
@@ -238,7 +244,7 @@ static void dim_bar_set(lv_obj_t * env, lv_obj_t * fill, lv_obj_t * cap,
             if (!segs[i]) continue;
             ui_obj_clear_flag(segs[i], LV_OBJ_FLAG_HIDDEN);
             int fb = DIM_NSEG - 1 - i;   /* 0 = bottom, 11 = top */
-            uint32_t c = (fb < lit) ? (fb < 7 ? 0x689F38 : 0xCCCC33) : 0x2A3540;
+            uint32_t c = (fb < lit) ? (fb < 7 ? THEME_SUCCESS : THEME_WARNING) : THEME_OFF;
             ui_obj_set_style_bg_color(segs[i], lv_color_hex(c), 0);
         }
     } else {
@@ -255,8 +261,14 @@ static void dim_bar_set(lv_obj_t * env, lv_obj_t * fill, lv_obj_t * cap,
 
     ui_obj_clear_flag(env, LV_OBJ_FLAG_HIDDEN);
     if (cap) {
-        ui_label_set_text(cap, txt);
-        ui_obj_set_style_text_color(cap, lv_color_hex(0xffffff), 0);
+        /* Value over unit ("384\nW"): two bars sit 10px apart, and side by
+         * side captions like "384 W" + "-- kWh" ran into each other. */
+        char two[32];
+        snprintf(two, sizeof two, "%s", txt ? txt : "");
+        char * sp = strrchr(two, ' ');
+        if (sp) *sp = '\n';
+        ui_label_set_text(cap, two);
+        ui_obj_set_style_text_color(cap, lv_color_hex(THEME_DIM_TEXT), 0);
         ui_obj_set_style_text_font(cap, (DISP_VER < 600) ? &lv_font_montserrat_14 : &lv_font_montserrat_18, 0);
         lv_obj_align_to(cap, env, LV_ALIGN_OUT_BOTTOM_MID, 0, SY(10));
         ui_obj_clear_flag(cap, LV_OBJ_FLAG_HIDDEN);
@@ -306,8 +318,8 @@ static void refresh_cb(lv_timer_t * t) {
     ui_label_set_text(lbl_clock_m, clk_m);
     lv_obj_update_layout(lbl_clock_h);
     lv_obj_update_layout(lbl_clock_m);
-    lv_obj_align_to(lbl_clock_h, lbl_clock_colon, LV_ALIGN_OUT_LEFT_MID, -SX(8), 0);
-    lv_obj_align_to(lbl_clock_m, lbl_clock_colon, LV_ALIGN_OUT_RIGHT_MID, SX(8), 0);
+    lv_obj_align_to(lbl_clock_h, lbl_clock_colon, LV_ALIGN_OUT_LEFT_MID, -SX(2), 0);
+    lv_obj_align_to(lbl_clock_m, lbl_clock_colon, LV_ALIGN_OUT_RIGHT_MID, SX(2), 0);
     char dt[64];
     snprintf(dt, sizeof(dt), "%s\n%d %s",
              i18n_day_long(tm.tm_wday),
@@ -333,11 +345,15 @@ static void refresh_cb(lv_timer_t * t) {
     /* Always paint values: if data not yet present, fall back to a
        "wait..." marker instead of leaving the stale "-- C" default. */
     if (toon_state.indoor_temp > 0)
-        ui_label_set_text_fmt(lbl_temp, "%.1f°C", toon_state.indoor_temp);
+        ui_label_set_text_fmt(lbl_temp, "%.1f°", toon_state.indoor_temp);
     else
         ui_label_set_text(lbl_temp, "...");
     lv_obj_update_layout(lbl_temp);
     if (dim_img_flame) lv_obj_align_to(dim_img_flame, lbl_temp, LV_ALIGN_OUT_BOTTOM_MID, 0, SY(8));
+    /* Ventilation fan + % sit left of the big temperature, whatever its
+     * width (a fixed offset put the fan on top of "20.0°C"). */
+    if (dim_vent_fan) lv_obj_align_to(dim_vent_fan, lbl_temp, LV_ALIGN_OUT_LEFT_MID, -SX(8), -SY(10));
+    if (dim_vent_lbl && dim_vent_fan) lv_obj_align_to(dim_vent_lbl, dim_vent_fan, LV_ALIGN_OUT_BOTTOM_MID, 0, -SY(14));
     if (dim_img_faucet) lv_obj_align_to(dim_img_faucet, lbl_temp, LV_ALIGN_OUT_BOTTOM_MID, -SX(10), SY(8));
     if (dim_img_drop) lv_obj_align_to(dim_img_drop, dim_img_faucet, LV_ALIGN_OUT_RIGHT_MID, SX(8), 0);
 
@@ -350,6 +366,8 @@ static void refresh_cb(lv_timer_t * t) {
             ui_label_set_text(lbl_setpoint, prog);
         }
         lv_obj_update_layout(lbl_setpoint);
+        /* Hang under the temperature, whatever its font height (Toon 1). */
+        lv_obj_align_to(lbl_setpoint, lbl_temp, LV_ALIGN_OUT_BOTTOM_MID, 0, -SY(6));
         if (dim_img_flame) lv_obj_align_to(dim_img_flame, lbl_setpoint, LV_ALIGN_OUT_BOTTOM_MID, 0, SY(8));
         if (dim_img_faucet) lv_obj_align_to(dim_img_faucet, lbl_setpoint, LV_ALIGN_OUT_BOTTOM_MID, -SX(10), SY(8));
         if (dim_img_drop) lv_obj_align_to(dim_img_drop, dim_img_faucet, LV_ALIGN_OUT_RIGHT_MID, SX(8), 0);
@@ -566,12 +584,12 @@ static void refresh_cb(lv_timer_t * t) {
                     size_t n = strlen(t1); while (n && t1[n-1] == ' ') t1[--n] = 0;
                 }
                 ui_img_set_src(waste_icon, waste_icon_for_label_lg(t1));
-                ui_obj_set_style_img_recolor(waste_icon, lv_color_hex(0xffffff), 0);
+                ui_obj_set_style_img_recolor(waste_icon, lv_color_hex(THEME_DIM_TEXT), 0);
                 ui_obj_set_style_img_recolor_opa(waste_icon, 255, 0);
                 if (waste_icon_2) {
                     if (t2[0]) {
                         ui_img_set_src(waste_icon_2, waste_icon_for_label_lg(t2));
-                        ui_obj_set_style_img_recolor(waste_icon_2, lv_color_hex(0xffffff), 0);
+                        ui_obj_set_style_img_recolor(waste_icon_2, lv_color_hex(THEME_DIM_TEXT), 0);
                         ui_obj_set_style_img_recolor_opa(waste_icon_2, 255, 0);
                         ui_obj_clear_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
                     } else ui_obj_add_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
@@ -589,7 +607,7 @@ static void refresh_cb(lv_timer_t * t) {
             } else if (settings.dim_waste_lead_days <= 0) {
                 /* Filter off and genuinely no upcoming pickup → dimmed placeholder. */
                 ui_img_set_src(waste_icon, &icon_trash_lg);
-                ui_obj_set_style_img_recolor(waste_icon, lv_color_hex(0xffffff), 0);
+                ui_obj_set_style_img_recolor(waste_icon, lv_color_hex(THEME_DIM_TEXT), 0);
                 ui_obj_set_style_img_recolor_opa(waste_icon, 100, 0); /* dimmed */
                 ui_label_set_text(lbl_waste, tr("Geen", "None"));
                 if (waste_icon_2) ui_obj_add_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
@@ -651,9 +669,9 @@ static void refresh_cb(lv_timer_t * t) {
             snprintf(edtxt, sizeof edtxt, "-- kWh");
         }
 
-        dim_bar_set(bar_gas_env,  bar_gas_fill,  bar_gas_cap,  bar_gas_segs,  show, gr,  0xffffff, gtxt);
-        dim_bar_set(bar_eact_env, bar_eact_fill, bar_eact_cap, bar_eact_segs, show, er,  0xffffff, etxt);
-        dim_bar_set(bar_eday_env, bar_eday_fill, bar_eday_cap, bar_eday_segs, show, edr, 0xffffff, edtxt);
+        dim_bar_set(bar_gas_env,  bar_gas_fill,  bar_gas_cap,  bar_gas_segs,  show, gr,  THEME_DIM_TEXT, gtxt);
+        dim_bar_set(bar_eact_env, bar_eact_fill, bar_eact_cap, bar_eact_segs, show, er,  THEME_DIM_TEXT, etxt);
+        dim_bar_set(bar_eday_env, bar_eday_fill, bar_eday_cap, bar_eday_segs, show, edr, THEME_DIM_TEXT, edtxt);
     }
     /* NILM transient device label */
     if (lbl_dim_nilm) {
@@ -668,7 +686,7 @@ static void refresh_cb(lv_timer_t * t) {
 }
 
 void dim_set_outside_temp(lv_obj_t * lbl, float t, lv_coord_t max_w) {
-    static const char * const fmts[] = { "%.1f°C", "%.1f°", "%.0f°" };
+    static const char * const fmts[] = { "%.1f°", "%.0f°" };
     const lv_font_t * f = lv_obj_get_style_text_font(lbl, LV_PART_MAIN);
     char b[24] = "";
     for (size_t i = 0; i < sizeof fmts / sizeof fmts[0]; i++) {
@@ -700,7 +718,7 @@ void dim_fc_build(lv_obj_t * parent, int x, int y, int col_w, int h,
     ui_obj_add_flag(*icon, LV_OBJ_FLAG_HIDDEN);
 
     *day = lv_label_create(parent);
-    ui_obj_set_style_text_color(*day, lv_color_hex(0xcccccc), 0);
+    ui_obj_set_style_text_color(*day, lv_color_hex(THEME_DIM_TEXT_DIM), 0);
     ui_obj_set_style_text_font(*day, fd, 0);
     lv_obj_set_width(*day, text_w);
     lv_label_set_long_mode(*day, LV_LABEL_LONG_CLIP);
@@ -709,7 +727,7 @@ void dim_fc_build(lv_obj_t * parent, int x, int y, int col_w, int h,
     ui_obj_add_flag(*day, LV_OBJ_FLAG_HIDDEN);
 
     *temp = lv_label_create(parent);
-    ui_obj_set_style_text_color(*temp, lv_color_hex(0xffffff), 0);
+    ui_obj_set_style_text_color(*temp, lv_color_hex(THEME_DIM_TEXT), 0);
     ui_obj_set_style_text_font(*temp, ft, 0);
     lv_obj_set_width(*temp, text_w);
     lv_label_set_long_mode(*temp, LV_LABEL_LONG_CLIP);
@@ -753,7 +771,7 @@ lv_obj_t * screen_dim_create(void) {
     if (scr_root) return scr_root;
 
     scr_root = lv_obj_create(NULL);
-    ui_obj_set_style_bg_color(scr_root, lv_color_hex(0x000000), 0);
+    ui_obj_set_style_bg_color(scr_root, lv_color_hex(THEME_DIM_BG), 0);
     ui_obj_set_style_bg_opa(scr_root, LV_OPA_COVER, 0);
     ui_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -772,9 +790,9 @@ lv_obj_t * screen_dim_create(void) {
      * any boot-splash "TOON" residue that can linger in this corner (the bare
      * dim background otherwise leaves no element here). */
     lv_obj_t * dim_brand = lv_label_create(scr_root);
-    ui_obj_set_style_text_color(dim_brand, lv_color_hex(0xffffff), 0);
-    ui_obj_set_style_text_font(dim_brand, SF(22), 0);
-    lv_obj_set_style_text_letter_space(dim_brand, SX(1), 0);
+    ui_obj_set_style_text_color(dim_brand, lv_color_hex(THEME_DIM_TEXT_DIM), 0);
+    ui_obj_set_style_text_font(dim_brand, THEME_FONT_LABEL, 0);
+    lv_obj_set_style_text_letter_space(dim_brand, SX(2), 0);
     ui_label_set_text(dim_brand, "Freetoon");
     ui_obj_align(dim_brand, LV_ALIGN_TOP_LEFT, SX(20), SY(16));
 
@@ -784,42 +802,45 @@ lv_obj_t * screen_dim_create(void) {
        to its right so proportional digit widths can never cause the colon
        to overlap the digits. */
     lbl_clock_colon = lv_label_create(scr_root);
-    ui_obj_set_style_text_color(lbl_clock_colon, lv_color_hex(0xffffff), 0);
-    ui_obj_set_style_text_font(lbl_clock_colon, SF(96), 0);
+    ui_obj_set_style_text_color(lbl_clock_colon, lv_color_hex(THEME_DIM_TEXT), 0);
+    ui_obj_set_style_text_font(lbl_clock_colon, THEME_FONT_NUM(96), 0);   /* light numerals */
     ui_label_set_text(lbl_clock_colon, ":");
     ui_obj_align(lbl_clock_colon, LV_ALIGN_CENTER, 0, SY(-130));
 
     lbl_clock_h = lv_label_create(scr_root);
-    ui_obj_set_style_text_color(lbl_clock_h, lv_color_hex(0xffffff), 0);
-    ui_obj_set_style_text_font(lbl_clock_h, SF(96), 0);
+    ui_obj_set_style_text_color(lbl_clock_h, lv_color_hex(THEME_DIM_TEXT), 0);
+    ui_obj_set_style_text_font(lbl_clock_h, THEME_FONT_NUM(96), 0);   /* light numerals */
     ui_label_set_text(lbl_clock_h, "--");
 
     lbl_clock_m = lv_label_create(scr_root);
-    ui_obj_set_style_text_color(lbl_clock_m, lv_color_hex(0xffffff), 0);
-    ui_obj_set_style_text_font(lbl_clock_m, SF(96), 0);
+    ui_obj_set_style_text_color(lbl_clock_m, lv_color_hex(THEME_DIM_TEXT), 0);
+    ui_obj_set_style_text_font(lbl_clock_m, THEME_FONT_NUM(96), 0);   /* light numerals */
     ui_label_set_text(lbl_clock_m, "--");
 
     lv_obj_update_layout(lbl_clock_colon);
     lv_obj_update_layout(lbl_clock_h);
     lv_obj_update_layout(lbl_clock_m);
-    lv_obj_align_to(lbl_clock_h, lbl_clock_colon, LV_ALIGN_OUT_LEFT_MID, -SX(8), 0);
-    lv_obj_align_to(lbl_clock_m, lbl_clock_colon, LV_ALIGN_OUT_RIGHT_MID, SX(8), 0);
+    lv_obj_align_to(lbl_clock_h, lbl_clock_colon, LV_ALIGN_OUT_LEFT_MID, -SX(2), 0);
+    lv_obj_align_to(lbl_clock_m, lbl_clock_colon, LV_ALIGN_OUT_RIGHT_MID, SX(2), 0);
 
     /* NILM transient device label — floats above the energy bar cap at the
      * bottom of the screen; hidden until a step-change event fires. */
     lbl_dim_nilm = lv_label_create(scr_root);
-    ui_obj_set_style_text_color(lbl_dim_nilm, lv_color_hex(0xffffff), 0);
+    ui_obj_set_style_text_color(lbl_dim_nilm, lv_color_hex(THEME_DIM_TEXT), 0);
     ui_obj_set_style_text_font(lbl_dim_nilm, SF(16), 0);
     lv_obj_set_style_text_align(lbl_dim_nilm, LV_TEXT_ALIGN_CENTER, 0);
     ui_label_set_text(lbl_dim_nilm, "");
-    ui_obj_align(lbl_dim_nilm, LV_ALIGN_BOTTOM_MID, 0, -SY(22));
+    /* Just above the forecast strip (strip_y below): at -22 it sat on top
+     * of the middle forecast column. */
+    ui_obj_align(lbl_dim_nilm, LV_ALIGN_TOP_MID, 0, ((DISP_VER < 600) ? 398 : SY(508)) - SY(30));
     ui_obj_add_flag(lbl_dim_nilm, LV_OBJ_FLAG_HIDDEN);
 
     /* All labels positioned against screen center with explicit Y offsets so
        different content widths can't drift them out of alignment. */
     lbl_date = lv_label_create(scr_root);
-    ui_obj_set_style_text_color(lbl_date, lv_color_hex(0xffffff), 0);
-    ui_obj_set_style_text_font(lbl_date, SF(28), 0);
+    ui_obj_set_style_text_color(lbl_date, lv_color_hex(THEME_DIM_TEXT_DIM), 0);
+    ui_obj_set_style_text_font(lbl_date, SF(22), 0);
+    lv_obj_set_style_text_letter_space(lbl_date, THEME_LABEL_TRACK, 0);
     lv_obj_set_style_text_align(lbl_date, LV_TEXT_ALIGN_CENTER, 0);
     ui_label_set_text(lbl_date, "");
     ui_obj_align(lbl_date, LV_ALIGN_CENTER, 0, SY(-50));
@@ -830,13 +851,13 @@ lv_obj_t * screen_dim_create(void) {
     /* Room temperature readout: enlarged to 96pt Montserrat (clock font/size).
        CR2: Setpoint + program state in small font (SF(22)) under room temp. */
     lbl_temp = lv_label_create(scr_root);
-    ui_obj_set_style_text_color(lbl_temp, lv_color_hex(0xffffff), 0);
-    ui_obj_set_style_text_font(lbl_temp, SF(96), 0);
+    ui_obj_set_style_text_color(lbl_temp, lv_color_hex(THEME_DIM_TEXT), 0);
+    ui_obj_set_style_text_font(lbl_temp, THEME_FONT_NUM(80), 0);   /* light numerals (Light 90 on a Toon 2, 50 on a Toon 1) */
     ui_label_set_text(lbl_temp, "--.-°C");
     ui_obj_align(lbl_temp, LV_ALIGN_CENTER, 0, SY(40));
 
     lbl_setpoint = lv_label_create(scr_root);
-    ui_obj_set_style_text_color(lbl_setpoint, lv_color_hex(0xffffff), 0);
+    ui_obj_set_style_text_color(lbl_setpoint, lv_color_hex(THEME_DIM_TEXT), 0);
     ui_obj_set_style_text_font(lbl_setpoint, SF(22), 0);
     lv_obj_set_style_text_align(lbl_setpoint, LV_TEXT_ALIGN_CENTER, 0);
     ui_label_set_text(lbl_setpoint, "");
@@ -850,7 +871,7 @@ lv_obj_t * screen_dim_create(void) {
     dim_img_flame = lv_img_create(scr_root);
     ui_img_set_src(dim_img_flame, &icon_radiator);
     lv_img_set_zoom(dim_img_flame, 256);
-    ui_obj_set_style_img_recolor(dim_img_flame, lv_color_hex(0xff8866), 0);
+    ui_obj_set_style_img_recolor(dim_img_flame, lv_color_hex(THEME_GLOW), 0);
     ui_obj_set_style_img_recolor_opa(dim_img_flame, 255, 0);
     lv_obj_align_to(dim_img_flame, lbl_setpoint, LV_ALIGN_OUT_BOTTOM_MID, 0, SY(8));
     ui_obj_add_flag(dim_img_flame, LV_OBJ_FLAG_HIDDEN);
@@ -859,7 +880,7 @@ lv_obj_t * screen_dim_create(void) {
     dim_img_faucet = lv_img_create(scr_root);
     ui_img_set_src(dim_img_faucet, &icon_faucet);
     lv_img_set_zoom(dim_img_faucet, 256);
-    ui_obj_set_style_img_recolor(dim_img_faucet, lv_color_hex(0xff5544), 0);
+    ui_obj_set_style_img_recolor(dim_img_faucet, lv_color_hex(THEME_GLOW), 0);
     ui_obj_set_style_img_recolor_opa(dim_img_faucet, 255, 0);
     lv_obj_align_to(dim_img_faucet, lbl_setpoint, LV_ALIGN_OUT_BOTTOM_MID, -SX(10), SY(8));
     ui_obj_add_flag(dim_img_faucet, LV_OBJ_FLAG_HIDDEN);
@@ -868,7 +889,7 @@ lv_obj_t * screen_dim_create(void) {
     dim_img_drop = lv_img_create(scr_root);
     ui_img_set_src(dim_img_drop, &icon_drop);
     lv_img_set_zoom(dim_img_drop, 256);
-    ui_obj_set_style_img_recolor(dim_img_drop, lv_color_hex(0xff5544), 0);
+    ui_obj_set_style_img_recolor(dim_img_drop, lv_color_hex(THEME_GLOW), 0);
     ui_obj_set_style_img_recolor_opa(dim_img_drop, 255, 0);
     lv_obj_align_to(dim_img_drop, dim_img_faucet, LV_ALIGN_OUT_RIGHT_MID, SX(8), 0);
     ui_obj_add_flag(dim_img_drop, LV_OBJ_FLAG_HIDDEN);
@@ -878,13 +899,13 @@ lv_obj_t * screen_dim_create(void) {
     dim_img_water = lv_img_create(scr_root);
     ui_img_set_src(dim_img_water, &icon_drop);
     lv_img_set_zoom(dim_img_water, 256);
-    ui_obj_set_style_img_recolor(dim_img_water, lv_color_hex(0x66bbff), 0);
+    ui_obj_set_style_img_recolor(dim_img_water, lv_color_hex(THEME_INFO), 0);
     ui_obj_set_style_img_recolor_opa(dim_img_water, 255, 0);
     ui_obj_align(dim_img_water, LV_ALIGN_CENTER, SX(130), SY(80));
     ui_obj_add_flag(dim_img_water, LV_OBJ_FLAG_HIDDEN);
 
     dim_lbl_water = lv_label_create(scr_root);
-    ui_obj_set_style_text_color(dim_lbl_water, lv_color_hex(0x66bbff), 0);
+    ui_obj_set_style_text_color(dim_lbl_water, lv_color_hex(THEME_INFO), 0);
     ui_obj_set_style_text_font(dim_lbl_water, &lv_font_montserrat_22, 0);
     ui_label_set_text(dim_lbl_water, "");
     ui_obj_align(dim_lbl_water, LV_ALIGN_CENTER, SX(175), SY(80));
@@ -898,7 +919,7 @@ lv_obj_t * screen_dim_create(void) {
     ui_img_set_src(dim_vent_fan, &icon_fan);
     /* icon_fan is large (~96px); scale down for the dim chrome row. */
     lv_img_set_zoom(dim_vent_fan, 128);
-    ui_obj_set_style_img_recolor(dim_vent_fan, lv_color_hex(0xbbbbbb), 0);
+    ui_obj_set_style_img_recolor(dim_vent_fan, lv_color_hex(THEME_DIM_TEXT_DIM), 0);
     ui_obj_set_style_img_recolor_opa(dim_vent_fan, 255, 0);
     /* Set pivot to center so rotation looks natural — has to be set
        AFTER the source is bound. icon_fan is 80×80 native (not 128 like
@@ -912,7 +933,7 @@ lv_obj_t * screen_dim_create(void) {
     ui_obj_add_flag(dim_vent_fan, LV_OBJ_FLAG_HIDDEN);
 
     dim_vent_lbl = lv_label_create(scr_root);
-    ui_obj_set_style_text_color(dim_vent_lbl, lv_color_hex(0xbbbbbb), 0);
+    ui_obj_set_style_text_color(dim_vent_lbl, lv_color_hex(THEME_DIM_TEXT_DIM), 0);
     ui_obj_set_style_text_font(dim_vent_lbl, &lv_font_montserrat_18, 0);
     ui_label_set_text(dim_vent_lbl, "-- %");
     lv_obj_set_style_text_align(dim_vent_lbl, LV_TEXT_ALIGN_CENTER, 0);
@@ -926,14 +947,14 @@ lv_obj_t * screen_dim_create(void) {
     /* Outside temp in the same big font as the room temp (readable from
      * across the room); icon + "Buiten" in a row underneath. */
     lbl_outside_temp = lv_label_create(scr_root);
-    ui_obj_set_style_text_color(lbl_outside_temp, lv_color_hex(0xffffff), 0);
-    ui_obj_set_style_text_font(lbl_outside_temp, SF(96), 0);
+    ui_obj_set_style_text_color(lbl_outside_temp, lv_color_hex(THEME_DIM_TEXT), 0);
+    ui_obj_set_style_text_font(lbl_outside_temp, THEME_FONT_NUM(96), 0);   /* light numerals */
     ui_label_set_text(lbl_outside_temp, "");
     ui_obj_align(lbl_outside_temp, LV_ALIGN_TOP_RIGHT, SX(-24), SY(28));
 
     wx_icon = lv_img_create(scr_root);
     ui_img_set_src(wx_icon, &icon_wx_cloud_lg);
-    ui_obj_set_style_img_recolor(wx_icon, lv_color_hex(0xffffff), 0);
+    ui_obj_set_style_img_recolor(wx_icon, lv_color_hex(THEME_DIM_TEXT), 0);
     ui_obj_set_style_img_recolor_opa(wx_icon, 255, 0);
     lv_obj_align_to(wx_icon, lbl_outside_temp, LV_ALIGN_OUT_BOTTOM_MID, 0, SY(2));
 
@@ -944,7 +965,7 @@ lv_obj_t * screen_dim_create(void) {
      * the Family tile on the home screen. Right-aligned so longer street
      * names extend to the LEFT instead of clipping the bezel. */
     dim_lbl_life360_a = lv_label_create(scr_root);
-    ui_obj_set_style_text_color(dim_lbl_life360_a, lv_color_hex(0x88aaff), 0);
+    ui_obj_set_style_text_color(dim_lbl_life360_a, lv_color_hex(DIM_COL_LIFE360_A), 0);
     ui_obj_set_style_text_font(dim_lbl_life360_a, &lv_font_montserrat_18, 0);
     lv_obj_set_width(dim_lbl_life360_a, SX(340));
     lv_obj_set_style_text_align(dim_lbl_life360_a, LV_TEXT_ALIGN_RIGHT, 0);
@@ -954,7 +975,7 @@ lv_obj_t * screen_dim_create(void) {
     ui_obj_add_flag(dim_lbl_life360_a, LV_OBJ_FLAG_HIDDEN);
 
     dim_lbl_life360_b = lv_label_create(scr_root);
-    ui_obj_set_style_text_color(dim_lbl_life360_b, lv_color_hex(0xff88cc), 0);
+    ui_obj_set_style_text_color(dim_lbl_life360_b, lv_color_hex(DIM_COL_LIFE360_B), 0);
     ui_obj_set_style_text_font(dim_lbl_life360_b, &lv_font_montserrat_18, 0);
     lv_obj_set_width(dim_lbl_life360_b, SX(340));
     lv_obj_set_style_text_align(dim_lbl_life360_b, LV_TEXT_ALIGN_RIGHT, 0);
@@ -968,7 +989,7 @@ lv_obj_t * screen_dim_create(void) {
        because zoomed alpha-only icons can disappear on Toon 1. */
     waste_icon = lv_img_create(scr_root);
     ui_img_set_src(waste_icon, &icon_trash_lg);
-    ui_obj_set_style_img_recolor(waste_icon, lv_color_hex(0xffffff), 0);
+    ui_obj_set_style_img_recolor(waste_icon, lv_color_hex(THEME_DIM_TEXT), 0);
     ui_obj_set_style_img_recolor_opa(waste_icon, 255, 0);
     ui_obj_align(waste_icon, LV_ALIGN_TOP_LEFT, SX(70), SY(52));
     ui_obj_add_flag(waste_icon, LV_OBJ_FLAG_HIDDEN);
@@ -982,7 +1003,7 @@ lv_obj_t * screen_dim_create(void) {
     ui_obj_add_flag(waste_icon_2, LV_OBJ_FLAG_HIDDEN);
 
     lbl_waste = lv_label_create(scr_root);
-    ui_obj_set_style_text_color(lbl_waste, lv_color_hex(0xbbbbbb), 0);
+    ui_obj_set_style_text_color(lbl_waste, lv_color_hex(THEME_DIM_TEXT_DIM), 0);
     const lv_font_t * waste_font = (DISP_VER < 600) ? &lv_font_montserrat_14 : &lv_font_montserrat_18;
     int waste_lbl_y = (DISP_VER < 600) ? 128 : SY(138);
     ui_obj_set_style_text_font(lbl_waste, waste_font, 0);
@@ -1016,4 +1037,56 @@ lv_obj_t * screen_dim_create(void) {
 
     if (!refresh_timer) refresh_timer = lv_timer_create(refresh_cb, 1000, NULL);
     return scr_root;
+}
+
+/* Theme change: drop the cached screen so the next dim builds it in the new palette. Clears every widget pointer, so refresh code never touches a freed object. */
+void screen_dim_destroy(void) {
+    if (!scr_root) return;
+    if (refresh_timer) { lv_timer_del(refresh_timer); refresh_timer = NULL; }
+    lv_obj_t * s = scr_root;
+    scr_root = NULL;
+    lbl_clock_h = NULL;
+    lbl_clock_m = NULL;
+    lbl_clock_colon = NULL;
+    lbl_date = NULL;
+    dim_moon_img = NULL;
+    lbl_temp = NULL;
+    lbl_setpoint = NULL;
+    lbl_outside_temp = NULL;
+    lbl_program = NULL;
+    lbl_metrics = NULL;
+    lbl_burner = NULL;
+    dim_img_flame = NULL;
+    dim_img_faucet = NULL;
+    dim_img_drop = NULL;
+    wx_icon = NULL;
+    lbl_outside = NULL;
+    waste_icon = NULL;
+    waste_icon_2 = NULL;
+    lbl_waste = NULL;
+    waste_box_ptr = NULL;
+    dim_lbl_city = NULL;
+    dim_lbl_life360_a = NULL;
+    dim_lbl_life360_b = NULL;
+    dim_vent_fan = NULL;
+    dim_vent_lbl = NULL;
+    dim_img_water = NULL;
+    dim_lbl_water = NULL;
+    lbl_dim_nilm = NULL;
+    bar_gas_env = NULL;
+    bar_gas_fill = NULL;
+    bar_gas_cap = NULL;
+    bar_eact_env = NULL;
+    bar_eact_fill = NULL;
+    bar_eact_cap = NULL;
+    bar_eday_env = NULL;
+    bar_eday_fill = NULL;
+    bar_eday_cap = NULL;
+    memset(dim_fc_icon, 0, sizeof dim_fc_icon);
+    memset(dim_fc_day, 0, sizeof dim_fc_day);
+    memset(dim_fc_temp, 0, sizeof dim_fc_temp);
+    memset(bar_gas_segs, 0, sizeof bar_gas_segs);
+    memset(bar_eact_segs, 0, sizeof bar_eact_segs);
+    memset(bar_eday_segs, 0, sizeof bar_eday_segs);
+    ui_del_screen(s);
 }

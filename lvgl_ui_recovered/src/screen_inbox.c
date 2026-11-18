@@ -66,10 +66,10 @@ static void rebuild_list(void) {
         lv_obj_set_pos(row, 0, SY(i * 100));
         uint32_t row_bg = m->read
             ? THEME_CARD_BG
-            : (settings.home_light_mode ? 0xdbeafe : 0x223e6a);
+            : THEME_ACCENT_SOFT;
         lv_obj_set_style_bg_color(row, lv_color_hex(row_bg), 0);
         lv_obj_set_style_border_color(row, lv_color_hex(THEME_BORDER), 0);
-        lv_obj_set_style_border_width(row, settings.home_light_mode ? 1 : 0, 0);
+        lv_obj_set_style_border_width(row, THEME_IS_LIGHT ? 1 : 0, 0);
         lv_obj_set_style_radius(row, 10, 0);
         lv_obj_set_style_pad_all(row, 12, 0);
         lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
@@ -110,12 +110,12 @@ static void rebuild_list(void) {
         lv_obj_t * btn = lv_btn_create(row);
         lv_obj_set_size(btn, SX(110), SY(50));
         lv_obj_align(btn, LV_ALIGN_RIGHT_MID, 0, 0);
-        lv_obj_set_style_bg_color(btn, lv_color_hex(0xaa3344), 0);
+        lv_obj_set_style_bg_color(btn, lv_color_hex(THEME_DANGER_BG), 0);
         lv_obj_set_style_radius(btn, 10, 0);
         lv_obj_add_event_cb(btn, on_row_delete, LV_EVENT_CLICKED, &row_ud[i]);
         lv_obj_t * btn_lbl = lv_label_create(btn);
         lv_label_set_text(btn_lbl, tr("Verwijder", "Delete"));
-        lv_obj_set_style_text_color(btn_lbl, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_color(btn_lbl, lv_color_hex(THEME_ON_ACCENT), 0);
         lv_obj_set_style_text_font(btn_lbl, SF(18), 0);
         lv_obj_center(btn_lbl);
     }
@@ -140,7 +140,7 @@ void screen_inbox_show(void) {
     lv_obj_align(close, LV_ALIGN_TOP_LEFT, SX(12), SY(12));
     lv_obj_set_style_bg_color(close, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_set_style_border_color(close, lv_color_hex(THEME_BORDER), 0);
-    lv_obj_set_style_border_width(close, settings.home_light_mode ? 1 : 0, 0);
+    lv_obj_set_style_border_width(close, THEME_IS_LIGHT ? 1 : 0, 0);
     lv_obj_set_style_radius(close, 12, 0);
     lv_obj_set_ext_click_area(close, 20);
     lv_obj_add_event_cb(close, on_close, LV_EVENT_CLICKED, NULL);

@@ -197,12 +197,12 @@ int canonical_state_render_full_json(char * buf, size_t maxlen) {
 
     return snprintf(buf, maxlen,
         "{\"system\":{\"version\":\"" BUILD_VERSION "\",\"hardware\":\"%s\","
-        "\"theme\":\"%s\"},"
+        "\"theme\":\"%s\",\"ui_theme\":%d},"
         "\"thermostat\":%s,"
         "\"boiler\":%s,"
         "\"sensors\":%s,"
         "\"energy\":%s}",
-        hw_name, settings.home_light_mode ? "light" : "dark",
+        hw_name, settings.home_light_mode ? "light" : "dark", settings.ui_theme,
         therm, boiler, sensors, energy);
 }
 

@@ -11,6 +11,7 @@
 #include "display.h"
 #include "i18n.h"
 #include "settings.h"
+#include "theme.h"
 #include "lvgl/lvgl.h"
 #include "fbdev.h"
 #include "lv_drivers/indev/evdev.h"
@@ -19,6 +20,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+/* identity colours of the original Eneco qt-gui button, same in every theme */
+#define BP_COL_QT_BG   0x483a2a
+#define BP_COL_QT_TEXT 0xffffff
+#define BP_COL_QT_SUB  0xddc296
 
 /* Drive LVGL + the draw buffer from the REAL panel resolution. Hardcoding
  * 1024x600 told LVGL the Toon 1 panel (800x480) was wider/taller than it is, so
@@ -119,7 +125,7 @@ static void apply_pick_home_theme(int pick) {
 static void hl(lv_obj_t * b, int on) {
     if (!b) return;
     lv_obj_set_style_border_width(b, on ? 4 : 0, 0);
-    lv_obj_set_style_border_color(b, lv_color_hex(0x88ccff), 0);
+    lv_obj_set_style_border_color(b, lv_color_hex(THEME_ACCENT), 0);
 }
 
 static void apply_button_highlight(void) {
@@ -181,18 +187,18 @@ static void tick_countdown(lv_timer_t * t) {
  * verified at 800x480 without the device. Coords are SX/SY-scaled so the picker
  * fits the Toon 1 panel, not just the 1024x600 design size. */
 static void bootpick_build_ui(lv_obj_t * scr) {
-    lv_obj_set_style_bg_color(scr, lv_color_hex(0x0f1a2a), 0);
+    lv_obj_set_style_bg_color(scr, lv_color_hex(THEME_BG), 0);
     lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t * title = lv_label_create(scr);
     lv_obj_set_style_text_font(title, SF(28), 0);
-    lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(title, lv_color_hex(THEME_TEXT_HI), 0);
     lv_label_set_text(title, tr("Kies UI", "Choose UI"));
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, SY(50));
 
     bp_lbl_countdown = lv_label_create(scr);
     lv_obj_set_style_text_font(bp_lbl_countdown, SF(22), 0);
-    lv_obj_set_style_text_color(bp_lbl_countdown, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_color(bp_lbl_countdown, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_label_set_text(bp_lbl_countdown, "");
     lv_obj_align(bp_lbl_countdown, LV_ALIGN_TOP_MID, 0, SY(140));
     /* prime the label so the first second of the countdown isn't blank */
@@ -209,18 +215,18 @@ static void bootpick_build_ui(lv_obj_t * scr) {
     bp_btn_freetoon = lv_btn_create(scr);
     lv_obj_set_size(bp_btn_freetoon, BW, BH);
     lv_obj_align(bp_btn_freetoon, LV_ALIGN_CENTER, -DX, DY);
-    lv_obj_set_style_bg_color(bp_btn_freetoon, lv_color_hex(0x2a4060), 0);
+    lv_obj_set_style_bg_color(bp_btn_freetoon, lv_color_hex(THEME_BTN_ACCENT), 0);
     lv_obj_set_style_radius(bp_btn_freetoon, SX(24), 0);
     lv_obj_add_event_cb(bp_btn_freetoon, on_pick_freetoon, LV_EVENT_CLICKED, NULL);
     {
         lv_obj_t * l = lv_label_create(bp_btn_freetoon);
         lv_obj_set_style_text_font(l, SF(24), 0);
-        lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_color(l, lv_color_hex(THEME_TEXT_HI), 0);
         lv_label_set_text(l, "freetoon-lvgl");
         lv_obj_align(l, LV_ALIGN_CENTER, 0, SY(-24));
         lv_obj_t * s = lv_label_create(bp_btn_freetoon);
         lv_obj_set_style_text_font(s, SF(16), 0);
-        lv_obj_set_style_text_color(s, lv_color_hex(0x9ec4e6), 0);
+        lv_obj_set_style_text_color(s, lv_color_hex(THEME_TEXT_DIM), 0);
         lv_label_set_text(s, tr("Donker dashboard", "Dark dashboard"));
         lv_obj_align(s, LV_ALIGN_CENTER, 0, SY(22));
     }
@@ -228,18 +234,18 @@ static void bootpick_build_ui(lv_obj_t * scr) {
     bp_btn_freetoon_stock = lv_btn_create(scr);
     lv_obj_set_size(bp_btn_freetoon_stock, BW, BH);
     lv_obj_align(bp_btn_freetoon_stock, LV_ALIGN_CENTER, 0, DY);
-    lv_obj_set_style_bg_color(bp_btn_freetoon_stock, lv_color_hex(0x35506e), 0);
+    lv_obj_set_style_bg_color(bp_btn_freetoon_stock, lv_color_hex(THEME_ACCENT_SOFT), 0);
     lv_obj_set_style_radius(bp_btn_freetoon_stock, SX(24), 0);
     lv_obj_add_event_cb(bp_btn_freetoon_stock, on_pick_freetoon_stock, LV_EVENT_CLICKED, NULL);
     {
         lv_obj_t * l = lv_label_create(bp_btn_freetoon_stock);
         lv_obj_set_style_text_font(l, SF(24), 0);
-        lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_color(l, lv_color_hex(THEME_TEXT_HI), 0);
         lv_label_set_text(l, tr("Stock thema", "Stock theme"));
         lv_obj_align(l, LV_ALIGN_CENTER, 0, SY(-24));
         lv_obj_t * s = lv_label_create(bp_btn_freetoon_stock);
         lv_obj_set_style_text_font(s, SF(16), 0);
-        lv_obj_set_style_text_color(s, lv_color_hex(0xb8d4ee), 0);
+        lv_obj_set_style_text_color(s, lv_color_hex(THEME_TEXT_DIM), 0);
         lv_label_set_text(s, tr("freetoon, qt-gui look", "freetoon, qt-gui look"));
         lv_obj_align(s, LV_ALIGN_CENTER, 0, SY(22));
     }
@@ -247,18 +253,18 @@ static void bootpick_build_ui(lv_obj_t * scr) {
     bp_btn_qtgui = lv_btn_create(scr);
     lv_obj_set_size(bp_btn_qtgui, BW, BH);
     lv_obj_align(bp_btn_qtgui, LV_ALIGN_CENTER, DX, DY);
-    lv_obj_set_style_bg_color(bp_btn_qtgui, lv_color_hex(0x483a2a), 0);
+    lv_obj_set_style_bg_color(bp_btn_qtgui, lv_color_hex(BP_COL_QT_BG), 0);
     lv_obj_set_style_radius(bp_btn_qtgui, SX(24), 0);
     lv_obj_add_event_cb(bp_btn_qtgui, on_pick_qtgui, LV_EVENT_CLICKED, NULL);
     {
         lv_obj_t * l = lv_label_create(bp_btn_qtgui);
         lv_obj_set_style_text_font(l, SF(24), 0);
-        lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_color(l, lv_color_hex(BP_COL_QT_TEXT), 0);
         lv_label_set_text(l, tr("Stock qt-gui", "Stock qt-gui"));
         lv_obj_align(l, LV_ALIGN_CENTER, 0, SY(-24));
         lv_obj_t * s = lv_label_create(bp_btn_qtgui);
         lv_obj_set_style_text_font(s, SF(16), 0);
-        lv_obj_set_style_text_color(s, lv_color_hex(0xddc296), 0);
+        lv_obj_set_style_text_color(s, lv_color_hex(BP_COL_QT_SUB), 0);
         lv_label_set_text(s, tr("Originele Eneco UI", "Original Eneco UI"));
         lv_obj_align(s, LV_ALIGN_CENTER, 0, SY(22));
     }
@@ -322,11 +328,11 @@ int bootpick_run(void) {
         fprintf(stderr, "[bootpick] warm restart — splash only, rc=%d\n",
                 bp_default_choice);
         lv_obj_t * scr = lv_scr_act();
-        lv_obj_set_style_bg_color(scr, lv_color_hex(0x0f1a2a), 0);
+        lv_obj_set_style_bg_color(scr, lv_color_hex(THEME_BG), 0);
         lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_t * msg = lv_label_create(scr);
         lv_obj_set_style_text_font(msg, SF(28), 0);
-        lv_obj_set_style_text_color(msg, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_color(msg, lv_color_hex(THEME_TEXT_HI), 0);
         lv_label_set_text(msg, tr(LV_SYMBOL_REFRESH "  UI herstart", LV_SYMBOL_REFRESH "  UI restarting"));
         lv_obj_center(msg);
         for (int i = 0; i < 300; i++) {     /* ~1.5 s so it actually shows */

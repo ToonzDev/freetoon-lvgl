@@ -13,6 +13,7 @@
 #include "backlight.h"
 #include "boxtalk.h"
 #include "calendar.h"
+#include "theme.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -98,12 +99,63 @@ void ui_refresh_home(void) {
     }
 }
 
-void ui_refresh_theme(void) {
-    ui_refresh_home();
+static int      is_dimmed = 0;
+static int      theme_refresh_pending = 0;
+
+/* Delete a cached screen that is being rebuilt. LVGL cannot load a screen
+ * once the active one is gone (lv_scr_load_anim touches the old one), so an
+ * active screen first parks on a shared blank; the caller loads the rebuilt
+ * screen right after. */
+void ui_del_screen(lv_obj_t * scr) {
+    if (!scr) return;
+    if (scr == lv_scr_act()) {
+        static lv_obj_t * s_blank = NULL;
+        if (!s_blank) s_blank = lv_obj_create(NULL);
+        lv_scr_load(s_blank);
+    }
+    lv_obj_del(scr);
 }
 
+void ui_replace_screen(lv_obj_t * old_scr, lv_obj_t * new_scr) {
+    if (!old_scr || !new_scr || old_scr == new_scr) return;
+    for (int i = 0; i < sp; i++) {
+        if (stack[i] != old_scr) continue;
+        stack[i] = new_scr;
+        if (i == sp - 1) lv_scr_load(new_scr);
+    }
+}
+
+/* New colour theme: rebuild the cached home screens and drop the cached dim
+ * screens (rebuilt on the next dim). Other screens compare settings.ui_theme
+ * on their next create(). The caller rebuilds the screen it is on. */
+void ui_refresh_theme(void) {
+    if (is_dimmed) { theme_refresh_pending = 1; return; }   /* after wake */
+    theme_refresh_pending = 0;
+    /* Home modals live on the top layer and point into the home screen that
+     * is about to be rebuilt: close them first, as ui_dim_now() does. */
+    screen_calendar_close();
+    screen_waste_close();
+    screen_home_dismiss_modals();
+    ui_theme_install();                /* LVGL widget accent */
+    screen_dim_destroy();
+    screen_dim_grid_destroy();
+    if (settings.home_theme == 1) {
+        /* LVGL copes with deleting the active screen as long as another is
+         * loaded right after, which ui_replace_screen does. */
+        lv_obj_t * old = screen_home_stock_create();
+        screen_home_stock_destroy();
+        ui_replace_screen(old, screen_home_stock_create());
+        screen_home_destroy();         /* the inactive freetoon home: rebuilt when picked */
+    } else {
+        screen_home_stock_destroy();
+        ui_refresh_home();
+    }
+}
+
+static volatile int theme_request = 0;
+void ui_request_theme_refresh(void) { theme_request = 1; }
+
 static uint32_t last_activity_ms = 0;
-static int      is_dimmed = 0;
 static int      is_black_screen = 0;
 
 static lv_obj_t * scr_black = NULL;
@@ -216,6 +268,19 @@ void ui_idle_tick(void) {
     /* Bring in calendar data published by worker threads; calendar_state is
      * only written here, on the UI thread (see calendar.c). */
     calendar_apply_pending();
+
+    /* Theme changed from the web API (another thread): back to home, then
+     * rebuild in the new palette. A rebuild deferred by the dim screen runs
+     * once it is gone. */
+    if (theme_request && !is_dimmed) {
+        theme_request = 0;
+        theme_set(settings.ui_theme);
+        screen_settings_close_modals();
+        while (sp > 1) ui_pop();
+        ui_refresh_theme();
+    } else if (theme_refresh_pending && !is_dimmed) {
+        ui_refresh_theme();
+    }
 
     /* Process any queued wake first so a touch immediately undims, even
        if the on-screen click handler couldn't run for some reason. */
@@ -374,14 +439,13 @@ void ui_idle_tick(void) {
     }
 }
 
-/* Toon 1 only: theme extension on top of LVGL's default theme that drops the
- * button shadow. The default theme gives every lv_btn a grey 50% shadow (the
- * light bottom edge on tiles), redrawn (blurred, LV_SHADOW_CACHE_SIZE 0) on
- * every frame: ~45% of a Settings scroll frame (sim scrollbench), which made
- * scrolling on a Toon 1 visibly heavy. The Toon 2 has CPU to spare and keeps
- * the look. Buttons that set their own shadow keep it (local styles win over
+/* Theme extension on top of LVGL's default theme that drops the button
+ * shadow. The default theme gives every lv_btn a grey 50% shadow (the light
+ * bottom edge on tiles), redrawn (blurred, LV_SHADOW_CACHE_SIZE 0) on every
+ * frame: ~45% of a Settings scroll frame (sim scrollbench), visibly heavy on
+ * a Toon 1. Since the 1.1 themes it applies to both Toons: flat cards read
+ * calmer. Buttons that set their own shadow keep it (local styles win over
  * theme styles). */
-#ifdef TOON1
 static void theme_noshadow_apply(lv_theme_t * th, lv_obj_t * obj) {
     (void)th;
     static lv_style_t st;
@@ -395,18 +459,25 @@ static void theme_noshadow_apply(lv_theme_t * th, lv_obj_t * obj) {
     if (lv_obj_check_type(obj, &lv_btn_class)) lv_obj_add_style(obj, &st, 0);
 }
 
-#endif
-
 void ui_theme_install(void) {
-#ifdef TOON1
+    lv_disp_t * d = lv_disp_get_default();
+    if (!d) return;
+    /* LVGL's own widget styles (switch, slider, checkbox, spinner, focus
+     * rings) take the theme accent instead of LVGL's default blue. Re-running
+     * this on a theme change re-inits those shared styles in place, so every
+     * existing widget picks up the new accent. */
+    lv_theme_t * def = lv_theme_default_init(d, lv_color_hex(THEME_ACCENT_FILL),
+                                             lv_color_hex(THEME_DANGER),
+                                             LV_THEME_DEFAULT_DARK, LV_FONT_DEFAULT);
+    /* Flat buttons everywhere (design 1.1): the default drop shadow made
+     * every card look raised. On the Toon 1 it also saves ~45% of a scroll
+     * frame. Buttons that set their own shadow keep it. */
     static lv_theme_t th;
-    lv_theme_t * base = lv_disp_get_theme(NULL);
-    if (!base || base == &th) return;
-    th = *base;
-    lv_theme_set_parent(&th, base);
+    if (lv_disp_get_theme(d) == &th) return;   /* wrapper already installed */
+    th = *def;
+    lv_theme_set_parent(&th, def);
     lv_theme_set_apply_cb(&th, theme_noshadow_apply);
-    lv_disp_set_theme(NULL, &th);
-#endif
+    lv_disp_set_theme(d, &th);
 }
 
 void ui_init(void) {

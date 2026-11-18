@@ -58,6 +58,18 @@
 
 static lv_obj_t * scr_root = NULL;
 static lv_obj_t * scr_tiles_cont = NULL;
+/* Identity colours, same in every theme: one swatch per animation test button
+ * (white label on top, as before). */
+#define COL_ANIM_BALLOONS 0xd32f2f
+#define COL_ANIM_CONFETTI 0x7b1fa2
+#define COL_ANIM_SNOW 0x1976d2
+#define COL_ANIM_FIREWORKS 0xf57c00
+#define COL_ANIM_LEAVES 0x5d4037
+#define COL_ANIM_HEARTS 0xc2185b
+#define COL_ANIM_SINT 0xb71c1c
+#define COL_ANIM_CHRISTMAS 0x1b5e20
+#define COL_ANIM_STOP 0x455a64
+
 static int        scr_light_mode = -1;
 
 /* ---- modal state ---- */
@@ -325,7 +337,7 @@ static lv_obj_t * panel_row(lv_obj_t * parent, int y, const char * title,
     lv_obj_align(row, LV_ALIGN_TOP_LEFT, SX(4), row_y);
     lv_obj_set_style_bg_color(row, lv_color_hex(THEME_ROW_BG), 0);
     lv_obj_set_style_border_width(row, 0, 0);
-    lv_obj_set_style_radius(row, 12, 0);
+    lv_obj_set_style_radius(row, THEME_RADIUS_BTN, 0);
     lv_obj_set_style_pad_all(row, 12, 0);
     lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);   /* swallow taps, don't close modal */
@@ -515,7 +527,7 @@ static lv_obj_t * modal_open(const char * title, int panel_h) {
     lv_obj_remove_style_all(cur_modal);
     lv_obj_set_size(cur_modal, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_pos(cur_modal, 0, 0);
-    lv_obj_set_style_bg_color(cur_modal, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_color(cur_modal, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(cur_modal, LV_OPA_70, 0);
     lv_obj_clear_flag(cur_modal, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(cur_modal, LV_OBJ_FLAG_CLICKABLE);          /* tap-outside target */
@@ -528,9 +540,9 @@ static lv_obj_t * modal_open(const char * title, int panel_h) {
     lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_size(panel, SX(860), h);
     lv_obj_center(panel);
-    lv_obj_set_style_bg_color(panel, lv_color_hex(settings.home_light_mode ? 0xffffff : 0x16243a), 0);
+    lv_obj_set_style_bg_color(panel, lv_color_hex(THEME_CARD_BG), 0);
     lv_obj_set_style_border_width(panel, 0, 0);
-    lv_obj_set_style_radius(panel, 18, 0);
+    lv_obj_set_style_radius(panel, THEME_RADIUS_PANEL, 0);
     lv_obj_set_style_clip_corner(panel, true, 0);
     lv_obj_set_style_pad_all(panel, 0, 0);
     lv_obj_add_flag(panel, LV_OBJ_FLAG_CLICKABLE);              /* stop taps reaching backdrop */
@@ -555,10 +567,10 @@ static lv_obj_t * modal_open(const char * title, int panel_h) {
     lv_obj_t * hdr = lv_obj_create(panel);
     lv_obj_set_size(hdr, SX(860), SY(64));
     lv_obj_set_pos(hdr, 0, 0);
-    lv_obj_set_style_bg_color(hdr, lv_color_hex(settings.home_light_mode ? 0xffffff : 0x16243a), 0);
+    lv_obj_set_style_bg_color(hdr, lv_color_hex(THEME_CARD_BG), 0);
     lv_obj_set_style_bg_opa(hdr, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(hdr, 0, 0);
-    lv_obj_set_style_radius(hdr, 18, 0);
+    lv_obj_set_style_radius(hdr, THEME_RADIUS_PANEL, 0);
     lv_obj_set_style_pad_hor(hdr, 20, 0);
     lv_obj_set_style_pad_ver(hdr, 0, 0);
     lv_obj_clear_flag(hdr, LV_OBJ_FLAG_SCROLLABLE);
@@ -576,7 +588,8 @@ static lv_obj_t * modal_open(const char * title, int panel_h) {
     lv_obj_set_size(x, x_w, x_h);
     lv_obj_align(x, LV_ALIGN_RIGHT_MID, 0, 0);
     lv_obj_set_style_bg_color(x, lv_color_hex(THEME_BTN_BG), 0);
-    lv_obj_set_style_radius(x, 12, 0);
+    lv_obj_set_style_radius(x, THEME_RADIUS_BTN, 0);
+    lv_obj_set_style_shadow_width(x, 0, 0);
     lv_obj_set_ext_click_area(x, (DISP_VER < 600) ? 6 : 10);
     lv_obj_add_event_cb(x, modal_close, LV_EVENT_CLICKED, NULL);
     lv_obj_t * xl = lv_label_create(x);
@@ -634,7 +647,7 @@ static void on_boiler_switch(lv_event_t * e) {
     lv_obj_remove_style_all(confirm_box);
     lv_obj_set_size(confirm_box, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_pos(confirm_box, 0, 0);
-    lv_obj_set_style_bg_color(confirm_box, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_color(confirm_box, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(confirm_box, LV_OPA_60, 0);
     lv_obj_clear_flag(confirm_box, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(confirm_box, LV_OBJ_FLAG_CLICKABLE);
@@ -642,8 +655,8 @@ static void on_boiler_switch(lv_event_t * e) {
     lv_obj_t * dlg = lv_obj_create(confirm_box);
     lv_obj_set_size(dlg, SX(720), SY(360));
     lv_obj_center(dlg);
-    lv_obj_set_style_bg_color(dlg, lv_color_hex(0x2a1c1c), 0);
-    lv_obj_set_style_border_color(dlg, lv_color_hex(0xcc5544), 0);
+    lv_obj_set_style_bg_color(dlg, lv_color_hex(THEME_CARD_BG), 0);
+    lv_obj_set_style_border_color(dlg, lv_color_hex(THEME_DANGER), 0);
     lv_obj_set_style_border_width(dlg, 2, 0);
     lv_obj_set_style_radius(dlg, 16, 0);
     lv_obj_set_style_pad_all(dlg, 24, 0);
@@ -652,13 +665,13 @@ static void on_boiler_switch(lv_event_t * e) {
 
     lv_obj_t * dt = lv_label_create(dlg);
     lv_obj_set_style_text_font(dt, SF(28), 0);
-    lv_obj_set_style_text_color(dt, lv_color_hex(0xffcc66), 0);
+    lv_obj_set_style_text_color(dt, lv_color_hex(THEME_WARN_ORANGE), 0);
     lv_label_set_text(dt, tr("Ketelregeling wijzigen?", "Change boiler control?"));
     lv_obj_align(dt, LV_ALIGN_TOP_LEFT, 0, 0);
 
     lv_obj_t * body = lv_label_create(dlg);
     lv_obj_set_style_text_font(body, SF(18), 0);
-    lv_obj_set_style_text_color(body, lv_color_hex(0xddddee), 0);
+    lv_obj_set_style_text_color(body, lv_color_hex(THEME_TEXT_HI), 0);
     lv_label_set_long_mode(body, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(body, SX(672));
     lv_label_set_text_fmt(body,
@@ -676,7 +689,7 @@ static void on_boiler_switch(lv_event_t * e) {
     lv_obj_t * b_no = lv_btn_create(dlg);
     lv_obj_set_size(b_no, SX(200), SY(64));
     lv_obj_align(b_no, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-    lv_obj_set_style_bg_color(b_no, lv_color_hex(0x44556a), 0);
+    lv_obj_set_style_bg_color(b_no, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_set_style_radius(b_no, 12, 0);
     lv_obj_add_event_cb(b_no, on_boiler_confirm_no, LV_EVENT_CLICKED, NULL);
     lv_obj_t * b_no_l = lv_label_create(b_no);
@@ -687,7 +700,7 @@ static void on_boiler_switch(lv_event_t * e) {
     lv_obj_t * b_yes = lv_btn_create(dlg);
     lv_obj_set_size(b_yes, SX(260), SY(64));
     lv_obj_align(b_yes, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
-    lv_obj_set_style_bg_color(b_yes, lv_color_hex(0xcc5544), 0);
+    lv_obj_set_style_bg_color(b_yes, lv_color_hex(THEME_DANGER_BG), 0);
     lv_obj_set_style_radius(b_yes, 12, 0);
     lv_obj_add_event_cb(b_yes, on_boiler_confirm_yes, LV_EVENT_CLICKED, NULL);
     lv_obj_t * b_yes_l = lv_label_create(b_yes);
@@ -809,122 +822,127 @@ static void heating_tick(void) {
 }
 
 static lv_obj_t * lbl_theme_val = NULL;
-static lv_obj_t * lbl_light_mode_val = NULL;
-static lv_obj_t * sw_light_mode = NULL;
-static void settings_apply_theme(void);
 
+/* Classic Toon look (stock tile carousel) vs the FreeToon dashboard. Both
+ * follow the colour theme; the Light theme gives the original Eneco look. */
 static void on_home_theme_change(lv_event_t * e) {
     int on = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
     settings.home_theme = on ? 1 : 0;
     if (lbl_theme_val)
-        lv_label_set_text(lbl_theme_val, on ? tr("Stock", "Stock")
-                                            : tr("freetoon", "freetoon"));
-    if (on) {
-        settings.home_light_mode = 1;
-        if (lbl_light_mode_val)
-            lv_label_set_text(lbl_light_mode_val, tr("Aan", "On"));
-        if (sw_light_mode)
-            lv_obj_add_state(sw_light_mode, LV_STATE_CHECKED);
-        settings_apply_theme();
-        ui_refresh_theme();
-        scr_light_mode = -1;
-    }
+        lv_label_set_text(lbl_theme_val, on ? tr("Klassiek", "Classic")
+                                            : tr("FreeToon", "FreeToon"));
     settings_save();
     ui_apply_home_theme();   /* live swap — visible next time home is shown */
 }
 
-static void settings_apply_theme(void) {
-    if (scr_root) {
-        lv_obj_set_style_bg_color(scr_root, lv_color_hex(THEME_BG), 0);
-        uint32_t cnt = lv_obj_get_child_cnt(scr_root);
-        for (uint32_t i = 0; i < cnt; i++) {
-            lv_obj_t * ch = lv_obj_get_child(scr_root, i);
-            if (lv_obj_check_type(ch, &lv_btn_class)) {
-                lv_obj_set_style_bg_color(ch, lv_color_hex(THEME_BTN_BG), 0);
-                if (lv_obj_get_child_cnt(ch) > 0)
-                    lv_obj_set_style_text_color(lv_obj_get_child(ch, 0), lv_color_hex(THEME_TEXT_HI), 0);
-            } else if (lv_obj_check_type(ch, &lv_label_class)) {
-                lv_obj_set_style_text_color(ch, lv_color_hex(THEME_TEXT_HI), 0);
-            }
-        }
-    }
-    if (scr_tiles_cont) {
-        uint32_t n = lv_obj_get_child_cnt(scr_tiles_cont);
-        for (uint32_t i = 0; i < n; i++) {
-            lv_obj_t * t = lv_obj_get_child(scr_tiles_cont, i);
-            if (!t) continue;
-            lv_obj_set_style_bg_color(t, lv_color_hex(THEME_CARD_BG), 0);
-            lv_obj_set_style_bg_color(t, lv_color_hex(THEME_BTN_BG), LV_STATE_PRESSED);
-            uint32_t tc = lv_obj_get_child_cnt(t);
-            for (uint32_t j = 0; j < tc; j++) {
-                lv_obj_t * c = lv_obj_get_child(t, j);
-                if (lv_obj_check_type(c, &lv_img_class)) {
-                    lv_obj_set_style_img_recolor(c, lv_color_hex(settings.home_light_mode ? 0x2563eb : 0x9fc4e6), 0);
-                } else if (lv_obj_check_type(c, &lv_label_class)) {
-                    const lv_font_t * f = lv_obj_get_style_text_font(c, 0);
-                    if (f == SF(14)) {
-                        lv_obj_set_style_text_color(c, lv_color_hex(THEME_TEXT_DIM), 0);
-                    } else if (f == SF(28) || f == SF(22)) {
-                        if (lv_obj_get_y(c) < 20 && lv_obj_get_child_cnt(t) == 3 && j == 0) {
-                            lv_obj_set_style_text_color(c, lv_color_hex(settings.home_light_mode ? 0x2563eb : 0x9fc4e6), 0);
-                        } else {
-                            lv_obj_set_style_text_color(c, lv_color_hex(THEME_TEXT_HI), 0);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    if (cur_modal) {
-        lv_obj_t * panel = lv_obj_get_child(cur_modal, 0);
-        if (panel) {
-            lv_obj_set_style_bg_color(panel, lv_color_hex(settings.home_light_mode ? 0xffffff : 0x16243a), 0);
-            uint32_t pc = lv_obj_get_child_cnt(panel);
-            for (uint32_t pci = 0; pci < pc; pci++) {
-                lv_obj_t * ch = lv_obj_get_child(panel, pci);
-                if (pci == 0) {
-                    /* Scrollable body */
-                    uint32_t bc = lv_obj_get_child_cnt(ch);
-                    for (uint32_t bi = 0; bi < bc; bi++) {
-                        lv_obj_t * row = lv_obj_get_child(ch, bi);
-                        if (row && lv_obj_get_width(row) > 400) {
-                            lv_obj_set_style_bg_color(row, lv_color_hex(THEME_ROW_BG), 0);
-                            uint32_t rc = lv_obj_get_child_cnt(row);
-                            if (rc > 0) lv_obj_set_style_text_color(lv_obj_get_child(row, 0), lv_color_hex(THEME_TEXT_HI), 0);
-                            if (rc > 1) {
-                                lv_obj_t * r1 = lv_obj_get_child(row, 1);
-                                if (lv_obj_check_type(r1, &lv_label_class))
-                                    lv_obj_set_style_text_color(r1, lv_color_hex(THEME_TEXT_DIM), 0);
-                            }
-                        }
-                    }
-                } else if (pci == 1) {
-                    /* Header bar */
-                    lv_obj_set_style_bg_color(ch, lv_color_hex(settings.home_light_mode ? 0xffffff : 0x16243a), 0);
-                    uint32_t hc = lv_obj_get_child_cnt(ch);
-                    if (hc > 0) lv_obj_set_style_text_color(lv_obj_get_child(ch, 0), lv_color_hex(THEME_TEXT_HI), 0);
-                    if (hc > 1) {
-                        lv_obj_t * xbtn = lv_obj_get_child(ch, 1);
-                        lv_obj_set_style_bg_color(xbtn, lv_color_hex(THEME_BTN_BG), 0);
-                        if (lv_obj_get_child_cnt(xbtn) > 0)
-                            lv_obj_set_style_text_color(lv_obj_get_child(xbtn, 0), lv_color_hex(THEME_TEXT_HI), 0);
-                    }
-                }
-            }
-        }
-    }
+/* ---- colour theme picker (Settings > Display) ------------------------------
+ * Four swatches, each a miniature of its theme: canvas, a tile with the
+ * accent bar and a temperature in the theme's warm colour, and the name.
+ * Picking one rebuilds Settings (and home/dim) in the new palette and
+ * reopens this modal, so the change is visible at once. */
+static void open_display_modal(lv_event_t * e);
+
+static void theme_rebuild_async(void * p) {
+    (void)p;
+    screen_settings_close_modals();
+    lv_obj_t * old = scr_root;
+    lv_obj_t * fresh = screen_settings_create();   /* ui_theme changed → rebuilt */
+    ui_refresh_theme();                            /* home, classic home, dim */
+    ui_replace_screen(old, fresh);
+    /* Not on the stack (sim, direct open): still show the rebuilt screen. */
+    if (lv_scr_act() != fresh) lv_scr_load(fresh);
+    open_display_modal(NULL);
 }
 
-static void on_home_light_mode_change(lv_event_t * e) {
-    int on = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
-    settings.home_light_mode = on ? 1 : 0;
-    if (lbl_light_mode_val)
-        lv_label_set_text(lbl_light_mode_val, on ? tr("Aan", "On")
-                                                 : tr("Uit", "Off"));
+static void on_theme_pick(lv_event_t * e) {
+    int id = (int)(intptr_t)lv_event_get_user_data(e);
+    if (id == settings.ui_theme) return;
+    theme_set(id);
     settings_save();
-    settings_apply_theme();
-    ui_refresh_theme();
-    scr_light_mode = -1;
+    lv_async_call(theme_rebuild_async, NULL);
+}
+
+static lv_obj_t * theme_swatch(lv_obj_t * parent, int id, int x, int y, int w, int h) {
+    const ft_palette_t * pal = theme_palette(id);
+    int sel = (id == settings.ui_theme);
+
+    lv_obj_t * sw = lv_obj_create(parent);
+    lv_obj_remove_style_all(sw);
+    lv_obj_set_size(sw, w, h);
+    lv_obj_set_pos(sw, x, y);
+    lv_obj_set_style_bg_color(sw, lv_color_hex(pal->bg), 0);
+    lv_obj_set_style_bg_opa(sw, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(sw, THEME_RADIUS_BTN, 0);
+    lv_obj_set_style_border_width(sw, sel ? 3 : 1, 0);
+    lv_obj_set_style_border_color(sw, lv_color_hex(sel ? THEME_ACCENT : THEME_BORDER), 0);
+    lv_obj_set_style_clip_corner(sw, true, 0);
+    lv_obj_clear_flag(sw, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(sw, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_ext_click_area(sw, 6);
+    lv_obj_add_event_cb(sw, on_theme_pick, LV_EVENT_CLICKED, (void *)(intptr_t)id);
+
+    /* mini tile */
+    int pad = SUNI(8);
+    lv_obj_t * tile = lv_obj_create(sw);
+    lv_obj_remove_style_all(tile);
+    lv_obj_set_size(tile, w - 2 * pad, h - 2 * pad - SY(22));
+    lv_obj_set_pos(tile, pad, pad);
+    lv_obj_set_style_bg_color(tile, lv_color_hex(pal->card_bg), 0);
+    lv_obj_set_style_bg_opa(tile, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(tile, THEME_RADIUS_SMALL, 0);
+    lv_obj_clear_flag(tile, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+
+    lv_obj_t * bar = lv_obj_create(tile);
+    lv_obj_remove_style_all(bar);
+    lv_obj_set_size(bar, SUNI(26), THEME_BAR_H);
+    lv_obj_set_pos(bar, SUNI(8), SUNI(6));
+    lv_obj_set_style_bg_color(bar, lv_color_hex(pal->accent), 0);
+    lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(bar, 2, 0);
+    lv_obj_clear_flag(bar, LV_OBJ_FLAG_CLICKABLE);
+
+    lv_obj_t * t = lv_label_create(tile);
+    lv_label_set_text(t, "20.5\xC2\xB0");
+    lv_obj_set_style_text_font(t, SF(22), 0);
+    lv_obj_set_style_text_color(t, lv_color_hex(pal->warn_orange), 0);
+    lv_obj_align(t, LV_ALIGN_BOTTOM_RIGHT, SUNI(-8), SUNI(-2));
+
+    lv_obj_t * name = lv_label_create(sw);
+    lv_label_set_text(name, theme_name(id));
+    lv_obj_set_style_text_font(name, SF(18), 0);
+    lv_obj_set_style_text_color(name, lv_color_hex(pal->text_hi), 0);
+    lv_obj_align(name, LV_ALIGN_BOTTOM_LEFT, pad, -SUNI(5));
+
+    if (sel) {
+        lv_obj_t * ok = lv_label_create(sw);
+        lv_label_set_text(ok, LV_SYMBOL_OK);
+        lv_obj_set_style_text_font(ok, SF(18), 0);
+        lv_obj_set_style_text_color(ok, lv_color_hex(pal->accent), 0);
+        lv_obj_align(ok, LV_ALIGN_BOTTOM_RIGHT, -pad, -SUNI(5));
+    }
+    return sw;
+}
+
+/* Theme row for a modal body at design y; returns its design height. */
+static int theme_picker_row(lv_obj_t * p, int y) {
+    const int row_h = 168;
+    lv_obj_t * r = panel_row(p, y, tr("Kleurthema", "Colour theme"), NULL);
+    lv_obj_set_height(r, SY(row_h));
+    lv_obj_t * hint = lv_label_create(r);
+    lv_label_set_text(hint, tr("ook voor dimscherm en klassieke look",
+                               "also for the dim screen and classic look"));
+    lv_obj_set_style_text_font(hint, SF(14), 0);
+    lv_obj_set_style_text_color(hint, lv_color_hex(THEME_TEXT_DIM), 0);
+    lv_obj_align(hint, LV_ALIGN_TOP_RIGHT, 0, SY(6));
+
+    int gap = SUNI(12);
+    int inner_w = SX(800) - 2 * 12;
+    int w = (inner_w - 3 * gap) / 4;
+    int h = SY(row_h) - 24 - SY(40);
+    static const int order[UI_THEME_COUNT] = { UI_THEME_NIGHT, UI_THEME_LIGHT, UI_THEME_WARM, UI_THEME_BLACK };
+    for (int i = 0; i < UI_THEME_COUNT; i++)
+        theme_swatch(r, order[i], i * (w + gap), SY(40), w, h);
+    return row_h + 8;
 }
 
 static lv_obj_t * lbl_vnc_val = NULL;
@@ -947,6 +965,9 @@ static void open_display_modal(lv_event_t * e) {
     lv_obj_set_scrollbar_mode(p, LV_SCROLLBAR_MODE_AUTO);
     int y = 70;
     lv_obj_t * r;
+
+    /* Colour theme first: the most visible choice on this screen. */
+    y += theme_picker_row(p, y);
 
     r = panel_row(p, y, tr("Automatisch dimmen bij inactiviteit", "Auto-dim when idle"), NULL);
     sw_enable = row_switch(r, settings.auto_dim_enabled, on_enable_change);
@@ -1010,21 +1031,12 @@ static void open_display_modal(lv_event_t * e) {
     row_switch(r, settings.dim_bars_vertical, on_dim_bars_vertical_change);
     y += 82;
 
-    /* Home theme — classic Toon (stock) light tile-carousel vs freetoon dark
-       dashboard. Takes effect on the next return-to-home / restart. */
-    r = panel_row(p, y, tr("Thema startscherm (klassieke Toon-look)",
-                           "Home screen theme (classic Toon look)"), &lbl_theme_val);
+    /* Classic Toon look (stock tile carousel) vs the FreeToon dashboard. */
+    r = panel_row(p, y, tr("Klassieke Toon-look op startscherm",
+                           "Classic Toon look on home screen"), &lbl_theme_val);
     lv_label_set_text(lbl_theme_val, settings.home_theme == 1
-                      ? tr("Stock", "Stock") : tr("freetoon", "freetoon"));
+                      ? tr("Klassiek", "Classic") : tr("FreeToon", "FreeToon"));
     row_switch(r, settings.home_theme == 1, on_home_theme_change);
-    y += 82;
-
-    /* Light theme — applies to all screens */
-    r = panel_row(p, y, tr("Licht thema (alle schermen)",
-                           "Light theme (all screens)"), &lbl_light_mode_val);
-    lv_label_set_text(lbl_light_mode_val, settings.home_light_mode == 1
-                      ? tr("Aan", "On") : tr("Uit", "Off"));
-    sw_light_mode = row_switch(r, settings.home_light_mode == 1, on_home_light_mode_change);
     y += 82;
 
     /* VNC remote control (x11vnc server on port 5900) */
@@ -1111,7 +1123,7 @@ static void open_weather_modal(lv_event_t * e) {
 
     /* Hint — where to find the id. */
     lv_obj_t * hint = lv_label_create(p);
-    lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_color(hint, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(hint, SF(14), 0);
     lv_label_set_text(hint,
         tr("Vind de id van je plaats in de URL op buienradar.nl/weer/<plaats>/nl/<ID>\n"
@@ -1126,15 +1138,15 @@ static void open_weather_modal(lv_event_t * e) {
     lv_obj_t * btn = lv_btn_create(p);
     lv_obj_set_size(btn, SX(200), SY(50));
     lv_obj_align(btn, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
-    lv_obj_set_style_bg_color(btn, lv_color_hex(0x3a6090), 0);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(THEME_ACCENT_FILL), 0);
     lv_obj_add_event_cb(btn, on_weather_apply, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(btn);
     lv_label_set_text(bl, tr("Toepassen", "Apply"));
-    lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(bl, lv_color_hex(THEME_ON_ACCENT), 0);
     lv_obj_center(bl);
 
     lbl_wx_status = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_wx_status, lv_color_hex(0x9fc4e6), 0);
+    lv_obj_set_style_text_color(lbl_wx_status, lv_color_hex(THEME_ACCENT), 0);
     lv_obj_set_style_text_font(lbl_wx_status, SF(18), 0);
     lv_label_set_text(lbl_wx_status, "");
     lv_obj_set_width(lbl_wx_status, SX(580));
@@ -1314,12 +1326,12 @@ static void open_waste_modal(lv_event_t * e) {
     lv_obj_t * apply = lv_btn_create(p);
     lv_obj_set_size(apply, SX(200), SY(50));
     lv_obj_align(apply, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
-    lv_obj_set_style_bg_color(apply, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_set_style_bg_color(apply, lv_color_hex(THEME_SUCCESS_BG), 0);
     lv_obj_add_event_cb(apply, on_waste_apply, LV_EVENT_CLICKED, NULL);
     lv_obj_t * al = lv_label_create(apply); lv_label_set_text(al, tr("Opslaan", "Save")); lv_obj_center(al);
 
     lbl_waste_status = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_waste_status, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_color(lbl_waste_status, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_waste_status, SF(14), 0);
     lv_obj_set_width(lbl_waste_status, SX(736));
     lv_label_set_long_mode(lbl_waste_status, LV_LABEL_LONG_WRAP);
@@ -1365,7 +1377,7 @@ static void open_heating_modal(lv_event_t * e) {
     lv_obj_t * box = lv_obj_create(p);
     lv_obj_set_size(box, SX(800), SY(200));
     lv_obj_align(box, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
-    lv_obj_set_style_bg_color(box, lv_color_hex(0x1f3050), 0);
+    lv_obj_set_style_bg_color(box, lv_color_hex(THEME_ROW_BG), 0);
     lv_obj_set_style_border_width(box, 0, 0);
     lv_obj_set_style_radius(box, 12, 0);
     lv_obj_set_style_pad_all(box, 14, 0);
@@ -1373,7 +1385,7 @@ static void open_heating_modal(lv_event_t * e) {
     lv_obj_add_flag(box, LV_OBJ_FLAG_CLICKABLE);
 
     lv_obj_t * hdr = lv_label_create(box);
-    lv_obj_set_style_text_color(hdr, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(hdr, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(hdr, SF(22), 0);
     lv_label_set_text(hdr, tr("Ketelregeling", "Boiler control"));
     lv_obj_align(hdr, LV_ALIGN_TOP_LEFT, 0, 0);
@@ -1388,23 +1400,23 @@ static void open_heating_modal(lv_event_t * e) {
     lv_obj_add_event_cb(sw_boiler, on_boiler_switch, LV_EVENT_VALUE_CHANGED, NULL);
 
     lv_obj_t * swlbl = lv_label_create(box);
-    lv_obj_set_style_text_color(swlbl, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_color(swlbl, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(swlbl, SF(18), 0);
     lv_label_set_text(swlbl, tr("Uit = OpenTherm    Aan = On/Off", "Off = OpenTherm    On = On/Off"));
     lv_obj_align(swlbl, LV_ALIGN_TOP_RIGHT, SX(-4), SY(38));
 
     lbl_boiler_mode = lv_label_create(box);
-    lv_obj_set_style_text_color(lbl_boiler_mode, lv_color_hex(0xffcc44), 0);
+    lv_obj_set_style_text_color(lbl_boiler_mode, lv_color_hex(THEME_WARN_ORANGE), 0);
     lv_obj_set_style_text_font(lbl_boiler_mode, SF(22), 0);
     lv_obj_align(lbl_boiler_mode, LV_ALIGN_TOP_LEFT, 0, SY(36));
 
     lbl_boiler_ot = lv_label_create(box);
-    lv_obj_set_style_text_color(lbl_boiler_ot, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_color(lbl_boiler_ot, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_boiler_ot, SF(18), 0);
     lv_obj_align(lbl_boiler_ot, LV_ALIGN_TOP_LEFT, 0, SY(70));
 
     lv_obj_t * warn = lv_label_create(box);
-    lv_obj_set_style_text_color(warn, lv_color_hex(0xcc7766), 0);
+    lv_obj_set_style_text_color(warn, lv_color_hex(THEME_WARNING), 0);
     lv_obj_set_style_text_font(warn, SF(18), 0);
     lv_label_set_long_mode(warn, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(warn, SX(772));
@@ -1555,7 +1567,7 @@ static void on_uimode_confirm_yes(lv_event_t * e) {
     if (lbl_uimode_body) {
         lv_label_set_text(lbl_uimode_body, tr("Bezig met overschakelen naar qt-gui...\nEven geduld.",
                                               "Switching to qt-gui...\nPlease wait."));
-        lv_obj_set_style_text_color(lbl_uimode_body, lv_color_hex(0xffcc66), 0);
+        lv_obj_set_style_text_color(lbl_uimode_body, lv_color_hex(THEME_WARN_ORANGE), 0);
     }
     lv_refr_now(NULL);
 
@@ -1614,7 +1626,7 @@ static void on_uimode_to_qtgui(lv_event_t * e) {
     lv_obj_remove_style_all(confirm_uimode);
     lv_obj_set_size(confirm_uimode, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_pos(confirm_uimode, 0, 0);
-    lv_obj_set_style_bg_color(confirm_uimode, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_color(confirm_uimode, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(confirm_uimode, LV_OPA_70, 0);
     lv_obj_clear_flag(confirm_uimode, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(confirm_uimode, LV_OBJ_FLAG_CLICKABLE);
@@ -1622,8 +1634,8 @@ static void on_uimode_to_qtgui(lv_event_t * e) {
     lv_obj_t * dlg = lv_obj_create(confirm_uimode);
     lv_obj_set_size(dlg, SX(760), SY(380));
     lv_obj_center(dlg);
-    lv_obj_set_style_bg_color(dlg, lv_color_hex(0x2a1c1c), 0);
-    lv_obj_set_style_border_color(dlg, lv_color_hex(0xcc5544), 0);
+    lv_obj_set_style_bg_color(dlg, lv_color_hex(THEME_CARD_BG), 0);
+    lv_obj_set_style_border_color(dlg, lv_color_hex(THEME_DANGER), 0);
     lv_obj_set_style_border_width(dlg, 2, 0);
     lv_obj_set_style_radius(dlg, 16, 0);
     lv_obj_set_style_pad_all(dlg, 24, 0);
@@ -1632,13 +1644,13 @@ static void on_uimode_to_qtgui(lv_event_t * e) {
 
     lv_obj_t * dt = lv_label_create(dlg);
     lv_obj_set_style_text_font(dt, SF(28), 0);
-    lv_obj_set_style_text_color(dt, lv_color_hex(0xffcc66), 0);
+    lv_obj_set_style_text_color(dt, lv_color_hex(THEME_WARN_ORANGE), 0);
     lv_label_set_text(dt, tr("Overschakelen naar standaard qt-gui?", "Switch to stock qt-gui?"));
     lv_obj_align(dt, LV_ALIGN_TOP_LEFT, 0, 0);
 
     lbl_uimode_body = lv_label_create(dlg);
     lv_obj_set_style_text_font(lbl_uimode_body, SF(18), 0);
-    lv_obj_set_style_text_color(lbl_uimode_body, lv_color_hex(0xddddee), 0);
+    lv_obj_set_style_text_color(lbl_uimode_body, lv_color_hex(THEME_TEXT_HI), 0);
     lv_label_set_long_mode(lbl_uimode_body, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(lbl_uimode_body, SX(712));
     lv_label_set_text(lbl_uimode_body,
@@ -1662,7 +1674,7 @@ static void on_uimode_to_qtgui(lv_event_t * e) {
     g_qtgui_debug = qtlog_enabled();
     lbl_uimode_dbg = lv_label_create(dlg);
     lv_obj_set_style_text_font(lbl_uimode_dbg, SF(18), 0);
-    lv_obj_set_style_text_color(lbl_uimode_dbg, lv_color_hex(0xffcc66), 0);
+    lv_obj_set_style_text_color(lbl_uimode_dbg, lv_color_hex(THEME_WARN_ORANGE), 0);
     lv_label_set_text(lbl_uimode_dbg, tr("qt-gui debug-logging (/var/log/qt)",
                                          "qt-gui debug logging (/var/log/qt)"));
     lv_obj_align(lbl_uimode_dbg, LV_ALIGN_BOTTOM_LEFT, 0, SY(-84));
@@ -1675,7 +1687,7 @@ static void on_uimode_to_qtgui(lv_event_t * e) {
     b_uimode_no = lv_btn_create(dlg);
     lv_obj_set_size(b_uimode_no, SX(220), SY(64));
     lv_obj_align(b_uimode_no, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-    lv_obj_set_style_bg_color(b_uimode_no, lv_color_hex(0x44556a), 0);
+    lv_obj_set_style_bg_color(b_uimode_no, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_set_style_radius(b_uimode_no, 12, 0);
     lv_obj_add_event_cb(b_uimode_no, on_uimode_confirm_no, LV_EVENT_CLICKED, NULL);
     lv_obj_t * b_no_l = lv_label_create(b_uimode_no);
@@ -1686,7 +1698,7 @@ static void on_uimode_to_qtgui(lv_event_t * e) {
     b_uimode_yes = lv_btn_create(dlg);
     lv_obj_set_size(b_uimode_yes, SX(300), SY(64));
     lv_obj_align(b_uimode_yes, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
-    lv_obj_set_style_bg_color(b_uimode_yes, lv_color_hex(0xcc5544), 0);
+    lv_obj_set_style_bg_color(b_uimode_yes, lv_color_hex(THEME_DANGER_BG), 0);
     lv_obj_set_style_radius(b_uimode_yes, 12, 0);
     lv_obj_add_event_cb(b_uimode_yes, on_uimode_confirm_yes, LV_EVENT_CLICKED, NULL);
     lv_obj_t * b_yes_l = lv_label_create(b_uimode_yes);
@@ -1756,7 +1768,7 @@ static void on_restart_ui(lv_event_t * e) {
     if (g_restart_lbl) {
         lv_label_set_text(g_restart_lbl, tr("freetoon-UI wordt herstart...\n\nEven geduld.",
                                             "Restarting freetoon UI...\nPlease wait."));
-        lv_obj_set_style_text_color(g_restart_lbl, lv_color_hex(0xffcc66), 0);
+        lv_obj_set_style_text_color(g_restart_lbl, lv_color_hex(THEME_WARN_ORANGE), 0);
     }
     lv_refr_now(NULL);
     settings_save();
@@ -1772,7 +1784,7 @@ static void on_restart_reboot(lv_event_t * e) {
     if (g_restart_lbl) {
         lv_label_set_text(g_restart_lbl, tr("Toon wordt herstart...\n\nHet apparaat start opnieuw op.",
                                             "Rebooting Toon...\nThe device is restarting."));
-        lv_obj_set_style_text_color(g_restart_lbl, lv_color_hex(0xffcc66), 0);
+        lv_obj_set_style_text_color(g_restart_lbl, lv_color_hex(THEME_WARN_ORANGE), 0);
     }
     lv_refr_now(NULL);
     settings_save();
@@ -1790,7 +1802,7 @@ static void open_restart_confirm(lv_event_t * e) {
     g_restart_modal = lv_obj_create(lv_layer_top());
     lv_obj_set_size(g_restart_modal, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_pos(g_restart_modal, 0, 0);
-    lv_obj_set_style_bg_color(g_restart_modal, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_color(g_restart_modal, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(g_restart_modal, LV_OPA_70, 0);
     lv_obj_set_style_border_width(g_restart_modal, 0, 0);
     lv_obj_clear_flag(g_restart_modal, LV_OBJ_FLAG_SCROLLABLE);
@@ -1798,13 +1810,13 @@ static void open_restart_confirm(lv_event_t * e) {
     lv_obj_t * card = lv_obj_create(g_restart_modal);
     lv_obj_set_size(card, SX(640), SY(320));
     lv_obj_center(card);
-    lv_obj_set_style_bg_color(card, lv_color_hex(0x16243a), 0);
+    lv_obj_set_style_bg_color(card, lv_color_hex(THEME_CARD_BG), 0);
     lv_obj_set_style_border_width(card, 0, 0);
     lv_obj_set_style_radius(card, 14, 0);
     lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
     g_restart_lbl = lv_label_create(card);
-    lv_obj_set_style_text_color(g_restart_lbl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(g_restart_lbl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(g_restart_lbl, SF(20), 0);
     lv_obj_set_width(g_restart_lbl, SX(600));
     lv_label_set_long_mode(g_restart_lbl, LV_LABEL_LONG_WRAP);
@@ -1822,7 +1834,7 @@ static void open_restart_confirm(lv_event_t * e) {
     g_restart_btn_cancel = lv_btn_create(card);
     lv_obj_set_size(g_restart_btn_cancel, SX(180), SY(52));
     lv_obj_align(g_restart_btn_cancel, LV_ALIGN_BOTTOM_LEFT, SX(16), SY(-16));
-    lv_obj_set_style_bg_color(g_restart_btn_cancel, lv_color_hex(0x3a4658), 0);
+    lv_obj_set_style_bg_color(g_restart_btn_cancel, lv_color_hex(THEME_OFF), 0);
     lv_obj_add_event_cb(g_restart_btn_cancel, on_restart_no, LV_EVENT_CLICKED, NULL);
     lv_obj_t * nl = lv_label_create(g_restart_btn_cancel);
     lv_label_set_text(nl, tr("Annuleren", "Cancel"));
@@ -1833,7 +1845,7 @@ static void open_restart_confirm(lv_event_t * e) {
     g_restart_btn_ui = lv_btn_create(card);
     lv_obj_set_size(g_restart_btn_ui, SX(185), SY(52));
     lv_obj_align(g_restart_btn_ui, LV_ALIGN_BOTTOM_MID, 0, SY(-16));
-    lv_obj_set_style_bg_color(g_restart_btn_ui, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_set_style_bg_color(g_restart_btn_ui, lv_color_hex(THEME_SUCCESS_BG), 0);
     lv_obj_add_event_cb(g_restart_btn_ui, on_restart_ui, LV_EVENT_CLICKED, NULL);
     lv_obj_t * yl = lv_label_create(g_restart_btn_ui);
     lv_label_set_text(yl, tr("UI herstarten", "Restart UI"));
@@ -1844,7 +1856,7 @@ static void open_restart_confirm(lv_event_t * e) {
     g_restart_btn_reboot = lv_btn_create(card);
     lv_obj_set_size(g_restart_btn_reboot, SX(185), SY(52));
     lv_obj_align(g_restart_btn_reboot, LV_ALIGN_BOTTOM_RIGHT, SX(-16), SY(-16));
-    lv_obj_set_style_bg_color(g_restart_btn_reboot, lv_color_hex(0x9e382b), 0);
+    lv_obj_set_style_bg_color(g_restart_btn_reboot, lv_color_hex(THEME_DANGER_BG), 0);
     lv_obj_add_event_cb(g_restart_btn_reboot, on_restart_reboot, LV_EVENT_CLICKED, NULL);
     lv_obj_t * rl = lv_label_create(g_restart_btn_reboot);
     lv_label_set_text(rl, tr("Toon herstarten", "Reboot Toon"));
@@ -1948,20 +1960,20 @@ static void open_domoticz(lv_event_t * e) {
     lv_obj_t * b_apply = lv_btn_create(p);
     lv_obj_set_size(b_apply, SX(220), SY(48));
     lv_obj_align(b_apply, LV_ALIGN_TOP_LEFT, SX(4), y);
-    lv_obj_set_style_bg_color(b_apply, lv_color_hex(0xc06030), 0);
+    lv_obj_set_style_bg_color(b_apply, lv_color_hex(THEME_GLOW), 0);
     lv_obj_add_event_cb(b_apply, on_domoticz_apply_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * la = lv_label_create(b_apply); lv_label_set_text(la, tr("Opslaan + verbinden", "Save + connect")); lv_obj_center(la);
 
     lv_obj_t * b_view = lv_btn_create(p);
     lv_obj_set_size(b_view, SX(240), SY(48));
     lv_obj_align(b_view, LV_ALIGN_TOP_LEFT, SX(244), y);
-    lv_obj_set_style_bg_color(b_view, lv_color_hex(0x2a4060), 0);
+    lv_obj_set_style_bg_color(b_view, lv_color_hex(THEME_BTN_ACCENT), 0);
     lv_obj_add_event_cb(b_view, on_domoticz_view_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * lv = lv_label_create(b_view); lv_label_set_text(lv, tr("Licht/zonwering", "View lights/blinds")); lv_obj_center(lv);
     y += is_t1 ? 52 : 60;
 
     lbl_domoticz_result = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_domoticz_result, lv_color_hex(0xa8c4dc), 0);
+    lv_obj_set_style_text_color(lbl_domoticz_result, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_domoticz_result, SF(18), 0);
     lv_obj_set_width(lbl_domoticz_result, SX(770));
     lv_label_set_long_mode(lbl_domoticz_result, LV_LABEL_LONG_WRAP);
@@ -2102,21 +2114,21 @@ static void open_hue(lv_event_t * e) {
     lv_obj_t * b_pair = lv_btn_create(p);
     lv_obj_set_size(b_pair, SX(210), SY(48));
     lv_obj_align(b_pair, LV_ALIGN_TOP_LEFT, SX(4), y);
-    lv_obj_set_style_bg_color(b_pair, lv_color_hex(0xc06030), 0);
+    lv_obj_set_style_bg_color(b_pair, lv_color_hex(THEME_GLOW), 0);
     lv_obj_add_event_cb(b_pair, on_hue_pair_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * lp = lv_label_create(b_pair); lv_label_set_text(lp, tr("Koppelen met Bridge", "Pair with Bridge")); lv_obj_center(lp);
 
     lv_obj_t * b_test = lv_btn_create(p);
     lv_obj_set_size(b_test, SX(180), SY(48));
     lv_obj_align(b_test, LV_ALIGN_TOP_LEFT, SX(222), y);
-    lv_obj_set_style_bg_color(b_test, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_set_style_bg_color(b_test, lv_color_hex(THEME_SUCCESS_BG), 0);
     lv_obj_add_event_cb(b_test, on_hue_test_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * lt = lv_label_create(b_test); lv_label_set_text(lt, tr("Test verbinding", "Test connection")); lv_obj_center(lt);
 
     lv_obj_t * b_view = lv_btn_create(p);
     lv_obj_set_size(b_view, SX(180), SY(48));
     lv_obj_align(b_view, LV_ALIGN_TOP_LEFT, SX(410), y);
-    lv_obj_set_style_bg_color(b_view, lv_color_hex(0x2a4060), 0);
+    lv_obj_set_style_bg_color(b_view, lv_color_hex(THEME_BTN_ACCENT), 0);
     lv_obj_add_event_cb(b_view, on_hue_view_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * lv = lv_label_create(b_view); lv_label_set_text(lv, tr("Bekijk lampen", "View lights")); lv_obj_center(lv);
     y += is_t1 ? 58 : 68;
@@ -2249,7 +2261,7 @@ static void tg_build_chats(void) {
         const tg_chat_t * c = &tg_ui_chats[i];
         lv_obj_t * row = lv_obj_create(tg_chats_cont);
         lv_obj_set_size(row, SX(800), SY(68));
-        lv_obj_set_style_bg_color(row, lv_color_hex(c->state == TG_CHAT_PENDING ? (settings.home_light_mode ? 0xfdecc8 : 0x5a4410) : THEME_ROW_BG), 0);
+        lv_obj_set_style_bg_color(row, lv_color_hex(c->state == TG_CHAT_PENDING ? THEME_ACCENT_SOFT : THEME_ROW_BG), 0);
         lv_obj_set_style_border_width(row, 0, 0);
         lv_obj_set_style_radius(row, 12, 0);
         lv_obj_set_style_pad_all(row, 8, 0);
@@ -2275,15 +2287,15 @@ static void tg_build_chats(void) {
 
         lv_obj_t * b1, * b2;
         if (c->state == TG_CHAT_PENDING) {
-            b1 = tg_small_btn(row, tr("Toestaan", "Allow"), 0x2e6e3a, i, TG_ACT_ALLOW);
-            b2 = tg_small_btn(row, tr("Weigeren", "Deny"), 0x8a2a2a, i, TG_ACT_DENY);
+            b1 = tg_small_btn(row, tr("Toestaan", "Allow"), THEME_SUCCESS_BG, i, TG_ACT_ALLOW);
+            b2 = tg_small_btn(row, tr("Weigeren", "Deny"), THEME_DANGER_BG, i, TG_ACT_DENY);
         } else if (c->state == TG_CHAT_ALLOWED) {
             b1 = tg_small_btn(row, c->alerts ? tr("Meldingen uit", "Alerts off") : tr("Meldingen aan", "Alerts on"),
-                              0x2a4060, i, TG_ACT_ALERTS);
-            b2 = tg_small_btn(row, tr("Verwijderen", "Remove"), 0x8a2a2a, i, TG_ACT_REMOVE);
+                              THEME_BTN_ACCENT, i, TG_ACT_ALERTS);
+            b2 = tg_small_btn(row, tr("Verwijderen", "Remove"), THEME_DANGER_BG, i, TG_ACT_REMOVE);
         } else {
-            b1 = tg_small_btn(row, tr("Toestaan", "Allow"), 0x2e6e3a, i, TG_ACT_ALLOW);
-            b2 = tg_small_btn(row, tr("Verwijderen", "Remove"), 0x8a2a2a, i, TG_ACT_REMOVE);
+            b1 = tg_small_btn(row, tr("Toestaan", "Allow"), THEME_SUCCESS_BG, i, TG_ACT_ALLOW);
+            b2 = tg_small_btn(row, tr("Verwijderen", "Remove"), THEME_DANGER_BG, i, TG_ACT_REMOVE);
         }
         lv_obj_align(b2, LV_ALIGN_RIGHT_MID, 0, 0);
         lv_obj_align_to(b1, b2, LV_ALIGN_OUT_LEFT_MID, -SX(8), 0);
@@ -2391,7 +2403,7 @@ static void open_telegram_modal(lv_event_t * e) {
     lv_obj_t * b_save = lv_btn_create(p);
     lv_obj_set_size(b_save, SX(180), SY(44));
     lv_obj_align(b_save, LV_ALIGN_TOP_LEFT, SX(620), y);
-    lv_obj_set_style_bg_color(b_save, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_set_style_bg_color(b_save, lv_color_hex(THEME_SUCCESS_BG), 0);
     lv_obj_add_event_cb(b_save, tg_on_save_token, LV_EVENT_CLICKED, NULL);
     lv_obj_t * ls = lv_label_create(b_save); lv_obj_set_style_text_font(ls, SF(20), 0);
     lv_label_set_text(ls, tr("Opslaan", "Save")); lv_obj_center(ls);
@@ -2442,7 +2454,7 @@ static void open_telegram_modal(lv_event_t * e) {
     tg_alert_row(flow, tr("Thermostaat niet bereikbaar", "Thermostat unreachable"), TG_ALERT_OFFLINE);
     lv_obj_t * b_test = lv_btn_create(flow);
     lv_obj_set_size(b_test, SX(260), SY(46));
-    lv_obj_set_style_bg_color(b_test, lv_color_hex(0x2a4060), 0);
+    lv_obj_set_style_bg_color(b_test, lv_color_hex(THEME_BTN_ACCENT), 0);
     lv_obj_add_event_cb(b_test, tg_on_test, LV_EVENT_CLICKED, NULL);
     lv_obj_t * lt = lv_label_create(b_test); lv_label_set_text(lt, tr("Testmelding sturen", "Send test alert")); lv_obj_center(lt);
 
@@ -2546,7 +2558,7 @@ static void open_client_modal(lv_event_t * e) {
     y += 64;
 
     lv_obj_t * lnote = lv_label_create(p);
-    lv_obj_set_style_text_color(lnote, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_color(lnote, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lnote, SF(16), 0);
     lv_label_set_text(lnote, tr("Gebruiker en wachtwoord van Webtoegang op de master (leeg als die geen login heeft).",
                                 "User and password of Web Access on the master (empty if it has no login)."));
@@ -2554,7 +2566,7 @@ static void open_client_modal(lv_event_t * e) {
     y += 40;
 
     lv_obj_t * hint = lv_label_create(p);
-    lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_color(hint, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(hint, SF(18), 0);
     lv_label_set_text(hint,
         tr("Deze Toon wordt een alleen-weergave-slave: hij toont de thermostaat/\n"
@@ -2571,11 +2583,11 @@ static void open_client_modal(lv_event_t * e) {
     lv_obj_t * btn = lv_btn_create(p);
     lv_obj_set_size(btn, (DISP_VER < 600 ? 230 : SX(240)), SY(50));
     lv_obj_align(btn, LV_ALIGN_TOP_LEFT, SX(4), y);
-    lv_obj_set_style_bg_color(btn, lv_color_hex(0x3a6090), 0);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(THEME_ACCENT_FILL), 0);
     lv_obj_add_event_cb(btn, on_client_apply, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(btn);
     lv_label_set_text(bl, tr("Toepassen & herstarten", "Apply & restart"));
-    lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(bl, lv_color_hex(THEME_ON_ACCENT), 0);
     lv_obj_center(bl);
 }
 
@@ -2653,7 +2665,7 @@ static void open_rotate_modal(lv_event_t * e) {
     rotate_cb_count = 0;
 
     lv_obj_t * pick = lv_label_create(p);
-    lv_obj_set_style_text_color(pick, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_color(pick, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(pick, SF(18), 0);
     lv_label_set_text(pick, tr("Wissel tussen:", "Cycle through:"));
     lv_obj_align(pick, LV_ALIGN_TOP_LEFT, SX(4), y);
@@ -2693,7 +2705,7 @@ static void open_rotate_modal(lv_event_t * e) {
 
     if (rotate_cb_count == 0) {
         lv_obj_t * m = lv_label_create(sc);
-        lv_obj_set_style_text_color(m, lv_color_hex(0x88aabb), 0);
+        lv_obj_set_style_text_color(m, lv_color_hex(THEME_TEXT_DIM), 0);
         lv_obj_set_style_text_font(m, SF(18), 0);
         lv_obj_set_width(m, SX(780));
         lv_label_set_long_mode(m, LV_LABEL_LONG_WRAP);
@@ -2702,7 +2714,7 @@ static void open_rotate_modal(lv_event_t * e) {
 
     /* Remark pointing at the marketplace for more, placed above bottom buttons */
     lv_obj_t * note = lv_label_create(p);
-    lv_obj_set_style_text_color(note, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_color(note, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(note, SF(18), 0);
     lv_obj_set_width(note, SX(800));
     lv_label_set_long_mode(note, LV_LABEL_LONG_WRAP);
@@ -2712,10 +2724,10 @@ static void open_rotate_modal(lv_event_t * e) {
     lv_obj_t * btn = lv_btn_create(p);
     lv_obj_set_size(btn, SX(160), SY(50));
     lv_obj_align(btn, LV_ALIGN_BOTTOM_LEFT, SX(16), SY(-8));
-    lv_obj_set_style_bg_color(btn, lv_color_hex(0x3a6090), 0);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(THEME_ACCENT_FILL), 0);
     lv_obj_add_event_cb(btn, on_rotate_apply, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(btn); lv_label_set_text(bl, tr("Toepassen", "Apply"));
-    lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0); lv_obj_center(bl);
+    lv_obj_set_style_text_color(bl, lv_color_hex(THEME_ON_ACCENT), 0); lv_obj_center(bl);
 
     marketplace_button(p);   /* bottom-right → opens the Marketplace screen */
 }
@@ -2822,7 +2834,7 @@ static void news_feeds_rebuild(void) {
         lv_obj_t * b = lv_list_add_btn(news_feeds_list,
             disabled ? LV_SYMBOL_EYE_CLOSE : LV_SYMBOL_EYE_OPEN, shown);
         lv_obj_set_style_text_font(b, SF(14), 0);
-        if (disabled) lv_obj_set_style_text_color(b, lv_color_hex(0x66788a), 0);
+        if (disabled) lv_obj_set_style_text_color(b, lv_color_hex(THEME_TEXT_MUTED), 0);
         lv_obj_set_style_pad_right(b, SX(56), 0);          /* room for trash */
         lv_obj_add_event_cb(b, on_news_feed_toggle, LV_EVENT_CLICKED, (void *)(intptr_t)i);
         /* trash button overlaid on the right edge (own click → remove) */
@@ -2830,7 +2842,7 @@ static void news_feeds_rebuild(void) {
         lv_obj_add_flag(tr, LV_OBJ_FLAG_IGNORE_LAYOUT);
         lv_obj_set_size(tr, SX(46), SY(34));
         lv_obj_align(tr, LV_ALIGN_RIGHT_MID, 0, 0);
-        lv_obj_set_style_bg_color(tr, lv_color_hex(0x5a2a2a), 0);
+        lv_obj_set_style_bg_color(tr, lv_color_hex(THEME_DANGER_BG), 0);
         lv_obj_set_style_radius(tr, 8, 0);
         lv_obj_add_event_cb(tr, on_news_feed_remove, LV_EVENT_CLICKED, (void *)(intptr_t)i);
         lv_obj_t * tl = lv_label_create(tr);
@@ -2986,11 +2998,11 @@ static void cal_feeds_rebuild(void) {
         lv_obj_add_flag(tr_btn, LV_OBJ_FLAG_IGNORE_LAYOUT);
         lv_obj_set_size(tr_btn, SX(46), SY(34));
         lv_obj_align(tr_btn, LV_ALIGN_RIGHT_MID, 0, 0);
-        lv_obj_set_style_bg_color(tr_btn, lv_color_hex(0x882222), 0);
+        lv_obj_set_style_bg_color(tr_btn, lv_color_hex(THEME_DANGER_BG), 0);
         lv_obj_set_style_radius(tr_btn, 8, 0);
         lv_obj_add_event_cb(tr_btn, on_cal_feed_remove, LV_EVENT_CLICKED, (void *)(intptr_t)i);
         lv_obj_t * tl = lv_label_create(tr_btn);
-        lv_obj_set_style_text_color(tl, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_color(tl, lv_color_hex(THEME_ON_ACCENT), 0);
         lv_label_set_text(tl, LV_SYMBOL_TRASH);
         lv_obj_center(tl);
 
@@ -3184,7 +3196,7 @@ static void open_calendar_modal(lv_event_t * e) {
     lv_obj_t * addb = lv_btn_create(p);
     lv_obj_set_size(addb, SX(120), SY(44));
     lv_obj_align(addb, LV_ALIGN_TOP_LEFT, SX(464), SY(y));
-    lv_obj_set_style_bg_color(addb, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_set_style_bg_color(addb, lv_color_hex(THEME_SUCCESS_BG), 0);
     lv_obj_set_ext_click_area(addb, (DISP_VER < 600) ? 10 : 4);
     lv_obj_add_event_cb(addb, on_cal_add_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * al = lv_label_create(addb); lv_label_set_text(al, tr("Toevoegen", "Add")); lv_obj_center(al);
@@ -3192,14 +3204,14 @@ static void open_calendar_modal(lv_event_t * e) {
     lv_obj_t * impb = lv_btn_create(p);
     lv_obj_set_size(impb, SX(150), SY(44));
     lv_obj_align(impb, LV_ALIGN_TOP_LEFT, SX(594), SY(y));
-    lv_obj_set_style_bg_color(impb, lv_color_hex(0x224466), 0);
+    lv_obj_set_style_bg_color(impb, lv_color_hex(THEME_BTN_ACCENT), 0);
     lv_obj_set_ext_click_area(impb, (DISP_VER < 600) ? 10 : 4);
     lv_obj_add_event_cb(impb, on_cal_import_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * il = lv_label_create(impb); lv_label_set_text(il, tr("Toon import", "Toon import")); lv_obj_center(il);
     y += 52;
 
     lbl_cal_status = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_cal_status, lv_color_hex(0x9fc4e6), 0);
+    lv_obj_set_style_text_color(lbl_cal_status, lv_color_hex(THEME_ACCENT), 0);
     lv_obj_set_style_text_font(lbl_cal_status, SF(16), 0);
     lv_obj_set_width(lbl_cal_status, SX(740));
     lv_label_set_long_mode(lbl_cal_status, LV_LABEL_LONG_WRAP);
@@ -3230,14 +3242,14 @@ static void open_calendar_modal(lv_event_t * e) {
     lv_obj_t * saveb = lv_btn_create(p);
     lv_obj_set_size(saveb, SX(150), SY(46));
     lv_obj_align(saveb, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
-    lv_obj_set_style_bg_color(saveb, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_set_style_bg_color(saveb, lv_color_hex(THEME_SUCCESS_BG), 0);
     lv_obj_add_event_cb(saveb, on_cal_save_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * sl = lv_label_create(saveb); lv_label_set_text(sl, tr("Opslaan", "Save")); lv_obj_center(sl);
 
     lv_obj_t * openb = lv_btn_create(p);
     lv_obj_set_size(openb, SX(180), SY(46));
     lv_obj_align(openb, LV_ALIGN_TOP_LEFT, SX(170), SY(y));
-    lv_obj_set_style_bg_color(openb, lv_color_hex(0x2a4060), 0);
+    lv_obj_set_style_bg_color(openb, lv_color_hex(THEME_BTN_ACCENT), 0);
     lv_obj_add_event_cb(openb, on_cal_open_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * ol = lv_label_create(openb); lv_label_set_text(ol, tr("Agenda openen", "Open calendar")); lv_obj_center(ol);
 }
@@ -3323,15 +3335,15 @@ static void open_anim_modal(lv_event_t * e) {
 
     /* Grid of test buttons */
     struct { anim_effect_t eff; const char * label; uint32_t bg; } btns[] = {
-        { ANIM_EFFECT_BALLOONS,  tr("Ballonnen", "Balloons"),  0xd32f2f },
-        { ANIM_EFFECT_CONFETTI,  tr("Confetti", "Confetti"),   0x7b1fa2 },
-        { ANIM_EFFECT_SNOW,      tr("Sneeuw", "Snow"),         0x1976d2 },
-        { ANIM_EFFECT_FIREWORKS, tr("Vuurwerk", "Fireworks"),  0xf57c00 },
-        { ANIM_EFFECT_LEAVES,    tr("Herfst", "Autumn"),       0x5d4037 },
-        { ANIM_EFFECT_HEARTS,    tr("Hartjes", "Hearts"),      0xc2185b },
-        { ANIM_EFFECT_SINT,      tr("Sint", "Sint"),           0xb71c1c },
-        { ANIM_EFFECT_CHRISTMAS, tr("Kerst", "Christmas"),     0x1b5e20 },
-        { ANIM_EFFECT_NONE,      tr("Stop", "Stop"),           0x455a64 }
+        { ANIM_EFFECT_BALLOONS,  tr("Ballonnen", "Balloons"),  COL_ANIM_BALLOONS },
+        { ANIM_EFFECT_CONFETTI,  tr("Confetti", "Confetti"),   COL_ANIM_CONFETTI },
+        { ANIM_EFFECT_SNOW,      tr("Sneeuw", "Snow"),         COL_ANIM_SNOW },
+        { ANIM_EFFECT_FIREWORKS, tr("Vuurwerk", "Fireworks"),  COL_ANIM_FIREWORKS },
+        { ANIM_EFFECT_LEAVES,    tr("Herfst", "Autumn"),       COL_ANIM_LEAVES },
+        { ANIM_EFFECT_HEARTS,    tr("Hartjes", "Hearts"),      COL_ANIM_HEARTS },
+        { ANIM_EFFECT_SINT,      tr("Sint", "Sint"),           COL_ANIM_SINT },
+        { ANIM_EFFECT_CHRISTMAS, tr("Kerst", "Christmas"),     COL_ANIM_CHRISTMAS },
+        { ANIM_EFFECT_NONE,      tr("Stop", "Stop"),           COL_ANIM_STOP }
     };
     int n_btns = (int)(sizeof(btns) / sizeof(btns[0]));
 
@@ -3347,7 +3359,7 @@ static void open_anim_modal(lv_event_t * e) {
         lv_obj_add_event_cb(b, on_anim_test_click, LV_EVENT_CLICKED, (void *)(intptr_t)btns[i].eff);
         lv_obj_t * bl = lv_label_create(b);
         lv_obj_set_style_text_font(bl, SF(15), 0);
-        lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_color(bl, lv_color_white(), 0);
         lv_label_set_text(bl, btns[i].label);
         lv_obj_center(bl);
     }
@@ -3378,7 +3390,7 @@ static void open_news_modal(lv_event_t * e) {
     lv_obj_t * onb = lv_btn_create(p);
     lv_obj_set_size(onb, SX(220), SY(46));
     lv_obj_align(onb, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
-    lv_obj_set_style_bg_color(onb, lv_color_hex(0x2a4060), 0);
+    lv_obj_set_style_bg_color(onb, lv_color_hex(THEME_BTN_ACCENT), 0);
     lv_obj_add_event_cb(onb, on_news_open_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * onl = lv_label_create(onb); lv_label_set_text(onl, tr("Nieuws openen", "Open news")); lv_obj_center(onl);
     y += 64;
@@ -3393,7 +3405,7 @@ static void open_news_modal(lv_event_t * e) {
     news_feeds_list = lv_list_create(p);
     lv_obj_set_size(news_feeds_list, SX(740), SY(150));
     lv_obj_align(news_feeds_list, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
-    lv_obj_set_style_bg_color(news_feeds_list, lv_color_hex(0x0e1a2a), 0);
+    lv_obj_set_style_bg_color(news_feeds_list, lv_color_hex(THEME_INPUT_BG), 0);
     news_feeds_rebuild();
     y += 158;
 
@@ -3405,16 +3417,16 @@ static void open_news_modal(lv_event_t * e) {
     lv_obj_t * addb = lv_btn_create(p);
     lv_obj_set_size(addb, SX(120), SY(44));
     lv_obj_align(addb, LV_ALIGN_TOP_LEFT, SX(484), SY(y));
-    lv_obj_set_style_bg_color(addb, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_set_style_bg_color(addb, lv_color_hex(THEME_SUCCESS_BG), 0);
     lv_obj_add_event_cb(addb, on_news_add_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * al = lv_label_create(addb); lv_label_set_text(al, tr("Toevoegen", "Add")); lv_obj_center(al);
     lv_obj_t * tbtn = lv_btn_create(p);
     lv_obj_set_size(tbtn, SX(120), SY(44));
     lv_obj_align(tbtn, LV_ALIGN_TOP_LEFT, SX(614), SY(y));
-    lv_obj_set_style_bg_color(tbtn, lv_color_hex(0x33445a), 0);
+    lv_obj_set_style_bg_color(tbtn, lv_color_hex(THEME_OFF), 0);
     lv_obj_add_event_cb(tbtn, on_news_test, LV_EVENT_CLICKED, NULL);
     lv_obj_t * tl = lv_label_create(tbtn); lv_label_set_text(tl, tr("Test", "Test")); lv_obj_center(tl);
-    lv_obj_set_style_text_color(tl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(tl, lv_color_hex(THEME_TEXT_HI), 0);
     y += 64;
 
     int spd = settings.news_scroll_speed >= 30 ? settings.news_scroll_speed : 30;
@@ -3424,7 +3436,7 @@ static void open_news_modal(lv_event_t * e) {
     y += 86;
 
     lbl_news_status = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_news_status, lv_color_hex(0x9fc4e6), 0);
+    lv_obj_set_style_text_color(lbl_news_status, lv_color_hex(THEME_ACCENT), 0);
     lv_obj_set_style_text_font(lbl_news_status, SF(18), 0);
     lv_obj_set_width(lbl_news_status, SX(800));
     lv_label_set_long_mode(lbl_news_status, LV_LABEL_LONG_WRAP);
@@ -3433,7 +3445,7 @@ static void open_news_modal(lv_event_t * e) {
     y += 30;
 
     lv_obj_t * hint = lv_label_create(p);
-    lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_color(hint, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(hint, SF(18), 0);
     lv_obj_set_width(hint, SX(800));
     lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
@@ -3450,11 +3462,11 @@ static void open_news_modal(lv_event_t * e) {
     lv_obj_t * btn = lv_btn_create(p);
     lv_obj_set_size(btn, SX(240), SY(50));
     lv_obj_align(btn, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
-    lv_obj_set_style_bg_color(btn, lv_color_hex(0x3a6090), 0);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(THEME_ACCENT_FILL), 0);
     lv_obj_add_event_cb(btn, on_news_apply, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl = lv_label_create(btn);
     lv_label_set_text(bl, tr("Toepassen & herstarten", "Apply & restart"));
-    lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(bl, lv_color_hex(THEME_ON_ACCENT), 0);
     lv_obj_center(bl);
     y += 60;
 }
@@ -3481,13 +3493,13 @@ static void open_uimode_modal(lv_event_t * e) {
     lv_obj_t * b_switch = lv_btn_create(p);
     lv_obj_set_size(b_switch, SX(800), SY(64));
     lv_obj_align(b_switch, LV_ALIGN_TOP_LEFT, SX(4), y);
-    lv_obj_set_style_bg_color(b_switch, lv_color_hex(0x6a3a2a), 0);
+    lv_obj_set_style_bg_color(b_switch, lv_color_hex(THEME_DANGER_BG), 0);
     lv_obj_set_style_radius(b_switch, 12, 0);
     lv_obj_add_event_cb(b_switch, on_uimode_to_qtgui, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bsw_l = lv_label_create(b_switch);
     lv_label_set_text(bsw_l, tr("Naar standaard qt-gui...", "Switch to stock qt-gui..."));
     lv_obj_set_style_text_font(bsw_l, SF(22), 0);
-    lv_obj_set_style_text_color(bsw_l, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(bsw_l, lv_color_hex(THEME_ON_ACCENT), 0);
     lv_obj_center(bsw_l);
 }
 
@@ -3511,7 +3523,7 @@ static void integ_dirty_hint(void) {
            "of trek de stekker er even uit).",
            "Saved. Restart toonui to apply (Settings -> Restart UI, "
            "or just unplug+plug the screen)."));
-    lv_obj_set_style_text_color(lbl_integ_hint, lv_color_hex(0xffcc66), 0);
+    lv_obj_set_style_text_color(lbl_integ_hint, lv_color_hex(THEME_WARN_ORANGE), 0);
 }
 
 /* HomeWizard switches apply live: the poller re-reads the flags and hosts
@@ -3555,8 +3567,8 @@ static void on_p1src_yes(lv_event_t * e) {
 }
 static void on_p1src_no(lv_event_t * e) { (void)e; p1src_close(); }
 
-static lv_obj_t * p1src_btn(lv_obj_t * card, const char * txt, uint32_t col, lv_align_t a,
-                            lv_event_cb_t cb) {
+static lv_obj_t * p1src_btn(lv_obj_t * card, const char * txt, uint32_t col, uint32_t tcol,
+                            lv_align_t a, lv_event_cb_t cb) {
     lv_obj_t * b = lv_btn_create(card);
     lv_obj_set_size(b, SX(200), SY(54));
     lv_obj_align(b, a, 0, 0);
@@ -3565,7 +3577,7 @@ static lv_obj_t * p1src_btn(lv_obj_t * card, const char * txt, uint32_t col, lv_
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t * l = lv_label_create(b);
     lv_label_set_text(l, txt);
-    lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(l, lv_color_hex(tcol), 0);
     lv_obj_set_style_text_font(l, SF(20), 0);
     lv_obj_center(l);
     return b;
@@ -3576,7 +3588,7 @@ static void offer_p1_energy_source(void) {
     s_p1src_dlg = lv_obj_create(lv_layer_top());
     lv_obj_set_size(s_p1src_dlg, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_pos(s_p1src_dlg, 0, 0);
-    lv_obj_set_style_bg_color(s_p1src_dlg, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_color(s_p1src_dlg, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(s_p1src_dlg, LV_OPA_60, 0);
     lv_obj_set_style_border_width(s_p1src_dlg, 0, 0);
     lv_obj_clear_flag(s_p1src_dlg, LV_OBJ_FLAG_SCROLLABLE);
@@ -3604,8 +3616,8 @@ static void offer_p1_energy_source(void) {
                             "the P1 meter instead of the Toon's meter adapter."));
     lv_obj_align(t, LV_ALIGN_TOP_LEFT, 0, 0);
 
-    p1src_btn(card, tr("Nee", "No"), 0x4a5a6a, LV_ALIGN_BOTTOM_LEFT, on_p1src_no);
-    p1src_btn(card, tr("Ja, gebruiken", "Yes, use it"), 0x2e6e3a, LV_ALIGN_BOTTOM_RIGHT, on_p1src_yes);
+    p1src_btn(card, tr("Nee", "No"), THEME_BTN_BG, THEME_TEXT_HI, LV_ALIGN_BOTTOM_LEFT, on_p1src_no);
+    p1src_btn(card, tr("Ja, gebruiken", "Yes, use it"), THEME_SUCCESS_BG, THEME_ON_ACCENT, LV_ALIGN_BOTTOM_RIGHT, on_p1src_yes);
 }
 
 /* ---- "Energiegeschiedenis herstellen" (rrd_repair.c) ----
@@ -3648,7 +3660,7 @@ static void open_history_fix(lv_event_t * e) {
     s_fix_dlg = lv_obj_create(lv_layer_top());
     lv_obj_set_size(s_fix_dlg, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_pos(s_fix_dlg, 0, 0);
-    lv_obj_set_style_bg_color(s_fix_dlg, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_color(s_fix_dlg, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(s_fix_dlg, LV_OPA_60, 0);
     lv_obj_set_style_border_width(s_fix_dlg, 0, 0);
     lv_obj_clear_flag(s_fix_dlg, LV_OBJ_FLAG_SCROLLABLE);
@@ -3677,8 +3689,8 @@ static void open_history_fix(lv_event_t * e) {
     lv_label_set_text(s_fix_lbl, "");
     lv_obj_align(s_fix_lbl, LV_ALIGN_TOP_LEFT, 0, SY(40));
 
-    s_fix_close = p1src_btn(card, tr("Sluiten", "Close"), 0x4a5a6a, LV_ALIGN_BOTTOM_LEFT, on_fix_close);
-    s_fix_go    = p1src_btn(card, tr("Herstellen", "Repair"), 0x2e6e3a, LV_ALIGN_BOTTOM_RIGHT, on_fix_go);
+    s_fix_close = p1src_btn(card, tr("Sluiten", "Close"), THEME_BTN_BG, THEME_TEXT_HI, LV_ALIGN_BOTTOM_LEFT, on_fix_close);
+    s_fix_go    = p1src_btn(card, tr("Herstellen", "Repair"), THEME_SUCCESS_BG, THEME_ON_ACCENT, LV_ALIGN_BOTTOM_RIGHT, on_fix_go);
     lv_obj_add_flag(s_fix_go, LV_OBJ_FLAG_HIDDEN);
 
     rrd_repair_scan_start();              /* no-op while a run is busy: shows its status */
@@ -3830,12 +3842,12 @@ static void open_integrations_modal(lv_event_t * e) {
         lv_obj_t * b = lv_btn_create(r);
         lv_obj_set_size(b, SX(300), SY(44));
         lv_obj_align(b, LV_ALIGN_RIGHT_MID, SX(-12), 0);
-        lv_obj_set_style_bg_color(b, lv_color_hex(0x2a4a6a), 0);
+        lv_obj_set_style_bg_color(b, lv_color_hex(THEME_BTN_ACCENT), 0);
         lv_obj_set_style_radius(b, 10, 0);
         lv_obj_add_event_cb(b, open_history_fix, LV_EVENT_CLICKED, NULL);
         lv_obj_t * bl = lv_label_create(b);
         lv_label_set_text(bl, tr("Controleren / herstellen", "Check / repair"));
-        lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_color(bl, lv_color_hex(THEME_TEXT_HI), 0);
         lv_obj_set_style_text_font(bl, SF(18), 0);
         lv_obj_center(bl);
         y += 84;
@@ -3913,7 +3925,7 @@ static void open_integrations_modal(lv_event_t * e) {
     {
         lv_obj_t * hint = lv_label_create(p);
         lv_obj_set_style_text_font(hint, SF(16), 0);
-        lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
+        lv_obj_set_style_text_color(hint, lv_color_hex(THEME_TEXT_DIM), 0);
         lv_obj_set_width(hint, SX(800));
         lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
         lv_label_set_text(hint,
@@ -3945,7 +3957,7 @@ static void open_integrations_modal(lv_event_t * e) {
 
     lbl_integ_hint = lv_label_create(p);
     lv_obj_set_style_text_font(lbl_integ_hint, SF(18), 0);
-    lv_obj_set_style_text_color(lbl_integ_hint, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_color(lbl_integ_hint, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_width(lbl_integ_hint, SX(800));
     lv_label_set_long_mode(lbl_integ_hint, LV_LABEL_LONG_WRAP);
     lv_label_set_text(lbl_integ_hint,
@@ -3959,10 +3971,10 @@ static void open_integrations_modal(lv_event_t * e) {
     lv_obj_t * b_ha = lv_btn_create(p);
     lv_obj_set_size(b_ha, SX(420), SY(50));
     lv_obj_align(b_ha, LV_ALIGN_TOP_LEFT, SX(4), SY(y) + 60);
-    lv_obj_set_style_bg_color(b_ha, lv_color_hex(0x335577), 0);
+    lv_obj_set_style_bg_color(b_ha, lv_color_hex(THEME_BTN_ACCENT), 0);
     lv_obj_add_event_cb(b_ha, open_ha_entities_modal, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bhl = lv_label_create(b_ha);
-    lv_obj_set_style_text_color(bhl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(bhl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_label_set_text(bhl, tr("HA-entiteiten instellen...", "Configure HA entities..."));
     lv_obj_center(bhl);
 }
@@ -4161,14 +4173,14 @@ static void open_ha_entities_modal(lv_event_t * e) {
 
     /* ── Devices ── (dynamic list: lights, covers, switches, scripts, scenes) */
     lv_obj_t * lsec = lv_label_create(p);
-    lv_obj_set_style_text_color(lsec, lv_color_hex(0x44aaff), 0);
+    lv_obj_set_style_text_color(lsec, lv_color_hex(THEME_ACCENT), 0);
     lv_obj_set_style_text_font(lsec, SF(22), 0);
     lv_label_set_text(lsec, tr("Apparaten", "Devices"));
     lv_obj_align(lsec, LV_ALIGN_TOP_LEFT, SX(4), y);
     y += 36;
     {
         lv_obj_t * hint = lv_label_create(p);
-        lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
+        lv_obj_set_style_text_color(hint, lv_color_hex(THEME_TEXT_DIM), 0);
         lv_obj_set_style_text_font(hint, SF(18), 0);
         lv_label_set_text(hint, tr("Lampen, zonwering, schakelaars, scripts en scenes -\n"
                                     "te zien achter de Apparaten-knop op start.",
@@ -4179,11 +4191,11 @@ static void open_ha_entities_modal(lv_event_t * e) {
         lv_obj_t * bm = lv_btn_create(p);
         lv_obj_set_size(bm, SX(300), SY(48));
         lv_obj_align(bm, LV_ALIGN_TOP_LEFT, SX(4), y);
-        lv_obj_set_style_bg_color(bm, lv_color_hex(0x2e5e8a), 0);
+        lv_obj_set_style_bg_color(bm, lv_color_hex(THEME_ACCENT_FILL), 0);
         lv_obj_set_style_radius(bm, 8, 0);
         lv_obj_add_event_cb(bm, on_manage_devices, LV_EVENT_CLICKED, NULL);
         lv_obj_t * bml = lv_label_create(bm);
-        lv_obj_set_style_text_color(bml, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_color(bml, lv_color_hex(THEME_ON_ACCENT), 0);
         lv_obj_set_style_text_font(bml, SF(20), 0);
         lv_label_set_text(bml, tr("Apparaten beheren...", "Manage devices..."));
         lv_obj_center(bml);
@@ -4192,14 +4204,14 @@ static void open_ha_entities_modal(lv_event_t * e) {
 
     /* ── Energy ── */
     lsec = lv_label_create(p);
-    lv_obj_set_style_text_color(lsec, lv_color_hex(0x44aaff), 0);
+    lv_obj_set_style_text_color(lsec, lv_color_hex(THEME_ACCENT), 0);
     lv_obj_set_style_text_font(lsec, SF(22), 0);
     lv_label_set_text(lsec, tr("Energie", "Energy"));
     lv_obj_align(lsec, LV_ALIGN_TOP_LEFT, SX(4), y);
     y += 36;
     {
         lv_obj_t * hint = lv_label_create(p);
-        lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
+        lv_obj_set_style_text_color(hint, lv_color_hex(THEME_TEXT_DIM), 0);
         lv_obj_set_style_text_font(hint, SF(18), 0);
         lv_label_set_text(hint, tr(
             "Stroom/gas worden alleen gebruikt als de energiebron op\n"
@@ -4221,7 +4233,7 @@ static void open_ha_entities_modal(lv_event_t * e) {
 
     /* ── Doorbell ── */
     lsec = lv_label_create(p);
-    lv_obj_set_style_text_color(lsec, lv_color_hex(0x44aaff), 0);
+    lv_obj_set_style_text_color(lsec, lv_color_hex(THEME_ACCENT), 0);
     lv_obj_set_style_text_font(lsec, SF(22), 0);
     lv_label_set_text(lsec, tr("Deurbel", "Doorbell"));
     lv_obj_align(lsec, LV_ALIGN_TOP_LEFT, SX(4), y);
@@ -4239,7 +4251,7 @@ static void open_ha_entities_modal(lv_event_t * e) {
 
     /* ── Family / Trackers ── */
     lsec = lv_label_create(p);
-    lv_obj_set_style_text_color(lsec, lv_color_hex(0x44aaff), 0);
+    lv_obj_set_style_text_color(lsec, lv_color_hex(THEME_ACCENT), 0);
     lv_obj_set_style_text_font(lsec, SF(22), 0);
     lv_label_set_text(lsec, tr("Trackers", "Trackers"));
     lv_obj_align(lsec, LV_ALIGN_TOP_LEFT, SX(4), y);
@@ -4254,7 +4266,7 @@ static void open_ha_entities_modal(lv_event_t * e) {
 
     /* ── Calendar ── */
     lsec = lv_label_create(p);
-    lv_obj_set_style_text_color(lsec, lv_color_hex(0x44aaff), 0);
+    lv_obj_set_style_text_color(lsec, lv_color_hex(THEME_ACCENT), 0);
     lv_obj_set_style_text_font(lsec, SF(22), 0);
     lv_label_set_text(lsec, tr("Agenda", "Calendar"));
     lv_obj_align(lsec, LV_ALIGN_TOP_LEFT, SX(4), y);
@@ -4266,11 +4278,11 @@ static void open_ha_entities_modal(lv_event_t * e) {
     lv_obj_t * b_save = lv_btn_create(p);
     lv_obj_set_size(b_save, SX(240), SY(50));
     lv_obj_align(b_save, LV_ALIGN_TOP_LEFT, SX(4), y);
-    lv_obj_set_style_bg_color(b_save, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_set_style_bg_color(b_save, lv_color_hex(THEME_SUCCESS_BG), 0);
     lv_obj_set_style_radius(b_save, 8, 0);
     lv_obj_add_event_cb(b_save, on_ha_entities_save, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bsl = lv_label_create(b_save);
-    lv_obj_set_style_text_color(bsl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(bsl, lv_color_hex(THEME_ON_ACCENT), 0);
     lv_label_set_text(bsl, tr("Opslaan & sluiten", "Save & close"));
     lv_obj_center(bsl);
 }
@@ -4379,11 +4391,11 @@ static lv_obj_t * marketplace_button(lv_obj_t * parent) {
     lv_obj_t * b = lv_btn_create(parent);
     lv_obj_set_size(b, SX(250), SY(50));
     lv_obj_align(b, LV_ALIGN_BOTTOM_RIGHT, SX(-4), SY(-8));
-    lv_obj_set_style_bg_color(b, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_set_style_bg_color(b, lv_color_hex(THEME_SUCCESS_BG), 0);
     lv_obj_add_event_cb(b, on_modal_to_marketplace, LV_EVENT_CLICKED, NULL);
     lv_obj_t * l = lv_label_create(b);
     lv_label_set_text_fmt(l, LV_SYMBOL_DOWNLOAD "  %s", tr("Marketplace openen", "Open Marketplace"));
-    lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(l, lv_color_hex(THEME_ON_ACCENT), 0);
     lv_obj_center(l);
     return b;
 }
@@ -4407,7 +4419,7 @@ static void open_tile_slots_modal(lv_event_t * e) {
     /* Section 1: Startscherm (4 vaste tegels) */
     lv_obj_t * sec1 = lv_label_create(sc);
     lv_obj_set_style_text_font(sec1, SF(20), 0);
-    lv_obj_set_style_text_color(sec1, lv_color_hex(0xffcc44), 0);
+    lv_obj_set_style_text_color(sec1, lv_color_hex(THEME_WARN_ORANGE), 0);
     lv_label_set_text(sec1, tr("Startscherm (4 vaste tegels)", "Home screen (4 fixed tiles)"));
     lv_obj_align(sec1, LV_ALIGN_TOP_LEFT, SX(8), y + 6);
     y += 34;
@@ -4416,14 +4428,14 @@ static void open_tile_slots_modal(lv_event_t * e) {
         lv_obj_t * row = lv_obj_create(sc);
         lv_obj_set_size(row, SX(790), SY(72));
         lv_obj_align(row, LV_ALIGN_TOP_LEFT, SX(4), y);
-        lv_obj_set_style_bg_color(row, lv_color_hex(0x152033), 0);
+        lv_obj_set_style_bg_color(row, lv_color_hex(THEME_ROW_BG_ALT), 0);
         lv_obj_set_style_radius(row, 10, 0);
         lv_obj_set_style_pad_all(row, 8, 0);
         lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
 
         lv_obj_t * lbl = lv_label_create(row);
         lv_obj_set_style_text_font(lbl, SF(22), 0);
-        lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_color(lbl, lv_color_hex(THEME_TEXT_HI), 0);
         lv_label_set_text(lbl, tile_slot_label(s));
         lv_obj_align(lbl, LV_ALIGN_LEFT_MID, SX(8), 0);
 
@@ -4446,7 +4458,7 @@ static void open_tile_slots_modal(lv_event_t * e) {
     /* Section 2: Pagina 2 (Veegscherm - 4 tegels) */
     lv_obj_t * sec2 = lv_label_create(sc);
     lv_obj_set_style_text_font(sec2, SF(20), 0);
-    lv_obj_set_style_text_color(sec2, lv_color_hex(0xffcc44), 0);
+    lv_obj_set_style_text_color(sec2, lv_color_hex(THEME_WARN_ORANGE), 0);
     lv_label_set_text(sec2, tr("Pagina 2 (Veegscherm - 4 tegels)", "Page 2 (Swipe screen - 4 tiles)"));
     lv_obj_align(sec2, LV_ALIGN_TOP_LEFT, SX(8), y + 6);
     y += 34;
@@ -4455,14 +4467,14 @@ static void open_tile_slots_modal(lv_event_t * e) {
         lv_obj_t * row = lv_obj_create(sc);
         lv_obj_set_size(row, SX(790), SY(72));
         lv_obj_align(row, LV_ALIGN_TOP_LEFT, SX(4), y);
-        lv_obj_set_style_bg_color(row, lv_color_hex(0x152033), 0);
+        lv_obj_set_style_bg_color(row, lv_color_hex(THEME_ROW_BG_ALT), 0);
         lv_obj_set_style_radius(row, 10, 0);
         lv_obj_set_style_pad_all(row, 8, 0);
         lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
 
         lv_obj_t * lbl = lv_label_create(row);
         lv_obj_set_style_text_font(lbl, SF(22), 0);
-        lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_color(lbl, lv_color_hex(THEME_TEXT_HI), 0);
         lv_label_set_text(lbl, tile_slot_label(s));
         lv_obj_align(lbl, LV_ALIGN_LEFT_MID, SX(8), 0);
 
@@ -4483,7 +4495,7 @@ static void open_tile_slots_modal(lv_event_t * e) {
 
     lv_obj_t * hint = lv_label_create(p);
     lv_obj_set_style_text_font(hint, SF(18), 0);
-    lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_color(hint, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_width(hint, SX(540));
     lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
     lv_label_set_text(hint,
@@ -4510,7 +4522,7 @@ void screen_settings_open_tile_slot_single_modal(int slot) {
 
     lv_obj_t * info = lv_label_create(p);
     lv_obj_set_style_text_font(info, SF(18), 0);
-    lv_obj_set_style_text_color(info, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_color(info, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_label_set_text(info, tr("Kies welke integratie of inhoud op deze tegel getoond wordt:",
                                "Choose which integration or content is displayed on this tile:"));
     lv_obj_align(info, LV_ALIGN_TOP_LEFT, SX(20), SY(70));
@@ -4810,12 +4822,12 @@ static void paint_mode_buttons(void) {
         /* Force opacity so theme defaults don't fight us. */
         lv_obj_set_style_bg_opa(items[i].b, LV_OPA_COVER, 0);
         lv_obj_set_style_bg_color(items[i].b,
-            lv_color_hex(active ? 0x3a6090 : 0x1a2a44), 0);
+            lv_color_hex(active ? THEME_ACCENT_FILL : THEME_BTN_BG), 0);
         /* Label text color lives on the LABEL, not the button — lv_btn
          * doesn't propagate text styles to its children. */
         if (items[i].lbl) {
             lv_obj_set_style_text_color(items[i].lbl,
-                lv_color_hex(active ? 0xffffff : 0x88aabb), 0);
+                lv_color_hex(active ? THEME_ON_ACCENT : THEME_TEXT_DIM), 0);
         }
         /* Belt-and-braces: mark dirty so LVGL repaints at next refresh. */
         lv_obj_invalidate(items[i].b);
@@ -4952,7 +4964,7 @@ static void open_otbridge_modal(lv_event_t * e) {
 
     /* Mode description (one-liner that flips with the selection). */
     lbl_otmode = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_otmode, lv_color_hex(0xa8c4dc), 0);
+    lv_obj_set_style_text_color(lbl_otmode, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_otmode, SF(18), 0);
     lv_obj_set_width(lbl_otmode, SX(560));
     lv_label_set_long_mode(lbl_otmode, LV_LABEL_LONG_WRAP);
@@ -5012,7 +5024,7 @@ static void open_otbridge_modal(lv_event_t * e) {
     lv_obj_t * b_test = lv_btn_create(p);
     lv_obj_set_size(b_test, SX(200), SY(50));
     lv_obj_align(b_test, LV_ALIGN_TOP_LEFT, SX(4), y);
-    lv_obj_set_style_bg_color(b_test, lv_color_hex(0x2a4060), 0);
+    lv_obj_set_style_bg_color(b_test, lv_color_hex(THEME_BTN_ACCENT), 0);
     lv_obj_add_event_cb(b_test, on_test_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * b_test_lbl = lv_label_create(b_test);
     lv_label_set_text(b_test_lbl, tr("Test OTGW", "Test OTGW"));
@@ -5021,7 +5033,7 @@ static void open_otbridge_modal(lv_event_t * e) {
     lv_obj_t * b_check = lv_btn_create(p);
     lv_obj_set_size(b_check, SX(220), SY(50));
     lv_obj_align(b_check, LV_ALIGN_TOP_LEFT, SX(218), y);
-    lv_obj_set_style_bg_color(b_check, lv_color_hex(0x2a4060), 0);
+    lv_obj_set_style_bg_color(b_check, lv_color_hex(THEME_BTN_ACCENT), 0);
     lv_obj_add_event_cb(b_check, on_check_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * b_check_lbl = lv_label_create(b_check);
     lv_label_set_text(b_check_lbl, tr("GW-modus checken", "Check GW mode"));
@@ -5030,7 +5042,7 @@ static void open_otbridge_modal(lv_event_t * e) {
     lv_obj_t * b_ket = lv_btn_create(p);
     lv_obj_set_size(b_ket, SX(220), SY(50));
     lv_obj_align(b_ket, LV_ALIGN_TOP_LEFT, SX(452), y);
-    lv_obj_set_style_bg_color(b_ket, lv_color_hex(0x2a4060), 0);
+    lv_obj_set_style_bg_color(b_ket, lv_color_hex(THEME_BTN_ACCENT), 0);
     lv_obj_add_event_cb(b_ket, on_ket_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * b_ket_lbl = lv_label_create(b_ket);
     lv_label_set_text(b_ket_lbl, tr("Test keteladapter", "Test keteladapter"));
@@ -5041,7 +5053,7 @@ static void open_otbridge_modal(lv_event_t * e) {
     lv_obj_t * b_apply = lv_btn_create(p);
     lv_obj_set_size(b_apply, SX(200), SY(50));
     lv_obj_align(b_apply, LV_ALIGN_TOP_LEFT, SX(4), y);
-    lv_obj_set_style_bg_color(b_apply, lv_color_hex(0x884422), 0);
+    lv_obj_set_style_bg_color(b_apply, lv_color_hex(THEME_GLOW), 0);
     lv_obj_add_event_cb(b_apply, on_apply_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * b_apply_lbl = lv_label_create(b_apply);
     lv_label_set_text(b_apply_lbl, tr("Modus toepassen", "Apply mode"));
@@ -5050,7 +5062,7 @@ static void open_otbridge_modal(lv_event_t * e) {
 
     /* Result labels stacked below the button rows */
     lbl_test_result = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_test_result, lv_color_hex(0xa8c4dc), 0);
+    lv_obj_set_style_text_color(lbl_test_result, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_test_result, SF(18), 0);
     lv_label_set_long_mode(lbl_test_result, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(lbl_test_result, SX(770));
@@ -5059,7 +5071,7 @@ static void open_otbridge_modal(lv_event_t * e) {
     y += 35;
 
     lbl_check_result = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_check_result, lv_color_hex(0xa8c4dc), 0);
+    lv_obj_set_style_text_color(lbl_check_result, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_check_result, SF(18), 0);
     lv_obj_set_width(lbl_check_result, SX(770));
     lv_label_set_long_mode(lbl_check_result, LV_LABEL_LONG_WRAP);
@@ -5068,7 +5080,7 @@ static void open_otbridge_modal(lv_event_t * e) {
     y += 35;
 
     lbl_ket_result = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_ket_result, lv_color_hex(0xa8c4dc), 0);
+    lv_obj_set_style_text_color(lbl_ket_result, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_ket_result, SF(18), 0);
     lv_obj_set_width(lbl_ket_result, SX(770));
     lv_label_set_long_mode(lbl_ket_result, LV_LABEL_LONG_WRAP);
@@ -5077,7 +5089,7 @@ static void open_otbridge_modal(lv_event_t * e) {
     y += 45;
 
     lbl_apply_warning = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_apply_warning, lv_color_hex(0xcc8866), 0);
+    lv_obj_set_style_text_color(lbl_apply_warning, lv_color_hex(THEME_WARNING), 0);
     lv_obj_set_style_text_font(lbl_apply_warning, SF(18), 0);
     lv_label_set_long_mode(lbl_apply_warning, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(lbl_apply_warning, SX(770));
@@ -5156,13 +5168,13 @@ static void open_clean_modal(lv_event_t * e) {
     lv_obj_remove_style_all(g_clean_overlay);
     lv_obj_set_size(g_clean_overlay, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_pos(g_clean_overlay, 0, 0);
-    lv_obj_set_style_bg_color(g_clean_overlay, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_color(g_clean_overlay, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(g_clean_overlay, LV_OPA_COVER, 0);
     lv_obj_clear_flag(g_clean_overlay, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(g_clean_overlay, LV_OBJ_FLAG_CLICKABLE);
 
     g_clean_lbl = lv_label_create(g_clean_overlay);
-    lv_obj_set_style_text_color(g_clean_lbl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(g_clean_lbl, lv_color_white(), 0);
     LV_FONT_DECLARE(lv_font_montserrat_96_custom);
     lv_obj_set_style_text_font(g_clean_lbl, SF(96), 0);
     lv_label_set_text_fmt(g_clean_lbl, "%d", g_clean_remaining);
@@ -5243,7 +5255,9 @@ static void make_tile(int x, int y, const lv_img_dsc_t * icon, const char * sym,
     lv_obj_set_pos(tile, x, y);
     lv_obj_set_style_bg_color(tile, lv_color_hex(THEME_CARD_BG), 0);
     lv_obj_set_style_bg_color(tile, lv_color_hex(THEME_BTN_BG), LV_STATE_PRESSED);
-    lv_obj_set_style_radius(tile, 12, 0);
+    lv_obj_set_style_radius(tile, THEME_RADIUS_TILE, 0);
+    lv_obj_set_style_shadow_width(tile, 0, 0);     /* flat cards: no drop shadow */
+    lv_obj_set_style_border_width(tile, 0, 0);
     lv_obj_set_style_pad_all(tile, 6, 0);
     lv_obj_add_event_cb(tile, cb, LV_EVENT_CLICKED, NULL);
 
@@ -5251,7 +5265,7 @@ static void make_tile(int x, int y, const lv_img_dsc_t * icon, const char * sym,
         icon = get_scaled_icon(icon);
         lv_obj_t * im = lv_img_create(tile);
         lv_img_set_src(im, icon);
-        lv_obj_set_style_img_recolor(im, lv_color_hex(settings.home_light_mode ? 0x2563eb : 0x9fc4e6), 0);
+        lv_obj_set_style_img_recolor(im, lv_color_hex(THEME_ICON), 0);
         lv_obj_set_style_img_recolor_opa(im, 255, 0);
 #ifdef TOON1
         /* Scaled 24px icon pinned near top with clear gap above title */
@@ -5262,7 +5276,7 @@ static void make_tile(int x, int y, const lv_img_dsc_t * icon, const char * sym,
     } else if (sym) {
         lv_obj_t * s = lv_label_create(tile);
         lv_obj_set_style_text_font(s, SF(22), 0);
-        lv_obj_set_style_text_color(s, lv_color_hex(settings.home_light_mode ? 0x2563eb : 0x9fc4e6), 0);
+        lv_obj_set_style_text_color(s, lv_color_hex(THEME_ICON), 0);
         lv_label_set_text(s, sym);
         lv_obj_align(s, LV_ALIGN_TOP_MID, 0, SY(8));
     }
@@ -5396,13 +5410,13 @@ static void open_web_modal(lv_event_t * e) {
     if (_ip[0]) snprintf(_url, sizeof _url, "http://%s:10081", _ip);
     else        snprintf(_url, sizeof _url, "http://<toon-ip>:10081");
     lv_obj_t * lcap = lv_label_create(p);
-    lv_obj_set_style_text_color(lcap, lv_color_hex(0x99aabb), 0);
+    lv_obj_set_style_text_color(lcap, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lcap, SF(14), 0);
     lv_label_set_text(lcap, tr("Openen in een browser op (telefoon/tablet/pc):",
                                "Open in a browser at (phone/tablet/PC):"));
     lv_obj_align(lcap, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
     lv_obj_t * lurl = lv_label_create(p);
-    lv_obj_set_style_text_color(lurl, lv_color_hex(0x66ccff), 0);
+    lv_obj_set_style_text_color(lurl, lv_color_hex(THEME_INFO), 0);
     lv_obj_set_style_text_font(lurl, SF(22), 0);
     lv_label_set_text(lurl, _url);
     lv_obj_align(lurl, LV_ALIGN_TOP_LEFT, SX(4), SY(y + 26));
@@ -5440,7 +5454,7 @@ static void open_web_modal(lv_event_t * e) {
     lv_obj_t * b_apply = lv_btn_create(p);
     lv_obj_set_size(b_apply, SX(220), SY(50));
     lv_obj_align(b_apply, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
-    lv_obj_set_style_bg_color(b_apply, lv_color_hex(0xc06030), 0);
+    lv_obj_set_style_bg_color(b_apply, lv_color_hex(THEME_GLOW), 0);
     lv_obj_add_event_cb(b_apply, on_pwa_apply_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * la = lv_label_create(b_apply);
     lv_label_set_text(la, tr("Opslaan", "Save")); lv_obj_center(la);
@@ -5451,7 +5465,7 @@ static void open_web_modal(lv_event_t * e) {
     lv_obj_t * b_reset = lv_btn_create(p);
     lv_obj_set_size(b_reset, SX(200), SY(50));
     lv_obj_align(b_reset, LV_ALIGN_TOP_LEFT, SX(244), SY(y));
-    lv_obj_set_style_bg_color(b_reset, lv_color_hex(0x444444), 0);
+    lv_obj_set_style_bg_color(b_reset, lv_color_hex(THEME_OFF), 0);
     lv_obj_add_event_cb(b_reset, on_pwa_reset_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * lr = lv_label_create(b_reset);
     lv_label_set_text(lr, tr("Wachtwoord resetten", "Reset password")); lv_obj_center(lr);
@@ -5459,7 +5473,7 @@ static void open_web_modal(lv_event_t * e) {
     /* Note label — explains the empty-password fallback so users aren't
      * surprised when clearing the field doesn't fully disable login. */
     lv_obj_t * note = lv_label_create(p);
-    lv_obj_set_style_text_color(note, lv_color_hex(0x99aabb), 0);
+    lv_obj_set_style_text_color(note, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(note, SF(14), 0);
     lv_label_set_text(note,
         tr("Leeg wachtwoord = volgende browserbezoek vraagt er een in te stellen.\n"
@@ -5523,13 +5537,13 @@ static void open_pin_settings_modal(lv_event_t * e) {
     lv_obj_t * b_apply = lv_btn_create(p);
     lv_obj_set_size(b_apply, SX(220), SY(50));
     lv_obj_align(b_apply, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
-    lv_obj_set_style_bg_color(b_apply, lv_color_hex(0xc06030), 0);
+    lv_obj_set_style_bg_color(b_apply, lv_color_hex(THEME_GLOW), 0);
     lv_obj_add_event_cb(b_apply, on_pin_apply_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * la = lv_label_create(b_apply);
     lv_label_set_text(la, tr("Opslaan", "Save")); lv_obj_center(la);
 
     lv_obj_t * note = lv_label_create(p);
-    lv_obj_set_style_text_color(note, lv_color_hex(0x99aabb), 0);
+    lv_obj_set_style_text_color(note, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(note, SF(14), 0);
     lv_label_set_text(note,
         tr("Indien aan, beschermt de pincode: Instellingen openen,\n"
@@ -5853,7 +5867,7 @@ static void open_mqtt_modal(lv_event_t * e) {
     lv_obj_t * b_test = lv_btn_create(p);
     lv_obj_set_size(b_test, SX(220), SY(50));
     lv_obj_align(b_test, LV_ALIGN_TOP_LEFT, SX(4), y);
-    lv_obj_set_style_bg_color(b_test, lv_color_hex(0x2a4060), 0);
+    lv_obj_set_style_bg_color(b_test, lv_color_hex(THEME_BTN_ACCENT), 0);
     lv_obj_add_event_cb(b_test, on_mqtt_test_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl1 = lv_label_create(b_test);
     lv_label_set_text(bl1, tr("Verbinding testen", "Test connection")); lv_obj_center(bl1);
@@ -5861,7 +5875,7 @@ static void open_mqtt_modal(lv_event_t * e) {
     lv_obj_t * b_disc = lv_btn_create(p);
     lv_obj_set_size(b_disc, SX(250), SY(50));
     lv_obj_align(b_disc, LV_ALIGN_TOP_LEFT, SX(240), y);
-    lv_obj_set_style_bg_color(b_disc, lv_color_hex(0x2a4060), 0);
+    lv_obj_set_style_bg_color(b_disc, lv_color_hex(THEME_BTN_ACCENT), 0);
     lv_obj_add_event_cb(b_disc, on_mqtt_discover_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl2 = lv_label_create(b_disc);
     lv_label_set_text(bl2, tr("Topics ontdekken (5s)", "Discover topics (5s)")); lv_obj_center(bl2);
@@ -5869,7 +5883,7 @@ static void open_mqtt_modal(lv_event_t * e) {
     lv_obj_t * b_apply = lv_btn_create(p);
     lv_obj_set_size(b_apply, SX(200), SY(50));
     lv_obj_align(b_apply, LV_ALIGN_TOP_LEFT, SX(500), y);
-    lv_obj_set_style_bg_color(b_apply, lv_color_hex(0xc06030), 0);
+    lv_obj_set_style_bg_color(b_apply, lv_color_hex(THEME_GLOW), 0);
     lv_obj_add_event_cb(b_apply, on_mqtt_apply_click, LV_EVENT_CLICKED, NULL);
     lv_obj_t * bl3 = lv_label_create(b_apply);
     lv_label_set_text(bl3, tr("Toepassen + herstart", "Apply + restart")); lv_obj_center(bl3);
@@ -5877,7 +5891,7 @@ static void open_mqtt_modal(lv_event_t * e) {
 
     /* Result line */
     lbl_mqtt_result = lv_label_create(p);
-    lv_obj_set_style_text_color(lbl_mqtt_result, lv_color_hex(0xa8c4dc), 0);
+    lv_obj_set_style_text_color(lbl_mqtt_result, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_mqtt_result, SF(18), 0);
     lv_obj_set_width(lbl_mqtt_result, SX(770));
     lv_label_set_long_mode(lbl_mqtt_result, LV_LABEL_LONG_WRAP);
@@ -5911,12 +5925,12 @@ static void open_mqtt_modal(lv_event_t * e) {
 }
 
 lv_obj_t * screen_settings_create(void) {
-    if (scr_root && scr_light_mode == settings.home_light_mode) return scr_root;
+    if (scr_root && scr_light_mode == settings.ui_theme) return scr_root;
     if (scr_root) {
-        lv_obj_del(scr_root);
+        ui_del_screen(scr_root);   /* theme change: may be the active screen */
         scr_root = NULL;
     }
-    scr_light_mode = settings.home_light_mode;
+    scr_light_mode = settings.ui_theme;
 
     scr_root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(THEME_BG), 0);
@@ -5929,7 +5943,8 @@ lv_obj_t * screen_settings_create(void) {
     lv_obj_set_size(btn_close, x_w, x_h);
     lv_obj_align(btn_close, LV_ALIGN_TOP_RIGHT, SX(-12), SY(12));
     lv_obj_set_style_bg_color(btn_close, lv_color_hex(THEME_BTN_BG), 0);
-    lv_obj_set_style_radius(btn_close, 12, 0);
+    lv_obj_set_style_radius(btn_close, THEME_RADIUS_BTN, 0);
+    lv_obj_set_style_shadow_width(btn_close, 0, 0);
     lv_obj_set_ext_click_area(btn_close, 25);
     lv_obj_add_event_cb(btn_close, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t * xl = lv_label_create(btn_close);
@@ -5957,7 +5972,7 @@ lv_obj_t * screen_settings_create(void) {
     lv_obj_set_scrollbar_mode(scr_tiles_cont, LV_SCROLLBAR_MODE_AUTO);
 
     /* Category tiles in a compact 4-column grid, sorted alphabetically (CR9) */
-    const int COLS = 4, MX = 20, TOP = 8, GAPX = 14, GAPY = 12;
+    const int COLS = 4, MX = 24, TOP = 8, GAPX = 16, GAPY = 16;   /* 8 px grid, one gap both ways */
     #define GX(i) (SX(MX + ((i) % COLS) * (SETT_TILE_W + GAPX)))
     #define GY(i) (SY(TOP + ((i) / COLS) * (SETT_TILE_H + GAPY)))
     int n = 0;

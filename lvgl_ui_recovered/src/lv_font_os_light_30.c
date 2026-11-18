@@ -515,6 +515,9 @@ static lv_font_fmt_txt_dsc_t font_dsc = {
  *  PUBLIC FONT
  *----------------*/
 
+/* Readout subset (digits, units): anything else renders from Montserrat. */
+LV_FONT_DECLARE(lv_font_montserrat_28)
+
 /*Initialize a public general font descriptor*/
 #if LVGL_VERSION_MAJOR >= 8
 const lv_font_t lv_font_os_light_30 = {
@@ -534,7 +537,7 @@ lv_font_t lv_font_os_light_30 = {
 #endif
     .dsc = &font_dsc,          /*The custom font data. Will be accessed by `get_glyph_bitmap/dsc` */
 #if LV_VERSION_CHECK(8, 2, 0) || LVGL_VERSION_MAJOR >= 9
-    .fallback = NULL,
+    .fallback = &lv_font_montserrat_28,   /* readout subset: other glyphs (C, letters) */
 #endif
     .user_data = NULL,
 };

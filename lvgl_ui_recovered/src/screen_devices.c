@@ -35,9 +35,9 @@
 #define COL_CARD      THEME_CARD_BG
 #define COL_TEXT_HI   THEME_TEXT_HI
 #define COL_TEXT_DIM  THEME_TEXT_DIM
-#define COL_ON        THEME_ACCENT_BLUE
+#define COL_ON        THEME_ACCENT
 #define COL_OFF       THEME_OFF
-#define COL_OFFLINE   (settings.home_light_mode ? 0x94a3b8 : 0x6e6e6e)
+#define COL_OFFLINE   THEME_OFFLINE
 
 enum { SRC_HUE, SRC_HA, SRC_DZ, SRC_ZW, SRC_HWS, SRC_EFAN, SRC_COUNT };
 enum { CTL_TOGGLE, CTL_COVER, CTL_RUN };
@@ -330,8 +330,8 @@ static void build_row(int i) {
     } else if (it->ctl == CTL_RUN) {
         int scene = it->src == SRC_HA && find_ha(it) && find_ha(it)->type == HADEV_SCENE;
         it->btn = mk_btn(c, scene ? tr("Activeer", "Activate") : tr("Start", "Run"), 84, 38, on_toggle, i);
-        lv_obj_set_style_bg_color(it->btn, lv_color_hex(0x2e5e8a), 0);
-        lv_obj_set_style_text_color(lv_obj_get_child(it->btn, 0), lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_bg_color(it->btn, lv_color_hex(THEME_ACCENT_FILL), 0);
+        lv_obj_set_style_text_color(lv_obj_get_child(it->btn, 0), lv_color_hex(THEME_ON_ACCENT), 0);
         lv_obj_align(it->btn, LV_ALIGN_RIGHT_MID, 0, 0);
         it->btn = NULL;                         /* stateless: refresh leaves it alone */
     } else {
@@ -530,7 +530,7 @@ static void refresh_rows(void) {
         ui_label_set_text(it->btn_lbl, bl);
         ui_obj_set_style_bg_color(it->btn, lv_color_hex(st.state == 1 ? COL_ON : COL_OFF), 0);
         ui_obj_set_style_text_color(it->btn_lbl,
-            lv_color_hex(st.state == 1 ? 0xffffff : COL_TEXT_HI), 0);
+            lv_color_hex(st.state == 1 ? THEME_ON_ACCENT : COL_TEXT_HI), 0);
     }
 }
 

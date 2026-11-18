@@ -2044,6 +2044,10 @@ static lv_font_fmt_txt_dsc_t font_dsc = {
  *  PUBLIC FONT
  *----------------*/
 
+/* Subset font (digits, ':', '.', '-', '°'): anything else renders from the
+ * 50 px Light, so a unit or label next to a big readout never shows tofu. */
+LV_FONT_DECLARE(lv_font_os_light_50)
+
 /*Initialize a public general font descriptor*/
 #if LVGL_VERSION_MAJOR >= 8
 const lv_font_t lv_font_os_light_90 = {
@@ -2063,7 +2067,7 @@ lv_font_t lv_font_os_light_90 = {
 #endif
     .dsc = &font_dsc,          /*The custom font data. Will be accessed by `get_glyph_bitmap/dsc` */
 #if LV_VERSION_CHECK(8, 2, 0) || LVGL_VERSION_MAJOR >= 9
-    .fallback = NULL,
+    .fallback = &lv_font_os_light_50,   /* letters, units: digits-only subset */
 #endif
     .user_data = NULL,
 };
