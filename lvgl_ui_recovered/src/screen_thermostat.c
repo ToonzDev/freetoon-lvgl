@@ -122,12 +122,14 @@ static void quick_paint(void) {
     }
 }
 
-static void on_boost(lv_event_t * e) {
-    (void)e;
+/* Behind the PIN like the other thermostat controls (pin_gate). */
+static void boost_apply(void * ctx) {
+    (void)ctx;
     if (thermo_boost_active()) thermo_boost_stop();
     else                       thermo_boost_start();
     quick_paint();
 }
+static void on_boost(lv_event_t * e) { (void)e; pin_gate(boost_apply, NULL); }
 
 static void hol_paint(void) {
     if (!hol_lbl_date) return;
@@ -147,8 +149,10 @@ static void on_hol_step(lv_event_t * e) {
     hol_until = n;
     hol_paint();
 }
-static void on_hol_start(lv_event_t * e) { (void)e; thermo_holiday_start(hol_until); hol_close(); quick_paint(); }
-static void on_hol_stop(lv_event_t * e)  { (void)e; thermo_holiday_stop(); hol_close(); quick_paint(); }
+static void hol_start_apply(void * ctx) { (void)ctx; thermo_holiday_start(hol_until); quick_paint(); }
+static void hol_stop_apply(void * ctx)  { (void)ctx; thermo_holiday_stop(); quick_paint(); }
+static void on_hol_start(lv_event_t * e) { (void)e; hol_close(); pin_gate(hol_start_apply, NULL); }
+static void on_hol_stop(lv_event_t * e)  { (void)e; hol_close(); pin_gate(hol_stop_apply, NULL); }
 static void on_hol_cancel(lv_event_t * e) { (void)e; hol_close(); }
 
 static lv_obj_t * hol_btn(lv_obj_t * par, const char * txt, lv_coord_t w, uint32_t bg, uint32_t fg,
