@@ -2743,7 +2743,22 @@ static void refresh_cb(lv_timer_t * t) {
         }
         /* Gas used today, under the watts. Was removed (CR10) when it showed
          * the meter total; users missed seeing their gas use here. */
-        if (lbl_energy_gas) {
+        float cost = settings.energy_cost_tile ? energy_cost_today() : -1.0f;
+        if (lbl_energy_gas && cost >= 0) {
+            /* Cost today (fixed tariffs), with yesterday's total for scale. */
+            char cb[64], t1[16], t2[16];
+            snprintf(t1, sizeof t1, "%.2f", cost);
+            float y = energy_cost_yesterday();
+            snprintf(t2, sizeof t2, "%.2f", y);
+            if (settings.language != LANG_EN) {
+                char * d = strchr(t1, '.'); if (d) *d = ',';
+                d = strchr(t2, '.'); if (d) *d = ',';
+            }
+            if (y >= 0) snprintf(cb, sizeof cb, tr("Vandaag \xE2\x82\xAC %s   gisteren \xE2\x82\xAC %s", "Today \xE2\x82\xAC %s   yesterday \xE2\x82\xAC %s"), t1, t2);
+            else        snprintf(cb, sizeof cb, tr("Vandaag \xE2\x82\xAC %s", "Today \xE2\x82\xAC %s"), t1);
+            ui_label_set_text(lbl_energy_gas, cb);
+            ui_obj_clear_flag(lbl_energy_gas, LV_OBJ_FLAG_HIDDEN);
+        } else if (lbl_energy_gas) {
             float g = energy_gas_today_m3();
             if (g >= 0) {
                 char gb[40];
@@ -4500,7 +4515,7 @@ lv_obj_t * screen_home_create(void) {
 
     lbl_energy_gas = lv_label_create(energy_t.tile);
     ui_obj_set_style_text_color(lbl_energy_gas, lv_color_hex(COL_TEXT_DIM), 0);
-    ui_obj_set_style_text_font(lbl_energy_gas, SF(18), 0);
+    ui_obj_set_style_text_font(lbl_energy_gas, SF_EUR(18)   /* euro sign for the cost line */, 0);
     ui_label_set_text(lbl_energy_gas, "");
     ui_obj_add_flag(lbl_energy_gas, LV_OBJ_FLAG_HIDDEN);
     ui_obj_align(lbl_energy_gas, LV_ALIGN_BOTTOM_LEFT, 0, -4);

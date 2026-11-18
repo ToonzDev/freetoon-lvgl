@@ -3959,6 +3959,11 @@ static void on_int_video(lv_event_t * e) {
 
 static void open_ha_entities_modal(lv_event_t * e);
 
+static void on_energy_cost_tile_change(lv_event_t * e) {
+    settings.energy_cost_tile = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    settings_save();
+}
+
 static void open_energy_stats(lv_event_t * e) {
     (void)e;
     modal_close(NULL);
@@ -3999,6 +4004,19 @@ static void open_integrations_modal(lv_event_t * e) {
         lv_obj_center(bl);
         y += 84;
     }
+
+    /* Cost today on the Energy tile (tariffs: Statistics). */
+    r = panel_row(p, y, tr("Kosten vandaag op Energie-tegel", "Cost today on Energy tile"), NULL);
+    {
+        lv_obj_t * h = lv_label_create(r);
+        lv_label_set_text(h, tr("met gisteren erbij; tarief instellen in Statistiek",
+                                "with yesterday; set the tariff in Statistics"));
+        lv_obj_set_style_text_font(h, SF(14), 0);
+        lv_obj_set_style_text_color(h, lv_color_hex(THEME_TEXT_DIM), 0);
+        lv_obj_align(h, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    }
+    row_switch(r, settings.energy_cost_tile, on_energy_cost_tile_change);
+    y += 84;
 
     /* Zuidwijk SlimmeLezer (or any ESPHome `dsmr` reader) — needs ESPHome's
      * web_server enabled on port 80, which Zuidwijk's stock config ships with. */

@@ -416,6 +416,10 @@ typedef struct {
     int   theme_auto_morning;       /* default 07:00 */
     int   theme_auto_evening;       /* default 19:00 */
     int   theme_auto_night;         /* default 23:00 */
+
+    /* Energy tile: show today's cost (electricity + gas at the fixed
+     * tariffs) and yesterday's instead of the gas line. Off by default. */
+    int   energy_cost_tile;
 } settings_t;
 
 #define FORECAST_AUTO   0
