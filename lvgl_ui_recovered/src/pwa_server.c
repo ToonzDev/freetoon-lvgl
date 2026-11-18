@@ -1550,7 +1550,7 @@ static int handle_settings_post(int fd, const char * body) {
         }
     }
     if (extract_str(body, "ot_bridge_mode", sv, sizeof sv) &&
-        (!strcmp(sv, "off") || !strcmp(sv, "proxy") || !strcmp(sv, "wireless")))
+        (!strcmp(sv, "off") || !strcmp(sv, "wireless")))   /* proxy mode removed */
         snprintf(settings.ot_bridge_mode, sizeof settings.ot_bridge_mode, "%s", sv);
     if (extract_str(body, "otgw_host", sv, sizeof sv))
         snprintf(settings.otgw_host, sizeof settings.otgw_host, "%s", sv);

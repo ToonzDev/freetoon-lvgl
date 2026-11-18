@@ -4782,7 +4782,7 @@ static void * ket_thread(void * arg) {
     if ((p = strstr(buf, "\"currentInternalBoilerSetpoint\":\"")))
         boil_sp = atoi(p + 33);
 
-    /* Mode-aware analysis: in off/proxy mode (keteladapter is real OT
+    /* Mode-aware analysis: in Direct mode (keteladapter is real OT
      * master) expect REAL OT data; in wireless mode the keteladapter
      * isn't in the loop so don't fail on absent burnerInfo. */
     int wired = strcmp(settings.ot_bridge_mode, "wireless") != 0;
@@ -4829,30 +4829,30 @@ static void on_check_click(lv_event_t * e) {
     if (pthread_create(&t, NULL, check_thread, NULL) == 0) pthread_detach(t);
 }
 
-/* Three mode-pick buttons; pointers cached so the click handler can update
- * their "checked" highlight state. The actual destructive mode-swap runs
- * on Apply, not on tap — taps just record the *intended* mode + repaint.
- * We also cache each button's label child because lv_btn doesn't propagate
- * style changes to its label (the label needs its own style update). */
+/* Two mode-pick buttons (Direct / Draadloos); pointers cached so the click
+ * handler can update their "checked" highlight state. The actual destructive
+ * mode-swap runs on Apply, not on tap — taps just record the *intended* mode +
+ * repaint. We also cache each button's label child because lv_btn doesn't
+ * propagate style changes to its label (the label needs its own style update).
+ * The former Proxy mode was removed: it broke OpenTherm for some boiler
+ * modules and the boiler flow/return temps come from the patched
+ * happ_thermstat. */
 static lv_obj_t * btn_off  = NULL;
-static lv_obj_t * btn_proxy = NULL;
 static lv_obj_t * btn_wireless = NULL;
 static lv_obj_t * lbl_off  = NULL;
-static lv_obj_t * lbl_proxy = NULL;
 static lv_obj_t * lbl_wireless = NULL;
+static int s_old_proxy_running = 0;   /* inittab still has the removed proxy row */
 
 static const char * mode_label(const char * m) {
     /* Hyphens (not em-dashes): Montserrat at this size lacks the em-dash
      * glyph and would render it as a missing-glyph square. */
-    if (strcmp(m, "off")      == 0) return tr("Direct - keteladapter is de OT-master (origineel qt-gui-gedrag, geen bridge-script)", "Direct - keteladapter is the OT master (original qt-gui behaviour, no bridge script)");
     if (strcmp(m, "wireless") == 0) return tr("Draadloos - bridge bootst Quby na, OTGW stuurt de ketel", "Wireless - bridge fakes Quby, OTGW drives boiler");
-    return                             tr("Proxy - bridge luistert Quby af, eigen warmtepad behouden", "Proxy - bridge sniffs Quby, native heat path preserved");
+    return                             tr("Direct - keteladapter is de OT-master (origineel qt-gui-gedrag, geen bridge-script)", "Direct - keteladapter is the OT master (original qt-gui behaviour, no bridge script)");
 }
 
 static void paint_mode_buttons(void) {
     const struct { lv_obj_t * b; lv_obj_t * lbl; const char * mode; } items[] = {
         { btn_off,      lbl_off,      "off" },
-        { btn_proxy,    lbl_proxy,    "proxy" },
         { btn_wireless, lbl_wireless, "wireless" },
     };
     for (unsigned i = 0; i < sizeof items / sizeof items[0]; i++) {
@@ -4882,8 +4882,8 @@ static void set_mode_and_repaint(const char * m) {
            "Verwarming is ~10-15s uit tijdens het omschakelen.",
            "Tap Apply to write inittab + restart bridge/thermstat.\n"
            "Heat will be off for ~10-15s during the switch."));
-    /* OTGW host/user/pass only meaningful for proxy + wireless (both talk
-     * to OTGW). Off mode doesn't need them but no harm keeping editable. */
+    /* OTGW host/user/pass only meaningful for wireless (talks to the OTGW).
+     * Direct doesn't need them. */
     int needs_otgw = strcmp(m, "off") != 0;
     if (needs_otgw) {
         lv_obj_clear_state(ta_otgw_host, LV_STATE_DISABLED);
@@ -4897,7 +4897,6 @@ static void set_mode_and_repaint(const char * m) {
 }
 
 static void on_mode_off_click(lv_event_t * e)      { (void)e; set_mode_and_repaint("off"); }
-static void on_mode_proxy_click(lv_event_t * e)    { (void)e; set_mode_and_repaint("proxy"); }
 static void on_mode_wireless_click(lv_event_t * e) { (void)e; set_mode_and_repaint("wireless"); }
 
 static void on_apply_click(lv_event_t * e) {
@@ -4914,11 +4913,12 @@ static void on_apply_click(lv_event_t * e) {
 
     /* Apply mode switch via shell. We shell out because rewriting inittab
      * + pkill + umount is messy to do via syscalls. The script lives at
-     * /mnt/data/ot_mode_switch.sh and accepts off|proxy|wireless. */
-    /* ot_bridge_mode can also be set from the PWA: only the three modes the
+     * /mnt/data/ot_mode_switch.sh and accepts off|wireless. */
+    /* ot_bridge_mode can also be set from the PWA: only the two modes the
      * script knows are ever passed to the shell. */
     const char * mode = settings.ot_bridge_mode;
-    if (strcmp(mode, "off") && strcmp(mode, "proxy") && strcmp(mode, "wireless")) mode = "off";
+    if (strcmp(mode, "wireless")) mode = "off";
+    s_old_proxy_running = 0;
     char cmd[256];
     snprintf(cmd, sizeof(cmd),
         "/mnt/data/ot_mode_switch.sh %s >> /tmp/ot_mode_switch.log 2>&1 &", mode);
@@ -4951,16 +4951,18 @@ static void open_otbridge_modal(lv_event_t * e) {
     /* Sync settings.ot_bridge_mode to whatever is *actually* running before
      * we paint, so the highlighted button reflects reality (not whatever
      * was last saved to cfg). Reads /etc/inittab for the qbri line; if
-     * absent we're in `off`, otherwise the `-m <mode>` arg wins. */
+     * absent we're in `off`, otherwise the `-m <mode>` arg wins. The removed
+     * proxy mode shows as Direct, with a note that Apply turns it off. */
     {
         FILE * f = fopen("/etc/inittab", "r");
         const char * detected = "off";
         char line[256];
+        s_old_proxy_running = 0;
         if (f) {
             while (fgets(line, sizeof(line), f)) {
                 if (strncmp(line, "qbri:", 5) != 0) continue;
                 if (strstr(line, "-m active"))      detected = "wireless";
-                else if (strstr(line, "-m proxy"))  detected = "proxy";
+                else if (strstr(line, "-m proxy"))  s_old_proxy_running = 1;
                 break;
             }
             fclose(f);
@@ -4972,7 +4974,7 @@ static void open_otbridge_modal(lv_event_t * e) {
     lv_obj_t * p = modal_open("OT Bridge", 600);
     int y = 70;
 
-    /* Mode picker — 3-way: off / proxy / wireless. */
+    /* Mode picker — Direct / Draadloos. */
     lv_obj_t * mode_lbl = lv_label_create(p);
     lv_obj_set_style_text_color(mode_lbl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(mode_lbl, SF(22), 0);
@@ -4983,8 +4985,7 @@ static void open_otbridge_modal(lv_event_t * e) {
                    const char * caption;
                    lv_event_cb_t cb; int x; } picks[] = {
         { &btn_off,      &lbl_off,      tr("Direct", "Direct"),     on_mode_off_click,      120 },
-        { &btn_proxy,    &lbl_proxy,    tr("Proxy", "Proxy"),       on_mode_proxy_click,    270 },
-        { &btn_wireless, &lbl_wireless, tr("Draadloos", "Wireless"), on_mode_wireless_click, 470 },
+        { &btn_wireless, &lbl_wireless, tr("Draadloos", "Wireless"), on_mode_wireless_click, 270 },
     };
     for (unsigned i = 0; i < sizeof picks / sizeof picks[0]; i++) {
         lv_obj_t * b = lv_btn_create(p);
@@ -5133,11 +5134,18 @@ static void open_otbridge_modal(lv_event_t * e) {
     lv_label_set_long_mode(lbl_apply_warning, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(lbl_apply_warning, SX(770));
     lv_obj_align(lbl_apply_warning, LV_ALIGN_TOP_LEFT, SX(4), y);
-    lv_label_set_text(lbl_apply_warning,
-        tr("Toepassen herschrijft /etc/inittab en herstart quby_bridge + happ_thermstat. "
-           "Verwarming pauzeert ~10s tijdens het omschakelen.",
-           "Apply rewrites /etc/inittab and restarts quby_bridge + happ_thermstat. "
-           "Heat will pause for ~10s during the switch."));
+    if (s_old_proxy_running)
+        lv_label_set_text(lbl_apply_warning,
+            tr("De oude Proxy-bridge (vervallen) draait nog. Tik op Toepassen om naar "
+               "Direct te gaan. Verwarming pauzeert ~10s.",
+               "The old Proxy bridge (removed) is still running. Tap Apply to switch to "
+               "Direct. Heat will pause for ~10s."));
+    else
+        lv_label_set_text(lbl_apply_warning,
+            tr("Toepassen herschrijft /etc/inittab en herstart quby_bridge + happ_thermstat. "
+               "Verwarming pauzeert ~10s tijdens het omschakelen.",
+               "Apply rewrites /etc/inittab and restarts quby_bridge + happ_thermstat. "
+               "Heat will pause for ~10s during the switch."));
 
     /* Reset async-result flags so this modal-open starts clean. */
     g_test_pending = 0;
@@ -6054,7 +6062,7 @@ lv_obj_t * screen_settings_create(void) {
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, tr("Nieuwslezer", "Newsreader"),
               tr("RSS-koppenticker", "RSS headlines ticker"), open_news_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_GPS, "OT Bridge",
-              tr("uit / proxy / draadloos", "off / proxy / wireless"), open_otbridge_modal); n++;
+              tr("direct / draadloos", "direct / wireless"), open_otbridge_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_CHARGE, "Philips Hue",
               tr("bridge koppelen & lampen", "bridge pairing & lights"), open_hue); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_OK, tr("Pincode", "PIN code"),

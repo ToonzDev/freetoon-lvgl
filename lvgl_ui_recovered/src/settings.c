@@ -60,18 +60,10 @@ settings_t settings = {
      * https://www.buienradar.nl/weer/medemblik/nl/<ID> reveals it). */
     .weather_location_id = 2757783,
     .forecast_mode       = FORECAST_AUTO,
-    /* Default proxy — bridge sniffs Quby frames, republishes BoilerInfo
-     * to BoxTalk, and forwards happ's OT-Writes to OTGW serial port
-     * 25238 (which lights up the PWA boiler card). 2026-05-19 follow-up
-     * test: when the bridge is started AFTER happ_thermstat has reached
-     * a stable state, both proxy mode and CV pressure work — direct vs
-     * proxy is robust if the startup race is avoided. The bridge's
-     * kick_thermstat + verify_thermstat_on_pty + force_pty_raw logic
-     * handles re-entry. */
-    /* OT *bridge* mode (off/proxy/wireless) — the quby_bridge/OTGW proxy, NOT
-     * the keteladapter's OpenTherm link (that's boiler_type, read from the Toon
-     * and unaffected by this). Default off: the proxy ships disabled, so a
-     * fresh install shouldn't claim "proxy" before the user enables it. */
+    /* OT *bridge* mode (off = "Direct" / wireless) — the quby_bridge/OTGW
+     * bridge, NOT the keteladapter's OpenTherm link (that's boiler_type, read
+     * from the Toon and unaffected by this). Default off: happ_thermstat drives
+     * the keteladapter itself, like the stock Toon. */
     .ot_bridge_mode      = "off",
     .otgw_host           = "",            /* set per-device in Settings → OT Bridge */
     .otgw_user           = "",
@@ -283,10 +275,14 @@ void settings_load(void) {
         else if (strcmp(k, "weather_lon") == 0)
             snprintf(settings.weather_lon, sizeof settings.weather_lon, "%s", v);
         else if (strcmp(k, "ot_bridge_mode")    == 0) {
-            /* Migrate legacy values to the new 3-way naming. */
+            /* Only "off" (Direct) and "wireless" remain. The proxy mode is
+             * gone: it sat between happ_thermstat and the boiler module and
+             * broke OpenTherm ("ketelmodule niet gevonden"); boiler flow/return
+             * temps come from the patched happ_thermstat. Old "proxy" and
+             * legacy "keteladapter" become Direct; legacy "otgw" = wireless. */
             const char *m = v;
-            if      (strcmp(v, "keteladapter") == 0) m = "proxy";
-            else if (strcmp(v, "otgw")         == 0) m = "wireless";
+            if      (strcmp(v, "otgw")     == 0) m = "wireless";
+            else if (strcmp(v, "wireless") != 0) m = "off";
             snprintf(settings.ot_bridge_mode,
                      sizeof settings.ot_bridge_mode, "%s", m);
         }

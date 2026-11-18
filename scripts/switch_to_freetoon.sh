@@ -148,13 +148,8 @@ else
     fi
 fi
 
-# Switch OT bridge mode if proxy is enabled in toonui.cfg
-if [ -f /mnt/data/toonui.cfg ] && grep -q '^ot_bridge_mode=proxy' /mnt/data/toonui.cfg 2>/dev/null; then
-    if [ -x /mnt/data/ot_mode_switch.sh ]; then
-        log "Configuring OpenTherm proxy bridge..."
-        /mnt/data/ot_mode_switch.sh proxy >> "$LOG" 2>&1 || true
-    fi
-fi
+# (The OpenTherm proxy bridge was removed 2026-11-18: no bridge is started
+# here. Draadloos / wireless is set from toonui's OT Bridge screen.)
 
 log "Signaling init to reload inittab..."
 kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true

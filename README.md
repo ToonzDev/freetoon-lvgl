@@ -78,7 +78,7 @@ p1bridge/               Pushes HWE-P1 readings into hcb_rrd
 ha_packages/            HA-side package-tracking automation (deploy.py)
 web/                    WASM slave UI (shell.html + build.sh) — the only
                         frontend pwa_server serves on :10081, at /ui/
-scripts/                Helpers (ot_mode_switch.sh: proxy/wireless/off)
+scripts/                Helpers (ot_mode_switch.sh: off/wireless)
 install.sh              One-shot deploy from a Linux host to a Toon
 toonshot.sh             Pull /dev/fb0 over SSH → PNG (debug helper)
 toontap.sh              Inject a touch event into /dev/input/event1

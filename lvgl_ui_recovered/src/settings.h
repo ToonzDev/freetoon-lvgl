@@ -60,21 +60,18 @@ typedef struct {
                                     1 = force hourly
                                     2 = force daily */
     int  weather_use_feel;       /* 0 = real temperature (default), 1 = feel temperature */
-    /* OT bridge / OTGW configuration — three-way selector matching
-       ot_mode_switch.sh:
-         "off"      — bare keteladapter on /dev/ttymxc0, no bridge.
-                      Bulletproof fallback; PWA boiler card not lit.
-         "proxy"    — quby_bridge in proxy mode: shuttles bytes happ↔
-                      keteladapter 1:1 and republishes BoilerInfo on
-                      BoxTalk. Default. Original heat path preserved
-                      plus full PWA boiler card.
+    /* OT bridge / OTGW configuration, matching ot_mode_switch.sh:
+         "off"      — "Direct" in the UI: happ_thermstat drives the
+                      keteladapter on /dev/ttymxc0 itself, no bridge.
+                      Original Toon behaviour. Default.
          "wireless" — quby_bridge in active mode + OTGW GW=2: bridge
                       fakes Quby responses to happ and forwards CS/CH/
                       etc to OTGW via port 25238. Keteladapter not in
                       loop. Use as fallback if keteladapter dies.
-       Legacy values "keteladapter"→proxy, "otgw"→wireless are migrated
-       on load. */
-    char ot_bridge_mode[16];     /* "off" | "proxy" | "wireless" — default proxy */
+       The former "proxy" mode was removed (it broke OpenTherm for some
+       boiler modules); "proxy"/"keteladapter" load as "off", legacy
+       "otgw" as "wireless". */
+    char ot_bridge_mode[16];     /* "off" | "wireless" — default off */
     char otgw_host[64];          /* "192.168.99.21" — IP or hostname (no scheme) */
     char otgw_user[32];          /* HTTP Basic-Auth user, empty = no auth */
     char otgw_pass[64];          /* HTTP Basic-Auth pass */

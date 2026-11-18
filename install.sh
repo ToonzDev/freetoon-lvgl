@@ -569,17 +569,18 @@ CFG
     fi
     if [ -n "$QUBY_BRIDGE_BIN" ] && [ -e "$QUBY_BRIDGE_BIN" ]; then
         install_file "$QUBY_BRIDGE_BIN" /mnt/data/quby_bridge
-        # The OT bridge runs only when the user chose it (Instellingen -> OT
-        # Bridge: ot_bridge_mode=proxy|wireless in toonui.cfg). Default is off:
-        # happ_thermstat keeps the boiler UART to itself, like the stock Toon.
-        # This used to switch every install/update to proxy while the setting
-        # still said "off" — the proxy pins the UART at 4800 baud and broke
-        # OpenTherm for a user ("ketelmodule niet gevonden", fine on qt-gui).
-        # Boiler flow/return temps come from the happ_thermstat mod, not the
-        # bridge. qbri was dropped and the UART released above, so "off"
-        # needs nothing more (and no extra happ_thermstat restart).
+        # The OT bridge runs only when the user chose Draadloos (Instellingen
+        # -> OT Bridge: ot_bridge_mode=wireless in toonui.cfg). Default is
+        # Direct (off): happ_thermstat keeps the boiler UART to itself, like
+        # the stock Toon. This used to switch every install/update to the
+        # proxy mode — which pinned the UART at 4800 baud and broke OpenTherm
+        # for a user ("ketelmodule niet gevonden", fine on qt-gui) — and the
+        # proxy mode is now removed altogether: an old "proxy" setting counts
+        # as off. Boiler flow/return temps come from the happ_thermstat mod.
+        # qbri was dropped and the UART released above, so off needs nothing
+        # more (and no extra happ_thermstat restart).
         _otb=$(remote "sed -n 's/^ot_bridge_mode=//p' /mnt/data/toonui.cfg 2>/dev/null | head -n 1" | tr -d ' \r\n')
-        case "$_otb" in proxy|wireless) ;; *) _otb=off ;; esac
+        case "$_otb" in wireless) ;; *) _otb=off ;; esac
         # stock qt-gui needs direct UART access
         if remote "[ \"\$(cat /mnt/data/ui_choice 2>/dev/null)\" = 'qt-gui' ]"; then _otb=off; fi
         if [ "$_otb" != off ]; then

@@ -1,21 +1,15 @@
 #!/bin/sh
-# Switch the Toon's OT data path between three topologies.
+# Switch the Toon's OT data path between two topologies.
 #
-#   off        Original Toon behaviour: happ_thermstat owns /dev/ttymxc0
-#              directly, no bridge. OTGW set to GW=1 (relay master traffic).
-#              Bulletproof fallback — use if anything goes wrong with proxy.
-#              No PWA boiler card (flow/return/ch_setpoint not published).
+#   off        "Direct" in toonui. Original Toon behaviour: happ_thermstat
+#              owns /dev/ttymxc0 directly, no bridge. OTGW set to GW=1
+#              (relay master traffic). Default. Boiler flow/return temps
+#              come from the patched happ_thermstat.
 #
-#   proxy      *** NEW DEFAULT, verified 2026-05-18 ***
-#              quby_bridge in proxy mode: bind-mounts a PTY over
-#              /dev/ttymxc0, opens the real UART, shuttles every byte
-#              between happ_thermstat (via PTY) and keteladapter (via
-#              UART) 1:1 without faking responses. Sniffs each Quby
-#              frame and publishes BoilerInfo/ThermostatInfo notifies
-#              on BoxTalk so toonui (and any future consumer) sees live
-#              boiler flow/return/control-setpoint/burner. Original Toon
-#              heating behaviour preserved (happ stooklijn unaffected).
-#              OTGW still on GW=1.
+#   proxy      REMOVED (2026-11-18): quby_bridge between happ_thermstat and
+#              the keteladapter pinned the UART at 4800 baud and broke
+#              OpenTherm for some boiler modules ("ketelmodule niet
+#              gevonden"). A "proxy" request is treated as off.
 #
 #   wireless   quby_bridge in active mode: bind-mounts a PTY and FAKES
 #              keteladapter responses, forwarding OT writes to OTGW
@@ -24,12 +18,11 @@
 #              (HTTP CS=/CH= overrides not driving boiler). Keep for
 #              future RE work; do not use for daily heating.
 #
-# Called from toonui's OT Bridge Apply button: /mnt/data/ot_mode_switch.sh off|proxy|wireless
+# Called from toonui's OT Bridge Apply button: /mnt/data/ot_mode_switch.sh off|wireless
 #
 # Survives reboot via the inittab edit (kill -HUP 1 re-reads it).
 set -e
-MODE="${1:-proxy}"
-QBRI_PROXY='qbri:345:respawn:/mnt/data/quby_bridge -m proxy >> /var/volatile/tmp/quby_bridge.log 2>&1'
+MODE="${1:-off}"
 QBRI_ACTIVE='qbri:345:respawn:/mnt/data/quby_bridge -m active >> /var/volatile/tmp/quby_bridge.log 2>&1'
 OTGW_HOST="${OTGW_HOST:-192.168.99.21}"
 
@@ -93,19 +86,12 @@ apply_mode_swap() {
 }
 
 case "$MODE" in
-off|wired)   # accept legacy `wired` synonym
+off|wired|proxy)   # legacy `wired`; proxy was removed -> off
     log "switching to OFF mode (no bridge, original keteladapter behaviour)"
     set_otgw_cmd      "GW=1"
     set_otgw_setting  "otgwcommands" "GW=1"
     apply_mode_swap ""
     log "off mode applied — heat resumes in ~15s"
-    ;;
-proxy)
-    log "switching to PROXY mode (bridge sniffs Quby + republishes BoilerInfo)"
-    set_otgw_cmd      "GW=1"
-    set_otgw_setting  "otgwcommands" "GW=1"
-    apply_mode_swap "$QBRI_PROXY"
-    log "proxy mode applied — bridge will sniff + publish; happ heat-path unchanged"
     ;;
 wireless)
     log "switching to WIRELESS mode (bridge fakes keteladapter, OTGW drives boiler)"
@@ -115,7 +101,7 @@ wireless)
     log "wireless mode applied — happ handshake takes 45-60s, then writes via port 25238"
     ;;
 *)
-    echo "usage: $0 off|proxy|wireless" >&2
+    echo "usage: $0 off|wireless" >&2
     exit 1
     ;;
 esac

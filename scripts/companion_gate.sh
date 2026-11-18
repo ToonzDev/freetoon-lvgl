@@ -7,7 +7,7 @@
 #
 # Usage (from inittab):
 #   p1br:345:respawn:/mnt/data/companion_gate.sh p1bridge /mnt/data/p1bridge
-#   qbri:345:respawn:/mnt/data/companion_gate.sh quby_bridge /mnt/data/quby_bridge -m proxy
+#   qbri:345:respawn:/mnt/data/companion_gate.sh quby_bridge /mnt/data/quby_bridge -m active
 #
 # Behaviour:
 #   ui_choice = freetoon  → exec the binary normally
