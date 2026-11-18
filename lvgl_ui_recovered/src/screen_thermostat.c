@@ -577,7 +577,7 @@ lv_obj_t * screen_thermostat_create(void) {
        layout. On Toon 2, scale modestly so - and + buttons are well-proportioned
        instead of oversized boxes. */
     int is_t1 = (DISP_VER < 600);
-    int sp_w  = is_t1 ? 560 : 580;
+    int sp_w  = is_t1 ? 460 : 580;   /* T1: clears the Boost / Holiday column on the right */
     int sp_h  = is_t1 ? 130 : 92;
     int btn_w = is_t1 ? 110 : 84;
     int btn_h = is_t1 ? 100 : 70;
