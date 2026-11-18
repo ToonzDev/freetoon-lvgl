@@ -25,6 +25,8 @@ void ui_refresh_theme(void);
 void ui_request_theme_refresh(void);
 /* Swap a cached screen in the stack for a freshly built one (theme change). */
 void ui_replace_screen(lv_obj_t * old_scr, lv_obj_t * new_scr);
+/* Delete a cached screen for a rebuild, safe when it is the active one. */
+void ui_del_screen(lv_obj_t * scr);
 void ui_request_restart(void);   /* clean _exit(0) restart; drops the launcher crash-guard marker */
 void ui_request_reboot(void);    /* full device reboot (sync + /sbin/reboot) */
 

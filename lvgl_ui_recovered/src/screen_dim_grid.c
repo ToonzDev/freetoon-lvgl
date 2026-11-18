@@ -1401,5 +1401,5 @@ void screen_dim_grid_destroy(void) {
     memset(en_gas_segs, 0, sizeof en_gas_segs);
     memset(en_sol_segs, 0, sizeof en_sol_segs);
     memset(en_eday_segs, 0, sizeof en_eday_segs);
-    lv_obj_del(s);
+    ui_del_screen(s);
 }

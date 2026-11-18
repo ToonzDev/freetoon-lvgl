@@ -1143,5 +1143,5 @@ void screen_home_stock_destroy(void) {
     memset(dots, 0, sizeof dots);
     memset(scene_btn, 0, sizeof scene_btn);
     memset(scene_lbl, 0, sizeof scene_lbl);
-    lv_obj_del(s);
+    ui_del_screen(s);
 }

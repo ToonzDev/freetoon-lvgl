@@ -102,6 +102,20 @@ void ui_refresh_home(void) {
 static int      is_dimmed = 0;
 static int      theme_refresh_pending = 0;
 
+/* Delete a cached screen that is being rebuilt. LVGL cannot load a screen
+ * once the active one is gone (lv_scr_load_anim touches the old one), so an
+ * active screen first parks on a shared blank; the caller loads the rebuilt
+ * screen right after. */
+void ui_del_screen(lv_obj_t * scr) {
+    if (!scr) return;
+    if (scr == lv_scr_act()) {
+        static lv_obj_t * s_blank = NULL;
+        if (!s_blank) s_blank = lv_obj_create(NULL);
+        lv_scr_load(s_blank);
+    }
+    lv_obj_del(scr);
+}
+
 void ui_replace_screen(lv_obj_t * old_scr, lv_obj_t * new_scr) {
     if (!old_scr || !new_scr || old_scr == new_scr) return;
     for (int i = 0; i < sp; i++) {
@@ -117,6 +131,7 @@ void ui_replace_screen(lv_obj_t * old_scr, lv_obj_t * new_scr) {
 void ui_refresh_theme(void) {
     if (is_dimmed) { theme_refresh_pending = 1; return; }   /* after wake */
     theme_refresh_pending = 0;
+    ui_theme_install();                /* LVGL widget accent */
     screen_dim_destroy();
     screen_dim_grid_destroy();
     if (settings.home_theme == 1) {
@@ -418,14 +433,13 @@ void ui_idle_tick(void) {
     }
 }
 
-/* Toon 1 only: theme extension on top of LVGL's default theme that drops the
- * button shadow. The default theme gives every lv_btn a grey 50% shadow (the
- * light bottom edge on tiles), redrawn (blurred, LV_SHADOW_CACHE_SIZE 0) on
- * every frame: ~45% of a Settings scroll frame (sim scrollbench), which made
- * scrolling on a Toon 1 visibly heavy. The Toon 2 has CPU to spare and keeps
- * the look. Buttons that set their own shadow keep it (local styles win over
+/* Theme extension on top of LVGL's default theme that drops the button
+ * shadow. The default theme gives every lv_btn a grey 50% shadow (the light
+ * bottom edge on tiles), redrawn (blurred, LV_SHADOW_CACHE_SIZE 0) on every
+ * frame: ~45% of a Settings scroll frame (sim scrollbench), visibly heavy on
+ * a Toon 1. Since the 1.1 themes it applies to both Toons: flat cards read
+ * calmer. Buttons that set their own shadow keep it (local styles win over
  * theme styles). */
-#ifdef TOON1
 static void theme_noshadow_apply(lv_theme_t * th, lv_obj_t * obj) {
     (void)th;
     static lv_style_t st;
@@ -439,18 +453,25 @@ static void theme_noshadow_apply(lv_theme_t * th, lv_obj_t * obj) {
     if (lv_obj_check_type(obj, &lv_btn_class)) lv_obj_add_style(obj, &st, 0);
 }
 
-#endif
-
 void ui_theme_install(void) {
-#ifdef TOON1
+    lv_disp_t * d = lv_disp_get_default();
+    if (!d) return;
+    /* LVGL's own widget styles (switch, slider, checkbox, spinner, focus
+     * rings) take the theme accent instead of LVGL's default blue. Re-running
+     * this on a theme change re-inits those shared styles in place, so every
+     * existing widget picks up the new accent. */
+    lv_theme_t * def = lv_theme_default_init(d, lv_color_hex(THEME_ACCENT_FILL),
+                                             lv_color_hex(THEME_DANGER),
+                                             LV_THEME_DEFAULT_DARK, LV_FONT_DEFAULT);
+    /* Flat buttons everywhere (design 1.1): the default drop shadow made
+     * every card look raised. On the Toon 1 it also saves ~45% of a scroll
+     * frame. Buttons that set their own shadow keep it. */
     static lv_theme_t th;
-    lv_theme_t * base = lv_disp_get_theme(NULL);
-    if (!base || base == &th) return;
-    th = *base;
-    lv_theme_set_parent(&th, base);
+    if (lv_disp_get_theme(d) == &th) return;   /* wrapper already installed */
+    th = *def;
+    lv_theme_set_parent(&th, def);
     lv_theme_set_apply_cb(&th, theme_noshadow_apply);
-    lv_disp_set_theme(NULL, &th);
-#endif
+    lv_disp_set_theme(d, &th);
 }
 
 void ui_init(void) {
