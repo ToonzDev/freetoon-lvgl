@@ -108,11 +108,21 @@ static void radar_after_load(void) {
     lv_gif_t * g = radar_img ? (lv_gif_t *)radar_img : NULL;
     if (!g || !g->gif) { radar_n = 0; return; }
     if (g->timer) lv_timer_pause(g->timer);
-    g->gif->loop_count = 1;                  /* gd_get_frame returns 0 at the end */
     gd_rewind(g->gif);
     int n = 0;
-    while (n < 48 && gd_get_frame(g->gif) == 1) n++;
+    /* loop_count = 1 before every step, so the trailer ends the count.
+     * Buienradar's GIF has its NETSCAPE loop block (0 = forever) right after
+     * anim_start: decoding frame 0 resets loop_count to 0 each pass, the
+     * trailer then wraps instead of returning 0, and the count ran to the
+     * cap (48 instead of 6): slider range and frame index no longer matched
+     * the picture. */
+    while (n < 48) {
+        g->gif->loop_count = 1;
+        if (gd_get_frame(g->gif) != 1) break;
+        n++;
+    }
     radar_n = n;
+    fprintf(stderr, "[radar] %d frames\n", n);
     if (radar_slider) {
         lv_slider_set_range(radar_slider, 0, n > 1 ? n - 1 : 1);
         if (n > 1) lv_obj_clear_flag(radar_bar, LV_OBJ_FLAG_HIDDEN);
