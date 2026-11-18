@@ -645,6 +645,15 @@ static int fetch_plugin(void) {
     return parse_ics(body);
 }
 
+/* An address (or calendar) to fetch for. The provider plugin has a default
+ * (waste_plugin=33), so "a plugin is set" alone says nothing: without a
+ * postcode, ICS id, street or iCal URL every provider fails, and the old
+ * loop then retried every 10 s forever (JS errors in the log each round). */
+static int waste_has_address(void) {
+    return settings.waste_postcode[0] || settings.waste_icsid[0] ||
+           settings.waste_street[0] || settings.waste_ics_url[0];
+}
+
 static int is_waste_configured(void) {
     if (settings.waste_plugin[0] && strcmp(settings.waste_plugin, "0") != 0) return 1;
     if (settings.waste_ics_url[0]) return 1;
@@ -656,8 +665,21 @@ static int is_waste_configured(void) {
 static void * waste_thread(void * arg) {
     (void)arg;
     sleep(5);                            /* initial settling delay for WiFi at boot */
+    int idle_logged = 0;
     while (1) {
         int ok = 0;
+        if (!waste_has_address()) {
+            /* Nothing to look up: wait for a settings save (wake_fetch). */
+            if (!idle_logged) {
+                fprintf(stderr, "[waste] no postcode / address set — not fetching until it is\n");
+                idle_logged = 1;
+            }
+            waste_state.connected = 0;
+            for (int s = 0; s < 60 && !waste_state.wake_fetch; s++) sleep(1);
+            waste_state.wake_fetch = 0;
+            continue;
+        }
+        idle_logged = 0;
         /* Provider plugin (full stock-app mimic) wins when configured; then a
          * direct iCal URL; then the legacy HVC postcode lookup. */
         if (settings.waste_plugin[0] && strcmp(settings.waste_plugin, "0") != 0) {
