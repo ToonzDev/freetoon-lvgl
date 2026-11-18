@@ -88,6 +88,9 @@ so the Toon 1 (800×480) scales.
 | `THEME_FONT_LABEL` + `THEME_LABEL_TRACK` | Montserrat 14, +1 px tracking | tile titles, units, weekdays |
 | `THEME_FONT_CAPTION` | Montserrat 14 | captions, hints |
 
+Montserrat has no euro sign: for any label that shows "€" use `SF_EUR(px)` (14/18/22/36 px; single-glyph
+fonts that fall back to Montserrat).
+
 The Light fonts are readout subsets (no new font files: flash is scarce). Write big temperatures as
 `20.5°` without the C; anything outside the subset falls back to Montserrat instead of a tofu box.
 

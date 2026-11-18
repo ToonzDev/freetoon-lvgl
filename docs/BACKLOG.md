@@ -654,3 +654,15 @@
 - **ABI**: `ui_theme` appended to `settings_t` (offsets unchanged); `home_light_mode` = 1 only for Licht; palette reached by plugins through the weak `ft_theme_cur`, `ft_palette_t` append-only with a `size` field.
 - **Fixed on the way**: dim-screen fan over the temperature, bar captions colliding, update banner hidden behind tiles, English date on the thermostat screen, crash when Settings was rebuilt while not on the screen stack.
 - **Open**: dim grid (opt-in) and the remaining detail screens only got colours, not the full typography pass; Toon 1 not tested on hardware.
+
+### 57. Everyday options: automatic theme, night rest, cost today, Boost and Holiday
+- **Status**: Implemented 2026-11-18 on branch `feat/themas-v2` (fork), each in its own commit, all off by default; sim-tested, cost tile and quick actions seen on a Toon 2.
+- **Automatic theme**: Settings > Display, Fixed / By time / By sun (weather location): day theme Light or Warm, evening Night, night Black; switches the dim screen too.
+- **Night rest**: Settings > Display, a from/until window with a fully black or extra-dim idle screen; touch wakes.
+- **Cost today**: Settings > Integrations, "Vandaag € 1,84   gisteren € 3,12" on the Energy tile at the fixed tariffs (dynamic tariffs: #44). Also fixes the missing € glyph (tofu) in Statistics.
+- **Boost / Holiday**: thermostat screen, behind the PIN. "I'm leaving" already exists (Weg once = until the next block, twice = held).
+
+### 58. Rain (Buienradar) made simpler and calmer
+- **Status**: Implemented 2026-11-18 on branch `feat/themas-v2`, sim-tested on Toon 1/2 and seen on a Toon 2.
+- One sentence ("Droog tot 14:20", "Over 10 min lichte regen"), a smooth 2-hour line on three bands, no 3u/24u buttons on the tile, a playable radar (play/pause + slider), swipe to close, optional dim-screen line when rain starts within 15 min, no radar fetch while dimmed.
+- **Open**: own-location dot and a theme-coloured base map. Buienradar serves the rain layer alone (renderBackground=False on the RadarMapRainNL image API), but the map projection needs calibrating first (the commonly quoted bounds 49.36-55.97 N / 0-10.86 E did not match the 550x512 map).
