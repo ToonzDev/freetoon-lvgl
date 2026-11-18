@@ -19,6 +19,7 @@
 #include "meteradapter.h"   /* meter_state — for the restored dim energy bar */
 #include "icons.h"
 #include "theme.h"
+#include "fonts_opensans.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -317,8 +318,8 @@ static void refresh_cb(lv_timer_t * t) {
     ui_label_set_text(lbl_clock_m, clk_m);
     lv_obj_update_layout(lbl_clock_h);
     lv_obj_update_layout(lbl_clock_m);
-    lv_obj_align_to(lbl_clock_h, lbl_clock_colon, LV_ALIGN_OUT_LEFT_MID, -SX(8), 0);
-    lv_obj_align_to(lbl_clock_m, lbl_clock_colon, LV_ALIGN_OUT_RIGHT_MID, SX(8), 0);
+    lv_obj_align_to(lbl_clock_h, lbl_clock_colon, LV_ALIGN_OUT_LEFT_MID, -SX(2), 0);
+    lv_obj_align_to(lbl_clock_m, lbl_clock_colon, LV_ALIGN_OUT_RIGHT_MID, SX(2), 0);
     char dt[64];
     snprintf(dt, sizeof(dt), "%s\n%d %s",
              i18n_day_long(tm.tm_wday),
@@ -344,7 +345,7 @@ static void refresh_cb(lv_timer_t * t) {
     /* Always paint values: if data not yet present, fall back to a
        "wait..." marker instead of leaving the stale "-- C" default. */
     if (toon_state.indoor_temp > 0)
-        ui_label_set_text_fmt(lbl_temp, "%.1f°C", toon_state.indoor_temp);
+        ui_label_set_text_fmt(lbl_temp, "%.1f°", toon_state.indoor_temp);
     else
         ui_label_set_text(lbl_temp, "...");
     lv_obj_update_layout(lbl_temp);
@@ -683,7 +684,7 @@ static void refresh_cb(lv_timer_t * t) {
 }
 
 void dim_set_outside_temp(lv_obj_t * lbl, float t, lv_coord_t max_w) {
-    static const char * const fmts[] = { "%.1f°C", "%.1f°", "%.0f°" };
+    static const char * const fmts[] = { "%.1f°", "%.0f°" };
     const lv_font_t * f = lv_obj_get_style_text_font(lbl, LV_PART_MAIN);
     char b[24] = "";
     for (size_t i = 0; i < sizeof fmts / sizeof fmts[0]; i++) {
@@ -787,9 +788,9 @@ lv_obj_t * screen_dim_create(void) {
      * any boot-splash "TOON" residue that can linger in this corner (the bare
      * dim background otherwise leaves no element here). */
     lv_obj_t * dim_brand = lv_label_create(scr_root);
-    ui_obj_set_style_text_color(dim_brand, lv_color_hex(THEME_DIM_TEXT), 0);
-    ui_obj_set_style_text_font(dim_brand, SF(22), 0);
-    lv_obj_set_style_text_letter_space(dim_brand, SX(1), 0);
+    ui_obj_set_style_text_color(dim_brand, lv_color_hex(THEME_DIM_TEXT_DIM), 0);
+    ui_obj_set_style_text_font(dim_brand, THEME_FONT_LABEL, 0);
+    lv_obj_set_style_text_letter_space(dim_brand, SX(2), 0);
     ui_label_set_text(dim_brand, "Freetoon");
     ui_obj_align(dim_brand, LV_ALIGN_TOP_LEFT, SX(20), SY(16));
 
@@ -800,25 +801,25 @@ lv_obj_t * screen_dim_create(void) {
        to overlap the digits. */
     lbl_clock_colon = lv_label_create(scr_root);
     ui_obj_set_style_text_color(lbl_clock_colon, lv_color_hex(THEME_DIM_TEXT), 0);
-    ui_obj_set_style_text_font(lbl_clock_colon, SF(96), 0);
+    ui_obj_set_style_text_font(lbl_clock_colon, THEME_FONT_NUM(96), 0);   /* light numerals */
     ui_label_set_text(lbl_clock_colon, ":");
     ui_obj_align(lbl_clock_colon, LV_ALIGN_CENTER, 0, SY(-130));
 
     lbl_clock_h = lv_label_create(scr_root);
     ui_obj_set_style_text_color(lbl_clock_h, lv_color_hex(THEME_DIM_TEXT), 0);
-    ui_obj_set_style_text_font(lbl_clock_h, SF(96), 0);
+    ui_obj_set_style_text_font(lbl_clock_h, THEME_FONT_NUM(96), 0);   /* light numerals */
     ui_label_set_text(lbl_clock_h, "--");
 
     lbl_clock_m = lv_label_create(scr_root);
     ui_obj_set_style_text_color(lbl_clock_m, lv_color_hex(THEME_DIM_TEXT), 0);
-    ui_obj_set_style_text_font(lbl_clock_m, SF(96), 0);
+    ui_obj_set_style_text_font(lbl_clock_m, THEME_FONT_NUM(96), 0);   /* light numerals */
     ui_label_set_text(lbl_clock_m, "--");
 
     lv_obj_update_layout(lbl_clock_colon);
     lv_obj_update_layout(lbl_clock_h);
     lv_obj_update_layout(lbl_clock_m);
-    lv_obj_align_to(lbl_clock_h, lbl_clock_colon, LV_ALIGN_OUT_LEFT_MID, -SX(8), 0);
-    lv_obj_align_to(lbl_clock_m, lbl_clock_colon, LV_ALIGN_OUT_RIGHT_MID, SX(8), 0);
+    lv_obj_align_to(lbl_clock_h, lbl_clock_colon, LV_ALIGN_OUT_LEFT_MID, -SX(2), 0);
+    lv_obj_align_to(lbl_clock_m, lbl_clock_colon, LV_ALIGN_OUT_RIGHT_MID, SX(2), 0);
 
     /* NILM transient device label — floats above the energy bar cap at the
      * bottom of the screen; hidden until a step-change event fires. */
@@ -833,8 +834,9 @@ lv_obj_t * screen_dim_create(void) {
     /* All labels positioned against screen center with explicit Y offsets so
        different content widths can't drift them out of alignment. */
     lbl_date = lv_label_create(scr_root);
-    ui_obj_set_style_text_color(lbl_date, lv_color_hex(THEME_DIM_TEXT), 0);
-    ui_obj_set_style_text_font(lbl_date, SF(28), 0);
+    ui_obj_set_style_text_color(lbl_date, lv_color_hex(THEME_DIM_TEXT_DIM), 0);
+    ui_obj_set_style_text_font(lbl_date, SF(22), 0);
+    lv_obj_set_style_text_letter_space(lbl_date, THEME_LABEL_TRACK, 0);
     lv_obj_set_style_text_align(lbl_date, LV_TEXT_ALIGN_CENTER, 0);
     ui_label_set_text(lbl_date, "");
     ui_obj_align(lbl_date, LV_ALIGN_CENTER, 0, SY(-50));
@@ -846,7 +848,7 @@ lv_obj_t * screen_dim_create(void) {
        CR2: Setpoint + program state in small font (SF(22)) under room temp. */
     lbl_temp = lv_label_create(scr_root);
     ui_obj_set_style_text_color(lbl_temp, lv_color_hex(THEME_DIM_TEXT), 0);
-    ui_obj_set_style_text_font(lbl_temp, SF(96), 0);
+    ui_obj_set_style_text_font(lbl_temp, THEME_FONT_NUM(96), 0);   /* light numerals */
     ui_label_set_text(lbl_temp, "--.-°C");
     ui_obj_align(lbl_temp, LV_ALIGN_CENTER, 0, SY(40));
 
@@ -942,7 +944,7 @@ lv_obj_t * screen_dim_create(void) {
      * across the room); icon + "Buiten" in a row underneath. */
     lbl_outside_temp = lv_label_create(scr_root);
     ui_obj_set_style_text_color(lbl_outside_temp, lv_color_hex(THEME_DIM_TEXT), 0);
-    ui_obj_set_style_text_font(lbl_outside_temp, SF(96), 0);
+    ui_obj_set_style_text_font(lbl_outside_temp, THEME_FONT_NUM(96), 0);   /* light numerals */
     ui_label_set_text(lbl_outside_temp, "");
     ui_obj_align(lbl_outside_temp, LV_ALIGN_TOP_RIGHT, SX(-24), SY(28));
 

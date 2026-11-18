@@ -41,6 +41,7 @@
 #include "screen_chart_24h.h"
 #include "plugin_loader.h"
 #include "theme.h"
+#include "fonts_opensans.h"   /* THEME_FONT_NUM: Open Sans Light numerals */
 #include "buienradar_rain.h"
 #include "screen_zwave.h"
 #include <stdio.h>
@@ -80,13 +81,7 @@
 #define SER_SETPOINT     0xff4444   /* temperature chart: setpoint */
 #define SER_OUTSIDE      0xffbb00   /* temperature chart: outside */
 #define RAIN_BLUE        0x5a9bd3   /* rain drop icon + rain chart series */
-#define PRESET_COMFORT   0xcc7733   /* thermostat preset colours (Comfort/Home/Sleep/Away) */
-#define PRESET_HOME      0x3377cc
-#define PRESET_SLEEP     0x553388
-#define PRESET_AWAY      0x557788
 #define BTN_FILL_AMBER   0x6a5424   /* vent Timer / cover Stop button fill (white text) */
-#define BTN_FILL_VENT_LOW  0x224d70 /* vent Low button fill (cool, white text) */
-#define BTN_FILL_VENT_HIGH 0x804030 /* vent High button fill (warm, white text) */
 #define MAP_MARKER       0xff3030   /* Life360 map pin */
 #define MAP_MARKER_RING  0xffffff   /* ... and its ring */
 #define WX_MOON          (THEME_IS_LIGHT ? 0x485868 : 0xe8edf2)   /* moon */
@@ -430,22 +425,16 @@ static void make_tile(lv_obj_t * parent, int x, int y, int w, int h, int ltype,
         lv_obj_add_event_cb(t, tile_click_wrapper, LV_EVENT_CLICKED, (void *)click_cb);
     }
 
-    /* Accent: a short tab in the tile's identity colour above the title
-     * (design 1.1). The old full-width bar shouted on every tile and was
-     * cut by the floating gear; the tab still tells tiles apart. */
-    lv_obj_t * bar = lv_obj_create(t);
-    lv_obj_set_size(bar, SUNI(28), THEME_BAR_H);
-    lv_obj_set_pos(bar, 0, 0);
-    ui_obj_set_style_bg_color(bar, lv_color_hex(accent_color), 0);
-    ui_obj_set_style_border_width(bar, 0, 0);
-    lv_obj_set_style_radius(bar, 2, 0);
-    ui_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
-
+    /* No accent bar (design 1.1, "quiet luxury"): the tile is a plain
+     * surface with a small, tracked title; the content carries the colour.
+     * accent_color stays in the signature for the slot views. */
+    (void)accent_color;
     lv_obj_t * lbl_title = lv_label_create(t);
     ui_obj_set_style_text_color(lbl_title, lv_color_hex(COL_TEXT_DIM), 0);
-    ui_obj_set_style_text_font(lbl_title, SF(18), 0);
+    ui_obj_set_style_text_font(lbl_title, THEME_FONT_LABEL, 0);
+    lv_obj_set_style_text_letter_space(lbl_title, THEME_LABEL_TRACK, 0);
     ui_label_set_text(lbl_title, title);
-    ui_obj_align(lbl_title, LV_ALIGN_TOP_LEFT, 0, 14);
+    ui_obj_align(lbl_title, LV_ALIGN_TOP_LEFT, 2, 4);
 
     out->tile = t;
     out->title = lbl_title;
@@ -1698,7 +1687,7 @@ static int render_tile_slot(int slot, lv_obj_t * lbl_main, lv_obj_t * lbl_sub) {
     const integration_meta_t * m = tile_slots_meta_for(slot);
     if (!m) {
         if (slot == TILE_SLOT_VENT) {
-            if (lbl_boiler_state) ui_obj_align(lbl_boiler_state, LV_ALIGN_TOP_RIGHT, -4, 14);
+            if (lbl_boiler_state) ui_obj_align(lbl_boiler_state, LV_ALIGN_TOP_RIGHT, -4, 4);
             if (lbl_boiler_pressure) ui_obj_align(lbl_boiler_pressure, LV_ALIGN_BOTTOM_MID, 0, -38);
         } else if (slot == TILE_SLOT_ENERGY) {
             if (lbl_energy_today) ui_obj_clear_flag(lbl_energy_today, LV_OBJ_FLAG_HIDDEN);
@@ -2450,7 +2439,7 @@ static void refresh_cb(lv_timer_t * t) {
     }
 
     if (toon_state.indoor_temp > 0) {
-        ui_label_set_text_fmt(lbl_t_temp, "%.1f°C", toon_state.indoor_temp);
+        ui_label_set_text_fmt(lbl_t_temp, "%.1f°", toon_state.indoor_temp);
         lv_obj_update_layout(lbl_t_temp);
         int temp_y = th_is_compact ? 2 : (DISP_VER < 600 ? 6 : 14);
         ui_obj_align(lbl_t_temp, LV_ALIGN_TOP_MID, 0, temp_y);
@@ -2501,11 +2490,11 @@ static void refresh_cb(lv_timer_t * t) {
         }
     }
 
-    /* Preset row: selected preset in full colour with white border when in program mode,
-     * or highlighted border only (without inner background color) when in manual mode.
-     * Unselected presets in dark background. All 4 buttons remain visible (CR3). */
+    /* Preset row, one button style, no borders: the active preset is an
+     * accent pill (program mode) or a soft accent pill with accent text
+     * (manual override of that preset); the others stay quiet. All 4 buttons
+     * remain visible (CR3). */
     {
-        static const uint32_t preset_cols[4] = {PRESET_COMFORT, PRESET_HOME, PRESET_SLEEP, PRESET_AWAY};
         int temp_origin = boxtalk_temp_override_origin();
         int hi;
         if (toon_state.active_state >= 0 && toon_state.active_state <= 3) {
@@ -2515,37 +2504,17 @@ static void refresh_cb(lv_timer_t * t) {
         } else {
             hi = -1;
         }
-        uint32_t border_col = THEME_TEXT_HI;
         for (int i = 0; i < 4; i++) {
             if (!tile_btn_preset[i]) continue;
             ui_obj_clear_flag(tile_btn_preset[i], LV_OBJ_FLAG_HIDDEN);
             int is_active = (i == hi);
-            if (is_active) {
-                ui_obj_set_style_border_width(tile_btn_preset[i], 2, 0);
-                ui_obj_set_style_border_color(tile_btn_preset[i], lv_color_hex(border_col), 0);
-                if (on_program) {
-                    /* Program mode: solid preset background */
-                    ui_obj_set_style_bg_color(tile_btn_preset[i], lv_color_hex(preset_cols[i]), 0);
-                } else {
-                    /* Manual mode: highlighted border ONLY, no inner background color */
-                    ui_obj_set_style_bg_color(tile_btn_preset[i],
-                                              lv_color_hex(THEME_BTN_BG), 0);
-                }
-                lv_obj_t * bl = lv_obj_get_child(tile_btn_preset[i], 0);
-                if (bl) {
-                    /* solid preset colour -> light text; border-only -> normal text */
-                    ui_obj_set_style_text_color(bl, lv_color_hex(on_program ? THEME_ON_ACCENT : THEME_TEXT_HI), 0);
-                }
-            } else {
-                /* Inactive button */
-                ui_obj_set_style_border_width(tile_btn_preset[i], 0, 0);
-                ui_obj_set_style_bg_color(tile_btn_preset[i],
-                                          lv_color_hex(THEME_BTN_BG), 0);
-                lv_obj_t * bl = lv_obj_get_child(tile_btn_preset[i], 0);
-                if (bl) {
-                    ui_obj_set_style_text_color(bl, lv_color_hex(THEME_TEXT_DIM), 0);
-                }
-            }
+            uint32_t bg = THEME_BTN_BG, fg = THEME_TEXT_DIM;
+            if (is_active && on_program) { bg = THEME_ACCENT_FILL; fg = THEME_ON_ACCENT; }
+            else if (is_active)          { bg = THEME_ACCENT_SOFT; fg = THEME_ACCENT; }
+            ui_obj_set_style_border_width(tile_btn_preset[i], 0, 0);
+            ui_obj_set_style_bg_color(tile_btn_preset[i], lv_color_hex(bg), 0);
+            lv_obj_t * bl = lv_obj_get_child(tile_btn_preset[i], 0);
+            if (bl) ui_obj_set_style_text_color(bl, lv_color_hex(fg), 0);
             ui_obj_set_style_opa(tile_btn_preset[i], LV_OPA_COVER, 0);
         }
     }
@@ -2878,12 +2847,11 @@ static void refresh_cb(lv_timer_t * t) {
                  * with the "Vent" title in a narrow custom tile. */
                 if (tile_vent)
                     fit_font(lbl_boiler_state, vshown,
-                             lv_obj_get_content_width(tile_vent) - SX(64), 18);
+                             lv_obj_get_content_width(tile_vent) - SX(64), 14);
             }
 
             /* Highlight whichever preset button matches the current fan_info
-             * (Timer wins when a countdown is running). White border = active,
-             * 0 = idle. ventilation.c already translates wire→user-intent. */
+             * (Timer wins when a countdown is running): accent pill = active. ventilation.c already translates wire→user-intent. */
             int act_low   = strcmp(fi_local, "low")    == 0;
             int act_high  = strcmp(fi_local, "high")   == 0;
             int act_auto  = strcmp(fi_local, "auto")   == 0
@@ -2891,14 +2859,14 @@ static void refresh_cb(lv_timer_t * t) {
             int act_timer = strncasecmp(fi_local, "timer", 5) == 0
                          || vent_state.remaining_min > 0;
             if (act_timer) { act_low = act_high = act_auto = 0; }
-            if (vent_btn_low)
-                ui_obj_set_style_border_width(vent_btn_low,   act_low   ? 2 : 0, 0);
-            if (vent_btn_high)
-                ui_obj_set_style_border_width(vent_btn_high,  act_high  ? 2 : 0, 0);
-            if (vent_btn_auto)
-                ui_obj_set_style_border_width(vent_btn_auto,  act_auto  ? 2 : 0, 0);
-            if (vent_btn_timer)
-                ui_obj_set_style_border_width(vent_btn_timer, act_timer ? 2 : 0, 0);
+            lv_obj_t * vb[4] = { vent_btn_low, vent_btn_high, vent_btn_auto, vent_btn_timer };
+            int        va[4] = { act_low, act_high, act_auto, act_timer };
+            for (int k = 0; k < 4; k++) {
+                if (!vb[k]) continue;
+                ui_obj_set_style_bg_color(vb[k], lv_color_hex(va[k] ? THEME_ACCENT_FILL : THEME_BTN_BG), 0);
+                lv_obj_t * vl = lv_obj_get_child(vb[k], 0);
+                if (vl) ui_obj_set_style_text_color(vl, lv_color_hex(va[k] ? THEME_ON_ACCENT : THEME_TEXT_HI), 0);
+            }
 
             if (lbl_boiler_pressure) {
                 /* Classify source into a 3-char tag so the line stays compact:
@@ -4153,7 +4121,8 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_flex_flow(clk_row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(clk_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-    const lv_font_t * font_clock = SF(64);
+    /* Big numerals in the light weight (Open Sans Light, already in flash). */
+    const lv_font_t * font_clock = THEME_FONT_NUM(80);
 
     lbl_t_clock_h = lv_label_create(clk_row);
     ui_obj_set_style_text_color(lbl_t_clock_h, lv_color_hex(COL_TEXT_HI), 0);
@@ -4173,7 +4142,8 @@ lv_obj_t * screen_home_create(void) {
     /* Date label centered horizontally */
     lbl_t_date = lv_label_create(tile_clock);
     ui_obj_set_style_text_color(lbl_t_date, lv_color_hex(COL_TEXT_DIM), 0);
-    ui_obj_set_style_text_font(lbl_t_date, SF(22), 0);
+    ui_obj_set_style_text_font(lbl_t_date, SF(18), 0);
+    lv_obj_set_style_text_letter_space(lbl_t_date, THEME_LABEL_TRACK, 0);
     lv_obj_set_style_text_align(lbl_t_date, LV_TEXT_ALIGN_CENTER, 0);
     ui_label_set_text(lbl_t_date, "");
 
@@ -4220,12 +4190,12 @@ lv_obj_t * screen_home_create(void) {
     ui_obj_set_style_text_color(lbl_t_temp, lv_color_hex(COL_TEMP_YELLOW), 0);
     const lv_font_t * font_temp;
     if (th_w >= 450 || th_h >= 280) {
-        font_temp = SF(64);
+        font_temp = THEME_FONT_NUM(90);
     } else {
-        font_temp = th_is_compact ? SF(36) : (DISP_VER < 600 ? SF(36) : SF(48));
+        font_temp = th_is_compact ? THEME_FONT_NUM(40) : THEME_FONT_NUM(64);
     }
     ui_obj_set_style_text_font(lbl_t_temp, font_temp, 0);
-    ui_label_set_text(lbl_t_temp, "--.-°C");
+    ui_label_set_text(lbl_t_temp, "--.-°");
     ui_obj_align(lbl_t_temp, LV_ALIGN_TOP_MID, 0, (th_is_compact ? 2 : (DISP_VER < 600 ? 6 : 14)));
 
     /* Flame / burner indicator sitting horizontally right next to the temp value */
@@ -4514,11 +4484,11 @@ lv_obj_t * screen_home_create(void) {
     }
     const lv_font_t * font_ew;
     if (ew >= 360 || eh >= 220) {
-        font_ew = SF(64);
+        font_ew = THEME_FONT_NUM(90);
     } else if (ew >= 260 || eh >= 170) {
-        font_ew = SF(48);
+        font_ew = THEME_FONT_NUM(50);
     } else {
-        font_ew = SF(28);
+        font_ew = THEME_FONT_NUM(40);
     }
 
     lbl_energy_w = lv_label_create(energy_t.tile);
@@ -4565,9 +4535,9 @@ lv_obj_t * screen_home_create(void) {
        top-row buttons can sit cleanly below without overlap. */
     lbl_boiler_state = lv_label_create(vent.tile);
     ui_obj_set_style_text_color(lbl_boiler_state, lv_color_hex(COL_TEXT_HI), 0);
-    ui_obj_set_style_text_font(lbl_boiler_state, SF(18), 0);
+    ui_obj_set_style_text_font(lbl_boiler_state, THEME_FONT_LABEL, 0);
     ui_label_set_text(lbl_boiler_state, "-- %");
-    ui_obj_align(lbl_boiler_state, LV_ALIGN_TOP_RIGHT, -4, 14);   /* font auto-fit at refresh */
+    ui_obj_align(lbl_boiler_state, LV_ALIGN_TOP_RIGHT, -4, 4);   /* font auto-fit at refresh */
 
     /* Spinning fan: 80x80 TRUE_COLOR_ALPHA icon (color baked in). Rotated
        directly with lv_img_set_angle — works reliably on this format.
@@ -4589,25 +4559,23 @@ lv_obj_t * screen_home_create(void) {
      * FanInfo back, so UI code deals only in intuitive labels. */
     struct { lv_align_t a; int x, y; uint32_t col; const char * cmd;
              const char * txt; lv_event_cb_t cb; } btn[] = {
-        { LV_ALIGN_TOP_LEFT,     4,  46, BTN_FILL_VENT_LOW, "low",  "Low",   on_vent_mode  },
-        { LV_ALIGN_TOP_RIGHT,   -4,  46, BTN_FILL_VENT_HIGH, "high", "High",  on_vent_mode  },
-        { LV_ALIGN_BOTTOM_LEFT,  4,  -4, THEME_SUCCESS_BG, "auto", "Auto",  on_vent_mode  },
-        { LV_ALIGN_BOTTOM_RIGHT,-4,  -4, BTN_FILL_AMBER, NULL,   "Timer", on_vent_timer },
+        { LV_ALIGN_TOP_LEFT,     4,  46, 0, "low",  "Low",   on_vent_mode  },
+        { LV_ALIGN_TOP_RIGHT,   -4,  46, 0, "high", "High",  on_vent_mode  },
+        { LV_ALIGN_BOTTOM_LEFT,  4,  -4, 0, "auto", "Auto",  on_vent_mode  },
+        { LV_ALIGN_BOTTOM_RIGHT,-4,  -4, 0, NULL,   "Timer", on_vent_timer },
     };
     for (size_t i = 0; i < sizeof(btn)/sizeof(btn[0]); i++) {
         lv_obj_t * b = lv_btn_create(vent.tile);
         lv_obj_set_size(b, 60, 28);
         ui_obj_align(b, btn[i].a, btn[i].x, btn[i].y);
-        ui_obj_set_style_bg_color(b, lv_color_hex(btn[i].col), 0);
+        (void)btn[i].col;   /* one button style: the active mode gets the accent */
+        ui_obj_set_style_bg_color(b, lv_color_hex(THEME_BTN_BG), 0);
         lv_obj_set_style_radius(b, THEME_RADIUS_SMALL, 0);
-        /* Pre-style border to 0 so the refresh-side toggle is a single
-         * width change (color always white when shown). */
-        ui_obj_set_style_border_color(b, lv_color_hex(THEME_TEXT_HI), 0);
         ui_obj_set_style_border_width(b, 0, 0);
         lv_obj_add_event_cb(b, btn[i].cb, LV_EVENT_CLICKED,
                             (void *)(intptr_t)(uintptr_t)btn[i].cmd);
         lv_obj_t * bl = lv_label_create(b);
-        ui_obj_set_style_text_color(bl, lv_color_hex(THEME_ON_ACCENT), 0);
+        ui_obj_set_style_text_color(bl, lv_color_hex(THEME_TEXT_HI), 0);
         ui_obj_set_style_text_font(bl, SF(14), 0);
         /* btn[i].txt stays the stable English key for the strcmp() ref
          * matching below; only the visible label is translated. */
@@ -5064,13 +5032,7 @@ lv_obj_t * screen_home_create(void) {
         ui_obj_add_flag(news_box, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_event_cb(news_box, on_news_tap, LV_EVENT_CLICKED, NULL);
 
-        /* Accent tab on top, like make_tile() */
-        lv_obj_t * bar = lv_obj_create(news_box);
-        lv_obj_set_size(bar, SUNI(28), THEME_BAR_H);
-        ui_obj_align(bar, LV_ALIGN_TOP_LEFT, 0, 0);
-        ui_obj_set_style_bg_color(bar, lv_color_hex(HUE_NEWS_BAR), 0);
-        ui_obj_set_style_border_width(bar, 0, 0);
-        lv_obj_set_style_radius(bar, 2, 0);
+        /* (no accent bar: see make_tile) */
 
         /* Title */
         lv_obj_t * tlbl = lv_label_create(news_box);
@@ -5182,13 +5144,14 @@ lv_obj_t * screen_home_create(void) {
             ui_obj_add_flag(col, LV_OBJ_FLAG_EVENT_BUBBLE);
 
             fc_day_lbl[i] = lv_label_create(col);
-            ui_obj_set_style_text_color(fc_day_lbl[i], lv_color_hex(COL_TEXT_HI), 0);
+            ui_obj_set_style_text_color(fc_day_lbl[i], lv_color_hex(COL_TEXT_DIM), 0);
             ui_obj_set_style_text_font(fc_day_lbl[i], f_day, 0);
+            lv_obj_set_style_text_letter_space(fc_day_lbl[i], THEME_LABEL_TRACK, 0);
             ui_label_set_text(fc_day_lbl[i], "--");
             ui_obj_align(fc_day_lbl[i], LV_ALIGN_TOP_MID, 0, 0);
 
             fc_temp_lbl[i] = lv_label_create(col);
-            ui_obj_set_style_text_color(fc_temp_lbl[i], lv_color_hex(COL_TEMP_YELLOW), 0);
+            ui_obj_set_style_text_color(fc_temp_lbl[i], lv_color_hex(COL_TEXT_HI), 0);
             ui_obj_set_style_text_font(fc_temp_lbl[i], f_temp, 0);
             ui_label_set_text(fc_temp_lbl[i], "");
             ui_obj_align(fc_temp_lbl[i], LV_ALIGN_TOP_MID, 0, (int)(20 * hscale));

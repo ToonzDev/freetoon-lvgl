@@ -10,6 +10,7 @@
 #include "icons.h"
 #include "settings.h"
 #include "theme.h"
+#include "fonts_opensans.h"
 #include "pin_modal.h"
 #include <stdio.h>
 #include <time.h>
@@ -97,7 +98,9 @@ static void refresh_cb(lv_timer_t * t) {
     strftime(clk, sizeof(clk), "%H:%M", &tm);
     lv_label_set_text(lbl_clock, clk);
     char dt[48];
-    strftime(dt, sizeof(dt), "%A %d %B %Y", &tm);
+    /* Localised (strftime gave "Wednesday 18 November" in the C locale). */
+    snprintf(dt, sizeof dt, "%s %d %s %d", i18n_day_long(tm.tm_wday), tm.tm_mday,
+             i18n_month_long(tm.tm_mon), 1900 + tm.tm_year);
     lv_label_set_text(lbl_date, dt);
 
     if (toon_state.connected) {
@@ -109,7 +112,7 @@ static void refresh_cb(lv_timer_t * t) {
     }
 
     if (toon_state.indoor_temp > 0)
-        lv_label_set_text_fmt(lbl_temp, "%.1f°C", toon_state.indoor_temp);
+        lv_label_set_text_fmt(lbl_temp, "%.1f°", toon_state.indoor_temp);
 
     /* Highlight logic: the mode button (Scheduled[0] or Off[1]) gets a white
      * border based on whether we're on the schedule (program_state 1, 2, 3, 8);
@@ -142,15 +145,15 @@ static void refresh_cb(lv_timer_t * t) {
                 lv_obj_clear_flag(btn_prog[i], LV_OBJ_FLAG_HIDDEN);
             }
         }
+        /* One button style (design 1.1): active = accent pill, no borders. */
         int active = (i == mode_idx) || (i == preset_idx);
-        lv_obj_set_style_border_width(btn_prog[i], active ? 2 : 0, 0);
-        lv_obj_set_style_border_color(btn_prog[i],
-                                      lv_color_hex(THEME_TEXT_HI), 0);
+        (void)prog_cols;
+        lv_obj_set_style_border_width(btn_prog[i], 0, 0);
         lv_obj_set_style_bg_color(btn_prog[i],
-                                  lv_color_hex(active ? prog_cols[i] : THEME_ROW_BG), 0);
+                                  lv_color_hex(active ? THEME_ACCENT_FILL : THEME_BTN_BG), 0);
         lv_obj_t * bl = lv_obj_get_child(btn_prog[i], 0);
         if (bl) {
-            lv_obj_set_style_text_color(bl, lv_color_hex(active ? COL_ON_IDENT : THEME_TEXT_DIM), 0);
+            lv_obj_set_style_text_color(bl, lv_color_hex(active ? THEME_ON_ACCENT : THEME_TEXT_DIM), 0);
         }
     }
     if (toon_state.humidity > 0)
@@ -295,9 +298,9 @@ lv_obj_t * screen_thermostat_create(void) {
     /* Big indoor temp */
     lbl_temp = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_temp, lv_color_hex(THEME_WARN_ORANGE), 0);
-    lv_obj_set_style_text_font(lbl_temp, SF(48), 0);
-    lv_obj_align(lbl_temp, LV_ALIGN_CENTER, 0, SY(-80));
-    lv_label_set_text(lbl_temp, "-- C");
+    lv_obj_set_style_text_font(lbl_temp, THEME_FONT_NUM(90), 0);   /* light numerals */
+    lv_obj_align(lbl_temp, LV_ALIGN_CENTER, 0, SY(-96));
+    lv_label_set_text(lbl_temp, "--.-°");
 
     /* Flame icon at left of the big temp — visible only when the burner
      * is firing CH. Same source/colour as the home-tile flame for

@@ -155,6 +155,11 @@ extern const ft_palette_t * ft_theme_cur __attribute__((weak));
 /* Active theme id (UI_THEME_*). */
 #define THEME_ID            FT_TOK(id, UI_THEME_LIGHT, UI_THEME_NIGHT)
 
+/* --- spacing: an 8 px grid ------------------------------------------------
+ * THEME_SP(1) = 8, THEME_SP(2) = 16 … Use it for gaps between groups and
+ * margins; tiles sit THEME_GAP apart. */
+#define THEME_SP(n)         (8 * (n))
+
 /* --- shape + spacing tokens ---------------------------------------------
  * One radius per level of hierarchy, one gap. Design px (1024x600); Toon 1
  * code scales where it already does. */
@@ -176,6 +181,14 @@ extern const ft_palette_t * ft_theme_cur __attribute__((weak));
 #define THEME_FONT_HEADING  SF(28)   /* screen titles, tile values */
 #define THEME_FONT_LARGE    SF(36)
 #define THEME_FONT_DISPLAY  SF(48)   /* big tile readouts */
+/* Small labels (tile titles, units, weekdays): 14 px, tracked +1 px.
+ *   lv_obj_set_style_text_letter_space(lbl, THEME_LABEL_TRACK, 0); */
+#define THEME_FONT_LABEL    SF(14)
+#define THEME_LABEL_TRACK   1
+/* Big numerals (clock, temperatures, power) in Open Sans Light. Needs
+ * fonts_opensans.h. 90 px is a digit subset (0-9 : . , - / °) that falls back
+ * to Light 50 for letters; below 70 px the full Light 50/40/30 is used. */
+#define THEME_FONT_NUM(px)  os_light(px)
 
 /* Host-only API (theme.c). */
 #ifdef FT_HOST
