@@ -13,6 +13,7 @@
 #include "backlight.h"
 #include "boxtalk.h"
 #include "calendar.h"
+#include "theme.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -98,12 +99,43 @@ void ui_refresh_home(void) {
     }
 }
 
-void ui_refresh_theme(void) {
-    ui_refresh_home();
+static int      is_dimmed = 0;
+static int      theme_refresh_pending = 0;
+
+void ui_replace_screen(lv_obj_t * old_scr, lv_obj_t * new_scr) {
+    if (!old_scr || !new_scr || old_scr == new_scr) return;
+    for (int i = 0; i < sp; i++) {
+        if (stack[i] != old_scr) continue;
+        stack[i] = new_scr;
+        if (i == sp - 1) lv_scr_load(new_scr);
+    }
 }
 
+/* New colour theme: rebuild the cached home screens and drop the cached dim
+ * screens (rebuilt on the next dim). Other screens compare settings.ui_theme
+ * on their next create(). The caller rebuilds the screen it is on. */
+void ui_refresh_theme(void) {
+    if (is_dimmed) { theme_refresh_pending = 1; return; }   /* after wake */
+    theme_refresh_pending = 0;
+    screen_dim_destroy();
+    screen_dim_grid_destroy();
+    if (settings.home_theme == 1) {
+        /* LVGL copes with deleting the active screen as long as another is
+         * loaded right after, which ui_replace_screen does. */
+        lv_obj_t * old = screen_home_stock_create();
+        screen_home_stock_destroy();
+        ui_replace_screen(old, screen_home_stock_create());
+        screen_home_destroy();         /* the inactive freetoon home: rebuilt when picked */
+    } else {
+        screen_home_stock_destroy();
+        ui_refresh_home();
+    }
+}
+
+static volatile int theme_request = 0;
+void ui_request_theme_refresh(void) { theme_request = 1; }
+
 static uint32_t last_activity_ms = 0;
-static int      is_dimmed = 0;
 static int      is_black_screen = 0;
 
 static lv_obj_t * scr_black = NULL;
@@ -216,6 +248,18 @@ void ui_idle_tick(void) {
     /* Bring in calendar data published by worker threads; calendar_state is
      * only written here, on the UI thread (see calendar.c). */
     calendar_apply_pending();
+
+    /* Theme changed from the web API (another thread): back to home, then
+     * rebuild in the new palette. A rebuild deferred by the dim screen runs
+     * once it is gone. */
+    if (theme_request && !is_dimmed) {
+        theme_request = 0;
+        theme_set(settings.ui_theme);
+        while (sp > 1) ui_pop();
+        ui_refresh_theme();
+    } else if (theme_refresh_pending && !is_dimmed) {
+        ui_refresh_theme();
+    }
 
     /* Process any queued wake first so a touch immediately undims, even
        if the on-screen click handler couldn't run for some reason. */

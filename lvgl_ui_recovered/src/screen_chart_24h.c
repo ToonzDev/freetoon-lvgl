@@ -41,6 +41,12 @@ static inline float chart_roundf(float x) {
 #include "settings.h"
 #include "theme.h"
 
+/* Identity colours, same in every theme: chart series that encode a quantity
+ * (room temperature, setpoint, outside temperature). */
+#define COL_SER_ROOM     0x3388ff
+#define COL_SER_SETPOINT 0xff4444
+#define COL_SER_OUTSIDE  0xffbb00
+
 #define COL_BG         THEME_BG
 #define COL_CARD       THEME_CARD_BG
 #define COL_GRID       THEME_BORDER
@@ -331,18 +337,18 @@ lv_obj_t * screen_chart_24h_create(const integration_meta_t * meta) {
     if (g_ctx->meta.series_count == 0) {
         g_ctx->series_count = 3;
         snprintf(g_ctx->series[0].name, sizeof(g_ctx->series[0].name), "%s", tr("Kamer", "Room"));
-        g_ctx->series[0].color_hex = 0x3388ff;
+        g_ctx->series[0].color_hex = COL_SER_ROOM;
 
         snprintf(g_ctx->series[1].name, sizeof(g_ctx->series[1].name), "%s", tr("Setpoint", "Setpoint"));
-        g_ctx->series[1].color_hex = 0xff4444;
+        g_ctx->series[1].color_hex = COL_SER_SETPOINT;
 
         snprintf(g_ctx->series[2].name, sizeof(g_ctx->series[2].name), "%s", tr("Buiten", "Outside"));
-        g_ctx->series[2].color_hex = 0xffbb00;
+        g_ctx->series[2].color_hex = COL_SER_OUTSIDE;
     } else {
         g_ctx->series_count = g_ctx->meta.series_count;
         for (int i = 0; i < g_ctx->series_count; i++) {
             snprintf(g_ctx->series[i].name, sizeof(g_ctx->series[i].name), "%s", g_ctx->meta.series[i].name);
-            g_ctx->series[i].color_hex = parse_hex_color(g_ctx->meta.series[i].color, 0x3388ff);
+            g_ctx->series[i].color_hex = parse_hex_color(g_ctx->meta.series[i].color, COL_SER_ROOM);
             snprintf(g_ctx->series[i].data_file, sizeof(g_ctx->series[i].data_file), "%s", g_ctx->meta.series[i].data_file);
         }
     }
@@ -555,7 +561,7 @@ lv_obj_t * screen_chart_24h_create(const integration_meta_t * meta) {
     g_ctx->cursor_line = cur_line;
     lv_obj_set_size(cur_line, 2, chart_h + SY(16));
     lv_obj_set_pos(cur_line, cursor_x, chart_y - SY(8));
-    lv_obj_set_style_bg_color(cur_line, lv_color_hex(settings.home_light_mode ? 0x1d4ed8 : 0x55aaff), 0);
+    lv_obj_set_style_bg_color(cur_line, lv_color_hex(THEME_ACCENT), 0);
     lv_obj_set_style_bg_opa(cur_line, LV_OPA_80, 0);
     lv_obj_set_style_border_width(cur_line, 0, 0);
     lv_obj_clear_flag(cur_line, LV_OBJ_FLAG_SCROLLABLE);
@@ -572,7 +578,7 @@ lv_obj_t * screen_chart_24h_create(const integration_meta_t * meta) {
     lv_obj_t * dl = lv_label_create(scr);
     g_ctx->cursor_lbl_left = dl;
     lv_obj_set_style_text_font(dl, SF(12), 0);
-    lv_obj_set_style_text_color(dl, lv_color_hex(0x55aaff), 0);
+    lv_obj_set_style_text_color(dl, lv_color_hex(THEME_ACCENT), 0);
     lv_label_set_text_fmt(dl, "%02d-%02d " LV_SYMBOL_LEFT,
                           tm_today.tm_mday, tm_today.tm_mon + 1);
     lv_obj_align_to(dl, cur_line, LV_ALIGN_OUT_LEFT_TOP, SX(-6), SY(10));

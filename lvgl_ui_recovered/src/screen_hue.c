@@ -19,10 +19,10 @@
 #define COL_CARD      THEME_CARD_BG
 #define COL_TEXT_HI   THEME_TEXT_HI
 #define COL_TEXT_DIM  THEME_TEXT_DIM
-#define COL_ON        THEME_ACCENT_BLUE   /* "on" = the app's accent blue, same on every device screen */
+#define COL_ON        THEME_ACCENT   /* "on" = the app's accent blue, same on every device screen */
 #define COL_OFF       THEME_OFF
-#define COL_OFFLINE   (settings.home_light_mode ? 0x94a3b8 : 0x6e6e6e)
-#define COL_ACCENT    THEME_ACCENT_BLUE
+#define COL_OFFLINE   THEME_OFFLINE
+#define COL_ACCENT    THEME_ACCENT
 
 typedef struct {
     char id[16];
@@ -214,7 +214,7 @@ static void build_group_rows(void) {
         lv_obj_set_style_text_font(R->lbl_state, SF(14), 0);
         lv_obj_align(R->lbl_state, LV_ALIGN_TOP_LEFT, 4, 26);
 
-        R->btn_toggle = small_btn(card, 64, -2, on_group_toggle, R->id, COL_OFF, 0xffffff, &R->btn_lbl);
+        R->btn_toggle = small_btn(card, 64, -2, on_group_toggle, R->id, COL_OFF, THEME_ON_ACCENT, &R->btn_lbl);
         R->btn_tile   = small_btn(card, 92, -74, on_group_tile, R->id, THEME_BTN_BG, COL_TEXT_HI, &R->btn_tile_lbl);
 
         lv_obj_t * s = lv_slider_create(card);
@@ -223,7 +223,7 @@ static void build_group_rows(void) {
         lv_obj_align(s, LV_ALIGN_BOTTOM_MID, 0, -2);
         lv_slider_set_range(s, 1, 100);
         lv_slider_set_value(s, G->bri_pct > 0 ? G->bri_pct : 1, LV_ANIM_OFF);
-        lv_obj_set_style_bg_color(s, lv_color_hex(0x223344), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(s, lv_color_hex(THEME_BTN_BG), LV_PART_MAIN);
         lv_obj_add_flag(s, LV_OBJ_FLAG_ADV_HITTEST);           /* knob only */
         lv_obj_set_ext_click_area(s, 16);
         lv_obj_add_event_cb(s, on_group_slider, LV_EVENT_RELEASED, R->id);
@@ -343,7 +343,7 @@ static void build_rows(void) {
 
         lv_obj_t * bl = lv_label_create(btn);
         R->btn_lbl = bl;
-        lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_color(bl, lv_color_hex(THEME_ON_ACCENT), 0);
         lv_obj_set_style_text_font(bl, SF(14), 0);
         lv_obj_center(bl);
 
@@ -364,7 +364,7 @@ static void build_rows(void) {
             lv_obj_align(s, LV_ALIGN_BOTTOM_MID, 0, -2);
             lv_slider_set_range(s, 1, 100);
             lv_slider_set_value(s, L->bri_pct > 0 ? L->bri_pct : 1, LV_ANIM_OFF);
-            lv_obj_set_style_bg_color(s, lv_color_hex(0x223344), LV_PART_MAIN);
+            lv_obj_set_style_bg_color(s, lv_color_hex(THEME_BTN_BG), LV_PART_MAIN);
             lv_obj_set_style_bg_color(s, lv_color_hex(COL_ON), LV_PART_INDICATOR);
             lv_obj_add_flag(s, LV_OBJ_FLAG_ADV_HITTEST);           /* knob only */
             lv_obj_set_ext_click_area(s, 16);                      /* forgiving grab */

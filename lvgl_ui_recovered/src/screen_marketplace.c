@@ -36,9 +36,9 @@
 #define COL_CARD     THEME_CARD_BG
 #define COL_TEXT_HI  THEME_TEXT_HI
 #define COL_TEXT_DIM THEME_TEXT_DIM
-#define COL_OK       (settings.home_light_mode ? 0x16a34a : 0x2e6e3a)
-#define COL_BUSY     (settings.home_light_mode ? 0xd97706 : 0x6a5424)
-#define COL_WARN     (settings.home_light_mode ? 0xdc2626 : 0x6e3a3a)
+#define COL_OK       THEME_SUCCESS_BG
+#define COL_BUSY     THEME_WARNING
+#define COL_WARN     THEME_DANGER_BG
 
 static lv_obj_t * scr_root = NULL;
 static lv_obj_t * list_box = NULL;
@@ -64,6 +64,17 @@ typedef struct {
     int is_installed;
     int is_updating;
 } integration_t;
+
+/* Action-button fill + a label colour that stays readable on it: amber
+ * (busy) takes the screen background colour as text, the rest take the
+ * on-accent text. */
+static void act_bg(integration_t * ent, uint32_t col) {
+    if (!ent->btn_action) return;
+    lv_obj_set_style_bg_color(ent->btn_action, lv_color_hex(col), 0);
+    if (ent->btn_action_lbl)
+        lv_obj_set_style_text_color(ent->btn_action_lbl,
+            lv_color_hex(col == (uint32_t)THEME_WARNING ? THEME_BG : THEME_ON_ACCENT), 0);
+}
 
 #define MAX_INTEGRATIONS 16
 static integration_t entries[MAX_INTEGRATIONS];
@@ -392,7 +403,7 @@ static void on_action_clicked(lv_event_t * e) {
         ent->action_status = 2;
         if (ent->btn_action_lbl) lv_label_set_text(ent->btn_action_lbl, tr("Verwijderen...", "Removing..."));
         if (ent->btn_action)
-            lv_obj_set_style_bg_color(ent->btn_action, lv_color_hex(COL_BUSY), 0);
+            act_bg(ent, COL_BUSY);
         pthread_t t;
         if (pthread_create(&t, NULL, uninstall_thread, ent) == 0)
             pthread_detach(t);
@@ -416,7 +427,7 @@ static void on_action_clicked(lv_event_t * e) {
         ent->action_status = 1;
         if (ent->btn_action_lbl) lv_label_set_text(ent->btn_action_lbl, tr("Installeren...", "Installing..."));
         if (ent->btn_action)
-            lv_obj_set_style_bg_color(ent->btn_action, lv_color_hex(COL_BUSY), 0);
+            act_bg(ent, COL_BUSY);
         pthread_t t;
         if (pthread_create(&t, NULL, install_thread, ent) == 0)
             pthread_detach(t);
@@ -457,7 +468,7 @@ static void on_update_clicked(lv_event_t * e) {
     ent->is_updating = 1;
     ent->action_status = 1;
     if (ent->btn_action_lbl) lv_label_set_text(ent->btn_action_lbl, tr("Updaten...", "Updating..."));
-    if (ent->btn_action) lv_obj_set_style_bg_color(ent->btn_action, lv_color_hex(COL_BUSY), 0);
+    if (ent->btn_action) act_bg(ent, COL_BUSY);
     if (ent->btn_update) lv_obj_add_flag(ent->btn_update, LV_OBJ_FLAG_HIDDEN);
 #ifdef WASM_BUILD
     char payload[96];
@@ -480,7 +491,7 @@ static void update_row_state(integration_t * ent) {
         if (ent->btn_update) lv_obj_add_flag(ent->btn_update, LV_OBJ_FLAG_HIDDEN);
         if (ent->badge_lbl) lv_label_set_text(ent->badge_lbl, "");
         if (ent->btn_action_lbl) lv_label_set_text(ent->btn_action_lbl, tr("Herstarten...", "Restarting..."));
-        if (ent->btn_action) lv_obj_set_style_bg_color(ent->btn_action, lv_color_hex(COL_BUSY), 0);
+        if (ent->btn_action) act_bg(ent, COL_BUSY);
         return;
     }
     if (ent->action_status == 1) {
@@ -489,21 +500,21 @@ static void update_row_state(integration_t * ent) {
         if (ent->btn_action_lbl)
             lv_label_set_text(ent->btn_action_lbl, ent->is_updating ? tr("Updaten...", "Updating...")
                                                                     : tr("Installeren...", "Installing..."));
-        if (ent->btn_action) lv_obj_set_style_bg_color(ent->btn_action, lv_color_hex(COL_BUSY), 0);
+        if (ent->btn_action) act_bg(ent, COL_BUSY);
         return;
     }
     if (ent->action_status == 2) {
         if (ent->btn_update) lv_obj_add_flag(ent->btn_update, LV_OBJ_FLAG_HIDDEN);
         if (ent->badge_lbl) lv_label_set_text(ent->badge_lbl, "");
         if (ent->btn_action_lbl) lv_label_set_text(ent->btn_action_lbl, tr("Verwijderen...", "Removing..."));
-        if (ent->btn_action) lv_obj_set_style_bg_color(ent->btn_action, lv_color_hex(COL_BUSY), 0);
+        if (ent->btn_action) act_bg(ent, COL_BUSY);
         return;
     }
     if (ent->action_status == 3 || ent->action_status == 4) {
         if (ent->btn_update) lv_obj_add_flag(ent->btn_update, LV_OBJ_FLAG_HIDDEN);
         if (ent->badge_lbl) lv_label_set_text(ent->badge_lbl, "");
         if (ent->btn_action_lbl) lv_label_set_text(ent->btn_action_lbl, tr("Mislukt", "Failed"));
-        if (ent->btn_action) lv_obj_set_style_bg_color(ent->btn_action, lv_color_hex(COL_WARN), 0);
+        if (ent->btn_action) act_bg(ent, COL_WARN);
         return;
     }
 
@@ -557,14 +568,14 @@ static void update_row_state(integration_t * ent) {
             if (ent->badge_lbl) {
                 lv_obj_clear_flag(ent->badge_lbl, LV_OBJ_FLAG_HIDDEN);
                 lv_label_set_text_fmt(ent->badge_lbl, LV_SYMBOL_OK " %s", tr("Geinstalleerd", "Installed"));
-                lv_obj_set_style_text_color(ent->badge_lbl, lv_color_hex(0x3ec263), 0);
+                lv_obj_set_style_text_color(ent->badge_lbl, lv_color_hex(THEME_SUCCESS), 0);
             }
         }
         if (ent->btn_action_lbl) {
             lv_label_set_text(ent->btn_action_lbl, tr("Verwijderen", "Uninstall"));
         }
         if (ent->btn_action) {
-            lv_obj_set_style_bg_color(ent->btn_action, lv_color_hex(COL_WARN), 0);
+            act_bg(ent, COL_WARN);
         }
     } else {
         if (ent->btn_update) lv_obj_add_flag(ent->btn_update, LV_OBJ_FLAG_HIDDEN);
@@ -585,7 +596,7 @@ static void update_row_state(integration_t * ent) {
                                                   : tr("Geen helper", "No helper"));
         }
         if (ent->btn_action) {
-            lv_obj_set_style_bg_color(ent->btn_action, lv_color_hex(0x2a4060), 0);
+            act_bg(ent, THEME_ACCENT_FILL);
         }
     }
 }
@@ -641,7 +652,7 @@ static void build_rows(void) {
         lv_obj_set_size(ent->row, SX(940), SY(90));
         lv_obj_set_style_bg_color(ent->row, lv_color_hex(COL_CARD), 0);
         lv_obj_set_style_border_color(ent->row, lv_color_hex(THEME_BORDER), 0);
-        lv_obj_set_style_border_width(ent->row, settings.home_light_mode ? 1 : 0, 0);
+        lv_obj_set_style_border_width(ent->row, THEME_IS_LIGHT ? 1 : 0, 0);
         lv_obj_set_style_radius(ent->row, 12, 0);
         lv_obj_set_style_pad_all(ent->row, 10, 0);
         lv_obj_clear_flag(ent->row, LV_OBJ_FLAG_SCROLLABLE);
@@ -676,11 +687,11 @@ static void build_rows(void) {
         lv_obj_set_size(ent->btn_update, SX(150), SY(52));
         lv_obj_align(ent->btn_update, LV_ALIGN_RIGHT_MID, SX(-180), 0);
         lv_obj_set_style_radius(ent->btn_update, 10, 0);
-        lv_obj_set_style_bg_color(ent->btn_update, lv_color_hex(settings.home_light_mode ? 0x2563eb : 0x2a5d96), 0);
+        lv_obj_set_style_bg_color(ent->btn_update, lv_color_hex(THEME_ACCENT_FILL), 0);
         lv_obj_add_event_cb(ent->btn_update, on_update_clicked, LV_EVENT_CLICKED, ent);
 
         ent->btn_update_lbl = lv_label_create(ent->btn_update);
-        lv_obj_set_style_text_color(ent->btn_update_lbl, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_color(ent->btn_update_lbl, lv_color_hex(THEME_ON_ACCENT), 0);
         lv_obj_set_style_text_font(ent->btn_update_lbl, SF(17), 0);
         lv_label_set_text_fmt(ent->btn_update_lbl, "%s %s", LV_SYMBOL_REFRESH, tr("Update nu", "Update now"));
         lv_obj_center(ent->btn_update_lbl);
@@ -696,7 +707,7 @@ static void build_rows(void) {
 
         ent->btn_action_lbl = lv_label_create(ent->btn_action);
         lv_obj_set_style_text_color(ent->btn_action_lbl,
-                                    lv_color_hex(0xffffff), 0);
+                                    lv_color_hex(THEME_ON_ACCENT), 0);
         lv_obj_set_style_text_font(ent->btn_action_lbl,
                                     SF(19), 0);
         lv_obj_center(ent->btn_action_lbl);
@@ -850,13 +861,13 @@ lv_obj_t * screen_marketplace_create(void) {
     s_btn_upd_all = lv_btn_create(scr_root);
     lv_obj_set_size(s_btn_upd_all, SX(230), x_h);
     lv_obj_align(s_btn_upd_all, LV_ALIGN_TOP_RIGHT, SX(-12) - x_w - SX(10) - (x_w - SX(6)) - SX(10), SY(12));
-    lv_obj_set_style_bg_color(s_btn_upd_all, lv_color_hex(settings.home_light_mode ? 0x2563eb : 0x2a5d96), 0);
+    lv_obj_set_style_bg_color(s_btn_upd_all, lv_color_hex(THEME_ACCENT_FILL), 0);
     lv_obj_set_style_radius(s_btn_upd_all, 12, 0);
     lv_obj_set_ext_click_area(s_btn_upd_all, 10);
     lv_obj_add_event_cb(s_btn_upd_all, on_update_all, LV_EVENT_CLICKED, NULL);
     s_btn_upd_all_lbl = lv_label_create(s_btn_upd_all);
     lv_label_set_text(s_btn_upd_all_lbl, "");
-    lv_obj_set_style_text_color(s_btn_upd_all_lbl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(s_btn_upd_all_lbl, lv_color_hex(THEME_ON_ACCENT), 0);
     lv_obj_set_style_text_font(s_btn_upd_all_lbl, SF(18), 0);
     lv_obj_center(s_btn_upd_all_lbl);
     lv_obj_add_flag(s_btn_upd_all, LV_OBJ_FLAG_HIDDEN);

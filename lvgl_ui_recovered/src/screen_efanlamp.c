@@ -21,7 +21,7 @@
 #define COL_CARD     THEME_CARD_BG
 #define COL_TEXT_HI  THEME_TEXT_HI
 #define COL_TEXT_DIM THEME_TEXT_DIM
-#define COL_ACCENT   THEME_ACCENT_BLUE
+#define COL_ACCENT   THEME_ACCENT
 #define COL_BTN      THEME_BTN_BG
 
 /* ── state ─────────────────────────────────────────────────────── */
@@ -43,7 +43,7 @@ static lv_obj_t * make_btn(lv_obj_t * parent, const char * label,
     lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(b, SX(8), 0);
     lv_obj_set_style_border_color(b, lv_color_hex(THEME_BORDER), 0);
-    lv_obj_set_style_border_width(b, settings.home_light_mode ? 1 : 0, 0);
+    lv_obj_set_style_border_width(b, THEME_IS_LIGHT ? 1 : 0, 0);
     lv_obj_t * l = lv_label_create(b);
     lv_label_set_text(l, label);
     lv_obj_set_style_text_color(l, lv_color_hex(COL_TEXT_HI), 0);
@@ -54,8 +54,8 @@ static lv_obj_t * make_btn(lv_obj_t * parent, const char * label,
 }
 
 static void highlight_btn(lv_obj_t * btn, int active) {
-    lv_obj_set_style_border_width(btn, active ? SX(3) : (settings.home_light_mode ? 1 : 0), 0);
-    lv_obj_set_style_border_color(btn, lv_color_hex(active ? (settings.home_light_mode ? 0x1d4ed8 : COL_TEXT_HI) : THEME_BORDER), 0);
+    lv_obj_set_style_border_width(btn, active ? SX(3) : (THEME_IS_LIGHT ? 1 : 0), 0);
+    lv_obj_set_style_border_color(btn, lv_color_hex(active ? THEME_ACCENT : THEME_BORDER), 0);
 }
 
 /* ── fan button handler ───────────────────────────────────────── */

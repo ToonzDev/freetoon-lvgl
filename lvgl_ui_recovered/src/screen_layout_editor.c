@@ -77,6 +77,9 @@ static const int PALETTE[] = {
 };
 #define N_PALETTE ((int)(sizeof PALETTE / sizeof PALETTE[0]))
 
+/* Per-tile-type identity colours: they tell the tile types apart on the canvas
+ * and mean the same in every theme. LE_COL_ON_TYPE = dark label on those fills. */
+#define LE_COL_ON_TYPE 0x0a121e
 static const uint32_t TYPE_COL[LT_COUNT] = {
     [LT_CLOCK]=0x2a4466, [LT_THERMOSTAT]=0x335577, [LT_FORECAST]=0x4488aa, [LT_RAINFALL]=0x3a77aa, [LT_NEWS_TICKER]=0x666688,
     [LT_NEWS_SUMMARY]=0x6666aa, [LT_CALENDAR]=0x4477cc, [LT_ENERGY]=0xaa77ff,
@@ -193,7 +196,7 @@ static void select_tile(int i) {
     for (int k = 0; k < edit.count; k++) {
         if (!rects[k]) continue;
         lv_obj_set_style_border_width(rects[k], k == i ? 4 : 0, 0);
-        lv_obj_set_style_border_color(rects[k], lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_border_color(rects[k], lv_color_hex(THEME_TEXT_HI), 0);
     }
     update_sel_label();
 }
@@ -235,7 +238,7 @@ static void rect_event(lv_event_t * e) {
             drag_preview_ok = trial_move(i, col, row, &drag_preview);
             lv_obj_set_style_border_width(r, 4, 0);
             lv_obj_set_style_border_color(r,
-                lv_color_hex(drag_preview_ok ? 0x33dd66 : 0xdd4444), 0);
+                lv_color_hex(drag_preview_ok ? THEME_SUCCESS : THEME_DANGER), 0);
             /* Live re-pack the other tiles (or snap them back if it won't fit). */
             preview_others(drag_preview_ok ? &drag_preview : &edit, i);
         }
@@ -296,7 +299,7 @@ static void create_rect(int i) {
     lv_obj_add_event_cb(r, rect_event, LV_EVENT_ALL, NULL);
     lv_obj_t * l = lv_label_create(r);
     lv_label_set_text(l, layout_type_name(t->type));
-    lv_obj_set_style_text_color(l, lv_color_hex(0x0a121e), 0);
+    lv_obj_set_style_text_color(l, lv_color_hex(LE_COL_ON_TYPE), 0);
     lv_obj_set_style_text_font(l, SF(14), 0);
     lv_obj_align(l, LV_ALIGN_TOP_LEFT, 2, 2);
     place_rect(i);
@@ -409,14 +412,14 @@ static void populate_types(void) {
         } else {
             lv_label_set_text(l, layout_type_name(type));
         }
-        lv_obj_set_style_text_color(l, lv_color_hex(0x0a121e), 0);
+        lv_obj_set_style_text_color(l, lv_color_hex(LE_COL_ON_TYPE), 0);
         lv_obj_center(l);
         added++;
     }
     if (!added) {
         lv_obj_t * l = lv_label_create(type_grid);
         lv_label_set_text(l, tr("Geen types passen in deze grootte", "No types fit this size"));
-        lv_obj_set_style_text_color(l, lv_color_hex(0xccddee), 0);
+        lv_obj_set_style_text_color(l, lv_color_hex(THEME_TEXT_DIM), 0);
     }
 }
 
@@ -450,8 +453,8 @@ static void on_add(lv_event_t * e) {
     chooser = lv_obj_create(modal);
     lv_obj_set_size(chooser, SCR_W * 72 / 100, SCR_H * 84 / 100);
     lv_obj_center(chooser);
-    lv_obj_set_style_bg_color(chooser, lv_color_hex(0x16263a), 0);
-    lv_obj_set_style_border_color(chooser, lv_color_hex(0x33506e), 0);
+    lv_obj_set_style_bg_color(chooser, lv_color_hex(THEME_CARD_BG), 0);
+    lv_obj_set_style_border_color(chooser, lv_color_hex(THEME_BORDER), 0);
     lv_obj_set_style_border_width(chooser, 2, 0);
     lv_obj_set_style_radius(chooser, 12, 0);
     lv_obj_set_style_pad_all(chooser, 12, 0);
@@ -462,7 +465,7 @@ static void on_add(lv_event_t * e) {
         lv_label_set_text(title, tr("Kies nieuw type voor de geselecteerde tegel", "Pick new type for selected tile"));
     else
         lv_label_set_text(title, tr("Tegel toevoegen  -  kies grootte, dan type", "Add tile  -  pick size, then type"));
-    lv_obj_set_style_text_color(title, lv_color_hex(0xeaf2ff), 0);
+    lv_obj_set_style_text_color(title, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(title, SF(14), 0);
 
     /* size row (only when adding, not when replacing type) */
@@ -481,13 +484,14 @@ static void on_add(lv_event_t * e) {
             size_btns[s] = b;
             lv_obj_set_flex_grow(b, 1);
             lv_obj_set_height(b, 58);
-            lv_obj_set_style_bg_color(b, lv_color_hex(0x2a4060), 0);
-            lv_obj_set_style_border_color(b, lv_color_hex(0xffffff), 0);
+            lv_obj_set_style_bg_color(b, lv_color_hex(THEME_BTN_ACCENT), 0);
+            lv_obj_set_style_border_color(b, lv_color_hex(THEME_ACCENT), 0);
             lv_obj_set_style_border_width(b, (SIZES[s].w == pick_w && SIZES[s].h == pick_h) ? 3 : 0, 0);
             lv_obj_add_event_cb(b, on_size_pick, LV_EVENT_CLICKED, (void *)(intptr_t)s);
             lv_obj_t * l = lv_label_create(b);
             lv_label_set_text(l, SIZES[s].name);
             lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
+            lv_obj_set_style_text_color(l, lv_color_hex(THEME_TEXT_HI), 0);
             lv_obj_center(l);
         }
     }
@@ -506,10 +510,11 @@ static void on_add(lv_event_t * e) {
     lv_obj_t * close = lv_btn_create(chooser);
     lv_obj_set_width(close, LV_PCT(100));
     lv_obj_set_height(close, 46);
-    lv_obj_set_style_bg_color(close, lv_color_hex(0x444444), 0);
+    lv_obj_set_style_bg_color(close, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_add_event_cb(close, on_chooser_close, LV_EVENT_CLICKED, NULL);
     lv_obj_t * cl = lv_label_create(close);
     lv_label_set_text(cl, tr("Annuleer", "Cancel"));
+    lv_obj_set_style_text_color(cl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_center(cl);
 }
 
@@ -610,7 +615,7 @@ static void show_delete_confirm(int i) {
     confirm_modal = lv_obj_create(modal);          /* full-screen input-capturing backdrop */
     lv_obj_set_size(confirm_modal, SCR_W, SCR_H);
     lv_obj_set_pos(confirm_modal, 0, 0);
-    lv_obj_set_style_bg_color(confirm_modal, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_color(confirm_modal, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(confirm_modal, LV_OPA_60, 0);
     lv_obj_set_style_border_width(confirm_modal, 0, 0);
     lv_obj_clear_flag(confirm_modal, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_SCROLL_CHAIN);
@@ -633,23 +638,26 @@ static void show_delete_confirm(int i) {
     lv_obj_t * ca = lv_btn_create(card);
     lv_obj_set_size(ca, SX(130), SY(50));
     lv_obj_align(ca, LV_ALIGN_BOTTOM_LEFT, SX(10), SY(-14));
-    lv_obj_set_style_bg_color(ca, lv_color_hex(0x444444), 0);
+    lv_obj_set_style_bg_color(ca, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_add_event_cb(ca, on_confirm_cancel, LV_EVENT_CLICKED, NULL);
     lv_obj_t * cal = lv_label_create(ca); lv_label_set_text(cal, tr("Annuleer", "Cancel")); lv_obj_center(cal);
+    lv_obj_set_style_text_color(cal, lv_color_hex(THEME_TEXT_HI), 0);
 
     lv_obj_t * rep = lv_btn_create(card);
     lv_obj_set_size(rep, SX(170), SY(50));
     lv_obj_align(rep, LV_ALIGN_BOTTOM_MID, 0, SY(-14));
-    lv_obj_set_style_bg_color(rep, lv_color_hex(0x2a5070), 0);
+    lv_obj_set_style_bg_color(rep, lv_color_hex(THEME_BTN_ACCENT), 0);
     lv_obj_add_event_cb(rep, on_confirm_replace, LV_EVENT_CLICKED, NULL);
     lv_obj_t * repl = lv_label_create(rep); lv_label_set_text(repl, tr("Vervang type", "Change type")); lv_obj_center(repl);
+    lv_obj_set_style_text_color(repl, lv_color_hex(THEME_TEXT_HI), 0);
 
     lv_obj_t * del = lv_btn_create(card);
     lv_obj_set_size(del, SX(130), SY(50));
     lv_obj_align(del, LV_ALIGN_BOTTOM_RIGHT, SX(-10), SY(-14));
-    lv_obj_set_style_bg_color(del, lv_color_hex(0x6e2e2e), 0);
+    lv_obj_set_style_bg_color(del, lv_color_hex(THEME_DANGER_BG), 0);
     lv_obj_add_event_cb(del, on_confirm_ok, LV_EVENT_CLICKED, NULL);
     lv_obj_t * dl = lv_label_create(del); lv_label_set_text(dl, tr("Verwijder", "Delete")); lv_obj_center(dl);
+    lv_obj_set_style_text_color(dl, lv_color_hex(THEME_ON_ACCENT), 0);
 }
 
 /* Toolbar "Verwijder" — routes through the same confirm dialog as the long-press. */
@@ -713,7 +721,7 @@ static void open_name_modal(lv_event_t * e) {
     name_modal = lv_obj_create(modal);
     lv_obj_set_size(name_modal, SCR_W, SCR_H);
     lv_obj_set_pos(name_modal, 0, 0);
-    lv_obj_set_style_bg_color(name_modal, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_color(name_modal, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(name_modal, LV_OPA_70, 0);
     lv_obj_set_style_border_width(name_modal, 0, 0);
     lv_obj_clear_flag(name_modal, LV_OBJ_FLAG_SCROLLABLE);
@@ -723,7 +731,7 @@ static void open_name_modal(lv_event_t * e) {
     lv_obj_center(card);
     lv_obj_set_style_bg_color(card, lv_color_hex(THEME_CARD_BG), 0);
     lv_obj_set_style_border_color(card, lv_color_hex(THEME_BORDER), 0);
-    lv_obj_set_style_border_width(card, settings.home_light_mode ? 1 : 0, 0);
+    lv_obj_set_style_border_width(card, THEME_IS_LIGHT ? 1 : 0, 0);
     lv_obj_set_style_radius(card, 12, 0);
     lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -738,24 +746,32 @@ static void open_name_modal(lv_event_t * e) {
     lv_textarea_set_placeholder_text(name_ta, tr("bv. Dag, Nacht, Gasten", "e.g. Day, Night, Guests"));
     lv_obj_set_width(name_ta, SCR_W * 70 / 100 - 40);
     lv_obj_align(name_ta, LV_ALIGN_TOP_MID, 0, 40);
+    lv_obj_set_style_bg_color(name_ta, lv_color_hex(THEME_INPUT_BG), 0);
+    lv_obj_set_style_text_color(name_ta, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_border_color(name_ta, lv_color_hex(THEME_BORDER), 0);
 
     lv_obj_t * ok = lv_btn_create(card);
     lv_obj_set_size(ok, SX(130), SY(42));
     lv_obj_align(ok, LV_ALIGN_TOP_RIGHT, SX(-6), SY(90));
-    lv_obj_set_style_bg_color(ok, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_set_style_bg_color(ok, lv_color_hex(THEME_SUCCESS_BG), 0);
     lv_obj_add_event_cb(ok, on_name_ok, LV_EVENT_CLICKED, NULL);
     lv_obj_t * okl = lv_label_create(ok); lv_label_set_text(okl, tr("Opslaan", "Save")); lv_obj_center(okl);
+    lv_obj_set_style_text_color(okl, lv_color_hex(THEME_ON_ACCENT), 0);
 
     lv_obj_t * ca = lv_btn_create(card);
     lv_obj_set_size(ca, SX(130), SY(42));
     lv_obj_align(ca, LV_ALIGN_TOP_LEFT, SX(6), SY(90));
-    lv_obj_set_style_bg_color(ca, lv_color_hex(0x444444), 0);
+    lv_obj_set_style_bg_color(ca, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_add_event_cb(ca, on_name_cancel, LV_EVENT_CLICKED, NULL);
     lv_obj_t * cal = lv_label_create(ca); lv_label_set_text(cal, tr("Annuleer", "Cancel")); lv_obj_center(cal);
+    lv_obj_set_style_text_color(cal, lv_color_hex(THEME_TEXT_HI), 0);
 
     lv_obj_t * kb = lv_keyboard_create(card);
     lv_obj_set_size(kb, SCR_W * 70 / 100 - 20, SCR_H / 2 - 30);
     lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, -8);
+    lv_obj_set_style_bg_color(kb, lv_color_hex(THEME_INPUT_BG), 0);
+    lv_obj_set_style_bg_color(kb, lv_color_hex(THEME_BTN_BG), LV_PART_ITEMS);
+    lv_obj_set_style_text_color(kb, lv_color_hex(THEME_TEXT_HI), LV_PART_ITEMS);
     lv_keyboard_set_textarea(kb, name_ta);
 }
 
@@ -797,6 +813,12 @@ static void on_preset_delete(lv_event_t * e) {
     preset_mgr_refresh();
 }
 
+/* Label colour that stays readable on a given button fill (all four themes). */
+static uint32_t btn_txt_col(uint32_t fill) {
+    return (fill == THEME_SUCCESS_BG || fill == THEME_DANGER_BG || fill == THEME_ACCENT_FILL)
+               ? THEME_ON_ACCENT : THEME_TEXT_HI;
+}
+
 static void row_btn(lv_obj_t * parent, const char * txt, uint32_t col,
                     lv_event_cb_t cb, int idx, int w) {
     lv_obj_t * b = lv_btn_create(parent);
@@ -804,6 +826,7 @@ static void row_btn(lv_obj_t * parent, const char * txt, uint32_t col,
     lv_obj_set_style_bg_color(b, lv_color_hex(col), 0);
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, (void *)(intptr_t)idx);
     lv_obj_t * l = lv_label_create(b); lv_label_set_text(l, txt); lv_obj_center(l);
+    lv_obj_set_style_text_color(l, lv_color_hex(btn_txt_col(col)), 0);
 }
 
 /* One preset row: name (+ ✓ if it's the active/home one) and the three actions —
@@ -818,7 +841,7 @@ static void preset_row(const char * name, int idx, int deletable) {
 
     int active = (strcmp(settings.active_layout, idx < 0 ? "" : name) == 0);
     lv_obj_t * l = lv_label_create(row);
-    lv_obj_set_style_text_color(l, lv_color_hex(active ? 0x66dd88 : 0xccddee), 0);
+    lv_obj_set_style_text_color(l, lv_color_hex(active ? THEME_SUCCESS : THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(l, SF(18), 0);
     lv_label_set_text_fmt(l, "%s%s", active ? LV_SYMBOL_OK " " : "",
                           (idx < 0) ? tr("Standaard", "Default") : name);
@@ -835,10 +858,10 @@ static void preset_row(const char * name, int idx, int deletable) {
     lv_obj_clear_flag(btns, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_flex_flow(btns, LV_FLEX_FLOW_ROW);
 
-    row_btn(btns, tr("Startscherm", "Home"), 0x2e6e3a, on_preset_apply, idx, 130);  /* show on home now */
-    row_btn(btns, tr("Bewerk", "Edit"),      0x2a4060, on_preset_load,  idx, 88);   /* edit in editor   */
+    row_btn(btns, tr("Startscherm", "Home"), THEME_SUCCESS_BG, on_preset_apply, idx, 130);  /* show on home now */
+    row_btn(btns, tr("Bewerk", "Edit"),      THEME_BTN_ACCENT, on_preset_load,  idx, 88);   /* edit in editor   */
     if (deletable)
-        row_btn(btns, tr("Verwijder", "Delete"), 0x6e2e2e, on_preset_delete, idx, 96);
+        row_btn(btns, tr("Verwijder", "Delete"), THEME_DANGER_BG, on_preset_delete, idx, 96);
 }
 
 static void preset_mgr_refresh(void) {
@@ -855,15 +878,15 @@ static void open_preset_mgr(lv_event_t * e) {
     preset_mgr = lv_obj_create(modal);
     lv_obj_set_size(preset_mgr, SCR_W * 76 / 100, SCR_H * 84 / 100);
     lv_obj_center(preset_mgr);
-    lv_obj_set_style_bg_color(preset_mgr, lv_color_hex(0x16263a), 0);
-    lv_obj_set_style_border_color(preset_mgr, lv_color_hex(0x33506e), 0);
+    lv_obj_set_style_bg_color(preset_mgr, lv_color_hex(THEME_CARD_BG), 0);
+    lv_obj_set_style_border_color(preset_mgr, lv_color_hex(THEME_BORDER), 0);
     lv_obj_set_style_border_width(preset_mgr, 2, 0);
     lv_obj_set_style_radius(preset_mgr, 12, 0);
     lv_obj_set_style_pad_all(preset_mgr, 12, 0);
     lv_obj_set_flex_flow(preset_mgr, LV_FLEX_FLOW_COLUMN);
 
     lv_obj_t * title = lv_label_create(preset_mgr);
-    lv_obj_set_style_text_color(title, lv_color_hex(0xeaf2ff), 0);
+    lv_obj_set_style_text_color(title, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(title, SF(18), 0);
     lv_label_set_text(title, tr("Indelingen  -  Startscherm = tonen op home, Bewerk = aanpassen", "Layouts  -  Home = show on home, Edit = change"));
 
@@ -889,15 +912,17 @@ static void open_preset_mgr(lv_event_t * e) {
 
     lv_obj_t * cp = lv_btn_create(actions);
     lv_obj_set_flex_grow(cp, 1); lv_obj_set_height(cp, 44);
-    lv_obj_set_style_bg_color(cp, lv_color_hex(0x2e4e6e), 0);
+    lv_obj_set_style_bg_color(cp, lv_color_hex(THEME_BTN_ACCENT), 0);
     lv_obj_add_event_cb(cp, on_copy_p2, LV_EVENT_CLICKED, NULL);
     lv_obj_t * cpl = lv_label_create(cp); lv_label_set_text(cpl, tr("Kopieer pagina 1 -> 2", "Copy page 1 -> 2")); lv_obj_center(cpl);
+    lv_obj_set_style_text_color(cpl, lv_color_hex(THEME_TEXT_HI), 0);
 
     lv_obj_t * rs = lv_btn_create(actions);
     lv_obj_set_width(rs, 150); lv_obj_set_height(rs, 44);
-    lv_obj_set_style_bg_color(rs, lv_color_hex(0x665522), 0);
+    lv_obj_set_style_bg_color(rs, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_add_event_cb(rs, on_reset, LV_EVENT_CLICKED, NULL);
     lv_obj_t * rsl = lv_label_create(rs); lv_label_set_text(rsl, tr("Standaard", "Default")); lv_obj_center(rsl);
+    lv_obj_set_style_text_color(rsl, lv_color_hex(THEME_TEXT_HI), 0);
 
     lv_obj_t * footer = lv_obj_create(preset_mgr);
     lv_obj_set_width(footer, LV_PCT(100));
@@ -910,15 +935,17 @@ static void open_preset_mgr(lv_event_t * e) {
 
     lv_obj_t * saveas = lv_btn_create(footer);
     lv_obj_set_flex_grow(saveas, 1); lv_obj_set_height(saveas, 44);
-    lv_obj_set_style_bg_color(saveas, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_set_style_bg_color(saveas, lv_color_hex(THEME_SUCCESS_BG), 0);
     lv_obj_add_event_cb(saveas, on_save_as, LV_EVENT_CLICKED, NULL);
     lv_obj_t * sl = lv_label_create(saveas); lv_label_set_text(sl, tr("Opslaan als nieuwe...", "Save as new...")); lv_obj_center(sl);
+    lv_obj_set_style_text_color(sl, lv_color_hex(THEME_ON_ACCENT), 0);
 
     lv_obj_t * cl = lv_btn_create(footer);
     lv_obj_set_width(cl, 120); lv_obj_set_height(cl, 44);
-    lv_obj_set_style_bg_color(cl, lv_color_hex(0x444444), 0);
+    lv_obj_set_style_bg_color(cl, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_add_event_cb(cl, on_preset_close, LV_EVENT_CLICKED, NULL);
     lv_obj_t * cll = lv_label_create(cl); lv_label_set_text(cll, tr("Sluit", "Close")); lv_obj_center(cll);
+    lv_obj_set_style_text_color(cll, lv_color_hex(THEME_TEXT_HI), 0);
 }
 static void on_cancel(lv_event_t * e) {
     (void)e;
@@ -962,6 +989,7 @@ static lv_obj_t * tb_btn(lv_obj_t * bar, int x, int w, const char * txt,
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, ud);
     lv_obj_t * l = lv_label_create(b);
     lv_label_set_text(l, txt);
+    lv_obj_set_style_text_color(l, lv_color_hex(btn_txt_col(col)), 0);
 #ifdef TOON1
     /* Toolbar buttons are width-tightened for 800px; use a smaller label so
      * long words ("Indelingen", "Verwijder") fit without clipping. */
@@ -1102,32 +1130,32 @@ void screen_layout_editor_show(void) {
     lv_obj_set_pos(bar, 0, SCR_H - BAR_H);
     lv_obj_set_style_bg_color(bar, lv_color_hex(THEME_CARD_BG), 0);
     lv_obj_set_style_border_color(bar, lv_color_hex(THEME_BORDER), 0);
-    lv_obj_set_style_border_width(bar, settings.home_light_mode ? 1 : 0, 0);
+    lv_obj_set_style_border_width(bar, THEME_IS_LIGHT ? 1 : 0, 0);
     lv_obj_set_style_radius(bar, 0, 0);
     lv_obj_set_style_pad_all(bar, 0, 0);
     lv_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
 
     /* Widths tightened so the new "Verwijder" button fits on both 1024 and 800. */
     int x = SX(8);
-    tb_btn(bar, x, SX(62), tr("Sluit", "Close"),      on_cancel,       NULL, 0x444444); x += SX(68);
-    page_btn = tb_btn(bar, x, SX(78), tr("Pagina 1", "Page 1"), on_page_toggle, NULL, 0x4a3a6a); x += SX(84);
-    tb_btn(bar, x, SX(40), "W-", on_resize, (void *)(intptr_t)0, 0x2a4060); x += SX(44);
-    tb_btn(bar, x, SX(40), "W+", on_resize, (void *)(intptr_t)1, 0x2a4060); x += SX(44);
-    tb_btn(bar, x, SX(40), "H-", on_resize, (void *)(intptr_t)2, 0x2a4060); x += SX(44);
-    tb_btn(bar, x, SX(40), "H+", on_resize, (void *)(intptr_t)3, 0x2a4060); x += SX(46);
-    tb_btn(bar, x, SX(82), tr("Verberg", "Hide"),    on_toggle_vis,   NULL, 0x553355); x += SX(88);
-    tb_btn(bar, x, SX(84), tr("Verwijder", "Delete"),  on_delete_tile,  NULL, 0x6e2e2e); x += SX(90);
-    tb_btn(bar, x, SX(70), tr("+ Tegel", "+ Tile"),    on_add,          NULL, 0x2e5e6e); x += SX(76);
-    tb_btn(bar, x, SX(92), tr("Indelingen", "Layouts"), open_preset_mgr, NULL, 0x2e4e6e); x += SX(98);
-    theme_btn = tb_btn(bar, x, SX(112), "", on_theme_toggle, NULL, 0x2e6e4e); x += SX(118);
+    tb_btn(bar, x, SX(62), tr("Sluit", "Close"),      on_cancel,       NULL, THEME_BTN_BG); x += SX(68);
+    page_btn = tb_btn(bar, x, SX(78), tr("Pagina 1", "Page 1"), on_page_toggle, NULL, THEME_BTN_ACCENT); x += SX(84);
+    tb_btn(bar, x, SX(40), "W-", on_resize, (void *)(intptr_t)0, THEME_BTN_ACCENT); x += SX(44);
+    tb_btn(bar, x, SX(40), "W+", on_resize, (void *)(intptr_t)1, THEME_BTN_ACCENT); x += SX(44);
+    tb_btn(bar, x, SX(40), "H-", on_resize, (void *)(intptr_t)2, THEME_BTN_ACCENT); x += SX(44);
+    tb_btn(bar, x, SX(40), "H+", on_resize, (void *)(intptr_t)3, THEME_BTN_ACCENT); x += SX(46);
+    tb_btn(bar, x, SX(82), tr("Verberg", "Hide"),    on_toggle_vis,   NULL, THEME_BTN_BG); x += SX(88);
+    tb_btn(bar, x, SX(84), tr("Verwijder", "Delete"),  on_delete_tile,  NULL, THEME_DANGER_BG); x += SX(90);
+    tb_btn(bar, x, SX(70), tr("+ Tegel", "+ Tile"),    on_add,          NULL, THEME_ACCENT_FILL); x += SX(76);
+    tb_btn(bar, x, SX(92), tr("Indelingen", "Layouts"), open_preset_mgr, NULL, THEME_BTN_ACCENT); x += SX(98);
+    theme_btn = tb_btn(bar, x, SX(112), "", on_theme_toggle, NULL, THEME_BTN_ACCENT); x += SX(118);
     theme_btn_label();
 
     sel_lbl = lv_label_create(bar);
-    lv_obj_set_style_text_color(sel_lbl, lv_color_hex(0xccddee), 0);
+    lv_obj_set_style_text_color(sel_lbl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(sel_lbl, SF(14), 0);
     lv_obj_align(sel_lbl, LV_ALIGN_LEFT_MID, x + SX(6), 0);
 
-    lv_obj_t * save = tb_btn(bar, SCR_W - SX(96), SX(88), tr("Opslaan", "Save"), on_save, NULL, 0x2e6e3a);
+    lv_obj_t * save = tb_btn(bar, SCR_W - SX(96), SX(88), tr("Opslaan", "Save"), on_save, NULL, THEME_SUCCESS_BG);
     (void)save;
     update_sel_label();
 }
