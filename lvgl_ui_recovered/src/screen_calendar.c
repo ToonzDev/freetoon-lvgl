@@ -119,7 +119,7 @@ static void render_calendar_page(void) {
             char pd[32]; pretty_date(ev->date, pd, sizeof pd);
             lv_obj_t * h = lv_label_create(target_col);
             lv_label_set_text(h, pd);
-            lv_obj_set_style_text_color(h, lv_color_hex(THEME_ACCENT_BLUE), 0);
+            lv_obj_set_style_text_color(h, lv_color_hex(THEME_ACCENT), 0);
             lv_obj_set_style_text_font(h, SF(22), 0);
             lv_obj_set_style_pad_top(h, is_col_first ? 0 : 10, 0);
         }
@@ -185,7 +185,7 @@ void screen_calendar_show(void) {
     lv_obj_align(close, LV_ALIGN_TOP_RIGHT, SX(-12), SY(8));
     lv_obj_set_style_bg_color(close, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_set_style_border_color(close, lv_color_hex(THEME_BORDER), 0);
-    lv_obj_set_style_border_width(close, settings.home_light_mode ? 1 : 0, 0);
+    lv_obj_set_style_border_width(close, THEME_IS_LIGHT ? 1 : 0, 0);
     lv_obj_set_style_radius(close, 12, 0);
     lv_obj_set_ext_click_area(close, 30);
     lv_obj_add_event_cb(close, on_close, LV_EVENT_CLICKED, NULL);
@@ -208,7 +208,7 @@ void screen_calendar_show(void) {
     lv_obj_align(s_btn_prev, LV_ALIGN_TOP_LEFT, SX(320), SY(17));
     lv_obj_set_style_bg_color(s_btn_prev, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_set_style_border_color(s_btn_prev, lv_color_hex(THEME_BORDER), 0);
-    lv_obj_set_style_border_width(s_btn_prev, settings.home_light_mode ? 1 : 0, 0);
+    lv_obj_set_style_border_width(s_btn_prev, THEME_IS_LIGHT ? 1 : 0, 0);
     lv_obj_set_style_radius(s_btn_prev, 8, 0);
     lv_obj_add_event_cb(s_btn_prev, on_cal_prev, LV_EVENT_CLICKED, NULL);
     lv_obj_t * pl = lv_label_create(s_btn_prev);
@@ -227,7 +227,7 @@ void screen_calendar_show(void) {
     lv_obj_align(s_btn_next, LV_ALIGN_TOP_LEFT, SX(600), SY(17));
     lv_obj_set_style_bg_color(s_btn_next, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_set_style_border_color(s_btn_next, lv_color_hex(THEME_BORDER), 0);
-    lv_obj_set_style_border_width(s_btn_next, settings.home_light_mode ? 1 : 0, 0);
+    lv_obj_set_style_border_width(s_btn_next, THEME_IS_LIGHT ? 1 : 0, 0);
     lv_obj_set_style_radius(s_btn_next, 8, 0);
     lv_obj_add_event_cb(s_btn_next, on_cal_next, LV_EVENT_CLICKED, NULL);
     lv_obj_t * nl = lv_label_create(s_btn_next);

@@ -291,7 +291,7 @@ typedef struct {
     int  anim_dim_enabled;           /* 1 = allow animations to remain visible in dim mode (default 0) */
     int  anim_duration_sec;          /* animation display duration in seconds (default 25) */
     int  home_theme;                 /* 0 = freetoon dark dashboard, 1 = stock light tile-carousel */
-    int  home_light_mode;            /* 0 = dark tiles (default), 1 = light tiles for freetoon dashboard */
+    int  home_light_mode;            /* 1 = Light theme active (derived from ui_theme; kept for plugins) */
     char stock_tiles[200];           /* stock-theme carousel layout: comma-sep tile keys per slot */
     int  stock_big_indoor;           /* stock theme: 1 = big readout is indoor temp, 0 = setpoint */
 
@@ -389,6 +389,49 @@ typedef struct {
 #define HW_SOCKET_MAX 4
     char  hw_socket_name[HW_SOCKET_MAX][24];
     char  hw_socket_host[HW_SOCKET_MAX][24];
+
+    /* Colour theme, UI_THEME_* in theme.h (0 Night, 1 Light, 2 Warm, 3 Black).
+     * home_light_mode above stays in step (1 exactly when Light) for plugins
+     * that only know light/dark; set both through theme_set(). */
+    int   ui_theme;
+
+    /* Night rest: from night_rest_from to night_rest_to (minutes after
+     * midnight, may wrap past midnight) the idle dim goes extra dark —
+     * fully black (backlight off) or night_rest_brightness. A touch wakes,
+     * as always. Off by default. */
+    int   night_rest_enabled;
+    int   night_rest_from;          /* default 23:00 = 1380 */
+    int   night_rest_to;            /* default 07:00 = 420 */
+    int   night_rest_black;         /* 1 = black screen, 0 = extra dim */
+    int   night_rest_brightness;    /* backlight while extra dim (0..400) */
+
+    /* Automatic theme (theme.c theme_auto_pick): 0 = fixed (ui_theme as
+     * picked), 1 = by time, 2 = by the sun at the weather location. Day =
+     * theme_auto_day (Licht or Warm), evening = Nacht, night = Zwart.
+     * By time: day from _morning, evening from _evening, night from _night.
+     * By sun: day from sunrise, evening from sunset, night from _night.
+     * Minutes after midnight. Off by default. */
+    int   theme_auto;
+    int   theme_auto_day;
+    int   theme_auto_morning;       /* default 07:00 */
+    int   theme_auto_evening;       /* default 19:00 */
+    int   theme_auto_night;         /* default 23:00 */
+
+    /* Energy tile: show today's cost (electricity + gas at the fixed
+     * tariffs) and yesterday's instead of the gas line. Off by default. */
+    int   energy_cost_tile;
+
+    /* Quick thermostat actions (thermo_quick.c). Unix times, 0 = not active.
+     * Kept here so a UI restart does not forget to end them. */
+    int   boost_until;              /* Boost +1 °C ends */
+    int   boost_target_centi;       /* setpoint the boost set */
+    int   boost_prev_centi;         /* setpoint before the boost */
+    int   boost_prev_manual;        /* 1 = was manual: restore that setpoint */
+    int   holiday_until;            /* holiday (Away, held) ends, programme resumes */
+
+    /* Dim screen: a quiet line when rain starts within 15 minutes (or it is
+     * raining), from the Buienradar 3-hour curve. Off by default. */
+    int   rain_dim_alert;
 } settings_t;
 
 #define FORECAST_AUTO   0

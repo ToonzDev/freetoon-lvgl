@@ -14,22 +14,6 @@
 #include <string.h>
 #include <time.h>
 
-#undef THEME_BG
-#undef THEME_CARD_BG
-#undef THEME_TEXT_HI
-#undef THEME_TEXT_DIM
-#undef THEME_BTN_BG
-
-#define THEME_BG          (settings.home_light_mode ? 0xeef4fa : 0x0f1722)
-#define THEME_CARD_BG     (settings.home_light_mode ? 0xffffff : 0x141f2d)
-#define THEME_CARD_ALT    (settings.home_light_mode ? 0xf2f7fc : 0x192738)
-#define THEME_TEXT_HI     (settings.home_light_mode ? 0x112233 : 0xffffff)
-#define THEME_TEXT_MID    (settings.home_light_mode ? 0x334455 : 0xc0d0e0)
-#define THEME_TEXT_DIM    (settings.home_light_mode ? 0x667788 : 0x7a8c9e)
-#define THEME_BTN_BG      (settings.home_light_mode ? 0xd0d8e2 : 0x223344)
-#define THEME_ORANGE      (settings.home_light_mode ? 0xa84200 : 0xffa333)
-#define THEME_BLUE        (settings.home_light_mode ? 0x1d4ed8 : 0x5a9bd3)
-
 static lv_obj_t * scr_root = NULL;
 static lv_obj_t * lbl_day_title = NULL;
 static lv_obj_t * lbl_day_summary = NULL;
@@ -37,7 +21,7 @@ static lv_obj_t * btn_prev_day = NULL;
 static lv_obj_t * btn_next_day = NULL;
 static lv_obj_t * hourly_list = NULL;
 static int s_active_day = 0;
-static int scr_light_mode = -1;
+static int scr_light_mode = -1;   /* cached UI theme (settings.ui_theme) */
 
 static void on_back(lv_event_t * e) {
     (void)e;
@@ -155,11 +139,11 @@ static void render_active_day(void) {
         int is_current = (s_active_day == 0 && h == cur_hour);
 
         if (is_current) {
-            lv_obj_set_style_bg_color(row, lv_color_hex(settings.home_light_mode ? 0xd8eafc : 0x1c3046), 0);
-            lv_obj_set_style_border_color(row, lv_color_hex(THEME_BLUE), 0);
+            lv_obj_set_style_bg_color(row, lv_color_hex(THEME_ACCENT_SOFT), 0);
+            lv_obj_set_style_border_color(row, lv_color_hex(THEME_ACCENT), 0);
             lv_obj_set_style_border_width(row, 2, 0);
         } else {
-            lv_obj_set_style_bg_color(row, lv_color_hex((h % 2 == 0) ? THEME_CARD_ALT : THEME_CARD_BG), 0);
+            lv_obj_set_style_bg_color(row, lv_color_hex((h % 2 == 0) ? THEME_ROW_BG : THEME_CARD_BG), 0);
             lv_obj_set_style_border_width(row, 0, 0);
         }
 
@@ -167,7 +151,7 @@ static void render_active_day(void) {
         lv_obj_t * lbl_t = lv_label_create(row);
         lv_obj_set_style_text_font(lbl_t, SF(15), 0);
         if (is_current) {
-            lv_obj_set_style_text_color(lbl_t, lv_color_hex(THEME_BLUE), 0);
+            lv_obj_set_style_text_color(lbl_t, lv_color_hex(THEME_ACCENT), 0);
             lv_label_set_text_fmt(lbl_t, "%s (nu)", slot->label);
         } else {
             lv_obj_set_style_text_color(lbl_t, lv_color_hex(THEME_TEXT_HI), 0);
@@ -186,7 +170,7 @@ static void render_active_day(void) {
         /* 3. Temperatuur */
         lv_obj_t * lbl_temp = lv_label_create(row);
         lv_obj_set_style_text_font(lbl_temp, SF(15), 0);
-        lv_obj_set_style_text_color(lbl_temp, lv_color_hex(THEME_ORANGE), 0);
+        lv_obj_set_style_text_color(lbl_temp, lv_color_hex(THEME_WARN_ORANGE), 0);
 
         float feel_diff = slot->feel_temp - slot->temperature;
         if (feel_diff < -1.0f || feel_diff > 1.0f) {
@@ -201,7 +185,7 @@ static void render_active_day(void) {
         lv_obj_t * lbl_rain = lv_label_create(row);
         lv_obj_set_style_text_font(lbl_rain, SF(15), 0);
         if (slot->rain_chance > 0 || slot->rain_mm >= 0.05f) {
-            lv_obj_set_style_text_color(lbl_rain, lv_color_hex(THEME_BLUE), 0);
+            lv_obj_set_style_text_color(lbl_rain, lv_color_hex(THEME_INFO), 0);
             if (slot->rain_mm >= 0.05f) {
                 lv_label_set_text_fmt(lbl_rain, "%d%% (%.1f mm)", slot->rain_chance, slot->rain_mm);
             } else {
@@ -247,7 +231,7 @@ static void render_active_day(void) {
 void screen_weather_hourly_show(int day_idx) {
     s_active_day = day_idx;
 
-    if (scr_root && scr_light_mode == settings.home_light_mode) {
+    if (scr_root && scr_light_mode == settings.ui_theme) {
         render_active_day();
         ui_push(scr_root);
         return;
@@ -258,7 +242,7 @@ void screen_weather_hourly_show(int day_idx) {
         scr_root = NULL;
     }
 
-    scr_light_mode = settings.home_light_mode;
+    scr_light_mode = settings.ui_theme;
     scr_root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(THEME_BG), 0);
     lv_obj_clear_flag(scr_root, LV_OBJ_FLAG_SCROLLABLE);
@@ -323,7 +307,7 @@ void screen_weather_hourly_show(int day_idx) {
     lv_obj_align(lbl_day_title, LV_ALIGN_TOP_MID, 0, SY(2));
 
     lbl_day_summary = lv_label_create(nav_bar);
-    lv_obj_set_style_text_color(lbl_day_summary, lv_color_hex(THEME_TEXT_MID), 0);
+    lv_obj_set_style_text_color(lbl_day_summary, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_day_summary, (DISP_VER < 600 ? SF(12) : SF(14)), 0);
     lv_obj_align(lbl_day_summary, LV_ALIGN_BOTTOM_MID, 0, SY(-2));
 
@@ -331,7 +315,7 @@ void screen_weather_hourly_show(int day_idx) {
     lv_obj_t * thdr = lv_obj_create(scr_root);
     lv_obj_set_size(thdr, DISP_HOR - SX(32), SY(32));
     lv_obj_align(thdr, LV_ALIGN_TOP_MID, 0, SY(62));
-    lv_obj_set_style_bg_color(thdr, lv_color_hex(settings.home_light_mode ? 0xdce6f2 : 0x182433), 0);
+    lv_obj_set_style_bg_color(thdr, lv_color_hex(THEME_ROW_BG_ALT), 0);
     lv_obj_set_style_radius(thdr, 8, 0);
     lv_obj_set_style_border_width(thdr, 0, 0);
     lv_obj_set_style_pad_all(thdr, 0, 0);

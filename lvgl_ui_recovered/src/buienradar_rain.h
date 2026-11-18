@@ -34,5 +34,13 @@ int  buienradar_rain_start(void);
 void buienradar_rain_refresh_async(void);
 void buienradar_rain_get_snapshot(buienradar_rain_snapshot_t * out);
 
+/* 0 none, 1 light (<2.5 mm/h), 2 moderate (<10), 3 heavy. */
+int  buienradar_rain_level(float mm);
+/* One plain sentence for the next hours into buf ("Droog tot 14:20",
+ * "Over 10 min lichte regen", "Lichte regen, stopt rond 15:05").
+ * Returns minutes until rain starts (0 = raining now), -1 = none expected
+ * in the 3-hour data (or no data). */
+int  buienradar_rain_outlook(const buienradar_rain_snapshot_t * s, char * buf, int len);
+
 #endif /* BUIENRADAR_RAIN_H */
 

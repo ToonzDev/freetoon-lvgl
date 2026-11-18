@@ -219,7 +219,7 @@ lv_obj_t * screen_heater_advanced_create(void) {
     lv_obj_align(back, LV_ALIGN_TOP_RIGHT, SX(-12), SY(12));
     lv_obj_set_style_bg_color(back, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_set_style_border_color(back, lv_color_hex(THEME_BORDER), 0);
-    lv_obj_set_style_border_width(back, settings.home_light_mode ? 1 : 0, 0);
+    lv_obj_set_style_border_width(back, THEME_IS_LIGHT ? 1 : 0, 0);
     lv_obj_set_style_radius(back, 12, 0);
     lv_obj_set_ext_click_area(back, 25);
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
@@ -242,7 +242,7 @@ lv_obj_t * screen_heater_advanced_create(void) {
     lv_obj_align(list_col, LV_ALIGN_TOP_LEFT, SX(10), SY(82));
     lv_obj_set_style_bg_color(list_col, lv_color_hex(THEME_CARD_BG), 0);
     lv_obj_set_style_border_color(list_col, lv_color_hex(THEME_BORDER), 0);
-    lv_obj_set_style_border_width(list_col, settings.home_light_mode ? 1 : 0, 0);
+    lv_obj_set_style_border_width(list_col, THEME_IS_LIGHT ? 1 : 0, 0);
     lv_obj_set_flex_flow(list_col, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(list_col, LV_FLEX_ALIGN_START,
                           LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
