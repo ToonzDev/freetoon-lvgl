@@ -444,7 +444,7 @@ void update_modal_open(lv_obj_t * parent) {
     lv_obj_t * ver = lv_label_create(panel);
     lv_obj_set_style_text_font(ver, SF(18), 0);
     lv_obj_set_style_text_color(ver, lv_color_hex(THEME_TEXT_DIM), 0);
-    lv_label_set_text_fmt(ver, tr("%s  -  beta", "%s  -  beta"), BUILD_VERSION);
+    lv_label_set_text(ver, BUILD_VERSION);
     lv_obj_align(ver, LV_ALIGN_TOP_LEFT, 60, 34);
 
     /* Credit + license line */

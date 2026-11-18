@@ -482,7 +482,7 @@
   - Decide whether a one-time "settings imported" note should go to the inbox at all, or only be a banner/log line.
 
 ### 41. Release 1.0.8: HomeWizard Sockets & kWh Meter, Remote Web Page, App Updates, Meter Readings, Live Settings
-- **Status**: Prepared (2026-11-12); tag 1.0.8 to be created on GitHub.
+- **Status**: Released (tag 1.0.8).
 - **Contents**:
   - HomeWizard: IP fields on the Toon, Energy Sockets (Devices screen, Hue/Domoticz "Stekkers" button, client mirror), kWh meter as solar source, offer to use the P1 as energy source (#37).
   - Remote-control web page on :10081; client mode signs in on a master with a web password; ToonWater sensor as water meter.
@@ -491,7 +491,7 @@
   - Settings that apply without a restart (#36); Meterstanden from the meter's registers (#38); FreeToon notifications with text, TSC notice hidden (#39, #40).
 
 ### 42. Release 1.0.9: HA Lights on Tile and Web Page, Gas Today, Water Statistics, Meter Readings After Restart
-- **Status**: Prepared (2026-11-13); tag 1.0.9 to be created on GitHub.
+- **Status**: Released (tag 1.0.9).
 - **Contents**:
   - Home Assistant lights/switches on the Verlichting tile (T1/T2 in Apparaten beheren) and switchable on the :10081 web page.
   - "Gas vandaag" on the Energie tile; gas today since 00:00 for HomeWizard/ESPHome P1 and Home Assistant.
@@ -652,7 +652,7 @@
 - **Later (separate)**: option B — a ReToon app host on QuickJS (ReToon app API levels 1–10) so ReToon apps run unchanged as separate downloads; large and a moving target, not planned.
 
 ### 56. Indoor humidity from the Toon's own sensor on screen
-- **Status**: Done (2026-11-18): option (3), new "Binnenklimaat" layout tile (`LT_CLIMATE`, appended to the enum; min 2x2): humidity big, air-quality word (coloured, "Lucht: Goed" on wider tiles), CO2 + TVOC line; "--" for unreported values. Not offered in the Toon 1 layout editor (no sensor). Sim-verified at 2x2 and 3x2.
+- **Status**: Done (2026-11-18): also a dim block `DB_CLIMATE` (02f76ff, Toon 2 only); option (3), new "Binnenklimaat" layout tile (`LT_CLIMATE`, appended to the enum; min 2x2): humidity big, air-quality word (coloured, "Lucht: Goed" on wider tiles), CO2 + TVOC line; "--" for unreported values. Not offered in the Toon 1 layout editor (no sensor). Sim-verified at 2x2 and 3x2.
 - **Situation**: `toon_state.humidity` is already filled from the Toon 2's own sensor (BoxTalk `HumiditySensor` / thermostatInfo `currentHumidity`) and exported over MQTT and the PWA, and the classic theme has a "Luchtvochtigheid" tile — but the FreeToon dashboard shows it nowhere (`lbl_t_humidity` is a leftover of the old thermostat tile and always NULL). Toon 1 has no humidity sensor.
 - **Options**: (1) add "RV 45%" to the dim screen's metrics row (TVOC / CO2 / CV bar / air quality) in `screen_dim.c` + `screen_dim_grid.c` — small; (2) small "RV 45%" on the home thermostat tile — small, but that tile is already full on Toon 1; (3) new "Binnenklimaat" layout tile (humidity + CO2 + TVOC + air-quality label) — append the LT_* value at the end of the enum. In all cases hide it when no value is reported (Toon 1).
 
@@ -660,3 +660,7 @@
 - **Status**: Open (2026-11-18, parked after 85ff5df).
 - **Situation**: since 85ff5df page 2's "+ Tegel" offers only "Integratie" (and Neerslag); the integration itself (e.g. Teletekst) is chosen afterwards by tapping the empty tile on the home screen. A user expected to find Teletekst in the editor list.
 - **Options**: (a) clearer label, e.g. "Integratie (bijv. Teletekst - koppelen op het scherm)" plus one line of explanation; (b) list the installed integrations in "+ Tegel" on page 2 and place the tile already bound. Page-2 slots are bound by position (slot 4+i), so (b) must keep a binding with its tile when tiles are moved or deleted in the editor.
+
+### 58. Release 1.0.14: first non-beta release
+- **Status**: Prepared (2026-11-18); tag 1.0.14 on the release commit, published as a normal release (not prerelease).
+- **Contents**: OT bridge Proxy mode removed (b984bd1, a5e0531, adcb532); Klok Studio (#55); dynamic energy contracts (#44); Binnenklimaat tile and dim block (#56); thin dim-screen font option; brighter Neerslag dim block; Toon 1: half the animation sprites, Wi-Fi keyboard, dim energy-bar gap; release notes without CRLF "r". The "- beta" label next to the version in the update screen is gone; the Beta / dev channel stays for test prereleases.

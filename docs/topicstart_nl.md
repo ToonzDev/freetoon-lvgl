@@ -16,9 +16,8 @@ enz.) blijft gewoon de stock-software van Quby. freetoon praat daar netjes mee v
 de interne BoxTalk-bus en de lokale HTTP-API's. Je kunt dus altijd terug naar de
 originele interface.
 
-> **Beta.** Alle releases staan als *prerelease* gemarkeerd. Het werkt hier
-> stabiel op twee Toons, maar gebruik het op eigen risico. Een geroote Toon is
-> vereist (SSH-toegang).
+> Sinds 1.0.14 zijn de releases geen *prerelease* (beta) meer. Gebruik op eigen
+> risico; een geroote Toon is vereist (SSH-toegang).
 
 ---
 

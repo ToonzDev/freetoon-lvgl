@@ -28,8 +28,8 @@ void ui_request_restart(void);   /* ui_stack.c (screens.h pulls in LVGL) */
  *       surface as "newest" and mask v0.9.13+.
  *   0 = stable/official only: /releases/latest, which GitHub returns only for
  *       non-prerelease, non-draft releases (404 → no update, banner stays off).
- * All freetoon releases are currently beta, so "stable" finds nothing until a
- * non-prerelease is published. */
+ * Since 1.0.14 releases are published as normal (non-prerelease) releases,
+ * so both channels find them; beta/dev additionally gets test prereleases. */
 /* per_page kept modest: the asset-metadata blob per release is large and the
  * shared http_fetch caps the transfer at a few seconds, so a 30-release page
  * could run past the timeout on the Toon's slow link and fail the whole check.
