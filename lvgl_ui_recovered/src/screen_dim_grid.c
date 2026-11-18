@@ -1237,7 +1237,7 @@ lv_obj_t * screen_dim_grid_create(void) {
         lv_obj_t * r_icon = lv_img_create(rhdr);
         ui_img_set_src(r_icon, &icon_drop);
         lv_img_set_zoom(r_icon, 160);
-        ui_obj_set_style_img_recolor(r_icon, lv_color_hex(0x5a9bd3), 0);
+        ui_obj_set_style_img_recolor(r_icon, lv_color_hex(0x8fd8ff), 0);
         ui_obj_set_style_img_recolor_opa(r_icon, 255, 0);
         ui_obj_align(r_icon, LV_ALIGN_LEFT_MID, 2, 0);
 
@@ -1248,7 +1248,7 @@ lv_obj_t * screen_dim_grid_create(void) {
         lv_obj_align_to(dim_rain_lbl_title, r_icon, LV_ALIGN_OUT_RIGHT_MID, 6, 0);
 
         dim_rain_lbl_status = lv_label_create(rhdr);
-        ui_obj_set_style_text_color(dim_rain_lbl_status, lv_color_hex(0x88aabb), 0);
+        ui_obj_set_style_text_color(dim_rain_lbl_status, lv_color_hex(0xc4dcee), 0);
         ui_obj_set_style_text_font(dim_rain_lbl_status, SF(13), 0);
         if (rbw > 200) lv_obj_set_width(dim_rain_lbl_status, rbw - 140);
         lv_label_set_long_mode(dim_rain_lbl_status, LV_LABEL_LONG_DOT);
@@ -1280,13 +1280,13 @@ lv_obj_t * screen_dim_grid_create(void) {
         lv_obj_set_style_pad_column(dim_rain_chart, 1, LV_PART_MAIN);
         lv_obj_set_style_radius(dim_rain_chart, 2, LV_PART_ITEMS);
 
-        dim_rain_ser = lv_chart_add_series(dim_rain_chart, lv_color_hex(0x5a9bd3), LV_CHART_AXIS_PRIMARY_Y);
+        dim_rain_ser = lv_chart_add_series(dim_rain_chart, lv_color_hex(0x8fd8ff), LV_CHART_AXIS_PRIMARY_Y);
 
         static const char * thresh_names[] = {"Zwaar", "Matig", "Licht"};
         for (int i = 0; i < 3; i++) {
             if (label_w > 0) {
                 dim_thresh_lbl[i] = lv_label_create(bx_r);
-                ui_obj_set_style_text_color(dim_thresh_lbl[i], lv_color_hex(0x88aabb), 0);
+                ui_obj_set_style_text_color(dim_thresh_lbl[i], lv_color_hex(0xc4dcee), 0);
                 ui_obj_set_style_text_font(dim_thresh_lbl[i], SF(11), 0);
                 ui_label_set_text(dim_thresh_lbl[i], thresh_names[i]);
                 int y_off = (chart_h * i) / 3 - 6;
@@ -1298,7 +1298,7 @@ lv_obj_t * screen_dim_grid_create(void) {
 
         for (int i = 0; i < 4; i++) {
             dim_rain_lbl_times[i] = lv_label_create(bx_r);
-            ui_obj_set_style_text_color(dim_rain_lbl_times[i], lv_color_hex(0x88aabb), 0);
+            ui_obj_set_style_text_color(dim_rain_lbl_times[i], lv_color_hex(0xc4dcee), 0);
             ui_obj_set_style_text_font(dim_rain_lbl_times[i], SF(12), 0);
             ui_label_set_text(dim_rain_lbl_times[i], "");
             if (i == 0) {
