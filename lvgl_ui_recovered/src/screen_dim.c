@@ -19,6 +19,7 @@
 #include "meteradapter.h"   /* meter_state — for the restored dim energy bar */
 #include "icons.h"
 #include "theme.h"
+#include "buienradar_rain.h"
 #include "fonts_opensans.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -304,9 +305,33 @@ static const lv_font_t * pick_date_font(const char * txt, lv_coord_t max_w, lv_c
     return &lv_font_montserrat_14;
 }
 
+/* Rain alert (settings.rain_dim_alert): rain within 15 min, or now. */
+static lv_obj_t * lbl_rain_alert = NULL;
+static uint32_t   s_rain_alert_last = 0;    /* 0 = paint at the next tick */
+static void dim_rain_alert_paint(void) {
+    if (!lbl_rain_alert) return;
+    if (s_rain_alert_last && lv_tick_elaps(s_rain_alert_last) < 30000) return;
+    s_rain_alert_last = lv_tick_get();
+    char sentence[64] = "";
+    int m = -1;
+    if (settings.rain_dim_alert) {
+        buienradar_rain_snapshot_t rs;
+        buienradar_rain_get_snapshot(&rs);
+        m = buienradar_rain_outlook(&rs, sentence, sizeof sentence);
+    }
+    if (m >= 0 && m <= 15 && sentence[0]) {
+        ui_label_set_text(lbl_rain_alert, sentence);
+        ui_obj_clear_flag(lbl_rain_alert, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        ui_obj_add_flag(lbl_rain_alert, LV_OBJ_FLAG_HIDDEN);
+    s_rain_alert_last = 0;
+    }
+}
+
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
     if (lv_scr_act() != scr_root) return;
+    dim_rain_alert_paint();
 
     time_t now = time(NULL);
     struct tm tm;
@@ -796,6 +821,13 @@ lv_obj_t * screen_dim_create(void) {
     ui_label_set_text(dim_brand, "Freetoon");
     ui_obj_align(dim_brand, LV_ALIGN_TOP_LEFT, SX(20), SY(16));
 
+    lbl_rain_alert = lv_label_create(scr_root);
+    ui_obj_set_style_text_color(lbl_rain_alert, lv_color_hex(THEME_INFO), 0);
+    ui_obj_set_style_text_font(lbl_rain_alert, SF(22), 0);
+    ui_label_set_text(lbl_rain_alert, "");
+    ui_obj_align(lbl_rain_alert, LV_ALIGN_TOP_MID, 0, SY(14));
+    ui_obj_add_flag(lbl_rain_alert, LV_OBJ_FLAG_HIDDEN);
+
     /* Clock — custom 96pt Montserrat (digits + ':' + space only,
        generated via lv_font_conv into lv_font_montserrat_96_custom.c).
        The pulsing ":" is centered; hours anchor to its left and minutes
@@ -1043,6 +1075,7 @@ lv_obj_t * screen_dim_create(void) {
 void screen_dim_destroy(void) {
     if (!scr_root) return;
     if (refresh_timer) { lv_timer_del(refresh_timer); refresh_timer = NULL; }
+    lbl_rain_alert = NULL;
     lv_obj_t * s = scr_root;
     scr_root = NULL;
     lbl_clock_h = NULL;

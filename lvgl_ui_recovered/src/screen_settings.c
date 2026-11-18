@@ -165,6 +165,10 @@ static void on_forecast_mode_change(lv_event_t * e) {
     settings.forecast_mode = daily ? FORECAST_DAILY : FORECAST_HOURLY;
     settings_save();
 }
+static void on_rain_dim_alert_change(lv_event_t * e) {
+    settings.rain_dim_alert = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    settings_save();
+}
 static void on_weather_feel_change(lv_event_t * e) {
     settings.weather_use_feel = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
     settings_save();
@@ -1212,6 +1216,10 @@ static void open_weather_modal(lv_event_t * e) {
 
     r = panel_row(p, y, tr("Gevoelstemperatuur tonen", "Show feel temperature"), NULL);
     sw_weather_feel = row_switch(r, settings.weather_use_feel, on_weather_feel_change);
+    y += 82;
+
+    r = panel_row(p, y, tr("Regen binnen 15 min op dimscherm", "Rain within 15 min on dim screen"), NULL);
+    row_switch(r, settings.rain_dim_alert, on_rain_dim_alert_change);
     y += 82;
 
     /* City name (cosmetic) + Buienradar GeoNames id (used by the API). */

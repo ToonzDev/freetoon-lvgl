@@ -57,6 +57,8 @@ float weather_hour_display_temp(const weather_hour_t * h) {
  * location search, else the forecast's own location. 0 = unresolved. */
 static double g_cfg_lat = 0.0, g_cfg_lon = 0.0;
 static volatile int g_wx_wake = 0;
+int ui_is_dimmed(void);                /* ui_stack.c */
+static volatile int g_radar_now = 0;   /* weather_radar_refresh_async() */
 static volatile int g_wx_relocate = 0;   /* settings changed: resolve lat/lon again */
 
 /* "51.83" or "51,83" (Dutch decimal comma) -> 51.83; atof stopped at the comma. */
@@ -861,17 +863,28 @@ static void * wx_thread(void * arg) {
            a wake-up (g_wx_wake); confirm the place name meanwhile. */
         int refetch = weather_check_name();
         for (int i = 0; i < 3 && !g_wx_wake && !refetch; i++) {
-            if (fetch_radar_image() == 0)
+            /* No radar traffic while the screen is dimmed or off: nobody sees
+             * the map. Opening the rain screen asks for a fresh one. */
+            g_radar_now = 0;
+            if (ui_is_dimmed())
+                ;
+            else if (fetch_radar_image() == 0)
                 fprintf(stderr, "[wx] radar refreshed (tick %d)\n", radar_tick++);
             else
                 fprintf(stderr, "[wx] radar fetch failed\n");
-            for (int s = 0; s < 5 * 60 && !g_wx_wake; s++)
+            for (int s = 0; s < 5 * 60 && !g_wx_wake && !g_radar_now; s++)
                 sleep(1);
+            if (g_radar_now) { i--; continue; }
             if (!g_wx_wake) refetch = weather_check_name();
         }
         g_wx_wake = 0;
     }
     return NULL;
+}
+
+/* Fetch the radar now (the rain screen opened with a stale map). */
+void weather_radar_refresh_async(void) {
+    g_radar_now = 1;
 }
 
 void weather_relocate_async(void) {

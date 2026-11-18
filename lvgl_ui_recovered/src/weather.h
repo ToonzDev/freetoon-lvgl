@@ -77,6 +77,7 @@ int  weather_start(void);
 /* Location settings changed: re-resolve lat/lon (manual Lat/Lon, else the city)
  * and refetch. */
 void weather_relocate_async(void);
+void weather_radar_refresh_async(void);   /* fetch the radar map now */
 
 /* Resolve a city name to a Buienradar/GeoNames location id (Buienradar
  * location search, Dutch places first). Returns the id or 0 if not found. */

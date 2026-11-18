@@ -478,12 +478,19 @@ static void mock_state(void) {
         static buienradar_rain_snapshot_t r;
         memset(&r, 0, sizeof r);
         r.count_3h = 36;
+        /* times from now (5-min steps), so the outlook sentence is real */
+        time_t now_t = time(NULL);
+        struct tm ntm;
+        localtime_r(&now_t, &ntm);
+        int base = ntm.tm_hour * 60 + (ntm.tm_min / 5) * 5;
+        int shift = getenv("SIM_RAIN_AT") ? atoi(getenv("SIM_RAIN_AT")) / 5 : 12;   /* shower peak, minutes ahead */
         for (int i = 0; i < r.count_3h; i++) {
-            int d = i - 12;
+            int d = i - shift;
             int v = 70 - d * d * 3;
             r.points_3h[i].value = v > 0 ? v : 0;
             r.points_3h[i].mm = r.points_3h[i].value / 20.0f;
-            snprintf(r.points_3h[i].time_str, sizeof r.points_3h[i].time_str, "%02d:%02d", 16 + (i * 5) / 60, (i * 5) % 60);
+            int tm_ = (base + i * 5) % 1440;
+            snprintf(r.points_3h[i].time_str, sizeof r.points_3h[i].time_str, "%02d:%02d", tm_ / 60, tm_ % 60);
         }
         snprintf(r.summary_3h, sizeof r.summary_3h, "Bui rond 17:00");
         r.has_rain_3h = 1;

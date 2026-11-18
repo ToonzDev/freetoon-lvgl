@@ -296,7 +296,6 @@ static lv_obj_t * rain_btn_24h      = NULL;
 static lv_obj_t * rain_chart        = NULL;
 static lv_chart_series_t * rain_ser = NULL;
 static lv_obj_t * rain_lbl_times[5] = {0};
-static int rain_mode_24h            = 0;
 static int s_rain_compact           = 0;
 static lv_obj_t * devices_btn       = NULL;   /* top-right, opens the Devices hub */
 
@@ -844,169 +843,116 @@ static void open_inbox(lv_event_t * e) {
     screen_inbox_show();
 }
 
+/* Rain intensity -> chart height 0..100 on three calm bands (light /
+ * moderate / heavy at 40 / 75), instead of the raw 0..100 Buienradar value. */
+static int rain_y(float mm) {
+    if (mm < 0.1f)  return 0;
+    if (mm < 2.5f)  return 8 + (int)((mm - 0.1f) / 2.4f * 32.0f);
+    if (mm < 10.0f) return 40 + (int)((mm - 2.5f) / 7.5f * 35.0f);
+    if (mm < 30.0f) return 75 + (int)((mm - 10.0f) / 20.0f * 25.0f);
+    return 100;
+}
+
+#define RAIN_TILE_POINTS 49        /* 2 h in 5-min steps, doubled and smoothed */
+
+/* Soft area under the rain line: per segment a fill masked by the line. */
+static void rain_chart_draw_cb(lv_event_t * e) {
+    lv_obj_draw_part_dsc_t * dsc = lv_event_get_draw_part_dsc(e);
+    if (dsc->part != LV_PART_ITEMS || !dsc->p1 || !dsc->p2) return;
+    lv_obj_t * obj = lv_event_get_target(e);
+    lv_draw_mask_line_param_t line_mask;
+    lv_draw_mask_line_points_init(&line_mask, dsc->p1->x, dsc->p1->y, dsc->p2->x, dsc->p2->y,
+                                  LV_DRAW_MASK_LINE_SIDE_BOTTOM);
+    int16_t line_id = lv_draw_mask_add(&line_mask, NULL);
+#ifndef TOON1
+    lv_draw_mask_fade_param_t fade;
+    lv_draw_mask_fade_init(&fade, &obj->coords, LV_OPA_COVER, obj->coords.y1 + lv_obj_get_height(obj) / 4,
+                           LV_OPA_TRANSP, obj->coords.y2);
+    int16_t fade_id = lv_draw_mask_add(&fade, NULL);
+#endif
+    lv_draw_rect_dsc_t r;
+    lv_draw_rect_dsc_init(&r);
+    r.bg_opa = LV_OPA_40;
+    r.bg_color = dsc->line_dsc->color;
+    lv_area_t a;
+    a.x1 = dsc->p1->x;
+    a.x2 = dsc->p2->x - 1;
+    a.y1 = LV_MIN(dsc->p1->y, dsc->p2->y);
+    a.y2 = obj->coords.y2;
+    if (a.x2 >= a.x1) lv_draw_rect(dsc->draw_ctx, &r, &a);
+    lv_draw_mask_free_param(&line_mask);
+    lv_draw_mask_remove_id(line_id);
+#ifndef TOON1
+    lv_draw_mask_free_param(&fade);
+    lv_draw_mask_remove_id(fade_id);
+#endif
+}
+
 static void update_rain_tile_ui(void) {
     if (!tile_rain) return;
     buienradar_rain_snapshot_t snap;
     buienradar_rain_get_snapshot(&snap);
 
-    if (rain_btn_3h) {
-        ui_obj_set_style_border_width(rain_btn_3h, (!rain_mode_24h) ? 2 : 0, 0);
-        ui_obj_set_style_border_color(rain_btn_3h, lv_color_hex(THEME_TEXT_HI), 0);
-        ui_obj_set_style_bg_color(rain_btn_3h, lv_color_hex((!rain_mode_24h) ? THEME_ACCENT_FILL : THEME_BTN_BG), 0);
-        lv_obj_t * bl = lv_obj_get_child(rain_btn_3h, 0);
-        if (bl) ui_obj_set_style_text_color(bl, lv_color_hex((!rain_mode_24h) ? THEME_ON_ACCENT : THEME_TEXT_DIM), 0);
-    }
-    if (rain_btn_24h) {
-        ui_obj_set_style_border_width(rain_btn_24h, (rain_mode_24h) ? 2 : 0, 0);
-        ui_obj_set_style_border_color(rain_btn_24h, lv_color_hex(THEME_TEXT_HI), 0);
-        ui_obj_set_style_bg_color(rain_btn_24h, lv_color_hex((rain_mode_24h) ? THEME_ACCENT_FILL : THEME_BTN_BG), 0);
-        lv_obj_t * bl = lv_obj_get_child(rain_btn_24h, 0);
-        if (bl) ui_obj_set_style_text_color(bl, lv_color_hex((rain_mode_24h) ? THEME_ON_ACCENT : THEME_TEXT_DIM), 0);
+    /* One sentence: "Droog tot 14:20", "Over 10 min lichte regen" ... */
+    if (rain_lbl_summary) {
+        char sentence[64];
+        buienradar_rain_outlook(&snap, sentence, sizeof sentence);
+        ui_label_set_text(rain_lbl_summary, sentence[0] ? sentence
+                          : (snap.is_valid ? tr("Geen actuele gegevens", "No current data")
+                                           : tr("Laden...", "Loading...")));
     }
 
-    int has_rain = (!rain_mode_24h) ? snap.has_rain_3h : snap.has_rain_24h;
+    /* Next two hours from now, 25 points at 5 min, doubled + smoothed. */
+    if (rain_chart && rain_ser) {
+        int raw[25] = {0};
+        char t0[8] = "";
+        time_t tn = time(NULL);
+        struct tm tm;
+        localtime_r(&tn, &tm);
+        int now_min = tm.tm_hour * 60 + tm.tm_min;
+        int k = 0;
+        for (int i = 0; i < snap.count_3h && k < 25; i++) {
+            int h = 0, m = 0;
+            if (sscanf(snap.points_3h[i].time_str, "%d:%d", &h, &m) != 2) continue;
+            int d = h * 60 + m - now_min;
+            while (d < -720) d += 1440;
+            while (d >= 720) d -= 1440;
+            if (d < -4) continue;
+            if (k == 0) snprintf(t0, sizeof t0, "%s", snap.points_3h[i].time_str);
+            raw[k++] = rain_y(snap.points_3h[i].mm);
+        }
+        int up[RAIN_TILE_POINTS];
+        for (int i = 0; i < RAIN_TILE_POINTS; i++) {
+            int a = raw[i / 2], b2 = raw[(i + 1) / 2 < 25 ? (i + 1) / 2 : 24];
+            up[i] = (i % 2) ? (a + b2) / 2 : a;
+        }
+        lv_chart_set_point_count(rain_chart, RAIN_TILE_POINTS);
+        for (int i = 0; i < RAIN_TILE_POINTS; i++) {
+            int l = up[i > 0 ? i - 1 : 0], c = up[i], r = up[i < RAIN_TILE_POINTS - 1 ? i + 1 : i];
+            rain_ser->y_points[i] = (l + 2 * c + r) / 4;
+        }
+        lv_chart_refresh(rain_chart);
 
-    if (rain_lbl_empty) {
-        if (snap.is_valid && !has_rain) {
-            ui_label_set_text(rain_lbl_empty, rain_mode_24h ?
-                              tr("Geen neerslag verwacht (24u)", "No rain expected (24h)") :
-                              tr("Geen neerslag verwacht", "No rain expected"));
-            ui_obj_clear_flag(rain_lbl_empty, LV_OBJ_FLAG_HIDDEN);
-            if (rain_lbl_summary) ui_obj_add_flag(rain_lbl_summary, LV_OBJ_FLAG_HIDDEN);
-            if (rain_chart) ui_obj_add_flag(rain_chart, LV_OBJ_FLAG_HIDDEN);
-            for (int i = 0; i < 3; i++) {
-                if (rain_thresh_lbl[i]) ui_obj_add_flag(rain_thresh_lbl[i], LV_OBJ_FLAG_HIDDEN);
+        /* Half-hour labels: Nu, then the clock time every 30 min. */
+        int h0 = 0, m0 = 0;
+        if (sscanf(t0, "%d:%d", &h0, &m0) != 2) { h0 = tm.tm_hour; m0 = (tm.tm_min / 5) * 5; }
+        int chart_w = lv_obj_get_width(rain_chart);
+        for (int i = 0; i < 5; i++) {
+            if (!rain_lbl_times[i]) continue;
+            if (i == 0) ui_label_set_text(rain_lbl_times[i], tr("Nu", "Now"));
+            else {
+                int mm_ = (h0 * 60 + m0 + i * 30) % 1440;
+                ui_label_set_text_fmt(rain_lbl_times[i], "%02d:%02d", mm_ / 60, mm_ % 60);
             }
-            for (int i = 0; i < 5; i++) {
-                if (rain_lbl_times[i]) ui_obj_add_flag(rain_lbl_times[i], LV_OBJ_FLAG_HIDDEN);
-            }
-        } else {
-            ui_obj_add_flag(rain_lbl_empty, LV_OBJ_FLAG_HIDDEN);
-            if (rain_lbl_summary) {
-                if (s_rain_compact) ui_obj_add_flag(rain_lbl_summary, LV_OBJ_FLAG_HIDDEN);
-                else ui_obj_clear_flag(rain_lbl_summary, LV_OBJ_FLAG_HIDDEN);
-            }
-            if (rain_chart) ui_obj_clear_flag(rain_chart, LV_OBJ_FLAG_HIDDEN);
-            for (int i = 0; i < 3; i++) {
-                if (rain_thresh_lbl[i]) ui_obj_clear_flag(rain_thresh_lbl[i], LV_OBJ_FLAG_HIDDEN);
-            }
-            for (int i = 0; i < 5; i++) {
-                if (rain_lbl_times[i]) ui_obj_clear_flag(rain_lbl_times[i], LV_OBJ_FLAG_HIDDEN);
-            }
+            ui_obj_clear_flag(rain_lbl_times[i], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_update_layout(rain_lbl_times[i]);
+            lv_coord_t w = lv_obj_get_width(rain_lbl_times[i]);
+            if (i == 0)      lv_obj_align_to(rain_lbl_times[i], rain_chart, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 2);
+            else if (i == 4) lv_obj_align_to(rain_lbl_times[i], rain_chart, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, 2);
+            else             lv_obj_align_to(rain_lbl_times[i], rain_chart, LV_ALIGN_OUT_BOTTOM_LEFT,
+                                             (chart_w * i) / 4 - w / 2, 2);
         }
     }
-
-    if (!rain_mode_24h) {
-        if (rain_chart) {
-            lv_chart_set_div_line_count(rain_chart, 4, 4);
-        }
-        if (rain_lbl_summary) {
-            ui_label_set_text(rain_lbl_summary, snap.summary_3h[0] ? snap.summary_3h : tr("Laden...", "Loading..."));
-        }
-        if (rain_chart && rain_ser) {
-            int n = snap.count_3h;
-            if (n <= 0) n = 38;
-            lv_chart_set_point_count(rain_chart, n);
-            for (int i = 0; i < n; i++) {
-                int v = (i < snap.count_3h) ? snap.points_3h[i].value : 0;
-                rain_ser->y_points[i] = v;
-            }
-            lv_chart_refresh(rain_chart);
-        }
-        if (snap.count_3h > 0) {
-            int n = snap.count_3h;
-            if (rain_lbl_times[0]) ui_label_set_text(rain_lbl_times[0], tr("Nu", "Now"));
-            if (rain_lbl_times[1]) ui_label_set_text(rain_lbl_times[1], snap.points_3h[n / 3].time_str);
-            if (rain_lbl_times[2]) ui_label_set_text(rain_lbl_times[2], snap.points_3h[2 * n / 3].time_str);
-            if (rain_lbl_times[3]) ui_label_set_text(rain_lbl_times[3], snap.points_3h[n - 1].time_str);
-            if (rain_lbl_times[4]) ui_obj_add_flag(rain_lbl_times[4], LV_OBJ_FLAG_HIDDEN);
-
-            if (rain_chart) {
-                int chart_w = lv_obj_get_width(rain_chart);
-                for (int i = 0; i < 4; i++) {
-                    if (!rain_lbl_times[i]) continue;
-                    ui_obj_clear_flag(rain_lbl_times[i], LV_OBJ_FLAG_HIDDEN);
-                    lv_obj_update_layout(rain_lbl_times[i]);
-                    if (i == 0) {
-                        lv_obj_align_to(rain_lbl_times[i], rain_chart, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 2);
-                    } else if (i == 3) {
-                        lv_obj_align_to(rain_lbl_times[i], rain_chart, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, 2);
-                    } else {
-                        lv_coord_t w = lv_obj_get_width(rain_lbl_times[i]);
-                        lv_obj_align_to(rain_lbl_times[i], rain_chart, LV_ALIGN_OUT_BOTTOM_LEFT, (chart_w * i) / 3 - w / 2, 2);
-                    }
-                }
-            }
-        }
-    } else {
-        if (rain_chart) {
-            lv_chart_set_div_line_count(rain_chart, 4, 5);
-        }
-        if (rain_lbl_summary) {
-            ui_label_set_text(rain_lbl_summary, snap.summary_24h[0] ? snap.summary_24h : tr("Laden...", "Loading..."));
-        }
-        if (rain_chart && rain_ser) {
-            int n = snap.count_24h;
-            if (n <= 0) n = 24;
-            lv_chart_set_point_count(rain_chart, n);
-            for (int i = 0; i < n; i++) {
-                int v = (i < snap.count_24h) ? snap.points_24h[i].value : 0;
-                rain_ser->y_points[i] = v;
-            }
-            lv_chart_refresh(rain_chart);
-        }
-        if (snap.count_24h > 0) {
-            int n = snap.count_24h;
-            int idxs[5] = { 0, 6, 12, 18, 24 };
-            int chart_w = rain_chart ? lv_obj_get_width(rain_chart) : 0;
-
-            for (int i = 0; i < 5; i++) {
-                if (!rain_lbl_times[i]) continue;
-                ui_obj_clear_flag(rain_lbl_times[i], LV_OBJ_FLAG_HIDDEN);
-                int idx = idxs[i];
-                char hbuf[8] = "";
-                const char * ts = "";
-                if (idx < n) {
-                    ts = snap.points_24h[idx].time_str;
-                } else if (idx == 24 && snap.points_24h[24].time_str[0]) {
-                    ts = snap.points_24h[24].time_str;
-                } else {
-                    ts = snap.points_24h[0].time_str;
-                }
-
-                if (ts[0]) {
-                    snprintf(hbuf, sizeof(hbuf), "%.2s", ts);
-                } else {
-                    snprintf(hbuf, sizeof(hbuf), "%02d", (i * 6) % 24);
-                }
-                ui_label_set_text(rain_lbl_times[i], hbuf);
-                lv_obj_update_layout(rain_lbl_times[i]);
-
-                if (rain_chart) {
-                    if (i == 0) {
-                        lv_obj_align_to(rain_lbl_times[i], rain_chart, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 2);
-                    } else if (i == 4) {
-                        lv_obj_align_to(rain_lbl_times[i], rain_chart, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, 2);
-                    } else {
-                        lv_coord_t w = lv_obj_get_width(rain_lbl_times[i]);
-                        lv_obj_align_to(rain_lbl_times[i], rain_chart, LV_ALIGN_OUT_BOTTOM_LEFT, (chart_w * i) / 4 - w / 2, 2);
-                    }
-                }
-            }
-        }
-    }
-}
-
-static void on_rain_toggle_3h(lv_event_t * e) {
-    (void)e;
-    rain_mode_24h = 0;
-    update_rain_tile_ui();
-}
-
-static void on_rain_toggle_24h(lv_event_t * e) {
-    (void)e;
-    rain_mode_24h = 1;
-    update_rain_tile_ui();
 }
 
 /* ---------- refresh timer ---------- */
@@ -5352,131 +5298,80 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_add_event_cb(tile_rain, open_forecast, LV_EVENT_CLICKED, NULL);
     if (!rt_show) ui_obj_add_flag(tile_rain, LV_OBJ_FLAG_HIDDEN);
 
-    /* Header row: Droplet icon + "Neerslag" title + 3u/24u buttons */
-    lv_obj_t * r_hdr = lv_obj_create(tile_rain);
-    lv_obj_set_size(r_hdr, LV_PCT(100), 28);
-    ui_obj_align(r_hdr, LV_ALIGN_TOP_MID, 0, 0);
-    ui_obj_set_style_bg_opa(r_hdr, LV_OPA_TRANSP, 0);
-    ui_obj_set_style_border_width(r_hdr, 0, 0);
-    lv_obj_set_style_pad_all(r_hdr, 0, 0);
-    ui_obj_clear_flag(r_hdr, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-
-    lv_obj_t * r_icon = lv_img_create(r_hdr);
-    ui_img_set_src(r_icon, &icon_drop);
-    lv_img_set_zoom(r_icon, 160);
-    ui_obj_set_style_img_recolor(r_icon, lv_color_hex(RAIN_BLUE), 0);
-    ui_obj_set_style_img_recolor_opa(r_icon, 255, 0);
-    ui_obj_align(r_icon, LV_ALIGN_LEFT_MID, 2, 0);
-
-    rain_lbl_title = lv_label_create(r_hdr);
-    ui_obj_set_style_text_color(rain_lbl_title, lv_color_hex(COL_TEXT_HI), 0);
-    ui_obj_set_style_text_font(rain_lbl_title, SF(16), 0);
+    /* Quiet tile (design 1.1): small title, one sentence, the next two
+     * hours as a soft line on three bands. Tap = the full rain screen. */
+    rain_lbl_title = lv_label_create(tile_rain);
+    ui_obj_set_style_text_color(rain_lbl_title, lv_color_hex(COL_TEXT_DIM), 0);
+    ui_obj_set_style_text_font(rain_lbl_title, THEME_FONT_LABEL, 0);
+    lv_obj_set_style_text_letter_space(rain_lbl_title, THEME_LABEL_TRACK, 0);
     ui_label_set_text(rain_lbl_title, tr("Neerslag", "Rain"));
-    lv_obj_align_to(rain_lbl_title, r_icon, LV_ALIGN_OUT_RIGHT_MID, 6, 0);
+    ui_obj_align(rain_lbl_title, LV_ALIGN_TOP_LEFT, 2, 2);
 
-    /* Toggle buttons: 3u and 24u */
-    rain_btn_24h = lv_btn_create(r_hdr);
-    lv_obj_set_size(rain_btn_24h, 42, 22);
-    ui_obj_align(rain_btn_24h, LV_ALIGN_RIGHT_MID, -2, 0);
-    lv_obj_set_style_radius(rain_btn_24h, 6, 0);
-    lv_obj_set_ext_click_area(rain_btn_24h, 6);
-    lv_obj_add_event_cb(rain_btn_24h, on_rain_toggle_24h, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * l24 = lv_label_create(rain_btn_24h);
-    ui_label_set_text(l24, "24u");
-    ui_obj_set_style_text_font(l24, SF(13), 0);
-    lv_obj_center(l24);
-
-    rain_btn_3h = lv_btn_create(r_hdr);
-    lv_obj_set_size(rain_btn_3h, 42, 22);
-    lv_obj_align_to(rain_btn_3h, rain_btn_24h, LV_ALIGN_OUT_LEFT_MID, -6, 0);
-    lv_obj_set_style_radius(rain_btn_3h, 6, 0);
-    lv_obj_set_ext_click_area(rain_btn_3h, 6);
-    lv_obj_add_event_cb(rain_btn_3h, on_rain_toggle_3h, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * l3 = lv_label_create(rain_btn_3h);
-    ui_label_set_text(l3, "3u");
-    ui_obj_set_style_text_font(l3, SF(13), 0);
-    lv_obj_center(l3);
-
-    /* Subtitle (summary text) - hidden on compact tiles (e.g. 3x2) */
     rain_lbl_summary = lv_label_create(tile_rain);
-    ui_obj_set_style_text_color(rain_lbl_summary, lv_color_hex(COL_TEXT_DIM), 0);
-    ui_obj_set_style_text_font(rain_lbl_summary, SF(14), 0);
-    lv_obj_set_width(rain_lbl_summary, rtw - 16);
+    ui_obj_set_style_text_color(rain_lbl_summary, lv_color_hex(COL_TEXT_HI), 0);
+    ui_obj_set_style_text_font(rain_lbl_summary, s_rain_compact ? SF(18) : SF(22), 0);
+    lv_obj_set_width(rain_lbl_summary, rtw - 20);
     lv_label_set_long_mode(rain_lbl_summary, LV_LABEL_LONG_DOT);
     ui_label_set_text(rain_lbl_summary, tr("Laden...", "Loading..."));
-    ui_obj_align(rain_lbl_summary, LV_ALIGN_TOP_LEFT, 6, 32);
-    if (s_rain_compact) {
-        ui_obj_add_flag(rain_lbl_summary, LV_OBJ_FLAG_HIDDEN);
-    }
+    ui_obj_align(rain_lbl_summary, LV_ALIGN_TOP_LEFT, 2, 22);
 
-    /* Chart */
+    /* Chart: transparent, no grid; the bands are two hairlines. */
     rain_chart = lv_chart_create(tile_rain);
-    int label_w = (rtw > 180) ? 44 : 0;
+    int label_w = (rtw > 200) ? SX(50) : 0;          /* band names on the right */
     int chart_w = rtw - 16 - label_w;
-    int chart_h;
-    if (s_rain_compact) {
-        chart_h = rth - 84;
-        if (chart_h > 60) chart_h = 60;
-        if (chart_h < 40) chart_h = 40;
-    } else {
-        chart_h = rth - 92;
-        if (chart_h < 50) chart_h = 50;
-    }
+    int top = s_rain_compact ? 46 : 56;
+    int chart_h = rth - 16 - top - 18;
+    if (chart_h < 36) chart_h = 36;
     lv_obj_set_size(rain_chart, chart_w, chart_h);
-    ui_obj_align(rain_chart, LV_ALIGN_BOTTOM_RIGHT, -4, -20);
-    ui_obj_set_style_bg_color(rain_chart, lv_color_hex(THEME_ROW_BG_ALT), 0);
-    ui_obj_set_style_border_color(rain_chart, lv_color_hex(THEME_BORDER), 0);
-    ui_obj_set_style_border_width(rain_chart, 1, 0);
-    lv_obj_set_style_radius(rain_chart, 8, 0);
-    lv_obj_set_style_pad_ver(rain_chart, 2, 0);
-    lv_obj_set_style_pad_hor(rain_chart, 0, 0);
+    ui_obj_align(rain_chart, LV_ALIGN_TOP_LEFT, 0, top);
+    ui_obj_set_style_bg_opa(rain_chart, LV_OPA_TRANSP, 0);
+    ui_obj_set_style_border_width(rain_chart, 0, 0);
+    lv_obj_set_style_pad_all(rain_chart, 0, 0);
     ui_obj_clear_flag(rain_chart, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-
-    lv_chart_set_type(rain_chart, LV_CHART_TYPE_BAR);
+    lv_chart_set_type(rain_chart, LV_CHART_TYPE_LINE);
     lv_chart_set_range(rain_chart, LV_CHART_AXIS_PRIMARY_Y, 0, 100);
-    lv_chart_set_div_line_count(rain_chart, 4, 4);
-    ui_obj_set_style_line_color(rain_chart, lv_color_hex(THEME_BORDER), LV_PART_MAIN);
-    lv_obj_set_style_line_opa(rain_chart, LV_OPA_50, LV_PART_MAIN);
-    lv_obj_set_style_pad_column(rain_chart, 1, LV_PART_MAIN);
-    lv_obj_set_style_radius(rain_chart, 2, LV_PART_ITEMS);
+    lv_chart_set_div_line_count(rain_chart, 0, 0);
+    lv_obj_set_style_size(rain_chart, 0, LV_PART_INDICATOR);        /* no point dots */
+    lv_obj_set_style_line_width(rain_chart, 3, LV_PART_ITEMS);
+    lv_obj_set_style_line_rounded(rain_chart, true, LV_PART_ITEMS);
+    rain_ser = lv_chart_add_series(rain_chart, lv_color_hex(THEME_INFO), LV_CHART_AXIS_PRIMARY_Y);
+    lv_obj_add_event_cb(rain_chart, rain_chart_draw_cb, LV_EVENT_DRAW_PART_BEGIN, NULL);
+    lv_chart_set_point_count(rain_chart, RAIN_TILE_POINTS);
 
-    rain_ser = lv_chart_add_series(rain_chart, lv_color_hex(RAIN_BLUE), LV_CHART_AXIS_PRIMARY_Y);
-
-    static const char * thresh_names[] = {"Zwaar", "Matig", "Licht"};
+    /* band hairlines at the light/moderate and moderate/heavy borders + base */
+    static const int band_y[3] = { 40, 75, 0 };
     for (int i = 0; i < 3; i++) {
-        if (label_w > 0) {
-            rain_thresh_lbl[i] = lv_label_create(tile_rain);
-            ui_obj_set_style_text_color(rain_thresh_lbl[i], lv_color_hex(COL_TEXT_DIM), 0);
-            ui_obj_set_style_text_font(rain_thresh_lbl[i], SF(11), 0);
-            ui_label_set_text(rain_thresh_lbl[i], thresh_names[i]);
-            int y_off = (chart_h * i) / 3 - 6;
-            lv_obj_align_to(rain_thresh_lbl[i], rain_chart, LV_ALIGN_OUT_LEFT_TOP, -4, y_off);
-        } else {
-            rain_thresh_lbl[i] = NULL;
-        }
+        lv_obj_t * ln = lv_obj_create(tile_rain);
+        lv_obj_remove_style_all(ln);
+        lv_obj_set_size(ln, chart_w, 1);
+        ui_obj_set_style_bg_color(ln, lv_color_hex(THEME_DIVIDER), 0);
+        lv_obj_set_style_bg_opa(ln, LV_OPA_COVER, 0);
+        ui_obj_align(ln, LV_ALIGN_TOP_LEFT, 0, top + chart_h - 1 - (chart_h - 1) * band_y[i] / 100);
+        ui_obj_clear_flag(ln, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_move_background(ln);
+    }
+    static const char * band_nl[3] = { "zwaar", "matig", "licht" };
+    static const char * band_en[3] = { "heavy", "moderate", "light" };
+    static const int band_mid[3] = { 88, 57, 20 };
+    for (int i = 0; i < 3; i++) {
+        rain_thresh_lbl[i] = NULL;
+        if (!label_w) continue;
+        rain_thresh_lbl[i] = lv_label_create(tile_rain);
+        ui_obj_set_style_text_color(rain_thresh_lbl[i], lv_color_hex(THEME_TEXT_MUTED), 0);
+        ui_obj_set_style_text_font(rain_thresh_lbl[i], SF(12), 0);
+        ui_label_set_text(rain_thresh_lbl[i], settings.language == LANG_EN ? band_en[i] : band_nl[i]);
+        ui_obj_align(rain_thresh_lbl[i], LV_ALIGN_TOP_RIGHT, 0,
+                     top + (chart_h - 1) * (100 - band_mid[i]) / 100 - 7);
     }
 
-    /* Time markers under chart */
+    /* Half-hour labels under the chart */
     for (int i = 0; i < 5; i++) {
         rain_lbl_times[i] = lv_label_create(tile_rain);
         ui_obj_set_style_text_color(rain_lbl_times[i], lv_color_hex(COL_TEXT_DIM), 0);
         ui_obj_set_style_text_font(rain_lbl_times[i], SF(12), 0);
         ui_label_set_text(rain_lbl_times[i], "");
-        if (i == 0) {
-            lv_obj_align_to(rain_lbl_times[i], rain_chart, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 2);
-        } else if (i == 4) {
-            lv_obj_align_to(rain_lbl_times[i], rain_chart, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, 2);
-        } else {
-            lv_obj_align_to(rain_lbl_times[i], rain_chart, LV_ALIGN_OUT_BOTTOM_LEFT, (chart_w * i) / 4 - 6, 2);
-        }
     }
-
-    rain_lbl_empty = lv_label_create(tile_rain);
-    ui_obj_set_style_text_color(rain_lbl_empty, lv_color_hex(COL_TEXT_HI), 0);
-    ui_obj_set_style_text_font(rain_lbl_empty, SF(15), 0);
-    ui_label_set_text(rain_lbl_empty, tr("Geen neerslag verwacht", "No rain expected"));
-    ui_obj_align(rain_lbl_empty, LV_ALIGN_CENTER, 0, 15);
-    ui_obj_add_flag(rain_lbl_empty, LV_OBJ_FLAG_HIDDEN);
+    rain_lbl_empty = NULL;
 
     /* Gear in the very top-right corner of the screen. */
     lv_coord_t gear_sz = HOME_GEAR_SZ;

@@ -1,6 +1,8 @@
 #include "buienradar_rain.h"
 #include "settings.h"
 #include "weather.h"
+#include "i18n.h"
+#include <time.h>
 #include "http.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -304,6 +306,85 @@ void buienradar_rain_get_snapshot(buienradar_rain_snapshot_t * out) {
     pthread_mutex_unlock(&s_rain_mtx);
 }
 
+
+/* ---- plain-language outlook ------------------------------------------------
+ * The 3-hour curve as one sentence ("Droog tot 14:20", "Over 10 min lichte
+ * regen", "Regen stopt rond 15:05"), computed against the clock each time it
+ * is shown, so "over 10 min" counts down between fetches. */
+int buienradar_rain_level(float mm) {
+    if (mm < 0.1f)  return 0;
+    if (mm < 2.5f)  return 1;     /* light (KNMI) */
+    if (mm < 10.0f) return 2;     /* moderate */
+    return 3;                     /* heavy */
+}
+
+/* minutes from now to "HH:MM" (today), wrapped into -720..719 */
+static int delta_min(const char * hhmm, int now_min) {
+    int h = 0, m = 0;
+    if (!hhmm || sscanf(hhmm, "%d:%d", &h, &m) != 2) return 9999;
+    int d = h * 60 + m - now_min;
+    while (d < -720) d += 1440;
+    while (d >= 720) d -= 1440;
+    return d;
+}
+
+int buienradar_rain_outlook(const buienradar_rain_snapshot_t * s, char * buf, int len) {
+    if (buf && len) buf[0] = 0;
+    if (!s || !s->is_valid || s->count_3h <= 0) return -1;
+    time_t t = time(NULL);
+    struct tm tm;
+    localtime_r(&t, &tm);
+    int now_min = tm.tm_hour * 60 + tm.tm_min;
+
+    int now_i = -1, start_i = -1, stop_i = -1, last_d = -9999, peak = 0;
+    for (int i = 0; i < s->count_3h; i++) {
+        int d = delta_min(s->points_3h[i].time_str, now_min);
+        if (d == 9999 || d < -4) continue;          /* history */
+        if (now_i < 0) now_i = i;
+        last_d = d;
+        int lv = buienradar_rain_level(s->points_3h[i].mm);
+        if (i == now_i && lv > 0) start_i = i;
+        if (start_i < 0 && lv > 0) start_i = i;
+        if (start_i >= 0 && stop_i < 0 && i > start_i && lv == 0) stop_i = i;
+        if (start_i >= 0 && stop_i < 0 && lv > peak) peak = lv;
+    }
+    if (now_i < 0) return -1;                       /* data too old */
+    static const char * adj_nl[4] = { "", "lichte", "matige", "zware" };
+    static const char * adj_en[4] = { "", "light", "moderate", "heavy" };
+    static const char * cap_nl[4] = { "", "Lichte", "Matige", "Zware" };
+    static const char * cap_en[4] = { "", "Light", "Moderate", "Heavy" };
+    int en = settings.language == LANG_EN;
+
+    if (start_i < 0) {
+        if (buf) snprintf(buf, len, en ? "Dry for the next %d hours" : "Droog de komende %d uur",
+                          last_d >= 150 ? 3 : 2);
+        return -1;
+    }
+    int ds = delta_min(s->points_3h[start_i].time_str, now_min);
+    if (start_i == now_i || ds <= 0) {
+        if (buf) {
+            if (stop_i >= 0)
+                snprintf(buf, len, en ? "%s rain, stops around %s" : "%s regen, stopt rond %s",
+                         en ? cap_en[peak] : cap_nl[peak], s->points_3h[stop_i].time_str);
+            else
+                snprintf(buf, len, en ? "%s rain for a while" : "%s regen, houdt aan",
+                         en ? cap_en[peak] : cap_nl[peak]);
+        }
+        return 0;
+    }
+    if (buf) {
+        if (ds <= 60) {
+            int m5 = ((ds + 2) / 5) * 5;
+            if (m5 < 5) m5 = 5;
+            if (en) snprintf(buf, len, "%s rain in %d min", cap_en[peak], m5);
+            else    snprintf(buf, len, "Over %d min %s regen", m5, adj_nl[peak]);
+        } else {
+            snprintf(buf, len, en ? "Dry until %s" : "Droog tot %s", s->points_3h[start_i].time_str);
+        }
+    }
+    (void)adj_en;
+    return ds;
+}
 
 #ifdef SIM
 /* Headless sim: install a rain snapshot (SIM_RAIN in sim.c). */

@@ -428,6 +428,10 @@ typedef struct {
     int   boost_prev_centi;         /* setpoint before the boost */
     int   boost_prev_manual;        /* 1 = was manual: restore that setpoint */
     int   holiday_until;            /* holiday (Away, held) ends, programme resumes */
+
+    /* Dim screen: a quiet line when rain starts within 15 minutes (or it is
+     * raining), from the Buienradar 3-hour curve. Off by default. */
+    int   rain_dim_alert;
 } settings_t;
 
 #define FORECAST_AUTO   0

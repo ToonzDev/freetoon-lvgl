@@ -24,6 +24,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <time.h>
 
 static lv_obj_t * scr_root = NULL;
 static lv_obj_t * lbl_title;
@@ -71,6 +72,84 @@ static lv_obj_t * fc_rain_lbl_status = NULL;
 static lv_obj_t * fc_rain_lbl_empty = NULL;
 static lv_obj_t * fc_thresh_lbl[3] = {0};
 static lv_obj_t * fc_rain_lbl_times[5] = {0};
+static lv_obj_t * lbl_rain_now = NULL;      /* "Over 10 min lichte regen" */
+
+/* ---- radar player -----------------------------------------------------------
+ * We drive the radar GIF's frames ourselves (lv_gif's own timer stays paused):
+ * it plays by itself, holds the last frame a moment, and can be paused and
+ * scrubbed with a slider. The frame count is taken once per new GIF (decoding
+ * it once with loop_count = 1); a seek rewinds and decodes up to the frame,
+ * which for Buienradar's ~6 frames is cheap even on a Toon 1. Only runs while
+ * this screen is on top and the radar view is showing. */
+static lv_obj_t *   radar_bar = NULL, * radar_btn = NULL, * radar_btn_lbl = NULL, * radar_slider = NULL;
+static lv_timer_t * radar_play_timer = NULL;
+static int radar_n = 0, radar_i = 0, radar_playing = 1;
+
+static void radar_render(void) {
+    lv_gif_t * g = (lv_gif_t *)radar_img;
+    gd_render_frame(g->gif, (uint8_t *)g->imgdsc.data);
+    lv_img_cache_invalidate_src(lv_img_get_src(radar_img));
+    lv_obj_invalidate(radar_img);
+}
+static void radar_seek(int k) {
+    lv_gif_t * g = radar_img ? (lv_gif_t *)radar_img : NULL;
+    if (!g || !g->gif || radar_n <= 0) return;
+    if (k < 0) k = 0;
+    if (k >= radar_n) k = radar_n - 1;
+    gd_rewind(g->gif);
+    for (int i = 0; i <= k; i++) if (gd_get_frame(g->gif) != 1) break;
+    radar_i = k;
+    radar_render();
+    if (radar_slider) lv_slider_set_value(radar_slider, k, LV_ANIM_OFF);
+}
+/* After a (re)load: count frames, stop lv_gif's timer, show the last frame
+ * (the newest radar) and start playing from the first. */
+static void radar_after_load(void) {
+    lv_gif_t * g = radar_img ? (lv_gif_t *)radar_img : NULL;
+    if (!g || !g->gif) { radar_n = 0; return; }
+    if (g->timer) lv_timer_pause(g->timer);
+    g->gif->loop_count = 1;                  /* gd_get_frame returns 0 at the end */
+    gd_rewind(g->gif);
+    int n = 0;
+    while (n < 48 && gd_get_frame(g->gif) == 1) n++;
+    radar_n = n;
+    if (radar_slider) {
+        lv_slider_set_range(radar_slider, 0, n > 1 ? n - 1 : 1);
+        if (n > 1) lv_obj_clear_flag(radar_bar, LV_OBJ_FLAG_HIDDEN);
+        else       lv_obj_add_flag(radar_bar, LV_OBJ_FLAG_HIDDEN);
+    }
+    radar_seek(0);
+}
+static void radar_btn_paint(void) {
+    if (radar_btn_lbl) lv_label_set_text(radar_btn_lbl, radar_playing ? LV_SYMBOL_PAUSE : LV_SYMBOL_PLAY);
+}
+static void radar_play_cb(lv_timer_t * t) {
+    if (!scr_root || lv_scr_act() != scr_root || fc_view_mode != 0 || !radar_playing || radar_n < 2) return;
+    /* ~0.7 s per frame, the newest frame held for 2 s */
+    static uint32_t hold = 0;
+    if (radar_i == radar_n - 1) {
+        if (++hold < 3) return;
+        hold = 0;
+        radar_seek(0);
+        return;
+    }
+    lv_gif_t * g = (lv_gif_t *)radar_img;
+    if (gd_get_frame(g->gif) != 1) { radar_seek(0); return; }
+    radar_i++;
+    radar_render();
+    if (radar_slider) lv_slider_set_value(radar_slider, radar_i, LV_ANIM_OFF);
+    (void)t;
+}
+static void on_radar_btn(lv_event_t * e) {
+    (void)e;
+    radar_playing = !radar_playing;
+    radar_btn_paint();
+}
+static void on_radar_slider(lv_event_t * e) {
+    radar_playing = 0;
+    radar_btn_paint();
+    radar_seek(lv_slider_get_value(lv_event_get_target(e)));
+}
 
 static void update_forecast_view_mode(void) {
     if (!scr_root) return;
@@ -89,8 +168,7 @@ static void update_forecast_view_mode(void) {
     if (fc_view_mode == 0) {
         if (radar_img) {
             lv_obj_clear_flag(radar_img, LV_OBJ_FLAG_HIDDEN);
-            lv_gif_t * g = (lv_gif_t *)radar_img;
-            if (g->timer) lv_timer_resume(g->timer);
+            /* frames are driven by radar_play_cb */
         }
         if (fc_rain_cont) lv_obj_add_flag(fc_rain_cont, LV_OBJ_FLAG_HIDDEN);
     } else {
@@ -238,6 +316,21 @@ static void on_day_card_clicked(lv_event_t * e) {
     screen_weather_hourly_show(day_idx);
 }
 
+static void refresh_cb(lv_timer_t * t);
+static void on_screen_loaded(lv_event_t * e) {
+    (void)e;
+    /* the radar is not fetched while the screen is dimmed: get a fresh one */
+    struct stat st;
+    if (stat(RADAR_FILE, &st) != 0 || time(NULL) - st.st_mtime > 5 * 60)
+        weather_radar_refresh_async();
+    refresh_cb(NULL);
+}
+static void on_back(lv_event_t * e);
+static void on_swipe_close(lv_event_t * e) {
+    lv_dir_t d = lv_indev_get_gesture_dir(lv_indev_get_act());
+    if (d == LV_DIR_BOTTOM || d == LV_DIR_RIGHT) on_back(e);
+}
+
 static void on_back(lv_event_t * e) {
     (void)e;
     if (radar_img) {
@@ -258,11 +351,17 @@ static void refresh_cb(lv_timer_t * t) {
         return;
     }
     if (radar_img && fc_view_mode == 0) {
-        lv_gif_t * g = (lv_gif_t *)radar_img;
-        if (g->timer) lv_timer_resume(g->timer);
+        /* frames are driven by radar_play_cb */
     }
     if (fc_view_mode != 0) {
         update_forecast_view_mode();
+    }
+    if (lbl_rain_now) {
+        buienradar_rain_snapshot_t rs;
+        buienradar_rain_get_snapshot(&rs);
+        char sentence[64];
+        buienradar_rain_outlook(&rs, sentence, sizeof sentence);
+        lv_label_set_text(lbl_rain_now, sentence);
     }
     weather_state_t wx;
     weather_get_snapshot(&wx);
@@ -277,6 +376,7 @@ static void refresh_cb(lv_timer_t * t) {
         lv_obj_center(radar_img);
         radar_loaded = 1;
         radar_note_loaded();
+        radar_after_load();
     }
 
     int show_hourly = settings.forecast_mode != FORECAST_DAILY
@@ -348,8 +448,7 @@ static int scr_light_mode = -1;   /* cached UI theme (settings.ui_theme) */
 lv_obj_t * screen_forecast_create(void) {
     if (scr_root && scr_light_mode == settings.ui_theme) {
         if (radar_img) {
-            lv_gif_t * g = (lv_gif_t *)radar_img;
-            if (g->timer) lv_timer_resume(g->timer);
+            /* frames are driven by radar_play_cb */
         }
         return scr_root;
     }
@@ -368,6 +467,9 @@ lv_obj_t * screen_forecast_create(void) {
         fc_rain_lbl_empty = NULL;
         for (int i = 0; i < 3; i++) fc_thresh_lbl[i] = NULL;
         for (int i = 0; i < 5; i++) fc_rain_lbl_times[i] = NULL;
+        radar_bar = radar_btn = radar_btn_lbl = radar_slider = NULL;
+        lbl_rain_now = NULL;
+        radar_n = 0;
     }
     scr_light_mode = settings.ui_theme;
 
@@ -422,6 +524,39 @@ lv_obj_t * screen_forecast_create(void) {
     radar_zoom = (DISP_VER < 600) ? 160 : 202;
     lv_img_set_zoom(radar_img, radar_zoom);
     lv_obj_center(radar_img);
+
+    /* Transport bar over the bottom of the map: play/pause + time slider. */
+    radar_bar = lv_obj_create(radar_frame);
+    lv_obj_remove_style_all(radar_bar);
+    lv_obj_set_size(radar_bar, rf_sz, SY(52));
+    lv_obj_align(radar_bar, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_bg_color(radar_bar, lv_color_hex(THEME_CARD_BG), 0);
+    lv_obj_set_style_bg_opa(radar_bar, LV_OPA_80, 0);
+    lv_obj_clear_flag(radar_bar, LV_OBJ_FLAG_SCROLLABLE);
+    radar_btn = lv_btn_create(radar_bar);
+    lv_obj_set_size(radar_btn, SX(48), SY(38));
+    lv_obj_align(radar_btn, LV_ALIGN_LEFT_MID, SX(8), 0);
+    lv_obj_set_style_radius(radar_btn, THEME_RADIUS_BTN, 0);
+    lv_obj_set_style_shadow_width(radar_btn, 0, 0);
+    lv_obj_set_style_bg_color(radar_btn, lv_color_hex(THEME_BTN_BG), 0);
+    lv_obj_set_ext_click_area(radar_btn, 8);
+    lv_obj_add_event_cb(radar_btn, on_radar_btn, LV_EVENT_CLICKED, NULL);
+    radar_btn_lbl = lv_label_create(radar_btn);
+    lv_obj_set_style_text_color(radar_btn_lbl, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_center(radar_btn_lbl);
+    radar_slider = lv_slider_create(radar_bar);
+    lv_obj_set_size(radar_slider, rf_sz - SX(48) - SX(8) * 2 - SX(28), SY(8));
+    lv_obj_align(radar_slider, LV_ALIGN_LEFT_MID, SX(8) + SX(48) + SX(18), 0);
+    lv_obj_set_ext_click_area(radar_slider, 16);
+    lv_obj_add_event_cb(radar_slider, on_radar_slider, LV_EVENT_VALUE_CHANGED, NULL);
+    /* dragging the slider must not count as the close swipe */
+    lv_obj_clear_flag(radar_slider, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_clear_flag(radar_bar, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    radar_playing = 1;
+    radar_btn_paint();
+    lv_obj_add_flag(radar_bar, LV_OBJ_FLAG_HIDDEN);   /* until a GIF with frames is loaded */
+    if (radar_loaded) radar_after_load();
+    if (!radar_play_timer) radar_play_timer = lv_timer_create(radar_play_cb, 700, NULL);
 
     /* Expanded Rain Forecast container (3h / 24h charts) inside radar_frame */
     fc_rain_cont = lv_obj_create(radar_frame);
@@ -550,16 +685,26 @@ lv_obj_t * screen_forecast_create(void) {
     /* Right side: title + body text */
     int right_x = rf_x + rf_sz + (DISP_VER < 600 ? 12 : 20);
     int right_w = DISP_HOR - right_x - (DISP_VER < 600 ? 12 : 18);
+    /* Rain now, in one sentence, above the weather report. */
+    lbl_rain_now = lv_label_create(scr_root);
+    lv_obj_set_style_text_color(lbl_rain_now, lv_color_hex(THEME_INFO), 0);
+    lv_obj_set_style_text_font(lbl_rain_now, SF(22), 0);
+    lv_obj_set_width(lbl_rain_now, right_w - 76);
+    lv_label_set_long_mode(lbl_rain_now, LV_LABEL_LONG_DOT);
+    lv_obj_align(lbl_rain_now, LV_ALIGN_TOP_LEFT, right_x, rf_y + SY(4));
+    lv_label_set_text(lbl_rain_now, "");
+    int rn_h = SY(40);
+
     lbl_title = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_title, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(lbl_title, (DISP_VER < 600 ? SF(22) : SF(28)), 0);
-    lv_obj_set_width(lbl_title, right_w - 76);
+    lv_obj_set_width(lbl_title, right_w - (rn_h ? 0 : 76));
     lv_label_set_long_mode(lbl_title, LV_LABEL_LONG_DOT);
-    lv_obj_align(lbl_title, LV_ALIGN_TOP_LEFT, right_x, rf_y);
+    lv_obj_align(lbl_title, LV_ALIGN_TOP_LEFT, right_x, rf_y + rn_h);
     lv_label_set_text(lbl_title, tr("Weersverwachting", "Weather forecast"));
 
     /* Body text — vertically-scrollable container cleanly below header (title + close button) */
-    int body_y = (DISP_VER < 600) ? 58 : 68;
+    int body_y = ((DISP_VER < 600) ? 58 : 68) + rn_h;
     int body_h = (rf_y + rf_sz) - body_y;
     lv_obj_t * body_scroll = lv_obj_create(scr_root);
     lv_obj_set_size(body_scroll, right_w, body_h);
@@ -636,6 +781,11 @@ lv_obj_t * screen_forecast_create(void) {
         /* Verbose desc moved to the title body — match the home band. */
         fc_desc_lbl[i] = NULL;
     }
+
+    /* One swipe (down or right) closes, like the close button. */
+    lv_obj_add_event_cb(scr_root, on_swipe_close, LV_EVENT_GESTURE, NULL);
+    /* fill everything the moment the screen shows, not at the next 5 s tick */
+    lv_obj_add_event_cb(scr_root, on_screen_loaded, LV_EVENT_SCREEN_LOADED, NULL);
 
     lv_obj_move_foreground(close_btn);
     refresh_cb(NULL);
