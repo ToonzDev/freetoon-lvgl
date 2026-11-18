@@ -36,6 +36,19 @@ static const ft_plugin_field_t s_exported_fields[] = {
     FT_SETTINGS_FIELD(sonos_zone),
 };
 
+/* The published plugins were built against these offsets (32-bit ARM, Toon 1
+ * and Toon 2 alike). A settings_t change that moves one breaks every
+ * installed plugin using it — fail the build instead of the users' apps.
+ * Add new settings fields at the END of settings_t. */
+#if defined(__arm__)
+_Static_assert(offsetof(settings_t, language)        ==   68, "settings_t: 'language' moved - plugins break; append new fields at the end");
+_Static_assert(offsetof(settings_t, sonos_enabled)   == 2040, "settings_t: 'sonos_enabled' moved - plugins break; append new fields at the end");
+_Static_assert(offsetof(settings_t, sonos_host)      == 2044, "settings_t: 'sonos_host' moved - plugins break; append new fields at the end");
+_Static_assert(offsetof(settings_t, sonos_port)      == 2108, "settings_t: 'sonos_port' moved - plugins break; append new fields at the end");
+_Static_assert(offsetof(settings_t, sonos_zone)      == 2112, "settings_t: 'sonos_zone' moved - plugins break; append new fields at the end");
+_Static_assert(offsetof(settings_t, home_light_mode) == 6780, "settings_t: 'home_light_mode' moved - plugins break; append new fields at the end");
+#endif
+
 /* Returns NULL if the plugin's ABI matches this build, else a short reason. */
 static const char * plugin_abi_mismatch(void * h, char * why, size_t whysz) {
     const ft_plugin_abi_t * abi = (const ft_plugin_abi_t *)dlsym(h, FT_PLUGIN_ABI_SYMBOL);

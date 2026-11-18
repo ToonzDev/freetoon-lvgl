@@ -31,7 +31,7 @@ typedef struct {
                                  2 = Day totals left (gas + elec day), Electricity act right
                                  3 = Electricity act left, Day totals right (gas + elec day) */
     int dim_bars_vertical;    /* 0 = horizontal (default); 1 = vertical segmented (classic Toon style) */
-    int dim_elec_max_kwh;     /* 5..50 kWh — full scale for electricity day total bar (default 15) */
+    /* (dim_elec_max_kwh lives at the END of this struct — see there.) */
     int dim_waste_lead_days;  /* 0..7 — only show if pickup is within this many days
                                  (0 disables; 1 = only on pickup day; 2 = day before + day of) */
     int dim_waste_hour;       /* 0..23 — alert window start/end hour (default 18 = 18:00) */
@@ -389,6 +389,13 @@ typedef struct {
 #define HW_SOCKET_MAX 4
     char  hw_socket_name[HW_SOCKET_MAX][24];
     char  hw_socket_host[HW_SOCKET_MAX][24];
+
+    /* NEW FIELDS GO HERE, AT THE END. Marketplace plugins (.so) read this
+     * struct directly; a field inserted in the middle moves every field after
+     * it and the loader then refuses those plugins ("app is not compatible").
+     * 1.0.12 did exactly that with dim_elec_max_kwh (Sonos, Stocks refused).
+     * plugin_loader.c checks the exported offsets at compile time. */
+    int dim_elec_max_kwh;     /* 5..50 kWh — full scale for electricity day total bar (default 15) */
 } settings_t;
 
 #define FORECAST_AUTO   0
