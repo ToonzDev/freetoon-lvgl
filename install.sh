@@ -569,11 +569,24 @@ CFG
     fi
     if [ -n "$QUBY_BRIDGE_BIN" ] && [ -e "$QUBY_BRIDGE_BIN" ]; then
         install_file "$QUBY_BRIDGE_BIN" /mnt/data/quby_bridge
-        # Only enable OT bridge proxy if FreeToon is active; stock qt-gui needs direct UART access
-        if remote "[ \"\$(cat /mnt/data/ui_choice 2>/dev/null)\" != 'qt-gui' ]"; then
-            remote "/mnt/data/ot_mode_switch.sh proxy" || true
+        # The OT bridge runs only when the user chose it (Instellingen -> OT
+        # Bridge: ot_bridge_mode=proxy|wireless in toonui.cfg). Default is off:
+        # happ_thermstat keeps the boiler UART to itself, like the stock Toon.
+        # This used to switch every install/update to proxy while the setting
+        # still said "off" — the proxy pins the UART at 4800 baud and broke
+        # OpenTherm for a user ("ketelmodule niet gevonden", fine on qt-gui).
+        # Boiler flow/return temps come from the happ_thermstat mod, not the
+        # bridge. qbri was dropped and the UART released above, so "off"
+        # needs nothing more (and no extra happ_thermstat restart).
+        _otb=$(remote "sed -n 's/^ot_bridge_mode=//p' /mnt/data/toonui.cfg 2>/dev/null | head -n 1" | tr -d ' \r\n')
+        case "$_otb" in proxy|wireless) ;; *) _otb=off ;; esac
+        # stock qt-gui needs direct UART access
+        if remote "[ \"\$(cat /mnt/data/ui_choice 2>/dev/null)\" = 'qt-gui' ]"; then _otb=off; fi
+        if [ "$_otb" != off ]; then
+            say "OT bridge: $_otb (chosen in OT Bridge settings)"
+            remote "/mnt/data/ot_mode_switch.sh $_otb" || true
         else
-            remote "/mnt/data/ot_mode_switch.sh off" || true
+            say "OT bridge: off (happ_thermstat drives the boiler module directly)"
         fi
     else
         echo "  (skipping bridge install — quby_bridge absent; OT bridge stays off)"
