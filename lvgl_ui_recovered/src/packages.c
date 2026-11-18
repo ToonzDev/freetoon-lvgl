@@ -12,6 +12,7 @@
 #define _GNU_SOURCE
 #include "packages.h"
 #include "display.h"
+#include "theme.h"
 #include "mqtt_client.h"
 #include "lvgl/lvgl.h"
 #include <stdio.h>
@@ -341,9 +342,9 @@ void packages_banner_attach(lv_obj_t * parent) {
     bw->box = lv_obj_create(parent);
     lv_obj_set_size(bw->box, 1024, 58);
     lv_obj_align(bw->box, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_style_bg_color(bw->box, lv_color_hex(0x2a4060), 0);
+    lv_obj_set_style_bg_color(bw->box, lv_color_hex(THEME_BTN_ACCENT), 0);
     lv_obj_set_style_bg_opa(bw->box, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(bw->box, lv_color_hex(0xffcc44), 0);
+    lv_obj_set_style_border_color(bw->box, lv_color_hex(THEME_WARNING), 0);
     lv_obj_set_style_border_width(bw->box, 0, 0);
     lv_obj_set_style_border_side(bw->box, LV_BORDER_SIDE_BOTTOM, 0);
     lv_obj_set_style_radius(bw->box, 0, 0);
@@ -353,20 +354,20 @@ void packages_banner_attach(lv_obj_t * parent) {
     lv_obj_add_event_cb(bw->box, bw_click, LV_EVENT_CLICKED, NULL);
 
     bw->lbl_title = lv_label_create(bw->box);
-    lv_obj_set_style_text_color(bw->lbl_title, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(bw->lbl_title, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(bw->lbl_title, SF(22), 0);
     lv_obj_align(bw->lbl_title, LV_ALIGN_LEFT_MID, 12, -10);
     lv_label_set_text(bw->lbl_title, "");
 
     bw->lbl_msg = lv_label_create(bw->box);
-    lv_obj_set_style_text_color(bw->lbl_msg, lv_color_hex(0xa8c4dc), 0);
+    lv_obj_set_style_text_color(bw->lbl_msg, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(bw->lbl_msg, SF(18), 0);
     lv_obj_align(bw->lbl_msg, LV_ALIGN_LEFT_MID, 12, 14);
     lv_label_set_text(bw->lbl_msg, "");
 
     /* Small "tap to dismiss" hint on the right side */
     lv_obj_t * hint = lv_label_create(bw->box);
-    lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_color(hint, lv_color_hex(THEME_TEXT_MUTED), 0);
     lv_obj_set_style_text_font(hint, SF(14), 0);
     lv_obj_align(hint, LV_ALIGN_RIGHT_MID, -12, 0);
     lv_label_set_text(hint, "tap to dismiss  x");

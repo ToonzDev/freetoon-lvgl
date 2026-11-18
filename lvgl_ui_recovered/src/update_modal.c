@@ -137,10 +137,10 @@ static void upd_prog_tick(lv_timer_t * t) {
     fclose(f);
 
     for (int i = 0; i < UPD_STEP_COUNT; i++) {
-        if (failed > 0 && i == failed - 1)      upd_row_set(i, LV_SYMBOL_CLOSE, lv_color_hex(settings.home_light_mode ? 0xcc2222 : 0xff5555));
-        else if (i < cur - 1)                   upd_row_set(i, LV_SYMBOL_OK,    lv_color_hex(settings.home_light_mode ? 0x188a38 : 0x66dd88));
-        else if (i == cur - 1 && cur > 0)       upd_row_set(i, LV_SYMBOL_RIGHT, lv_color_hex(settings.home_light_mode ? 0xd07800 : 0xffd24a));
-        else                                    upd_row_set(i, "-",             lv_color_hex(settings.home_light_mode ? 0x8898a8 : 0x6b7c93));
+        if (failed > 0 && i == failed - 1)      upd_row_set(i, LV_SYMBOL_CLOSE, lv_color_hex(THEME_DANGER));
+        else if (i < cur - 1)                   upd_row_set(i, LV_SYMBOL_OK,    lv_color_hex(THEME_SUCCESS));
+        else if (i == cur - 1 && cur > 0)       upd_row_set(i, LV_SYMBOL_RIGHT, lv_color_hex(THEME_WARNING));
+        else                                    upd_row_set(i, "-",             lv_color_hex(THEME_TEXT_MUTED));
     }
 
     if (s_upd_prog_msg) {
@@ -193,10 +193,10 @@ static void do_install_now(lv_event_t * e) {
         lv_obj_t * card = lv_obj_create(s_upd_prog_modal);
         lv_obj_set_size(card, SX(620), SY(460));
         lv_obj_center(card);
-        lv_obj_set_style_bg_color(card, lv_color_hex(settings.home_light_mode ? 0xffffff : 0x16243a), 0);
+        lv_obj_set_style_bg_color(card, lv_color_hex(THEME_CARD_BG), 0);
         lv_obj_set_style_radius(card, 16, 0);
-        lv_obj_set_style_border_width(card, settings.home_light_mode ? 1 : 0, 0);
-        lv_obj_set_style_border_color(card, lv_color_hex(0xc8d4e2), 0);
+        lv_obj_set_style_border_width(card, THEME_IS_LIGHT ? 1 : 0, 0);
+        lv_obj_set_style_border_color(card, lv_color_hex(THEME_BORDER), 0);
         lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
         lv_obj_t * h = lv_label_create(card);
@@ -209,12 +209,12 @@ static void do_install_now(lv_event_t * e) {
             s_upd_prog_row[i] = lv_label_create(card);
             lv_obj_set_style_text_font(s_upd_prog_row[i], SF(20), 0);
             lv_obj_align(s_upd_prog_row[i], LV_ALIGN_TOP_LEFT, SX(28), SY(70 + i * 38));
-            upd_row_set(i, "-", lv_color_hex(settings.home_light_mode ? 0x8898a8 : 0x6b7c93));
+            upd_row_set(i, "-", lv_color_hex(THEME_TEXT_MUTED));
         }
 
         s_upd_prog_msg = lv_label_create(card);
         lv_obj_set_style_text_font(s_upd_prog_msg, SF(18), 0);
-        lv_obj_set_style_text_color(s_upd_prog_msg, lv_color_hex(settings.home_light_mode ? 0x3a4c5e : 0xcdd9e6), 0);
+        lv_obj_set_style_text_color(s_upd_prog_msg, lv_color_hex(THEME_TEXT_HI), 0);
         lv_label_set_recolor(s_upd_prog_msg, true);
         lv_label_set_long_mode(s_upd_prog_msg, LV_LABEL_LONG_WRAP);
         lv_obj_set_width(s_upd_prog_msg, SX(560));
@@ -224,9 +224,10 @@ static void do_install_now(lv_event_t * e) {
         lv_obj_t * x = lv_btn_create(card);
         lv_obj_set_size(x, SX(130), SY(46));
         lv_obj_align(x, LV_ALIGN_BOTTOM_RIGHT, SX(-16), SY(-12));
-        lv_obj_set_style_bg_color(x, lv_color_hex(settings.home_light_mode ? 0x4a5a6a : 0x33445a), 0);
+        lv_obj_set_style_bg_color(x, lv_color_hex(THEME_BTN_ACCENT), 0);
         lv_obj_add_event_cb(x, upd_prog_close, LV_EVENT_CLICKED, NULL);
         lv_obj_t * xl = lv_label_create(x);
+        lv_obj_set_style_text_color(xl, lv_color_hex(THEME_TEXT_HI), 0);
         lv_label_set_text(xl, tr("Sluiten", "Close"));
         lv_obj_center(xl);
     }
@@ -342,14 +343,14 @@ void update_modal_tick(void) {
     apps_status_refresh();
     if (s_about_status_lbl && !s_install_pinned) {
         if (g_update_state.available) {
-            lv_obj_set_style_text_color(s_about_status_lbl, lv_color_hex(settings.home_light_mode ? 0x188a38 : 0x66dd88), 0);
+            lv_obj_set_style_text_color(s_about_status_lbl, lv_color_hex(THEME_SUCCESS), 0);
             lv_label_set_text_fmt(s_about_status_lbl,
                                   tr("Update %s beschikbaar", "Update %s available"),
                                   g_update_state.latest_version);
         } else if (g_update_state.last_check_epoch) {
             lv_obj_set_style_text_color(s_about_status_lbl, lv_color_hex(g_update_state.last_check_ok
-                ? (settings.home_light_mode ? 0x1e2838 : 0xffffff)
-                : (settings.home_light_mode ? 0xcc2222 : 0xff7777)), 0);
+                ? THEME_TEXT_HI
+                : THEME_DANGER), 0);
             lv_label_set_text(s_about_status_lbl, g_update_state.last_check_ok
                               ? tr("Je hebt de nieuwste versie.", "You're on the latest release.")
                               : tr("Updatecontrole mislukt - check internet.", "Update check failed - check internet."));
@@ -412,9 +413,9 @@ void update_modal_open(lv_obj_t * parent) {
     lv_obj_t * panel = lv_obj_create(s_update_modal);
     lv_obj_set_size(panel, SX(760), SY(520));
     lv_obj_center(panel);
-    lv_obj_set_style_bg_color(panel, lv_color_hex(settings.home_light_mode ? 0xffffff : 0x16243a), 0);
-    lv_obj_set_style_border_width(panel, settings.home_light_mode ? 1 : 0, 0);
-    lv_obj_set_style_border_color(panel, lv_color_hex(0xc8d4e2), 0);
+    lv_obj_set_style_bg_color(panel, lv_color_hex(THEME_CARD_BG), 0);
+    lv_obj_set_style_border_width(panel, THEME_IS_LIGHT ? 1 : 0, 0);
+    lv_obj_set_style_border_color(panel, lv_color_hex(THEME_BORDER), 0);
     lv_obj_set_style_radius(panel, 18, 0);
     lv_obj_set_style_pad_hor(panel, SX(20), 0);
     lv_obj_set_style_pad_ver(panel, SY(16), 0);
@@ -425,12 +426,12 @@ void update_modal_open(lv_obj_t * parent) {
     lv_obj_t * mark = lv_obj_create(panel);
     lv_obj_set_size(mark, 46, 46);
     lv_obj_align(mark, LV_ALIGN_TOP_LEFT, 0, 0);
-    lv_obj_set_style_bg_color(mark, lv_color_hex(0x2e6e9e), 0);
+    lv_obj_set_style_bg_color(mark, lv_color_hex(THEME_ACCENT_FILL), 0);
     lv_obj_set_style_radius(mark, 12, 0);
     lv_obj_set_style_border_width(mark, 0, 0);
     lv_obj_clear_flag(mark, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_t * mk = lv_label_create(mark);
-    lv_obj_set_style_text_color(mk, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(mk, lv_color_hex(THEME_ON_ACCENT), 0);
     lv_obj_set_style_text_font(mk, SF(28), 0);
     lv_label_set_text(mk, "ft");
     lv_obj_center(mk);
@@ -450,7 +451,7 @@ void update_modal_open(lv_obj_t * parent) {
     /* Credit + license line */
     lv_obj_t * cred = lv_label_create(panel);
     lv_obj_set_style_text_font(cred, SF(14), 0);
-    lv_obj_set_style_text_color(cred, lv_color_hex(settings.home_light_mode ? 0x7a8a9a : 0x6f8aa0), 0);
+    lv_obj_set_style_text_color(cred, lv_color_hex(THEME_TEXT_MUTED), 0);
     lv_label_set_text(cred, tr("Alternatieve UI door Ierlandfan en Toonz  -  MIT-licentie",
                                "Alternative UI by Ierlandfan and Toonz  -  MIT License"));
     lv_obj_align(cred, LV_ALIGN_TOP_RIGHT, 0, 6);
@@ -467,16 +468,16 @@ void update_modal_open(lv_obj_t * parent) {
     lv_obj_t * notesbox = lv_obj_create(panel);
     lv_obj_set_size(notesbox, SX(716), SY(185));
     lv_obj_align(notesbox, LV_ALIGN_TOP_LEFT, 0, SY(96));
-    lv_obj_set_style_bg_color(notesbox, lv_color_hex(settings.home_light_mode ? 0xf0f4f8 : 0x0e1a2a), 0);
-    lv_obj_set_style_border_width(notesbox, settings.home_light_mode ? 1 : 0, 0);
-    lv_obj_set_style_border_color(notesbox, lv_color_hex(0xd0d8e2), 0);
+    lv_obj_set_style_bg_color(notesbox, lv_color_hex(THEME_INPUT_BG), 0);
+    lv_obj_set_style_border_width(notesbox, THEME_IS_LIGHT ? 1 : 0, 0);
+    lv_obj_set_style_border_color(notesbox, lv_color_hex(THEME_BORDER), 0);
     lv_obj_set_style_radius(notesbox, 10, 0);
     lv_obj_set_style_pad_all(notesbox, 12, 0);
     lv_obj_set_scroll_dir(notesbox, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(notesbox, LV_SCROLLBAR_MODE_AUTO);
     lv_obj_t * notes = lv_label_create(notesbox);
     lv_obj_set_style_text_font(notes, SF(18), 0);
-    lv_obj_set_style_text_color(notes, lv_color_hex(settings.home_light_mode ? 0x223042 : 0xc8d4e0), 0);
+    lv_obj_set_style_text_color(notes, lv_color_hex(THEME_TEXT_HI), 0);
     lv_label_set_long_mode(notes, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(notes, SX(690));
     lv_label_set_text(notes, g_update_state.changelog[0]
@@ -545,10 +546,11 @@ void update_modal_open(lv_obj_t * parent) {
     lv_obj_t * b_check = lv_btn_create(panel);
     lv_obj_set_size(b_check, SX(180), SY(50));
     lv_obj_align(b_check, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-    lv_obj_set_style_bg_color(b_check, lv_color_hex(settings.home_light_mode ? 0x2e5c8a : 0x2a4060), 0);
+    lv_obj_set_style_bg_color(b_check, lv_color_hex(THEME_BTN_ACCENT), 0);
     lv_obj_add_event_cb(b_check, do_check_updates, LV_EVENT_CLICKED, NULL);
     lv_obj_t * cl = lv_label_create(b_check);
     lv_obj_set_style_text_font(cl, SF(18), 0);
+    lv_obj_set_style_text_color(cl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_label_set_text(cl, tr("Controleer", "Check"));
     lv_obj_center(cl);
 
@@ -557,30 +559,33 @@ void update_modal_open(lv_obj_t * parent) {
         lv_obj_t * b_inst = lv_btn_create(panel);
         lv_obj_set_size(b_inst, SX(150), SY(50));
         lv_obj_align(b_inst, LV_ALIGN_BOTTOM_LEFT, SX(188), 0);
-        lv_obj_set_style_bg_color(b_inst, lv_color_hex(0x2e6e3a), 0);
+        lv_obj_set_style_bg_color(b_inst, lv_color_hex(THEME_SUCCESS_BG), 0);
         lv_obj_add_event_cb(b_inst, do_install_now, LV_EVENT_CLICKED, NULL);
         lv_obj_t * il = lv_label_create(b_inst);
         lv_obj_set_style_text_font(il, SF(18), 0);
+        lv_obj_set_style_text_color(il, lv_color_hex(THEME_ON_ACCENT), 0);
         lv_label_set_text(il, tr("Nu installeren", "Install now"));
         lv_obj_center(il);
 
         lv_obj_t * b_skip = lv_btn_create(panel);
         lv_obj_set_size(b_skip, SX(96), SY(50));
         lv_obj_align(b_skip, LV_ALIGN_BOTTOM_LEFT, SX(346), 0);
-        lv_obj_set_style_bg_color(b_skip, lv_color_hex(0x6a5424), 0);
+        lv_obj_set_style_bg_color(b_skip, lv_color_hex(THEME_BTN_BG), 0);
         lv_obj_add_event_cb(b_skip, do_skip_version, LV_EVENT_CLICKED, NULL);
         lv_obj_t * sl = lv_label_create(b_skip);
         lv_obj_set_style_text_font(sl, SF(18), 0);
+        lv_obj_set_style_text_color(sl, lv_color_hex(THEME_TEXT_HI), 0);
         lv_label_set_text(sl, tr("Overslaan", "Skip"));
         lv_obj_center(sl);
 
         lv_obj_t * b_dis = lv_btn_create(panel);
         lv_obj_set_size(b_dis, SX(130), SY(50));
         lv_obj_align(b_dis, LV_ALIGN_BOTTOM_LEFT, SX(450), 0);
-        lv_obj_set_style_bg_color(b_dis, lv_color_hex(settings.home_light_mode ? 0x4a5a6a : 0x33445a), 0);
+        lv_obj_set_style_bg_color(b_dis, lv_color_hex(THEME_BTN_ACCENT), 0);
         lv_obj_add_event_cb(b_dis, do_dismiss_to_envelope, LV_EVENT_CLICKED, NULL);
         lv_obj_t * dl = lv_label_create(b_dis);
         lv_obj_set_style_text_font(dl, SF(18), 0);
+        lv_obj_set_style_text_color(dl, lv_color_hex(THEME_TEXT_HI), 0);
         lv_label_set_text(dl, tr(LV_SYMBOL_ENVELOPE " Verbergen", LV_SYMBOL_ENVELOPE " Dismiss"));
         lv_obj_center(dl);
     }
@@ -588,10 +593,11 @@ void update_modal_open(lv_obj_t * parent) {
     lv_obj_t * x = lv_btn_create(panel);
     lv_obj_set_size(x, SX(120), SY(50));
     lv_obj_align(x, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
-    lv_obj_set_style_bg_color(x, lv_color_hex(settings.home_light_mode ? 0x4a5a6a : 0x33445a), 0);
+    lv_obj_set_style_bg_color(x, lv_color_hex(THEME_BTN_ACCENT), 0);
     lv_obj_add_event_cb(x, on_modal_close_event, LV_EVENT_CLICKED, NULL);
     lv_obj_t * xl = lv_label_create(x);
     lv_obj_set_style_text_font(xl, SF(22), 0);
+    lv_obj_set_style_text_color(xl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_label_set_text(xl, tr("Sluiten", "Close"));
     lv_obj_center(xl);
 

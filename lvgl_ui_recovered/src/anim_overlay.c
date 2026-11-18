@@ -57,6 +57,9 @@ static volatile int s_pending_effect = -1;
 static volatile int s_pending_duration = 0;
 static void anim_pending_cb(lv_timer_t * t);
 
+/* Celebration colours are identity colours (same in every theme). */
+#define BALLOON_GLOSS 0xffffff   /* balloon highlight */
+
 /* Color palettes */
 static const uint32_t PALETTE_BALLOONS[] = {
     0xe53935, /* Red */
@@ -171,7 +174,7 @@ static void spawn_balloon(particle_t * p, int stagger) {
     lv_obj_set_size(p->gloss, gw, gh);
     lv_obj_set_pos(p->gloss, gx, gy);
     lv_obj_set_style_radius(p->gloss, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(p->gloss, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_bg_color(p->gloss, lv_color_hex(BALLOON_GLOSS), 0);
     lv_obj_set_style_bg_opa(p->gloss, LV_OPA_60, 0);
 
     lv_obj_set_size(p->cont, p->base_w + 4, p->base_h + 4);

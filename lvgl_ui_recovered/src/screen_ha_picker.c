@@ -192,7 +192,7 @@ lv_obj_t * screen_ha_picker_create(void) {
     lv_obj_align(lst_results, LV_ALIGN_TOP_MID, 0, list_y);
     lv_obj_set_style_bg_color(lst_results, lv_color_hex(THEME_CARD_BG), 0);
     lv_obj_set_style_border_color(lst_results, lv_color_hex(THEME_BORDER), 0);
-    lv_obj_set_style_border_width(lst_results, settings.home_light_mode ? 1 : 0, 0);
+    lv_obj_set_style_border_width(lst_results, THEME_IS_LIGHT ? 1 : 0, 0);
 
     /* Spinner — shown while the curl call is in flight */
     spinner = lv_spinner_create(scr_root, 1000, 60);

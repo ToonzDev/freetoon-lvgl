@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" media="(prefers-color-scheme: light)" content="#e4eaf2">
-<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0f1a2a">
-<meta name="theme-color" content="#0f1a2a">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#e6ebf1">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0e1828">
+<meta name="theme-color" content="#0e1828">
 <title>FreeToon</title>
 <!--
   FreeToon remote control — served by pwa_server on :10081 (behind the web
@@ -16,27 +16,37 @@
 -->
 <style>
 :root{
-  --bg:#0f1a2a;--card:#1a2a44;--row:#1f3050;--btn:#223344;--btn-hi:#335577;
-  --text:#ffffff;--dim:#88aabb;--muted:#556677;--border:#335577;
-  --warm:#ffcc44;--accent:#44aaff;--active:#3377cc;--danger:#ff7766;
+  --bg:#0e1828;--card:#182739;--row:#1e3048;--btn:#23354c;--btn-hi:#2f4a6a;
+  --text:#f2f6fa;--dim:#8fa8c0;--muted:#5e7189;--border:#2a3d56;
+  --warm:#ffc94d;--accent:#4aa8ff;--active:#2f74c8;--danger:#f0625a;--sel:#ffffff;
 }
+/* Themes mirror the Toon's (theme.c): dark = Nacht, light = Licht, warm, black = Zwart. */
 @media (prefers-color-scheme: light){
-  :root:not([data-theme=dark]){
-    --bg:#e4eaf2;--card:#ffffff;--row:#f0f4f8;--btn:#d0d8e2;--btn-hi:#ccdaea;
-    --text:#1e2838;--dim:#687c94;--muted:#8898aa;--border:#c8d4e2;
-    --warm:#d97706;--accent:#1d4ed8;--active:#2f6fd0;--danger:#c0392b;
+  :root:not([data-theme]){
+  --bg:#e6ebf1;--card:#ffffff;--row:#f2f5f9;--btn:#dae2eb;--btn-hi:#cbd9ea;
+  --text:#1b2533;--dim:#5b6d84;--muted:#8a99ab;--border:#d3dce6;
+  --warm:#d27305;--accent:#1d5fd1;--active:#2266d8;--danger:#d42f2f;--sel:#1b2533;
   }
-  :root:not([data-theme=dark]) .presets button.on{border-color:#1e2838}
 }
 :root[data-theme=light]{
-  --bg:#e4eaf2;--card:#ffffff;--row:#f0f4f8;--btn:#d0d8e2;--btn-hi:#ccdaea;
-  --text:#1e2838;--dim:#687c94;--muted:#8898aa;--border:#c8d4e2;
-  --warm:#d97706;--accent:#1d4ed8;--active:#2f6fd0;--danger:#c0392b;
+  --bg:#e6ebf1;--card:#ffffff;--row:#f2f5f9;--btn:#dae2eb;--btn-hi:#cbd9ea;
+  --text:#1b2533;--dim:#5b6d84;--muted:#8a99ab;--border:#d3dce6;
+  --warm:#d27305;--accent:#1d5fd1;--active:#2266d8;--danger:#d42f2f;--sel:#1b2533;
 }
 :root[data-theme=dark]{
-  --bg:#0f1a2a;--card:#1a2a44;--row:#1f3050;--btn:#223344;--btn-hi:#335577;
-  --text:#ffffff;--dim:#88aabb;--muted:#556677;--border:#335577;
-  --warm:#ffcc44;--accent:#44aaff;--active:#3377cc;--danger:#ff7766;
+  --bg:#0e1828;--card:#182739;--row:#1e3048;--btn:#23354c;--btn-hi:#2f4a6a;
+  --text:#f2f6fa;--dim:#8fa8c0;--muted:#5e7189;--border:#2a3d56;
+  --warm:#ffc94d;--accent:#4aa8ff;--active:#2f74c8;--danger:#f0625a;--sel:#ffffff;
+}
+:root[data-theme=warm]{
+  --bg:#1c1c1e;--card:#29292c;--row:#313135;--btn:#37373b;--btn-hi:#4a4038;
+  --text:#f6f2ec;--dim:#b2aa9f;--muted:#7b746b;--border:#3b3a39;
+  --warm:#ffb257;--accent:#ff7a2e;--active:#e8641e;--danger:#f0624f;--sel:#f6f2ec;
+}
+:root[data-theme=black]{
+  --bg:#000000;--card:#0f0f11;--row:#17171a;--btn:#1c1c20;--btn-hi:#22303f;
+  --text:#e2e4e8;--dim:#8a8f98;--muted:#55595f;--border:#232328;
+  --warm:#dcae52;--accent:#5e9fd8;--active:#2b5d91;--danger:#d65a52;--sel:#e2e4e8;
 }
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--text);
@@ -105,8 +115,7 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .thermo .meta svg{width:15px;height:15px;vertical-align:-3px}
 .presets{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:14px 0 12px}
 .presets button{background:var(--btn);border-radius:8px;padding:9px 2px;font-size:14px;color:var(--dim);border:2px solid transparent}
-.presets button.on{background:var(--active);color:#fff;border-color:#fff}
-:root[data-theme=light] .presets button.on{border-color:#1e2838}
+.presets button.on{background:var(--active);color:#fff;border-color:var(--sel)}
 .setp{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .setp button{width:56px;height:48px;border-radius:10px;background:var(--btn-hi);font-size:26px;line-height:1}
 .setp button:active{transform:scale(.96)}
@@ -302,7 +311,7 @@ var T = {
   total:["Meterstand","Meter"], notap:["Geen water","No flow"],
   nocal:["Geen afspraken","No events"], nowaste:["Niets gepland","Nothing planned"],
   unknown:["onbekend","unknown"], theme:["Licht / donker","Light / dark"],
-  thAuto:["Automatisch","Auto"], thLight:["Licht","Light"], thDark:["Donker","Dark"],
+  thAuto:["Automatisch","Auto"], thToon:["Zoals de Toon","Like the Toon"], thLight:["Licht","Light"], thDark:["Nacht","Night"], thWarm:["Warm","Warm"], thBlack:["Zwart","Black"],
   logout:["Uitloggen","Sign out"]
 };
 function t(k) { var e = T[k]; return e ? e[lang] : k; }
@@ -404,14 +413,17 @@ function applyLayout() {
     });
 }
 
-/* ---------- theme: follows system default (Android/iOS/Windows) or user choice ---------- */
+/* ---------- theme: per viewer. Auto follows the phone's light/dark setting,
+   "toon" mirrors the Toon's own theme (Nacht / Licht / Warm / Zwart), or one
+   theme picked here. The button cycles through them. ---------- */
+var THEMES = ["auto", "toon", "dark", "light", "warm", "black"];
+var THEME_BG = { dark:"#0e1828", light:"#e6ebf1", warm:"#1c1c1e", black:"#000000" };
+var TOON_THEME = ["dark", "light", "warm", "black"];      /* settings.ui_theme 0..3 */
 var themePick = null;
 try {
-  if (localStorage.getItem("ft-theme")) {
-    /* Migrate away from old test override so system preference takes effect automatically */
-    localStorage.removeItem("ft-theme");
-  }
+  if (localStorage.getItem("ft-theme")) localStorage.removeItem("ft-theme");
   themePick = localStorage.getItem("ft-theme-v2");
+  if (THEMES.indexOf(themePick) < 0 || themePick === "auto") themePick = null;
 } catch (e) {}
 
 function getSystemLight() {
@@ -422,26 +434,30 @@ function getSystemLight() {
   return !!S.ui_light;
 }
 
-function isLight() {
-  if (themePick === "light") return true;
-  if (themePick === "dark") return false;
-  return getSystemLight();
+function currentTheme() {
+  if (themePick === "toon") {
+    var i = (typeof S.ui_theme === "number") ? S.ui_theme : (S.ui_light ? 1 : 0);
+    return TOON_THEME[i] || "dark";
+  }
+  if (themePick) return themePick;
+  return getSystemLight() ? "light" : "dark";
+}
+
+function themeLabel(k) {
+  return t({ auto:"thAuto", toon:"thToon", dark:"thDark", light:"thLight", warm:"thWarm", black:"thBlack" }[k]);
 }
 
 function updateThemeTitle() {
   var b = $("btn-theme");
   if (!b) return;
-  var mode = !themePick ? t("thAuto") : (themePick === "light" ? t("thLight") : t("thDark"));
-  b.title = t("theme") + " (" + mode + ")";
+  b.title = t("theme") + " (" + themeLabel(themePick || "auto") + ")";
 }
 
 function applyTheme() {
-  var light = isLight();
-  document.documentElement.setAttribute("data-theme", light ? "light" : "dark");
+  var th = currentTheme();
+  document.documentElement.setAttribute("data-theme", th);
   var metas = document.querySelectorAll("meta[name=theme-color]");
-  for (var i = 0; i < metas.length; i++) {
-    metas[i].setAttribute("content", light ? "#e4eaf2" : "#0f1a2a");
-  }
+  for (var i = 0; i < metas.length; i++) metas[i].setAttribute("content", THEME_BG[th]);
   updateThemeTitle();
 }
 
@@ -465,17 +481,9 @@ if (window.matchMedia) {
 applyTheme();
 
 $("btn-theme").onclick = function () {
-  var currentLight = document.documentElement.getAttribute("data-theme") === "light";
-  if (!themePick) {
-    /* Manual override to opposite of system */
-    themePick = currentLight ? "dark" : "light";
-  } else if ((themePick === "light") !== getSystemLight()) {
-    /* Second click returns to system default (auto) */
-    themePick = null;
-  } else {
-    /* Otherwise toggle */
-    themePick = currentLight ? "dark" : "light";
-  }
+  var i = THEMES.indexOf(themePick || "auto");
+  var next = THEMES[(i + 1) % THEMES.length];
+  themePick = next === "auto" ? null : next;
   try {
     if (themePick) localStorage.setItem("ft-theme-v2", themePick);
     else localStorage.removeItem("ft-theme-v2");

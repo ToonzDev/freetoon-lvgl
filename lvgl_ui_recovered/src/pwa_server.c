@@ -26,6 +26,8 @@
 #include "homeassistant.h"
 #include "schedule.h"
 #include "settings.h"
+#include "theme.h"
+#include "screens.h"
 #include "weather.h"
 #include "wastecollection.h"
 #include "homewizard.h"
@@ -187,8 +189,8 @@ static int render_state_json(char * body, size_t sz) {
     /* ---- UI language (0 = NL, 1 = EN) and light tiles, for the remote page.
      * Not in state_fields.def: client_link applies every field there to the
      * client Toon, which must keep its own language and theme. */
-    if (p < end) p += snprintf(p, end-p, "\"ui_language\":%d,\"ui_light\":%d,",
-        settings.language, settings.home_light_mode);
+    if (p < end) p += snprintf(p, end-p, "\"ui_language\":%d,\"ui_light\":%d,\"ui_theme\":%d,",
+        settings.language, settings.home_light_mode, settings.ui_theme);
 
     /* ---- home-screen layout, so the remote page mirrors it live: the visible
      * tiles of the custom layout (type, page, grid cell, span; a slot tile also
@@ -1388,7 +1390,7 @@ static int handle_settings_get(int fd) {
         "\"calendar_enabled\":%d,\"calendar_ha_entity\":\"%s\",\"calendar_ics_url\":\"%s\","
         "\"tile_rotate_enabled\":%d,\"tile_rotate_seconds\":%d,\"tile_rotate_members\":\"%s\","
         "\"client_mode\":%d,\"master_host\":\"%s\","
-        "\"home_theme\":%d"
+        "\"home_theme\":%d,\"ui_theme\":%d"
         "}",
         settings.auto_dim_enabled, settings.auto_dim_seconds,
         settings.active_brightness, settings.dim_brightness, settings.dim_sleep_away_black, settings.auto_brightness,
@@ -1417,7 +1419,7 @@ static int handle_settings_get(int fd) {
         settings.calendar_enabled, settings.calendar_ha_entity, settings.calendar_ics_url,
         settings.tile_rotate_enabled, settings.tile_rotate_seconds, settings.tile_rotate_members,
         settings.client_mode, settings.master_host,
-        settings.home_theme);
+        settings.home_theme, settings.ui_theme);
     /* HomeWizard kWh meter + Energy Sockets (#37): appended in place of the
      * closing brace, JSON-escaped. */
     if (n > 1 && n < (int)sizeof body && body[n - 1] == '}') {
@@ -1566,6 +1568,20 @@ static int handle_settings_post(int fd, const char * body) {
     if (extract_str(body, "master_host", sv, sizeof sv))
         snprintf(settings.master_host, sizeof settings.master_host, "%s", sv);
     if (extract_int(body, "home_theme", &iv))         settings.home_theme = !!iv;
+    /* Colour theme. The legacy home_light_mode key still works (1 = Light,
+     * 0 = off Light → Night); ui_theme wins when both come. Only the fields
+     * change here: the UI thread applies and rebuilds (ui_idle_tick). */
+    if (extract_int(body, "ui_theme", &iv)) {
+        if (iv >= 0 && iv < UI_THEME_COUNT && iv != settings.ui_theme) {
+            settings.ui_theme = iv;
+            settings.home_light_mode = (iv == UI_THEME_LIGHT);
+            ui_request_theme_refresh();
+        }
+    } else if (extract_int(body, "home_light_mode", &iv) && !!iv != settings.home_light_mode) {
+        settings.home_light_mode = !!iv;
+        settings.ui_theme = iv ? UI_THEME_LIGHT : UI_THEME_NIGHT;
+        ui_request_theme_refresh();
+    }
     /* Home Assistant host + Life360 + curtain entities */
     if (extract_str(body, "ha_host", sv, sizeof sv))
         snprintf(settings.ha_host, sizeof settings.ha_host, "%s", sv);

@@ -21,6 +21,10 @@
 #include "settings.h"
 #include "backlight.h"
 #include "screens.h"
+
+/* Identity colour, same in every theme: text drawn over the live camera image
+ * (always on a black scrim, so always white). */
+#define COL_CAM_TEXT 0xffffff
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -119,7 +123,7 @@ static void show_overlay(void) {
     lv_obj_remove_style_all(overlay);
     lv_obj_set_size(overlay, lv_disp_get_hor_res(NULL), lv_disp_get_ver_res(NULL));
     lv_obj_set_pos(overlay, 0, 0);
-    lv_obj_set_style_bg_color(overlay, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_color(overlay, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(overlay, LV_OPA_COVER, 0);
     lv_obj_clear_flag(overlay, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(overlay, LV_OBJ_FLAG_CLICKABLE);
@@ -133,16 +137,16 @@ static void show_overlay(void) {
         lv_obj_center(canvas);
     } else {
         err_label = lv_label_create(overlay);
-        lv_obj_set_style_text_color(err_label, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_color(err_label, lv_color_hex(COL_CAM_TEXT), 0);
         lv_obj_set_style_text_font(err_label, SF(22), 0);
         lv_label_set_text(err_label, tr("Bezig met verbinden met camera...", "Connecting to camera..."));
         lv_obj_center(err_label);
     }
 
     lv_obj_t * lbl = lv_label_create(overlay);
-    lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(COL_CAM_TEXT), 0);
     lv_obj_set_style_text_font(lbl, SF(28), 0);
-    lv_obj_set_style_bg_color(lbl, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_color(lbl, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(lbl, LV_OPA_50, 0);
     lv_obj_set_style_pad_all(lbl, 8, 0);
     lv_obj_set_style_radius(lbl, 8, 0);

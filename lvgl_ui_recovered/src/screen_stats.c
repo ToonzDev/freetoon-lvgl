@@ -28,6 +28,16 @@
 #include <string.h>
 #include <time.h>
 
+/* Identity colours, same in every theme: one hue per measured quantity
+ * (chart series, metric tabs, tooltips). */
+#define COL_SER_ELEC   0xaa77ff   /* electricity */
+#define COL_SER_SOLAR  0xeeaa22   /* solar */
+#define COL_SER_GAS    0xffaa44   /* gas */
+#define COL_SER_WATER  0x44aaff   /* water */
+#define COL_SER_CVBAR  0x5fb3ff   /* CH boiler pressure */
+#define COL_SER_PLUGS  0x3fbf7f   /* smart plugs */
+#define COL_ON_IDENT   0xffffff   /* text on those identity fills */
+
 static lv_obj_t * scr_root = NULL;
 static lv_obj_t * chart;
 static lv_chart_series_t * cs;
@@ -94,15 +104,15 @@ typedef struct {
     int local_hist;
 } metric_t;
 static const metric_t metrics[6] = {
-    {"Electricity", "W",     "kWh",  "elec_flow",                  "elec_quantity_nt",      "elec_quantity_lt",      0xaa77ff, 0},
+    {"Electricity", "W",     "kWh",  "elec_flow",                  "elec_quantity_nt",      "elec_quantity_lt",      COL_SER_ELEC, 0},
     /* Solar: the stock solar-meter loggers (analog S0 sensor on the meter
      * adapter); fallback = P1 return delivery (*_produ), see solar_produ(). */
-    {"Solar",       "W",     "kWh",  "elec_solar_flow",            "elec_solar_quantity",   NULL,                    0xeeaa22, 0},
-    {"Gas",         "m3/h",  "m3",   "gas_flow",                   "gas_quantity",          NULL,                    0xffaa44, 0},
-    {"Water",       "l/min", "m3",   "water_flow",                 "water_quantity",        NULL,                    0x44aaff, 0},
-    {"CV bar",      "bar",   "bar",  "thermstat_boilerChPressure", "thermstat_boilerChPressure", NULL,          0x5fb3ff, 0},
+    {"Solar",       "W",     "kWh",  "elec_solar_flow",            "elec_solar_quantity",   NULL,                    COL_SER_SOLAR, 0},
+    {"Gas",         "m3/h",  "m3",   "gas_flow",                   "gas_quantity",          NULL,                    COL_SER_GAS, 0},
+    {"Water",       "l/min", "m3",   "water_flow",                 "water_quantity",        NULL,                    COL_SER_WATER, 0},
+    {"CV bar",      "bar",   "bar",  "thermstat_boilerChPressure", "thermstat_boilerChPressure", NULL,          COL_SER_CVBAR, 0},
     /* Z-Wave smart plugs: logger chosen at run time (plugs.c) */
-    {"Plugs",       "W",     "kWh",  NULL,                         NULL,                    NULL,                    0x3fbf7f, 0},
+    {"Plugs",       "W",     "kWh",  NULL,                         NULL,                    NULL,                    COL_SER_PLUGS, 0},
 };
 #define N_METRIC ((int)(sizeof metrics / sizeof metrics[0]))
 #define M_PLUG   5
@@ -437,7 +447,7 @@ static void show_tooltip(int b, int bar_screen_x, int bar_screen_y) {
         s_tooltip_box = lv_obj_create(scr_root);
         lv_obj_remove_style_all(s_tooltip_box);
         lv_obj_set_size(s_tooltip_box, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-        lv_obj_set_style_bg_color(s_tooltip_box, lv_color_hex(0x0e1a2a), 0);
+        lv_obj_set_style_bg_color(s_tooltip_box, lv_color_hex(THEME_CARD_BG), 0);
         lv_obj_set_style_bg_opa(s_tooltip_box, LV_OPA_COVER, 0);
         lv_obj_set_style_border_width(s_tooltip_box, 2, 0);
         lv_obj_set_style_radius(s_tooltip_box, 6, 0);
@@ -446,7 +456,7 @@ static void show_tooltip(int b, int bar_screen_x, int bar_screen_y) {
         lv_obj_clear_flag(s_tooltip_box, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
 
         s_tooltip_lbl = lv_label_create(s_tooltip_box);
-        lv_obj_set_style_text_color(s_tooltip_lbl, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_color(s_tooltip_lbl, lv_color_hex(THEME_TEXT_HI), 0);
         lv_obj_set_style_text_font(s_tooltip_lbl, SF(15), 0);
         lv_obj_center(s_tooltip_lbl);
     }
@@ -942,20 +952,20 @@ static void style_metric_tab(int i, int sel) {
     lv_obj_set_style_bg_color(tab_metric_btns[i],
         lv_color_hex(sel ? metrics[i].color : THEME_CARD_BG), 0);
     lv_obj_set_style_border_color(tab_metric_btns[i],
-        lv_color_hex(sel ? (settings.home_light_mode ? 0x1d4ed8 : 0xffffff) : THEME_BORDER), 0);
+        lv_color_hex(sel ? THEME_TEXT_HI : THEME_BORDER), 0);
     lv_obj_set_style_border_width(tab_metric_btns[i], sel ? 2 : 1, 0);
     lv_obj_t * lbl = lv_obj_get_child(tab_metric_btns[i], 0);
-    if (lbl) lv_obj_set_style_text_color(lbl, lv_color_hex(sel ? 0xffffff : THEME_TEXT_HI), 0);
+    if (lbl) lv_obj_set_style_text_color(lbl, lv_color_hex(sel ? COL_ON_IDENT : THEME_TEXT_HI), 0);
 }
 static void style_period_tab(int i, int sel) {
     if (i < 0 || i >= N_PERIOD || !tab_period_btns[i]) return;
     lv_obj_set_style_bg_color(tab_period_btns[i],
-        lv_color_hex(sel ? (settings.home_light_mode ? 0x2563eb : 0x3388aa) : THEME_CARD_BG), 0);
+        lv_color_hex(sel ? THEME_ACCENT_FILL : THEME_CARD_BG), 0);
     lv_obj_set_style_border_color(tab_period_btns[i],
-        lv_color_hex(sel ? (settings.home_light_mode ? 0x1d4ed8 : 0xffffff) : THEME_BORDER), 0);
+        lv_color_hex(sel ? THEME_ACCENT : THEME_BORDER), 0);
     lv_obj_set_style_border_width(tab_period_btns[i], sel ? 2 : 1, 0);
     lv_obj_t * lbl = lv_obj_get_child(tab_period_btns[i], 0);
-    if (lbl) lv_obj_set_style_text_color(lbl, lv_color_hex(sel ? 0xffffff : THEME_TEXT_HI), 0);
+    if (lbl) lv_obj_set_style_text_color(lbl, lv_color_hex(sel ? THEME_ON_ACCENT : THEME_TEXT_HI), 0);
 }
 
 /* Diff a cumulative series in place to per-sample usage deltas (Wh / mL).
@@ -1587,10 +1597,10 @@ static void on_rate_gas_click(lv_event_t * e) {
     open_rate_modal(1);
 }
 
-static int scr_light_mode = -1;
+static int scr_light_mode = -1;   /* cached UI theme (settings.ui_theme) */
 
 lv_obj_t * screen_stats_create(void) {
-    if (scr_root && scr_light_mode == settings.home_light_mode) {
+    if (scr_root && scr_light_mode == settings.ui_theme) {
         reload_and_render();
         return scr_root;
     }
@@ -1606,7 +1616,7 @@ lv_obj_t * screen_stats_create(void) {
     lbl_rate_elec = NULL;
     btn_rate_gas = NULL;
     lbl_rate_gas = NULL;
-    scr_light_mode = settings.home_light_mode;
+    scr_light_mode = settings.ui_theme;
 
     scr_root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(THEME_BG), 0);
@@ -1756,7 +1766,7 @@ lv_obj_t * screen_stats_create(void) {
     lv_obj_set_size(btn_plug_next, SX(215), SY(36));
     lv_obj_set_pos(btn_plug_next, SX(30), SY(236));
     lv_obj_set_style_bg_color(btn_plug_next, lv_color_hex(metrics[M_PLUG].color), 0);
-    lv_obj_set_style_border_color(btn_plug_next, lv_color_hex(settings.home_light_mode ? 0x1d4ed8 : 0xffffff), 0);
+    lv_obj_set_style_border_color(btn_plug_next, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_border_width(btn_plug_next, 2, 0);
     lv_obj_set_style_radius(btn_plug_next, 10, 0);
     lv_obj_set_ext_click_area(btn_plug_next, 8);
@@ -1766,7 +1776,7 @@ lv_obj_t * screen_stats_create(void) {
     lv_label_set_long_mode(lbl_pn, LV_LABEL_LONG_DOT);
     lv_obj_set_width(lbl_pn, SX(195));
     lv_obj_set_style_text_align(lbl_pn, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_color(lbl_pn, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(lbl_pn, lv_color_hex(COL_ON_IDENT), 0);
     lv_obj_set_style_text_font(lbl_pn, SF(20), 0);
     lv_obj_center(lbl_pn);
     lv_obj_add_flag(btn_plug_next, LV_OBJ_FLAG_HIDDEN);
