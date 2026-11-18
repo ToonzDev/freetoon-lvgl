@@ -105,6 +105,36 @@ void layout_load_named(const char * name) {
     fclose(f);
     if (g_layout.count == 0) layout_reset_default();   /* empty/garbled → defaults */
 
+    /* Drop tiles on a page that can't show them. The editor used to offer every
+     * type on page 2, but page 2 only renders slots + the rain tile: a news
+     * tile added there came out as an empty slot on page 2 AND as the real
+     * ticker on page 1 at the page-2 position, over the page-1 tiles. */
+    /* Also drop a second VISIBLE tile of the same type (slots excepted): each
+     * type is one object on the home screen, so a duplicate (e.g. a rain tile
+     * on both pages, seen on a Toon 1) only showed up as an empty slot. */
+    {
+        int w = 0;
+        for (int i = 0; i < g_layout.count; i++) {
+            const layout_tile_t * t = &g_layout.tiles[i];
+            if (!layout_type_fits_page(t->type, t->page)) {
+                fprintf(stderr, "[layout] dropped '%s' on page %d: that page can't show it\n",
+                        layout_type_name(t->type), t->page + 1);
+                continue;
+            }
+            int dup = 0;
+            if (t->type != LT_SLOT && t->visible)
+                for (int k = 0; k < w && !dup; k++)
+                    dup = g_layout.tiles[k].type == t->type && g_layout.tiles[k].visible;
+            if (dup) {
+                fprintf(stderr, "[layout] dropped second '%s' on page %d: shown once only\n",
+                        layout_type_name(t->type), t->page + 1);
+                continue;
+            }
+            g_layout.tiles[w++] = g_layout.tiles[i];
+        }
+        g_layout.count = w;
+    }
+
     /* Migrate older saved layouts where the forecast tile was 1 row tall: its
      * weather icons can't be SW-zoomed, so a 1-row "Weer" tile overlaps its own
      * time/temp/wind (very visible on Toon 1). Heal to the 2-row minimum, pulling
@@ -209,10 +239,27 @@ void layout_cell_px(int col, int row, int w, int h,
     if (ph) *ph = y1 - y0;
 }
 
+/* Page 1 (0) shows every type except the page-2 integration slot; page 2 (1)
+ * shows integration slots and the rain tile (built on home_page1) only. Each
+ * other type is one object on page 1, placed from layout_find(). */
+int layout_type_fits_page(int type, int page) {
+    if (page == 0) return type != LT_SLOT;
+    if (page == 1) return type == LT_SLOT || type == LT_RAINFALL;
+    return 0;
+}
+
+/* The tile that places `type` on the home screen: on a page that can show it,
+ * a visible one first (a hidden duplicate earlier in the list used to win and
+ * hide the tile). */
 const layout_tile_t * layout_find(int type) {
-    for (int i = 0; i < g_layout.count; i++)
-        if (g_layout.tiles[i].type == type) return &g_layout.tiles[i];
-    return NULL;
+    const layout_tile_t * hidden = NULL;
+    for (int i = 0; i < g_layout.count; i++) {
+        const layout_tile_t * t = &g_layout.tiles[i];
+        if (t->type != type || !layout_type_fits_page(type, t->page)) continue;
+        if (t->visible) return t;
+        if (!hidden) hidden = t;
+    }
+    return hidden;
 }
 
 /* Grid-rect intersection (half-open cells). */

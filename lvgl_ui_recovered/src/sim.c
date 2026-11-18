@@ -815,6 +815,17 @@ int main(int argc, char ** argv) {
         settings.custom_layout_enabled = 1;
         layout_load_named("");
     }
+    /* Sim-only: $TOONUI_SIM_NEWS seeds two mock headlines (and switches news
+     * on) so the ticker / news tiles render without a feed fetch. */
+    if (getenv("TOONUI_SIM_NEWS")) {
+        extern void news_set_count(int n);
+        extern void news_set_item_data(int i, const char * title, const char * link,
+                                       const char * body, int feed);
+        settings.news_enabled = 1;
+        news_set_item_data(0, "Testkop een - de ticker staat hier", "https://example.org/1", "", 0);
+        news_set_item_data(1, "Testkop twee", "https://example.org/2", "", 0);
+        news_set_count(2);
+    }
     /* Sim-only: $TOONUI_SIM_STOCK_TILES sets the stock-theme tile layout so the
      * stock home and its dim screen can be rendered for an arbitrary layout
      * without a /mnt/data/toonui.cfg. */

@@ -111,8 +111,13 @@ const char * layout_type_name(int type);   /* human label for the editor palette
  * forecast) report min height 1. Writes 0 to both for an unknown type. */
 void layout_type_min(int type, int * min_w, int * min_h);
 
-/* First placed tile of `type`, or NULL if none. */
+/* The placed tile of `type` (a visible one first, on a page that can show
+ * it), or NULL if none. */
 const layout_tile_t * layout_find(int type);
+
+/* 1 if home page `page` (0 = page 1, 1 = page 2) can show tile type `type`:
+ * page 2 only renders integration slots and the rain tile. */
+int layout_type_fits_page(int type, int page);
 
 /* "Push & re-pack" reflow. `moved` is already at its desired col/row/w/h; shove
  * the other visible page-0 tiles straight down to clear any collision with it,

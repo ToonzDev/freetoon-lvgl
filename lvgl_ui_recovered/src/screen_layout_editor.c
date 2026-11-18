@@ -15,6 +15,7 @@
 #include "screens.h"
 #include "display.h"   /* SF()/SX()/SY() scaling for Toon 1 */
 #include "layout.h"
+#include "tile_slots.h"   /* TILE_SLOT_P1_N */
 #include "settings.h"
 #include "theme.h"
 #include "i18n.h"
@@ -70,12 +71,16 @@ static lv_obj_t * preset_list;               /* scrollable list inside preset_mg
 static lv_obj_t * name_modal;                /* keyboard modal for "Opslaan als…" */
 static lv_obj_t * name_ta;                   /* its text area */
 
-/* tile types offerable in the insert palette (LT_SLOT is page-1 only). */
+/* Tile types offerable in the insert palette, per page. Page 2 only renders
+ * integration slots and the rain tile (layout_type_fits_page): offering e.g.
+ * the news ticker there put it on page 1, over the page-1 tiles. */
 static const int PALETTE[] = {
     LT_CLOCK, LT_THERMOSTAT, LT_FORECAST, LT_RAINFALL, LT_NEWS_TICKER, LT_NEWS_SUMMARY, LT_CALENDAR,
     LT_ENERGY, LT_WATER, LT_VENT, LT_FAMILY, LT_WASTE, LT_LIGHTS, LT_SONOS, LT_SMARTPLUG,
 };
 #define N_PALETTE ((int)(sizeof PALETTE / sizeof PALETTE[0]))
+static const int PALETTE_P2[] = { LT_SLOT, LT_RAINFALL };
+#define N_PALETTE_P2 ((int)(sizeof PALETTE_P2 / sizeof PALETTE_P2[0]))
 
 static const uint32_t TYPE_COL[LT_COUNT] = {
     [LT_CLOCK]=0x2a4466, [LT_THERMOSTAT]=0x335577, [LT_FORECAST]=0x4488aa, [LT_RAINFALL]=0x3a77aa, [LT_NEWS_TICKER]=0x666688,
@@ -384,18 +389,23 @@ static void populate_types(void) {
     int added = 0;
     int cur_w = (replace_idx >= 0) ? edit.tiles[replace_idx].w : pick_w;
     int cur_h = (replace_idx >= 0) ? edit.tiles[replace_idx].h : pick_h;
-    for (int p = 0; p < N_PALETTE; p++) {
-        int type = PALETTE[p];
-        int visible_on_page = 0;
+    const int * pal = edit_page == 1 ? PALETTE_P2 : PALETTE;
+    int npal = edit_page == 1 ? N_PALETTE_P2 : N_PALETTE;
+    int slots_p2 = 0;
+    for (int k = 0; k < edit.count; k++)
+        if (edit.tiles[k].type == LT_SLOT && edit.tiles[k].page == 1 && edit.tiles[k].visible) slots_p2++;
+    for (int p = 0; p < npal; p++) {
+        int type = pal[p];
+        int visible_any = 0;       /* every type but the slot is ONE object on the home screen */
         int hidden_on_page = 0;
         for (int k = 0; k < edit.count; k++) {
             if (replace_idx >= 0 && k == replace_idx) continue;
-            if (edit.tiles[k].type == type && edit.tiles[k].page == edit_page) {
-                if (edit.tiles[k].visible) visible_on_page = 1;
-                else hidden_on_page = 1;
-            }
+            if (edit.tiles[k].type != type) continue;
+            if (edit.tiles[k].visible) visible_any = 1;
+            else if (edit.tiles[k].page == edit_page) hidden_on_page = 1;
         }
-        if (visible_on_page && type != LT_SLOT) continue;
+        if (visible_any && type != LT_SLOT) continue;
+        if (type == LT_SLOT && slots_p2 >= TILE_SLOT_P1_N) continue;   /* page 2 has 12 slots */
 
         int mw, mh; layout_type_min(type, &mw, &mh);
         if (cur_w < mw || cur_h < mh) continue;   /* too small for this content */
