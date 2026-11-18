@@ -357,9 +357,38 @@ static void format_agenda_date_time(const calendar_event_t * ev, char * out, siz
     }
 }
 
+/* Binnenklimaat block (DB_CLIMATE, #56) */
+static lv_obj_t * dim_cl_hum = NULL, * dim_cl_q = NULL, * dim_cl_air = NULL;
+static int dim_cl_wide = 0;
+static void dim_climate_update(void) {
+    if (!dim_cl_hum) return;
+    float hum = toon_state.humidity;
+    int eco2 = toon_state.eco2, tvoc = toon_state.tvoc;
+    if (hum > 0.5f) ui_label_set_text_fmt(dim_cl_hum, "%d%%", (int)(hum + 0.5f));
+    else            ui_label_set_text(dim_cl_hum, "--%");
+    char co2[16] = "--", voc[16] = "--";
+    if (eco2 > 0) snprintf(co2, sizeof co2, "%d", eco2);
+    if (tvoc > 0) snprintf(voc, sizeof voc, "%d", tvoc);
+    if (dim_cl_wide) ui_label_set_text_fmt(dim_cl_air, "CO2 %s ppm   TVOC %s ppb", co2, voc);
+    else             ui_label_set_text_fmt(dim_cl_air, "CO2 %s  TVOC %s", co2, voc);
+    const char * q = air_quality_label(eco2, tvoc);
+    const char * t = "";
+    switch (q[0]) {
+        case 'E': t = tr("Uitstekend", "Excellent"); break;
+        case 'G': t = tr("Goed", "Good");            break;
+        case 'F': t = tr("Matig", "Fair");           break;
+        case 'P': t = tr("Slecht", "Poor");          break;
+        case 'B': t = tr("Zeer slecht", "Bad");      break;
+    }
+    if (*t) ui_label_set_text_fmt(dim_cl_q, "%s %s", tr("Lucht:", "Air:"), t);
+    else    ui_label_set_text(dim_cl_q, "");
+    ui_obj_set_style_text_color(dim_cl_q, lv_color_hex(air_quality_color(eco2, tvoc)), 0);
+}
+
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
     if (lv_scr_act() != scr_root) return;
+    dim_climate_update();
 
     time_t now = time(NULL);
     struct tm tm;
@@ -1195,6 +1224,42 @@ lv_obj_t * screen_dim_grid_create(void) {
         int kbw = 0, kbh = 0;
         lv_obj_t * bx_k = dim_box(DB_CLOCKSTUDIO, &kbw, &kbh);
         cs_create(bx_k, CS_DIM, CS_CTX_DIM, 0, 0, kbw, kbh);
+    }
+
+    /* ---- Binnenklimaat (DB_CLIMATE, #56): humidity big, caption, the
+     * air-quality word in its colour, CO2 / TVOC. Toon 2 sensor. ---- */
+    dim_cl_hum = dim_cl_q = dim_cl_air = NULL;
+    if (g_dim_blocks[DB_CLIMATE].visible) {
+        int cbw = 0, cbh = 0;
+        lv_obj_t * bx = dim_box(DB_CLIMATE, &cbw, &cbh);
+        lv_obj_t * col = lv_obj_create(bx);
+        lv_obj_remove_style_all(col);
+        lv_obj_set_size(col, cbw, LV_SIZE_CONTENT);
+        lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_flex_align(col, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        ui_obj_clear_flag(col, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_center(col);
+        int big = cbh >= SY(150);
+        dim_cl_hum = lv_label_create(col);
+        ui_obj_set_style_text_color(dim_cl_hum, lv_color_hex(0xffffff), 0);
+        ui_obj_set_style_text_font(dim_cl_hum, big ? SF(48) : SF(36), 0);
+        ui_label_set_text(dim_cl_hum, "--%");
+        lv_obj_t * cap = lv_label_create(col);
+        ui_obj_set_style_text_color(cap, lv_color_hex(0xc4dcee), 0);
+        ui_obj_set_style_text_font(cap, SF(14), 0);
+        ui_label_set_text(cap, tr("luchtvochtigheid", "humidity"));
+        dim_cl_q = lv_label_create(col);
+        ui_obj_set_style_text_font(dim_cl_q, SF(20), 0);
+        ui_label_set_text(dim_cl_q, "");
+        dim_cl_air = lv_label_create(col);
+        ui_obj_set_style_text_color(dim_cl_air, lv_color_hex(0xc4dcee), 0);
+        ui_obj_set_style_text_font(dim_cl_air, SF(14), 0);
+        lv_obj_set_width(dim_cl_air, cbw);
+        lv_obj_set_style_text_align(dim_cl_air, LV_TEXT_ALIGN_CENTER, 0);
+        lv_label_set_long_mode(dim_cl_air, LV_LABEL_LONG_DOT);
+        ui_label_set_text(dim_cl_air, "");
+        dim_cl_wide = cbw >= SX(250);
+        dim_climate_update();
     }
 
     /* ---- AGENDA: next calendar event(s) — 2-column, height-adaptive, all white text ---- */

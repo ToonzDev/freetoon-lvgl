@@ -82,6 +82,7 @@ typedef enum {
     DB_SOLAR,        /* solar power production (W) value + mini-bar */
     DB_EDAY,         /* electricity day total (kWh) value + mini-bar */
     DB_CLOCKSTUDIO,  /* Klok Studio clock face (clock_studio.c, #55) */
+    DB_CLIMATE,      /* Binnenklimaat: humidity + air quality (Toon 2 sensor, #56) */
     DB_COUNT
 } dim_block_id_t;
 

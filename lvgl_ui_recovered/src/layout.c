@@ -491,6 +491,7 @@ static const dim_block_t DIM_DEFAULTS[DB_COUNT] = {
     [DB_SOLAR]    = { 9, 5, 3, 1, 0 },   /* solar production (default hidden) */
     [DB_EDAY]     = { 9, 5, 3, 1, 0 },   /* electricity day total (default hidden) */
     [DB_CLOCKSTUDIO] = { 0, 0, 3, 3, 0 },  /* Klok Studio (default hidden) */
+    [DB_CLIMATE]  = { 0, 4, 3, 2, 0 },   /* Binnenklimaat (default hidden) */
 };
 
 void dim_layout_reset_default(void) {
@@ -553,6 +554,7 @@ const char * dim_block_name(int id) {
         case DB_SOLAR:    return "Zon";
         case DB_EDAY:     return "Stroom dag";
         case DB_CLOCKSTUDIO: return "Klok Studio";
+        case DB_CLIMATE:  return "Binnenklimaat";
     }
     return "?";
 }

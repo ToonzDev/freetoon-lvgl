@@ -58,7 +58,7 @@ static const uint32_t DB_COL[DB_COUNT] = {
     [DB_WASTE]=0x88dd66,  [DB_FAMILY]=0xff8866,  [DB_VENT]=0x6666aa,
     [DB_ENERGY]=0xaa77ff, [DB_GAS]=0xffaa33,     [DB_CLOCK]=0x2b7bbb,
     [DB_DATE]=0x486b88,   [DB_AGENDA]=0x4477cc,  [DB_RAINFALL]=0x3a77aa,
-    [DB_SOLAR]=0xeeaa22,  [DB_EDAY]=0x8855dd, [DB_CLOCKSTUDIO]=0x5577cc,
+    [DB_SOLAR]=0xeeaa22,  [DB_EDAY]=0x8855dd, [DB_CLOCKSTUDIO]=0x5577cc, [DB_CLIMATE]=0x4fb3a9,
 };
 
 static void place_rect(int i);
@@ -576,6 +576,9 @@ static void open_add_modal(lv_event_t * e) {
 
     int hidden_count = 0;
     for (int i = 0; i < DB_COUNT; i++) {
+#ifdef TOON1
+        if (i == DB_CLIMATE) continue;     /* Toon 1 has no humidity / air sensor */
+#endif
         if (replace_idx >= 0) {
             if (i == replace_idx) continue;
             hidden_count++;
