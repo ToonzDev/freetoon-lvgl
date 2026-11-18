@@ -931,14 +931,52 @@ uint8_t g_slave_status = 0;
 /* Open the physical /dev/ttymxc0 with the same termios happ_thermstat
  * expects (raw, 9600 8N1). Must be called BEFORE bind_mount_tty() —
  * after bind-mount the path resolves to the pty. */
+/* ---- keteladapter parity ------------------------------------------------- */
+static int g_uart_parenb = 0;      /* 1 = 8E1, 0 = 8N1 on the real UART */
+
+/* stty via /proc/self/fd: TTY_PATH is bind-mounted over by the pty later. */
+static void uart_set_parity(int fd, int even) {
+    char cmd[160];
+    snprintf(cmd, sizeof cmd, "/bin/stty -F /proc/%d/fd/%d %s -parodd cs8 -cstopb 2>/dev/null",
+             (int)getpid(), fd, even ? "parenb" : "-parenb");
+    if (system(cmd) == 0) g_uart_parenb = even;
+}
+
+/* The parity that got replies, kept across restarts: at boot the bridge
+ * starts before happ_thermstat, so the UART still has the kernel default
+ * and nothing tells us what this adapter wants. */
+#define PARITY_FILE "/mnt/data/quby_bridge.parity"
+static int g_parity_saved = -1;            /* what PARITY_FILE holds, -1 = none */
+
+static int parity_load(void) {
+    FILE * f = fopen(PARITY_FILE, "r");
+    if (!f) return -1;
+    char b[8] = "";
+    int r = -1;
+    if (fgets(b, sizeof b, f) && b[0] == '8' && b[2] == '1')
+        r = (b[1] == 'E') ? 1 : (b[1] == 'N' ? 0 : -1);
+    fclose(f);
+    return r;
+}
+static void parity_save(int even) {
+    if (g_parity_saved == even) return;
+    FILE * f = fopen(PARITY_FILE ".tmp", "w");
+    if (!f) return;
+    fprintf(f, "%s\n", even ? "8E1" : "8N1");
+    fclose(f);
+    if (rename(PARITY_FILE ".tmp", PARITY_FILE) == 0) g_parity_saved = even;
+}
+
 static int open_real_uart(void) {
     /* If a previous bridge instance left a pty bind-mounted at TTY_PATH,
      * opening it again would give us the pty — not the real UART. stat the
      * path: a real i.MX UART has major 207. Anything else means there's a
      * stale bind-mount we need to drop first. */
     struct stat st;
+    int was_bound = 0;                 /* a previous bridge owned the UART */
     if (stat(TTY_PATH, &st) == 0 && S_ISCHR(st.st_mode)
         && major(st.st_rdev) != 207) {
+        was_bound = 1;
         logmsg("proxy: %s appears bind-mounted (major=%u rdev=%lx); lazy-umount",
                TTY_PATH, major(st.st_rdev), (unsigned long)st.st_rdev);
         if (umount2(TTY_PATH, MNT_DETACH) != 0)
@@ -974,8 +1012,32 @@ static int open_real_uart(void) {
      * 7-byte echo seen at 4800. Likewise CLOCAL on changes nothing the
      * keteladapter cares about, and merely hides the local-RX-echo we
      * already account for in the parser. Keep these flags pinned. */
+    /* happ_thermstat configured this UART before we kicked it: keep its
+     * parity. Some keteladapters run 4800 8E1, others 8N1 (the 2026-05-18
+     * rollout); forcing 8N1 on an 8E1 adapter mangled every byte (echo 0x6a
+     * came back as 0x2a), happ never got a reply and reported "Toon heeft
+     * geen verbinding met je cv-ketel". Without happ's setup (boot) the
+     * saved parity is used, and the shuttle loop's watchdog switches parity
+     * when the adapter never answers. */
+    {
+        struct termios cur;
+        g_parity_saved = parity_load();
+        if (!was_bound && tcgetattr(fd, &cur) == 0 && (cur.c_cflag & CBAUD) == B4800) {
+            /* happ_thermstat set this UART up (4800 is not the kernel
+             * default): its parity is the adapter's. */
+            g_uart_parenb = !!(cur.c_cflag & PARENB);
+            logmsg("proxy: UART was set up by happ_thermstat: 4800 8%c1", g_uart_parenb ? 'E' : 'N');
+            parity_save(g_uart_parenb);
+        } else if (g_parity_saved >= 0) {
+            g_uart_parenb = g_parity_saved;
+            logmsg("proxy: using the saved keteladapter parity 8%c1", g_uart_parenb ? 'E' : 'N');
+        } else {
+            g_uart_parenb = 0;
+        }
+    }
     system("/bin/stty -F " TTY_PATH
            " 4800 raw -clocal -echo -echoe -echok min 0 time 2 2>/dev/null");
+    uart_set_parity(fd, g_uart_parenb);
     /* Log resulting state so we can compare to known-good. */
     FILE *p = popen("/bin/stty -F " TTY_PATH " -a 2>&1 | head -n 6", "r");
     if (p) {
@@ -1147,8 +1209,12 @@ static void force_pty_raw(void) {
               || (t.c_iflag & (ICRNL | IXON | IXOFF))
               || (t.c_oflag & OPOST);
     if (!cooked) return;
+    /* Flatten only the line discipline (iflag/oflag/lflag). cfmakeraw also
+     * resets c_cflag to 8N1, which wiped happ_thermstat's parity setting
+     * on the slave. Keep happ's c_cflag and speed. */
+    tcflag_t cflag = t.c_cflag;           /* also holds the baud rate */
     cfmakeraw(&t);
-    cfsetspeed(&t, B4800);
+    t.c_cflag = cflag;
     if (tcsetattr(g_pty_slave_keeper, TCSANOW, &t) == 0)
         logmsg("proxy: re-applied raw termios to pty slave "
                "(happ_thermstat re-cooked it)");
@@ -1357,7 +1423,8 @@ int main(int argc, char **argv) {
         wait_for_thermstat_bind(10);
         /* Once happ_thermstat is verified on the pty, undo its cooked-mode
          * termios reset so the master read side doesn't see kernel-echoed
-         * copies of every byte we write down to it. */
+         * copies of every byte we write down to it, and give the real UART
+         * the baud / parity happ asked for. */
         force_pty_raw();
     }
 
@@ -1394,6 +1461,8 @@ int main(int argc, char **argv) {
         time_t next_stats   = time(NULL) + 10;
         unsigned long bytes_p2u = 0, bytes_u2p = 0;
         unsigned long frames_p = 0, frames_u = 0;
+        unsigned long replies_u = 0;      /* adapter answers (header bit 7 clear) */
+        int windows_no_reply = 0;
         logmsg("proxy: shuttle loop start  pty_master=%d  uart=%d",
                g_pty_master, g_uart_fd);
         while (!g_stop) {
@@ -1409,7 +1478,11 @@ int main(int argc, char **argv) {
                     ssize_t n = read(g_pty_master, pbuf + plen, sizeof(pbuf) - plen);
                     if (n > 0) {
                         WRITE_ALL(g_uart_fd, pbuf + plen, (size_t)n);
-                        bytes_p2u += (size_t)n;
+                        /* The watchdog counts payload only: happ's 256-byte
+                         * 0x6A boot sync is no frame and used to trip a false
+                         * "bytes but 0 frames" alarm on every start. */
+                        for (ssize_t q = 0; q < n; q++)
+                            if (pbuf[plen + q] != 0x6A) bytes_p2u++;
                         if (g_dbg_raw) {
                             char hex[3 * 32 + 1] = {0};
                             size_t ln = (size_t)n > 32 ? 32 : (size_t)n;
@@ -1468,6 +1541,7 @@ int main(int argc, char **argv) {
                         while (ulen >= 7 && is_quby_header(ubuf[0])) {
                             if (crc8_quby(ubuf, 6) == ubuf[6]) {
                                 sniff_frame(ubuf);
+                                if (!(ubuf[0] & 0x80)) replies_u++;   /* not our echo */
                                 dbgmsg("u>p: %02x %02x %02x %02x %02x %02x %02x",
                                        ubuf[0], ubuf[1], ubuf[2], ubuf[3],
                                        ubuf[4], ubuf[5], ubuf[6]);
@@ -1486,6 +1560,10 @@ int main(int argc, char **argv) {
                 }
             }
             time_t now = time(NULL);
+            /* happ re-cooks the slave when it (re)opens it: flatten it again
+             * within a second instead of after a full 10 s stats window. */
+            static time_t last_raw = 0;
+            if (now != last_raw) { last_raw = now; force_pty_raw(); }
             if (now >= next_publish) {
                 publish_to_boxtalk();
                 next_publish = now + 2;
@@ -1521,8 +1599,22 @@ int main(int argc, char **argv) {
                         force_pty_raw();
                     }
                 }
+                /* Parity: happ is asking (payload out) but the adapter never
+                 * answers with a valid frame → wrong parity for this adapter
+                 * (some run 8E1, others 8N1). Switch after two silent windows;
+                 * keep a parity that gets answers for the next boot. */
+                if (replies_u > 0) {
+                    windows_no_reply = 0;
+                    parity_save(g_uart_parenb);
+                } else if (bytes_p2u > 0 && ++windows_no_reply >= 2) {
+                    windows_no_reply = 0;
+                    uart_set_parity(g_uart_fd, !g_uart_parenb);
+                    logmsg("proxy: no adapter answer for 20 s — UART now 4800 8%c1",
+                           g_uart_parenb ? 'E' : 'N');
+                }
                 bytes_p2u = bytes_u2p = 0;
                 frames_p  = frames_u  = 0;
+                replies_u = 0;
                 next_stats = now + 10;
             }
         }
