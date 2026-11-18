@@ -29,11 +29,11 @@
 #include <string.h>
 #include <time.h>
 
-#define COL_GREEN  (settings.home_light_mode ? 0x16a34a : 0x36c46b)
-#define COL_RED    (settings.home_light_mode ? 0xdc2626 : 0xd4574f)
-#define COL_AMBER  (settings.home_light_mode ? 0xd97706 : 0xd9a23a)
-#define COL_OKBTN  (settings.home_light_mode ? 0x16a34a : 0x2e6e3a)
-#define COL_WARNBT (settings.home_light_mode ? 0xdc2626 : 0x6e3a3a)
+#define COL_GREEN  THEME_SUCCESS
+#define COL_RED    THEME_DANGER
+#define COL_AMBER  THEME_WARNING
+#define COL_OKBTN  THEME_SUCCESS_BG
+#define COL_WARNBT THEME_DANGER_BG
 
 static lv_obj_t * scr_root, * lst, * lbl_empty;
 static lv_timer_t * tmr;
@@ -147,8 +147,8 @@ static void build_editor(void) {
         lv_obj_set_style_border_width(bm, 0, LV_PART_MAIN);
         lv_obj_set_style_bg_color(bm, lv_color_hex(THEME_BTN_BG), LV_PART_ITEMS);
         lv_obj_set_style_text_color(bm, lv_color_hex(THEME_TEXT_HI), LV_PART_ITEMS);
-        lv_obj_set_style_bg_color(bm, lv_color_hex(0x2a7ad8), LV_PART_ITEMS | LV_STATE_CHECKED);
-        lv_obj_set_style_text_color(bm, lv_color_hex(0xffffff), LV_PART_ITEMS | LV_STATE_CHECKED);
+        lv_obj_set_style_bg_color(bm, lv_color_hex(THEME_ACCENT_FILL), LV_PART_ITEMS | LV_STATE_CHECKED);
+        lv_obj_set_style_text_color(bm, lv_color_hex(THEME_ON_ACCENT), LV_PART_ITEMS | LV_STATE_CHECKED);
         lv_obj_add_event_cb(bm, on_bm, LV_EVENT_VALUE_CHANGED, (void *)(intptr_t)r);
         g_bm[r] = bm;
         y += SY(58);
@@ -342,8 +342,8 @@ static void build_pulse_editor(void) {
         lv_obj_set_style_border_width(bm, 0, LV_PART_MAIN);
         lv_obj_set_style_bg_color(bm, lv_color_hex(THEME_BTN_BG), LV_PART_ITEMS);
         lv_obj_set_style_text_color(bm, lv_color_hex(THEME_TEXT_HI), LV_PART_ITEMS);
-        lv_obj_set_style_bg_color(bm, lv_color_hex(0x2a7ad8), LV_PART_ITEMS | LV_STATE_CHECKED);
-        lv_obj_set_style_text_color(bm, lv_color_hex(0xffffff), LV_PART_ITEMS | LV_STATE_CHECKED);
+        lv_obj_set_style_bg_color(bm, lv_color_hex(THEME_ACCENT_FILL), LV_PART_ITEMS | LV_STATE_CHECKED);
+        lv_obj_set_style_text_color(bm, lv_color_hex(THEME_ON_ACCENT), LV_PART_ITEMS | LV_STATE_CHECKED);
         lv_obj_add_event_cb(bm, on_punit, LV_EVENT_VALUE_CHANGED, (void *)(intptr_t)k);
         y += SY(58);
     }
@@ -411,7 +411,8 @@ static lv_obj_t * mk_btn(lv_obj_t * par, const char * txt, uint32_t col, lv_even
     lv_obj_set_ext_click_area(b, 6);
     if (cb) lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, ud);
     lv_obj_t * l = lv_label_create(b);
-    lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
+    /* neutral button: normal text; coloured (ok/remove) fills: text on accent */
+    lv_obj_set_style_text_color(l, lv_color_hex(col == (uint32_t)THEME_BTN_ACCENT ? THEME_TEXT_HI : THEME_ON_ACCENT), 0);
     lv_obj_set_style_text_font(l, SF(18), 0);
     lv_label_set_text(l, txt);
     lv_obj_center(l);
@@ -441,14 +442,14 @@ static void build_list(const ma_info_t * inf) {
         lv_obj_t * c = lv_obj_create(lst);
         lv_obj_set_size(c, lv_pct(100), SY(140));
         lv_obj_set_style_bg_color(c, lv_color_hex(THEME_CARD_BG), 0);
-        lv_obj_set_style_border_width(c, settings.home_light_mode ? 1 : 0, 0);
+        lv_obj_set_style_border_width(c, THEME_IS_LIGHT ? 1 : 0, 0);
         lv_obj_set_style_border_color(c, lv_color_hex(THEME_BORDER), 0);
         lv_obj_set_style_radius(c, 14, 0);
         lv_obj_set_style_pad_all(c, 14, 0);
         lv_obj_clear_flag(c, LV_OBJ_FLAG_SCROLLABLE);
 
         /* children 0/1 are the buttons: on_card_btn uses index parity */
-        lv_obj_t * bm = mk_btn(c, tr("Meters", "Meters"), 0x2a4060, on_card_btn, g_card_uuid[i], NULL);
+        lv_obj_t * bm = mk_btn(c, tr("Meters", "Meters"), THEME_BTN_ACCENT, on_card_btn, g_card_uuid[i], NULL);
         lv_obj_align(bm, LV_ALIGN_TOP_RIGHT, 0, 0);
         lv_obj_t * br = mk_btn(c, tr("Verwijderen", "Remove"), COL_WARNBT, on_card_btn, g_card_uuid[i], NULL);
         lv_obj_align(br, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
@@ -843,13 +844,13 @@ static void on_scr_event(lv_event_t * e) {
     else if (c == LV_EVENT_SCREEN_UNLOADED && tmr) lv_timer_pause(tmr);
 }
 
-static int scr_light_mode = -1;
+static int scr_light_mode = -1;   /* cached UI theme (settings.ui_theme) */
 
 lv_obj_t * screen_meteradapters_create(void) {
-    if (scr_root && scr_light_mode == settings.home_light_mode) return scr_root;
+    if (scr_root && scr_light_mode == settings.ui_theme) return scr_root;
     if (scr_root) { lv_obj_del(scr_root); scr_root = NULL; }
     if (tmr) { lv_timer_del(tmr); tmr = NULL; }
-    scr_light_mode = settings.home_light_mode;
+    scr_light_mode = settings.ui_theme;
     g_flow = F_NONE;
 
     scr_root = lv_obj_create(NULL);
@@ -893,7 +894,7 @@ lv_obj_t * screen_meteradapters_create(void) {
     lv_obj_t * add = mk_btn(scr_root, tr("Meetadapter toevoegen", "Add meter adapter"), COL_OKBTN, on_add, NULL, NULL);
     lv_obj_set_width(add, SX(320));
     lv_obj_align(add, LV_ALIGN_BOTTOM_LEFT, SX(22), SY(-18));
-    lv_obj_t * rst = mk_btn(scr_root, tr("Adapter resetten", "Reset adapter"), 0x2a4060, on_reset, NULL, NULL);
+    lv_obj_t * rst = mk_btn(scr_root, tr("Adapter resetten", "Reset adapter"), THEME_BTN_ACCENT, on_reset, NULL, NULL);
     lv_obj_set_width(rst, SX(260));
     lv_obj_align(rst, LV_ALIGN_BOTTOM_LEFT, SX(362), SY(-18));
 
@@ -935,7 +936,7 @@ lv_obj_t * screen_meteradapters_create(void) {
     lv_label_set_long_mode(ov_status, LV_LABEL_LONG_WRAP);
     lv_obj_align(ov_status, LV_ALIGN_BOTTOM_LEFT, 0, SY(-62));
     for (int i = 0; i < 3; i++) {
-        ov_btn[i] = mk_btn(card, "", i == 2 ? 0x2a4060 : (i == 1 ? COL_WARNBT : COL_OKBTN),
+        ov_btn[i] = mk_btn(card, "", i == 2 ? THEME_BTN_ACCENT : (i == 1 ? COL_WARNBT : COL_OKBTN),
                            on_ov_btn, (void *)(intptr_t)i, &ov_btn_lbl[i]);
         lv_obj_set_width(ov_btn[i], SX(i == 0 ? 260 : 200));
     }
