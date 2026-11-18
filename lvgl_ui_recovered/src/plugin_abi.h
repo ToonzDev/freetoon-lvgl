@@ -30,6 +30,13 @@
  *     changes incompatibly: an exported function's signature or semantics,
  *     a struct passed to plugins, or lv_conf.h options that change LVGL
  *     struct sizes. Appending new settings fields needs NO bump.
+ *   - Colours: use the THEME_* tokens from theme.h, never literals, so the
+ *     plugin follows the user's theme (Nacht / Licht / Warm / Zwart). They
+ *     read toonui's palette (ft_palette_t, append-only) through the weak
+ *     symbol ft_theme_cur and fall back to light/dark on an older toonui, so
+ *     declare FT_SETTINGS_FIELD(home_light_mode) when you use them.
+ *     settings.ui_theme (UI_THEME_*) is exported for plugins that need the
+ *     theme id itself; home_light_mode is 1 exactly when Light is active.
  */
 #ifndef FREETOON_PLUGIN_ABI_H
 #define FREETOON_PLUGIN_ABI_H

@@ -15,6 +15,9 @@
 #include "icons.h"
 #include "settings.h"
 #include "theme.h"
+
+/* Identity colour, same in every theme: rain bars in the neerslag chart. */
+#define COL_RAIN_SERIES 0x5a9bd3
 #include "lvgl/src/extra/libs/gif/lv_gif.h"
 #include "buienradar_rain.h"
 #include <stdio.h>
@@ -71,18 +74,16 @@ static lv_obj_t * fc_rain_lbl_times[5] = {0};
 
 static void update_forecast_view_mode(void) {
     if (!scr_root) return;
-    int light = settings.home_light_mode;
-
     /* Update button styles */
     lv_obj_t * btns[3] = { btn_view_radar, btn_view_3h, btn_view_24h };
     for (int i = 0; i < 3; i++) {
         if (!btns[i]) continue;
         int active = (fc_view_mode == i);
         lv_obj_set_style_border_width(btns[i], active ? 2 : 0, 0);
-        lv_obj_set_style_border_color(btns[i], lv_color_hex(light ? 0x224488 : 0xffffff), 0);
-        lv_obj_set_style_bg_color(btns[i], lv_color_hex(active ? (light ? 0x90c0f0 : 0x3a6090) : (light ? 0xccddee : 0x243242)), 0);
+        lv_obj_set_style_border_color(btns[i], lv_color_hex(THEME_ACCENT), 0);
+        lv_obj_set_style_bg_color(btns[i], lv_color_hex(active ? THEME_ACCENT_FILL : THEME_BTN_BG), 0);
         lv_obj_t * l = lv_obj_get_child(btns[i], 0);
-        if (l) lv_obj_set_style_text_color(l, lv_color_hex(active ? (light ? 0x112233 : 0xffffff) : (light ? 0x445566 : 0x88aabb)), 0);
+        if (l) lv_obj_set_style_text_color(l, lv_color_hex(active ? THEME_ON_ACCENT : THEME_TEXT_DIM), 0);
     }
 
     if (fc_view_mode == 0) {
@@ -342,10 +343,10 @@ static void refresh_cb(lv_timer_t * t) {
     }
 }
 
-static int scr_light_mode = -1;
+static int scr_light_mode = -1;   /* cached UI theme (settings.ui_theme) */
 
 lv_obj_t * screen_forecast_create(void) {
-    if (scr_root && scr_light_mode == settings.home_light_mode) {
+    if (scr_root && scr_light_mode == settings.ui_theme) {
         if (radar_img) {
             lv_gif_t * g = (lv_gif_t *)radar_img;
             if (g->timer) lv_timer_resume(g->timer);
@@ -368,7 +369,7 @@ lv_obj_t * screen_forecast_create(void) {
         for (int i = 0; i < 3; i++) fc_thresh_lbl[i] = NULL;
         for (int i = 0; i < 5; i++) fc_rain_lbl_times[i] = NULL;
     }
-    scr_light_mode = settings.home_light_mode;
+    scr_light_mode = settings.ui_theme;
 
     scr_root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(THEME_BG), 0);
@@ -448,8 +449,8 @@ lv_obj_t * screen_forecast_create(void) {
     int chart_h = rf_sz - 132;          /* top edge just below the view-button stack */
     lv_obj_set_size(fc_rain_chart, chart_w, chart_h);
     lv_obj_align(fc_rain_chart, LV_ALIGN_BOTTOM_RIGHT, -4, -26);
-    lv_obj_set_style_bg_color(fc_rain_chart, lv_color_hex(settings.home_light_mode ? 0xeef4fa : 0x141e2a), 0);
-    lv_obj_set_style_border_color(fc_rain_chart, lv_color_hex(settings.home_light_mode ? 0xccdae8 : 0x1e2c3e), 0);
+    lv_obj_set_style_bg_color(fc_rain_chart, lv_color_hex(THEME_ROW_BG_ALT), 0);
+    lv_obj_set_style_border_color(fc_rain_chart, lv_color_hex(THEME_BORDER), 0);
     lv_obj_set_style_border_width(fc_rain_chart, 1, 0);
     lv_obj_set_style_radius(fc_rain_chart, 8, 0);
     lv_obj_set_style_pad_ver(fc_rain_chart, 2, 0);
@@ -459,12 +460,12 @@ lv_obj_t * screen_forecast_create(void) {
     lv_chart_set_type(fc_rain_chart, LV_CHART_TYPE_BAR);
     lv_chart_set_range(fc_rain_chart, LV_CHART_AXIS_PRIMARY_Y, 0, 100);
     lv_chart_set_div_line_count(fc_rain_chart, 4, 5);
-    lv_obj_set_style_line_color(fc_rain_chart, lv_color_hex(settings.home_light_mode ? 0xccddee : 0x223344), LV_PART_MAIN);
+    lv_obj_set_style_line_color(fc_rain_chart, lv_color_hex(THEME_BORDER), LV_PART_MAIN);
     lv_obj_set_style_line_opa(fc_rain_chart, LV_OPA_50, LV_PART_MAIN);
     lv_obj_set_style_pad_column(fc_rain_chart, 1, LV_PART_MAIN);
     lv_obj_set_style_radius(fc_rain_chart, 2, LV_PART_ITEMS);
 
-    fc_rain_ser = lv_chart_add_series(fc_rain_chart, lv_color_hex(0x5a9bd3), LV_CHART_AXIS_PRIMARY_Y);
+    fc_rain_ser = lv_chart_add_series(fc_rain_chart, lv_color_hex(COL_RAIN_SERIES), LV_CHART_AXIS_PRIMARY_Y);
 
     static const char * thresh_names[] = {"Zwaar", "Matig", "Licht"};
     for (int i = 0; i < 3; i++) {
@@ -503,9 +504,9 @@ lv_obj_t * screen_forecast_create(void) {
     lv_obj_t * pill_bar = lv_obj_create(radar_frame);
     lv_obj_set_size(pill_bar, btn_w + 6, 3 * 26 + 2 * 4 + 6);
     lv_obj_align(pill_bar, LV_ALIGN_TOP_RIGHT, -6, 6);
-    lv_obj_set_style_bg_color(pill_bar, lv_color_hex(0x101722), 0);
+    lv_obj_set_style_bg_color(pill_bar, lv_color_hex(THEME_CARD_BG), 0);
     lv_obj_set_style_bg_opa(pill_bar, LV_OPA_80, 0);
-    lv_obj_set_style_border_color(pill_bar, lv_color_hex(0x223344), 0);
+    lv_obj_set_style_border_color(pill_bar, lv_color_hex(THEME_BORDER), 0);
     lv_obj_set_style_border_width(pill_bar, 1, 0);
     lv_obj_set_style_radius(pill_bar, 10, 0);
     lv_obj_set_style_pad_all(pill_bar, 3, 0);
@@ -569,7 +570,7 @@ lv_obj_t * screen_forecast_create(void) {
     lv_obj_set_scroll_dir(body_scroll, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(body_scroll, LV_SCROLLBAR_MODE_AUTO);
     lbl_body = lv_label_create(body_scroll);
-    lv_obj_set_style_text_color(lbl_body, lv_color_hex(settings.home_light_mode ? 0x334455 : 0xbbbbbb), 0);
+    lv_obj_set_style_text_color(lbl_body, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_body, SF(18), 0);
     lv_obj_set_width(lbl_body, right_w - 12);
     lv_label_set_long_mode(lbl_body, LV_LABEL_LONG_WRAP);
@@ -590,13 +591,13 @@ lv_obj_t * screen_forecast_create(void) {
         lv_obj_clear_flag(col, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_add_flag(col, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_set_ext_click_area(col, 4);
-        lv_obj_set_style_bg_color(col, lv_color_hex(settings.home_light_mode ? 0xccdae8 : 0x223348), LV_STATE_PRESSED);
+        lv_obj_set_style_bg_color(col, lv_color_hex(THEME_ROW_BG), LV_STATE_PRESSED);
         lv_obj_add_event_cb(col, on_day_card_clicked, LV_EVENT_CLICKED, (void *)(intptr_t)i);
 
         /* Centred big icon */
         fc_icon[i] = lv_img_create(col);
         lv_img_set_src(fc_icon[i], &icon_wx_cloud_lg);
-        lv_obj_set_style_img_recolor(fc_icon[i], lv_color_hex(settings.home_light_mode ? 0x64748b : 0xddeeff), 0);
+        lv_obj_set_style_img_recolor(fc_icon[i], lv_color_hex(THEME_TEXT_DIM), 0);
         lv_obj_set_style_img_recolor_opa(fc_icon[i], 255, 0);
         if (DISP_VER < 600) {
             lv_img_set_zoom(fc_icon[i], 120);

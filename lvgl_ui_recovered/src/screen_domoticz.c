@@ -20,8 +20,8 @@
 #define COL_CARD     THEME_CARD_BG
 #define COL_TEXT_HI  THEME_TEXT_HI
 #define COL_TEXT_DIM THEME_TEXT_DIM
-#define COL_ON       THEME_ACCENT_BLUE   /* "on", same as Lights/Hue */
-#define COL_OPEN     (settings.home_light_mode ? 0x16a34a : 0x2e6e3a)   /* blind Open stays green */
+#define COL_ON       THEME_ACCENT   /* "on", same as Lights/Hue */
+#define COL_OPEN     THEME_SUCCESS_BG   /* blind Open stays green */
 #define COL_OFF      THEME_OFF
 
 static lv_obj_t * scr_root   = NULL;
@@ -64,7 +64,7 @@ static lv_obj_t * mk_btn(lv_obj_t * parent, const char * txt, uint32_t col,
     lv_obj_set_style_radius(b, 10, 0);
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, (void *)(intptr_t)idx);
     lv_obj_t * l = lv_label_create(b);
-    lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(l, lv_color_hex(THEME_ON_ACCENT), 0);
     lv_obj_set_style_text_font(l, SF(18), 0);
     lv_label_set_text(l, txt);
     lv_obj_center(l);
@@ -92,7 +92,7 @@ static void build_rows(void) {
         lv_obj_set_size(row, SX(940), SY(76));
         lv_obj_set_style_bg_color(row, lv_color_hex(COL_CARD), 0);
         lv_obj_set_style_border_color(row, lv_color_hex(THEME_BORDER), 0);
-        lv_obj_set_style_border_width(row, settings.home_light_mode ? 1 : 0, 0);
+        lv_obj_set_style_border_width(row, THEME_IS_LIGHT ? 1 : 0, 0);
         lv_obj_set_style_radius(row, 12, 0);
         lv_obj_set_style_pad_all(row, 10, 0);
         lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
@@ -104,18 +104,20 @@ static void build_rows(void) {
         lv_obj_align(nm, LV_ALIGN_LEFT_MID, SX(4), 0);
 
         if (d->kind == DZ_BLIND) {
-            mk_btn(row, tr("Dicht", "Close"), 0x6e3a3a, on_blind_close, d->idx, SX(120)); /* rightmost */
+            mk_btn(row, tr("Dicht", "Close"), THEME_DANGER_BG, on_blind_close, d->idx, SX(120)); /* rightmost */
             lv_obj_align(lv_obj_get_child(row, lv_obj_get_child_cnt(row)-1), LV_ALIGN_RIGHT_MID, SX(-4), 0);
-            mk_btn(row, tr("Stop", "Stop"), 0x2a4060, on_blind_stop, d->idx, SX(110));
+            mk_btn(row, tr("Stop", "Stop"), THEME_BTN_ACCENT, on_blind_stop, d->idx, SX(110));
             lv_obj_align(lv_obj_get_child(row, lv_obj_get_child_cnt(row)-1), LV_ALIGN_RIGHT_MID, SX(-132), 0);
             mk_btn(row, tr("Open", "Open"), COL_OPEN, on_blind_open, d->idx, SX(120));
             lv_obj_align(lv_obj_get_child(row, lv_obj_get_child_cnt(row)-1), LV_ALIGN_RIGHT_MID, SX(-250), 0);
         } else {
             int is_t1 = (settings.domoticz_tile_idx1 == d->idx);
             int is_t2 = (settings.domoticz_tile_idx2 == d->idx);
-            lv_obj_t * b_t1 = mk_btn(row, is_t1 ? "[ T1 ]" : "T1", is_t1 ? 0x2a6088 : 0x223044, on_pin_tile1, d->idx, SX(72));
+            lv_obj_t * b_t1 = mk_btn(row, is_t1 ? "[ T1 ]" : "T1", is_t1 ? THEME_ACCENT_FILL : THEME_BTN_BG, on_pin_tile1, d->idx, SX(72));
+            lv_obj_set_style_text_color(lv_obj_get_child(b_t1, 0), lv_color_hex(is_t1 ? THEME_ON_ACCENT : THEME_TEXT_HI), 0);
             lv_obj_align(b_t1, LV_ALIGN_RIGHT_MID, SX(-238), 0);
-            lv_obj_t * b_t2 = mk_btn(row, is_t2 ? "[ T2 ]" : "T2", is_t2 ? 0x2a6088 : 0x223044, on_pin_tile2, d->idx, SX(72));
+            lv_obj_t * b_t2 = mk_btn(row, is_t2 ? "[ T2 ]" : "T2", is_t2 ? THEME_ACCENT_FILL : THEME_BTN_BG, on_pin_tile2, d->idx, SX(72));
+            lv_obj_set_style_text_color(lv_obj_get_child(b_t2, 0), lv_color_hex(is_t2 ? THEME_ON_ACCENT : THEME_TEXT_HI), 0);
             lv_obj_align(b_t2, LV_ALIGN_RIGHT_MID, SX(-160), 0);
 
             char st[24];
@@ -185,15 +187,15 @@ static void on_scr_event(lv_event_t * e) {
     else if (c == LV_EVENT_SCREEN_UNLOADED) { if (refresh_timer) lv_timer_pause(refresh_timer); }
 }
 
-static int scr_light_mode = -1;
+static int scr_theme = -1;
 
 lv_obj_t * screen_domoticz_create(void) {
-    if (scr_root && scr_light_mode == settings.home_light_mode) return scr_root;
+    if (scr_root && scr_theme == settings.ui_theme) return scr_root;
     if (scr_root) { lv_obj_del(scr_root); scr_root = NULL; }
     /* Rebuild (light-mode/theme toggle): the old timer must go too, or one
      * more paused timer leaks per toggle. */
     if (refresh_timer) { lv_timer_del(refresh_timer); refresh_timer = NULL; }
-    scr_light_mode = settings.home_light_mode;
+    scr_theme = settings.ui_theme;
 
     scr_root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(COL_BG), 0);

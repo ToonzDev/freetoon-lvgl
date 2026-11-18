@@ -23,9 +23,9 @@
 #define COL_CARD     THEME_CARD_BG
 #define COL_TEXT_HI  THEME_TEXT_HI
 #define COL_TEXT_DIM THEME_TEXT_DIM
-#define COL_PIN_ON   (settings.home_light_mode ? 0x16a34a : 0x2e6e3a)
+#define COL_PIN_ON   THEME_SUCCESS_BG
 #define COL_PIN_OFF  THEME_OFF
-#define COL_REMOVE   (settings.home_light_mode ? 0xdc2626 : 0x6e3a3a)
+#define COL_REMOVE   THEME_DANGER_BG
 
 static lv_obj_t * scr_root = NULL;
 static lv_obj_t * list     = NULL;
@@ -66,7 +66,7 @@ static lv_obj_t * small_btn(lv_obj_t * parent, const char * txt, uint32_t col,
     lv_obj_set_ext_click_area(b, 8);
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, (void *)(intptr_t)data);
     lv_obj_t * l = lv_label_create(b);
-    lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(l, lv_color_hex(THEME_ON_ACCENT), 0);
     lv_obj_set_style_text_font(l, SF(14), 0);
     lv_label_set_text(l, txt);
     lv_obj_center(l);
@@ -92,7 +92,7 @@ static void rebuild(void) {
         lv_obj_set_size(c, lv_pct(100), 56);
         lv_obj_set_style_bg_color(c, lv_color_hex(COL_CARD), 0);
         lv_obj_set_style_border_color(c, lv_color_hex(THEME_BORDER), 0);
-        lv_obj_set_style_border_width(c, settings.home_light_mode ? 1 : 0, 0);
+        lv_obj_set_style_border_width(c, THEME_IS_LIGHT ? 1 : 0, 0);
         lv_obj_set_style_radius(c, 12, 0);
         lv_obj_set_style_pad_all(c, 8, 0);
         lv_obj_clear_flag(c, LV_OBJ_FLAG_SCROLLABLE);
@@ -150,12 +150,12 @@ static void on_scr_event(lv_event_t * e) {
     }
 }
 
-static int scr_light_mode = -1;
+static int scr_theme = -1;
 
 lv_obj_t * screen_ha_devices_create(void) {
-    if (scr_root && scr_light_mode == settings.home_light_mode) return scr_root;
+    if (scr_root && scr_theme == settings.ui_theme) return scr_root;
     if (scr_root) { lv_obj_del(scr_root); scr_root = NULL; }
-    scr_light_mode = settings.home_light_mode;
+    scr_theme = settings.ui_theme;
 
     scr_root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr_root, lv_color_hex(COL_BG), 0);
@@ -199,7 +199,7 @@ lv_obj_t * screen_ha_devices_create(void) {
         { HADEV_SCENE, tr("+ Scene", "+ Scene") },
     };
     for (size_t i = 0; i < sizeof(adds)/sizeof(adds[0]); i++)
-        small_btn(addrow, adds[i].txt, settings.home_light_mode ? 0x2563eb : 0x2e5e8a, SX(140), SY(40), on_add, adds[i].type);
+        small_btn(addrow, adds[i].txt, THEME_ACCENT_FILL, SX(140), SY(40), on_add, adds[i].type);
 
     /* Scrollable device list. */
     list = lv_obj_create(scr_root);

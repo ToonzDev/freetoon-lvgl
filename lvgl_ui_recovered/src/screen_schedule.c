@@ -24,6 +24,9 @@
 #include <string.h>
 #include <time.h>
 
+/* Identity colour, same in every theme: text on a programme's colour block. */
+#define COL_ON_IDENT 0xffffff
+
 static lv_obj_t * scr_root = NULL;
 static int selected_day = 0;      /* 0=Mon..6=Sun */
 static lv_obj_t * day_chips[7];
@@ -62,11 +65,11 @@ static int chip_day_of(lv_obj_t * c) {
     return -1;
 }
 static void style_chip(lv_obj_t * c, int sel) {
-    lv_obj_set_style_bg_color(c, lv_color_hex(sel ? (settings.home_light_mode ? 0x2563eb : 0x3388aa) : THEME_CARD_BG), 0);
-    lv_obj_set_style_border_color(c, lv_color_hex(sel ? (settings.home_light_mode ? 0x1d4ed8 : 0xffffff) : THEME_BORDER), 0);
+    lv_obj_set_style_bg_color(c, lv_color_hex(sel ? THEME_ACCENT_FILL : THEME_CARD_BG), 0);
+    lv_obj_set_style_border_color(c, lv_color_hex(sel ? THEME_ACCENT : THEME_BORDER), 0);
     lv_obj_set_style_border_width(c, sel ? 2 : 1, 0);
     lv_obj_t * lbl = lv_obj_get_child(c, 0);
-    if (lbl) lv_obj_set_style_text_color(lbl, lv_color_hex(sel ? 0xffffff : THEME_TEXT_HI), 0);
+    if (lbl) lv_obj_set_style_text_color(lbl, lv_color_hex(sel ? THEME_ON_ACCENT : THEME_TEXT_HI), 0);
 }
 static void on_chip_tap(lv_event_t * e) {
     int d = chip_day_of(lv_event_get_target(e));
@@ -171,7 +174,7 @@ static void rebuild_timeline(void) {
     timeline_now_line = lv_obj_create(timeline_box);
     lv_obj_set_size(timeline_now_line, TL_COL_W - 2, 3);
     lv_obj_set_pos(timeline_now_line, toon_day * TL_COL_W + 1, y_now - 1);
-    lv_obj_set_style_bg_color(timeline_now_line, lv_color_hex(settings.home_light_mode ? 0xd97706 : 0xffffff), 0);
+    lv_obj_set_style_bg_color(timeline_now_line, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_border_width(timeline_now_line, 0, 0);
     lv_obj_set_style_radius(timeline_now_line, 1, 0);
     lv_obj_clear_flag(timeline_now_line, LV_OBJ_FLAG_SCROLLABLE);
@@ -256,12 +259,12 @@ static void rebuild_day_list(void) {
     lv_obj_t * add = lv_btn_create(day_list);
     lv_obj_set_size(add, 180, 50);
     lv_obj_set_pos(add, 0, row_y + 4);
-    lv_obj_set_style_bg_color(add, lv_color_hex(settings.home_light_mode ? 0x2563eb : 0x3388aa), 0);
+    lv_obj_set_style_bg_color(add, lv_color_hex(THEME_ACCENT_FILL), 0);
     lv_obj_set_style_radius(add, 10, 0);
     lv_obj_add_event_cb(add, on_add_row, LV_EVENT_CLICKED, NULL);
     lv_obj_t * add_lbl = lv_label_create(add);
     lv_label_set_text(add_lbl, tr("+ Schakelpunt", "+ Add switch point"));
-    lv_obj_set_style_text_color(add_lbl, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(add_lbl, lv_color_hex(THEME_ON_ACCENT), 0);
     lv_obj_set_style_text_font(add_lbl, SF(18), 0);
     lv_obj_center(add_lbl);
 }
@@ -290,8 +293,10 @@ static void edit_update_state_buttons(void) {
         lv_obj_set_style_bg_color(btn,
             lv_color_hex(active ? schedule_state_color(i) : THEME_BTN_BG), 0);
         lv_obj_set_style_border_color(btn,
-            lv_color_hex(active ? 0xffffff : THEME_BORDER), 0);
+            lv_color_hex(active ? THEME_TEXT_HI : THEME_BORDER), 0);
         lv_obj_set_style_border_width(btn, active ? 2 : 1, 0);
+        /* white on the programme's identity colour, normal text on the neutral fill */
+        lv_obj_set_style_text_color(edit_state_lbls[i], lv_color_hex(active ? COL_ON_IDENT : THEME_TEXT_HI), 0);
     }
 }
 
@@ -479,7 +484,7 @@ static void show_edit_modal(int idx) {
         lv_obj_add_event_cb(sb, on_state_btn, LV_EVENT_CLICKED, (void *)(long)i);
         lv_obj_t * lbl = lv_label_create(sb);
         lv_label_set_text(lbl, names[i]);
-        lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_color(lbl, lv_color_hex(THEME_TEXT_HI), 0);
         lv_obj_set_style_text_font(lbl, is_small ? SF(16) : SF(22), 0);
         lv_obj_center(lbl);
         edit_state_lbls[i] = lbl;
@@ -493,10 +498,10 @@ static void show_edit_modal(int idx) {
     lv_obj_t * save = lv_btn_create(panel);
     lv_obj_set_size(save, bb_w, bb_h);
     lv_obj_align(save, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-    lv_obj_set_style_bg_color(save, lv_color_hex(settings.home_light_mode ? 0x2563eb : 0x3388aa), 0);
+    lv_obj_set_style_bg_color(save, lv_color_hex(THEME_SUCCESS_BG), 0);
     lv_obj_add_event_cb(save, on_save, LV_EVENT_CLICKED, NULL);
     l = lv_label_create(save); lv_label_set_text(l, tr("Opslaan", "Save"));
-    lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(l, lv_color_hex(THEME_ON_ACCENT), 0);
     lv_obj_set_style_text_font(l, is_small ? SF(18) : SF(22), 0);
     lv_obj_center(l);
 
@@ -504,10 +509,10 @@ static void show_edit_modal(int idx) {
         lv_obj_t * del = lv_btn_create(panel);
         lv_obj_set_size(del, bb_w, bb_h);
         lv_obj_align(del, LV_ALIGN_BOTTOM_MID, 0, 0);
-        lv_obj_set_style_bg_color(del, lv_color_hex(0xaa3344), 0);
+        lv_obj_set_style_bg_color(del, lv_color_hex(THEME_DANGER_BG), 0);
         lv_obj_add_event_cb(del, on_delete, LV_EVENT_CLICKED, NULL);
         l = lv_label_create(del); lv_label_set_text(l, tr("Verwijderen", "Delete"));
-        lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_color(l, lv_color_hex(THEME_ON_ACCENT), 0);
         lv_obj_set_style_text_font(l, is_small ? SF(18) : SF(22), 0);
         lv_obj_center(l);
     }
@@ -589,7 +594,7 @@ static void refresh_cb(lv_timer_t * t) {
     if (!timeline_now_line) {
         timeline_now_line = lv_obj_create(timeline_box);
         lv_obj_set_size(timeline_now_line, TL_COL_W - 2, 3);
-        lv_obj_set_style_bg_color(timeline_now_line, lv_color_hex(settings.home_light_mode ? 0xd97706 : 0xffffff), 0);
+        lv_obj_set_style_bg_color(timeline_now_line, lv_color_hex(THEME_TEXT_HI), 0);
         lv_obj_set_style_border_width(timeline_now_line, 0, 0);
         lv_obj_set_style_radius(timeline_now_line, 1, 0);
         lv_obj_clear_flag(timeline_now_line, LV_OBJ_FLAG_SCROLLABLE);
@@ -597,10 +602,10 @@ static void refresh_cb(lv_timer_t * t) {
     lv_obj_set_pos(timeline_now_line, toon_day * TL_COL_W + 1, y_now - 1);
 }
 
-static int scr_light_mode = -1;
+static int scr_light_mode = -1;   /* cached UI theme (settings.ui_theme) */
 
 lv_obj_t * screen_schedule_create(void) {
-    if (scr_root && scr_light_mode == settings.home_light_mode) {
+    if (scr_root && scr_light_mode == settings.ui_theme) {
         /* Refresh data each time we enter (in case schedule changed elsewhere) */
         schedule_load();
         rebuild_timeline();
@@ -608,7 +613,7 @@ lv_obj_t * screen_schedule_create(void) {
         return scr_root;
     }
     if (scr_root) { lv_obj_del(scr_root); scr_root = NULL; }
-    scr_light_mode = settings.home_light_mode;
+    scr_light_mode = settings.ui_theme;
     memset(hour_labels, 0, sizeof(hour_labels));
     timeline_now_line = NULL;
     sw_preheat = NULL;

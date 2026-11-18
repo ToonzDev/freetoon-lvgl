@@ -806,6 +806,7 @@ int main(int argc, char ** argv) {
     lv_indev_drv_register(&id);
 
     settings_load();   /* defaults when /mnt/data/toonui.cfg is absent */
+    ui_theme_install(); /* again, now with the cfg's colour theme (widget accent) */
     mock_state();
     layout_load_named(settings.active_layout);  /* home-tile layout: active preset */
     dim_layout_load();  /* dim block layout (seeds defaults if no file) */

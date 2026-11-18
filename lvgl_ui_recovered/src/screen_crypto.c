@@ -13,6 +13,9 @@
 #include "i18n.h"
 #include "settings.h"
 #include "theme.h"
+
+/* Identity colour, same in every theme: Bitcoin brand orange (chart line). */
+#define COL_BITCOIN 0xf7931a
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -121,7 +124,7 @@ static void style_selected(lv_obj_t ** arr, int n, int sel) {
         if (!arr[i]) continue;
         lv_obj_set_style_bg_color(arr[i], lv_color_hex(i == sel ? THEME_BTN_ACCENT : THEME_BTN_BG), 0);
         lv_obj_set_style_border_color(arr[i], lv_color_hex(THEME_BORDER), 0);
-        lv_obj_set_style_border_width(arr[i], settings.home_light_mode && i != sel ? 1 : 0, 0);
+        lv_obj_set_style_border_width(arr[i], THEME_IS_LIGHT && i != sel ? 1 : 0, 0);
     }
 }
 
@@ -149,10 +152,10 @@ static lv_obj_t * chip(lv_obj_t * parent, const char * txt, lv_event_cb_t cb, in
 }
 
 lv_obj_t * screen_crypto_create(void) {
-    static int scr_light_mode = -1;
-    if (scr_root && scr_light_mode == settings.home_light_mode) return scr_root;
+    static int scr_theme = -1;
+    if (scr_root && scr_theme == settings.ui_theme) return scr_root;
     if (scr_root) { lv_obj_del(scr_root); scr_root = NULL; }
-    scr_light_mode = settings.home_light_mode;
+    scr_theme = settings.ui_theme;
 
     init_tf_labels();
     scr_root = lv_obj_create(NULL);
@@ -198,17 +201,17 @@ lv_obj_t * screen_crypto_create(void) {
     lv_chart_set_div_line_count(chart, 5, 0);
     lv_obj_set_style_bg_color(chart, lv_color_hex(THEME_CARD_BG), 0);
     lv_obj_set_style_border_color(chart, lv_color_hex(THEME_BORDER), 0);
-    lv_obj_set_style_border_width(chart, settings.home_light_mode ? 1 : 0, 0);
+    lv_obj_set_style_border_width(chart, THEME_IS_LIGHT ? 1 : 0, 0);
     lv_obj_set_style_line_color(chart, lv_color_hex(THEME_BORDER), LV_PART_MAIN);
     lv_obj_set_style_size(chart, 0, LV_PART_INDICATOR);   /* no point dots */
-    cs = lv_chart_add_series(chart, lv_color_hex(0xf7931a), LV_CHART_AXIS_PRIMARY_Y);
+    cs = lv_chart_add_series(chart, lv_color_hex(COL_BITCOIN), LV_CHART_AXIS_PRIMARY_Y);
 
     lbl_hi = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_hi, lv_color_hex(settings.home_light_mode ? 0x15803d : 0x88dd66), 0);
+    lv_obj_set_style_text_color(lbl_hi, lv_color_hex(THEME_SUCCESS), 0);
     lv_label_set_text(lbl_hi, "");
     lv_obj_align_to(lbl_hi, chart, LV_ALIGN_OUT_TOP_RIGHT, 0, -2);
     lbl_lo = lv_label_create(scr_root);
-    lv_obj_set_style_text_color(lbl_lo, lv_color_hex(settings.home_light_mode ? 0xd97706 : 0xff8866), 0);
+    lv_obj_set_style_text_color(lbl_lo, lv_color_hex(THEME_DANGER), 0);
     lv_label_set_text(lbl_lo, "");
     lv_obj_align_to(lbl_lo, chart, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, 2);
 

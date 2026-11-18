@@ -53,6 +53,9 @@ static int drag_last_col = -1, drag_last_row = -1;
 static dim_block_t drag_preview[DB_COUNT];
 static int drag_preview_ok = 0;
 
+/* Per-block-type identity colours: they tell the block types apart on the
+ * canvas and mean the same in every theme (labels on them stay white). */
+#define DE_COL_ON_BLOCK 0xffffff
 static const uint32_t DB_COL[DB_COUNT] = {
     [DB_THERMO]=0x335577, [DB_WEATHER]=0x4488aa, [DB_FORECAST]=0x66bbdd,
     [DB_WASTE]=0x88dd66,  [DB_FAMILY]=0xff8866,  [DB_VENT]=0x6666aa,
@@ -77,7 +80,7 @@ static void select_block(int i) {
     for (int k = 0; k < DB_COUNT; k++) {
         if (rects[k]) {
             lv_obj_set_style_border_width(rects[k], k == i ? 4 : 0, 0);
-            lv_obj_set_style_border_color(rects[k], lv_color_hex(0xffffff), 0);
+            lv_obj_set_style_border_color(rects[k], lv_color_hex(THEME_TEXT_HI), 0);
         }
     }
     update_sel_label();
@@ -216,7 +219,7 @@ static void rect_event(lv_event_t * e) {
             drag_preview_ok = trial_move(i, col, row, drag_preview);
             lv_obj_set_style_border_width(r, 4, 0);
             lv_obj_set_style_border_color(r,
-                lv_color_hex(drag_preview_ok ? 0x33dd66 : 0xdd4444), 0);
+                lv_color_hex(drag_preview_ok ? THEME_SUCCESS : THEME_DANGER), 0);
             preview_others(drag_preview_ok ? drag_preview : edit_dim, i);
         }
     } else if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
@@ -259,7 +262,7 @@ static void create_rect(int i) {
 
     lv_obj_t * l = lv_label_create(r);
     lv_label_set_text(l, dim_block_name(i));
-    lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_color(l, lv_color_hex(DE_COL_ON_BLOCK), 0);
     lv_obj_set_style_text_font(l, SF(15), 0);
     lv_obj_align(l, LV_ALIGN_TOP_LEFT, 2, 2);
     place_rect(i);
@@ -368,7 +371,7 @@ static void show_block_confirm(int i) {
     confirm_modal = lv_obj_create(modal);
     lv_obj_set_size(confirm_modal, SCR_W, SCR_H);
     lv_obj_set_pos(confirm_modal, 0, 0);
-    lv_obj_set_style_bg_color(confirm_modal, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_color(confirm_modal, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(confirm_modal, LV_OPA_60, 0);
     lv_obj_set_style_border_width(confirm_modal, 0, 0);
     lv_obj_clear_flag(confirm_modal, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_SCROLL_CHAIN);
@@ -391,23 +394,26 @@ static void show_block_confirm(int i) {
     lv_obj_t * ca = lv_btn_create(card);
     lv_obj_set_size(ca, SX(130), SY(50));
     lv_obj_align(ca, LV_ALIGN_BOTTOM_LEFT, SX(10), SY(-14));
-    lv_obj_set_style_bg_color(ca, lv_color_hex(0x444444), 0);
+    lv_obj_set_style_bg_color(ca, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_add_event_cb(ca, on_confirm_cancel, LV_EVENT_CLICKED, NULL);
     lv_obj_t * cal = lv_label_create(ca); lv_label_set_text(cal, tr("Annuleer", "Cancel")); lv_obj_center(cal);
+    lv_obj_set_style_text_color(cal, lv_color_hex(THEME_TEXT_HI), 0);
 
     lv_obj_t * rep = lv_btn_create(card);
     lv_obj_set_size(rep, SX(170), SY(50));
     lv_obj_align(rep, LV_ALIGN_BOTTOM_MID, 0, SY(-14));
-    lv_obj_set_style_bg_color(rep, lv_color_hex(0x2a5070), 0);
+    lv_obj_set_style_bg_color(rep, lv_color_hex(THEME_BTN_ACCENT), 0);
     lv_obj_add_event_cb(rep, on_confirm_replace, LV_EVENT_CLICKED, NULL);
     lv_obj_t * repl = lv_label_create(rep); lv_label_set_text(repl, tr("Vervang type", "Change type")); lv_obj_center(repl);
+    lv_obj_set_style_text_color(repl, lv_color_hex(THEME_TEXT_HI), 0);
 
     lv_obj_t * del = lv_btn_create(card);
     lv_obj_set_size(del, SX(130), SY(50));
     lv_obj_align(del, LV_ALIGN_BOTTOM_RIGHT, SX(-10), SY(-14));
-    lv_obj_set_style_bg_color(del, lv_color_hex(0x553355), 0);
+    lv_obj_set_style_bg_color(del, lv_color_hex(THEME_BTN_BG), 0);
     lv_obj_add_event_cb(del, on_confirm_hide, LV_EVENT_CLICKED, NULL);
     lv_obj_t * dl = lv_label_create(del); lv_label_set_text(dl, tr("Verberg", "Hide")); lv_obj_center(dl);
+    lv_obj_set_style_text_color(dl, lv_color_hex(THEME_TEXT_HI), 0);
 }
 
 static void on_replace_click(lv_event_t * e) {
@@ -528,7 +534,7 @@ static void open_add_modal(lv_event_t * e) {
     chooser_modal = lv_obj_create(modal);
     lv_obj_set_size(chooser_modal, SCR_W, SCR_H);
     lv_obj_set_pos(chooser_modal, 0, 0);
-    lv_obj_set_style_bg_color(chooser_modal, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_color(chooser_modal, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(chooser_modal, LV_OPA_60, 0);
     lv_obj_set_style_border_width(chooser_modal, 0, 0);
     lv_obj_clear_flag(chooser_modal, LV_OBJ_FLAG_SCROLLABLE);
@@ -560,6 +566,7 @@ static void open_add_modal(lv_event_t * e) {
     lv_obj_add_event_cb(b_close, on_chooser_close, LV_EVENT_CLICKED, NULL);
     lv_obj_t * cl = lv_label_create(b_close);
     lv_label_set_text(cl, LV_SYMBOL_CLOSE);
+    lv_obj_set_style_text_color(cl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(cl, SF(16), 0);
     lv_obj_center(cl);
 
@@ -591,7 +598,7 @@ static void open_add_modal(lv_event_t * e) {
             } else {
                 lv_label_set_text(bl, dim_block_name(i));
             }
-            lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+            lv_obj_set_style_text_color(bl, lv_color_hex(DE_COL_ON_BLOCK), 0);
             lv_obj_set_style_text_font(bl, SF(15), 0);
             lv_obj_center(bl);
         } else if (!edit_dim[i].visible) {
@@ -604,7 +611,7 @@ static void open_add_modal(lv_event_t * e) {
 
             lv_obj_t * bl = lv_label_create(btn);
             lv_label_set_text(bl, dim_block_name(i));
-            lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+            lv_obj_set_style_text_color(bl, lv_color_hex(DE_COL_ON_BLOCK), 0);
             lv_obj_set_style_text_font(bl, SF(15), 0);
             lv_obj_center(bl);
         }
@@ -646,6 +653,12 @@ static void on_save(lv_event_t * e) {
     ui_request_restart();
 }
 
+/* Label colour that stays readable on a given button fill (all four themes). */
+static uint32_t btn_txt_col(uint32_t fill) {
+    return (fill == THEME_SUCCESS_BG || fill == THEME_DANGER_BG || fill == THEME_ACCENT_FILL)
+               ? THEME_ON_ACCENT : THEME_TEXT_HI;
+}
+
 static lv_obj_t * tb_btn(lv_obj_t * bar, int x, int w, const char * txt,
                          lv_event_cb_t cb, void * ud, uint32_t col) {
     lv_obj_t * b = lv_btn_create(bar);
@@ -655,6 +668,7 @@ static lv_obj_t * tb_btn(lv_obj_t * bar, int x, int w, const char * txt,
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, ud);
     lv_obj_t * l = lv_label_create(b);
     lv_label_set_text(l, txt);
+    lv_obj_set_style_text_color(l, lv_color_hex(btn_txt_col(col)), 0);
 #ifdef TOON1
     lv_obj_set_style_text_font(l, &lv_font_montserrat_12, 0);
 #endif
@@ -717,27 +731,27 @@ void screen_dim_layout_editor_show(void) {
     lv_obj_set_pos(bar, 0, SCR_H - BAR_H);
     lv_obj_set_style_bg_color(bar, lv_color_hex(THEME_CARD_BG), 0);
     lv_obj_set_style_border_color(bar, lv_color_hex(THEME_BORDER), 0);
-    lv_obj_set_style_border_width(bar, settings.home_light_mode ? 1 : 0, 0);
+    lv_obj_set_style_border_width(bar, THEME_IS_LIGHT ? 1 : 0, 0);
     lv_obj_set_style_radius(bar, 0, 0);
     lv_obj_set_style_pad_all(bar, 0, 0);
     lv_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
 
     int x = SX(8);
-    tb_btn(bar, x, SX(62), tr("Sluit", "Close"), on_cancel, NULL, 0x444444); x += SX(68);
-    tb_btn(bar, x, SX(38), "W-", on_resize, (void *)(intptr_t)0, 0x2a4060); x += SX(42);
-    tb_btn(bar, x, SX(38), "W+", on_resize, (void *)(intptr_t)1, 0x2a4060); x += SX(42);
-    tb_btn(bar, x, SX(38), "H-", on_resize, (void *)(intptr_t)2, 0x2a4060); x += SX(42);
-    tb_btn(bar, x, SX(38), "H+", on_resize, (void *)(intptr_t)3, 0x2a4060); x += SX(44);
-    tb_btn(bar, x, SX(78), tr("Vervang", "Replace"), on_replace_click, NULL, 0x2a5070); x += SX(84);
-    tb_btn(bar, x, SX(78), tr("Verberg", "Hide"), on_toggle_vis, NULL, 0x553355); x += SX(84);
-    tb_btn(bar, x, SX(70), tr("+ Blok", "+ Block"), open_add_modal, NULL, 0x2e5e6e); x += SX(76);
-    tb_btn(bar, x, SX(86), tr("Standaard", "Default"), on_reset, NULL, 0x665522); x += SX(92);
+    tb_btn(bar, x, SX(62), tr("Sluit", "Close"), on_cancel, NULL, THEME_BTN_BG); x += SX(68);
+    tb_btn(bar, x, SX(38), "W-", on_resize, (void *)(intptr_t)0, THEME_BTN_ACCENT); x += SX(42);
+    tb_btn(bar, x, SX(38), "W+", on_resize, (void *)(intptr_t)1, THEME_BTN_ACCENT); x += SX(42);
+    tb_btn(bar, x, SX(38), "H-", on_resize, (void *)(intptr_t)2, THEME_BTN_ACCENT); x += SX(42);
+    tb_btn(bar, x, SX(38), "H+", on_resize, (void *)(intptr_t)3, THEME_BTN_ACCENT); x += SX(44);
+    tb_btn(bar, x, SX(78), tr("Vervang", "Replace"), on_replace_click, NULL, THEME_BTN_ACCENT); x += SX(84);
+    tb_btn(bar, x, SX(78), tr("Verberg", "Hide"), on_toggle_vis, NULL, THEME_BTN_BG); x += SX(84);
+    tb_btn(bar, x, SX(70), tr("+ Blok", "+ Block"), open_add_modal, NULL, THEME_ACCENT_FILL); x += SX(76);
+    tb_btn(bar, x, SX(86), tr("Standaard", "Default"), on_reset, NULL, THEME_BTN_BG); x += SX(92);
 
     sel_lbl = lv_label_create(bar);
     lv_obj_set_style_text_color(sel_lbl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(sel_lbl, SF(14), 0);
     lv_obj_align(sel_lbl, LV_ALIGN_LEFT_MID, x + SX(6), 0);
 
-    tb_btn(bar, SCR_W - SX(96), SX(88), tr("Opslaan", "Save"), on_save, NULL, 0x2e6e3a);
+    tb_btn(bar, SCR_W - SX(96), SX(88), tr("Opslaan", "Save"), on_save, NULL, THEME_SUCCESS_BG);
     update_sel_label();
 }
