@@ -101,6 +101,7 @@ void ui_refresh_home(void) {
 }
 
 static int      is_dimmed = 0;
+static int      is_black_screen = 0;
 static int      theme_refresh_pending = 0;
 
 /* Delete a cached screen that is being rebuilt. LVGL cannot load a screen
@@ -130,7 +131,19 @@ void ui_replace_screen(lv_obj_t * old_scr, lv_obj_t * new_scr) {
  * screens (rebuilt on the next dim). Other screens compare settings.ui_theme
  * on their next create(). The caller rebuilds the screen it is on. */
 void ui_refresh_theme(void) {
-    if (is_dimmed) { theme_refresh_pending = 1; return; }   /* after wake */
+    /* Black screen: nothing visible, rebuild after wake. Dim screen showing:
+     * rebuild everything under it, then swap the dim screen itself. */
+    if (is_dimmed && is_black_screen) { theme_refresh_pending = 1; return; }
+    int dimmed = is_dimmed && sp > 1;
+    if (dimmed && sp > 2) {
+        /* drop sub-screens under the dim screen (they cache the old theme) */
+        lv_obj_t * dropped[STACK_MAX];
+        unsigned char dropped_own[STACK_MAX];
+        int nd = 0;
+        for (int i = 1; i < sp - 1; i++) { dropped[nd] = stack[i]; dropped_own[nd++] = owned[i]; owned[i] = 0; }
+        stack[1] = stack[sp - 1]; owned[1] = 0; sp = 2;
+        for (int i = 0; i < nd; i++) release_screen(dropped[i], dropped_own[i]);
+    }
     theme_refresh_pending = 0;
     /* Home modals live on the top layer and point into the home screen that
      * is about to be rebuilt: close them first, as ui_dim_now() does. */
@@ -138,6 +151,7 @@ void ui_refresh_theme(void) {
     screen_waste_close();
     screen_home_dismiss_modals();
     ui_theme_install();                /* LVGL widget accent */
+    lv_obj_t * old_dim = dimmed ? stack[sp - 1] : NULL;
     screen_dim_destroy();
     screen_dim_grid_destroy();
     if (settings.home_theme == 1) {
@@ -151,13 +165,17 @@ void ui_refresh_theme(void) {
         screen_home_stock_destroy();
         ui_refresh_home();
     }
+    if (old_dim) {
+        lv_obj_t * nd = screen_dim_create();
+        stack[sp - 1] = nd;
+        lv_scr_load(nd);
+    }
 }
 
 static volatile int theme_request = 0;
 void ui_request_theme_refresh(void) { theme_request = 1; }
 
 static uint32_t last_activity_ms = 0;
-static int      is_black_screen = 0;
 
 static lv_obj_t * scr_black = NULL;
 
@@ -307,6 +325,23 @@ void ui_idle_tick(void) {
         ui_refresh_theme();
     } else if (theme_refresh_pending && !is_dimmed) {
         ui_refresh_theme();
+    }
+
+    /* Automatic theme: check twice a minute, switch when the period changes
+     * (also while dimmed, so the night theme reaches the dim screen). */
+    {
+        static uint32_t last_auto_ms = 0;
+        uint32_t nt = lv_tick_get();
+        if (settings.theme_auto && nt - last_auto_ms > 30000) {
+            last_auto_ms = nt;
+            int want = theme_auto_pick();
+            if (want >= 0 && want != settings.ui_theme) {
+                fprintf(stderr, "[ui] automatic theme -> %d\n", want);
+                theme_set(want);
+                settings_save();
+                ui_refresh_theme();
+            }
+        }
     }
 
     /* Process any queued wake first so a touch immediately undims, even

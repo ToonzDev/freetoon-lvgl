@@ -127,6 +127,11 @@ settings_t settings = {
     .night_rest_to            = 7 * 60,
     .night_rest_black         = 1,
     .night_rest_brightness    = 20,
+    .theme_auto               = 0,
+    .theme_auto_day           = 1,   /* UI_THEME_LIGHT */
+    .theme_auto_morning       = 7 * 60,
+    .theme_auto_evening       = 19 * 60,
+    .theme_auto_night         = 23 * 60,
     .stock_tiles              = "",
     .stock_big_indoor         = 1,
     .calendar_ha_entity  = "",
@@ -386,6 +391,11 @@ void settings_load(void) {
         else if (strcmp(k, "home_light_mode")    == 0) settings.home_light_mode = iv;
         else if (strcmp(k, "ui_theme")           == 0) { settings.ui_theme = iv; seen_ui_theme = 1; }
         else if (strcmp(k, "night_rest_enabled") == 0) settings.night_rest_enabled = iv;
+        else if (strcmp(k, "theme_auto")         == 0) settings.theme_auto = (iv >= 0 && iv <= 2) ? iv : 0;
+        else if (strcmp(k, "theme_auto_day")     == 0) settings.theme_auto_day = (iv == 2) ? 2 : 1;
+        else if (strcmp(k, "theme_auto_morning") == 0) settings.theme_auto_morning = (iv >= 0 && iv < 1440) ? iv : 7 * 60;
+        else if (strcmp(k, "theme_auto_evening") == 0) settings.theme_auto_evening = (iv >= 0 && iv < 1440) ? iv : 19 * 60;
+        else if (strcmp(k, "theme_auto_night")   == 0) settings.theme_auto_night = (iv >= 0 && iv < 1440) ? iv : 23 * 60;
         else if (strcmp(k, "night_rest_from")    == 0) settings.night_rest_from = (iv >= 0 && iv < 1440) ? iv : 23 * 60;
         else if (strcmp(k, "night_rest_to")      == 0) settings.night_rest_to = (iv >= 0 && iv < 1440) ? iv : 7 * 60;
         else if (strcmp(k, "night_rest_black")   == 0) settings.night_rest_black = iv;
@@ -1078,6 +1088,11 @@ static void settings_write_file(void) {
     fprintf(f, "home_light_mode=%d\n", settings.home_light_mode);
     fprintf(f, "ui_theme=%d\n", settings.ui_theme);
     fprintf(f, "night_rest_enabled=%d\n", settings.night_rest_enabled);
+    fprintf(f, "theme_auto=%d\n", settings.theme_auto);
+    fprintf(f, "theme_auto_day=%d\n", settings.theme_auto_day);
+    fprintf(f, "theme_auto_morning=%d\n", settings.theme_auto_morning);
+    fprintf(f, "theme_auto_evening=%d\n", settings.theme_auto_evening);
+    fprintf(f, "theme_auto_night=%d\n", settings.theme_auto_night);
     fprintf(f, "night_rest_from=%d\n", settings.night_rest_from);
     fprintf(f, "night_rest_to=%d\n", settings.night_rest_to);
     fprintf(f, "night_rest_black=%d\n", settings.night_rest_black);

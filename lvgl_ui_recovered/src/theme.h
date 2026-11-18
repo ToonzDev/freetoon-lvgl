@@ -198,6 +198,7 @@ const ft_palette_t * theme_palette(int id);   /* NULL if out of range */
 const char * theme_name(int id);              /* localised display name */
 void theme_set(int id);        /* sets ui_theme + home_light_mode + palette */
 void theme_sync_settings(void);/* re-derive after settings were loaded/merged */
+int  theme_auto_pick(void);    /* automatic theme for now, -1 when off */
 #endif
 
 #endif /* TOON_THEME_H */

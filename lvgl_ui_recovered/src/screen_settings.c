@@ -881,7 +881,8 @@ static void theme_rebuild_async(void * p) {
 
 static void on_theme_pick(lv_event_t * e) {
     int id = (int)(intptr_t)lv_event_get_user_data(e);
-    if (id == settings.ui_theme) return;
+    if (id == settings.ui_theme && !settings.theme_auto) return;
+    settings.theme_auto = 0;          /* picking a theme by hand = fixed theme */
     theme_set(id);
     settings_save();
     lv_async_call(theme_rebuild_async, NULL);
@@ -948,6 +949,106 @@ static lv_obj_t * theme_swatch(lv_obj_t * parent, int id, int x, int y, int w, i
     return sw;
 }
 
+/* ---- segmented choice (2-3 pills right in a panel_row) ------------------ */
+typedef void (*seg_cb_t)(int idx);
+static void seg_paint(lv_obj_t * row, int sel) {
+    uint32_t n = lv_obj_get_child_cnt(row);
+    for (uint32_t i = 0; i < n; i++) {
+        lv_obj_t * b = lv_obj_get_child(row, i);
+        if (!lv_obj_check_type(b, &lv_btn_class)) continue;
+        int idx = (int)(intptr_t)lv_obj_get_user_data(b);
+        int on = (idx == sel);
+        lv_obj_set_style_bg_color(b, lv_color_hex(on ? THEME_ACCENT_FILL : THEME_BTN_BG), 0);
+        lv_obj_t * l = lv_obj_get_child(b, 0);
+        if (l) lv_obj_set_style_text_color(l, lv_color_hex(on ? THEME_ON_ACCENT : THEME_TEXT_DIM), 0);
+    }
+}
+static void on_seg(lv_event_t * e) {
+    lv_obj_t * b = lv_event_get_target(e);
+    int idx = (int)(intptr_t)lv_obj_get_user_data(b);
+    seg_paint(lv_obj_get_parent(b), idx);
+    seg_cb_t cb = (seg_cb_t)lv_event_get_user_data(e);
+    if (cb) cb(idx);
+}
+static void row_segments(lv_obj_t * row, const char * const * labels, int n, int sel, seg_cb_t cb) {
+    int w = SX(118), gap = SX(8);
+    for (int i = n - 1, k = 0; i >= 0; i--, k++) {
+        lv_obj_t * b = lv_btn_create(row);
+        lv_obj_set_size(b, w, SY(38));
+        lv_obj_align(b, LV_ALIGN_RIGHT_MID, -(k * (w + gap)), 0);
+        lv_obj_set_style_radius(b, THEME_RADIUS_BTN, 0);
+        lv_obj_set_style_shadow_width(b, 0, 0);
+        lv_obj_set_user_data(b, (void *)(intptr_t)i);
+        lv_obj_add_event_cb(b, on_seg, LV_EVENT_CLICKED, (void *)cb);
+        lv_obj_t * l = lv_label_create(b);
+        lv_label_set_text(l, labels[i]);
+        lv_obj_set_style_text_font(l, SF(18), 0);
+        lv_obj_center(l);
+    }
+    seg_paint(row, sel);
+}
+
+/* ---- automatic theme ---------------------------------------------------- */
+static lv_obj_t * lbl_ta_morning = NULL, * lbl_ta_evening = NULL, * lbl_ta_night = NULL;
+static void theme_auto_apply_now(void) {
+    int want = theme_auto_pick();
+    if (want >= 0 && want != settings.ui_theme) {
+        theme_set(want);
+        settings_save();
+        lv_async_call(theme_rebuild_async, NULL);
+    } else {
+        settings_save();
+    }
+}
+static void on_theme_auto_mode(int idx) { settings.theme_auto = idx; theme_auto_apply_now(); }
+static void on_theme_auto_day(int idx)  { settings.theme_auto_day = idx ? UI_THEME_WARM : UI_THEME_LIGHT; theme_auto_apply_now(); }
+static void on_ta_morning(lv_event_t * e) {
+    settings.theme_auto_morning = lv_slider_get_value(lv_event_get_target(e)) * 15;
+    fmt_hhmm(lbl_ta_morning, settings.theme_auto_morning);
+}
+static void on_ta_evening(lv_event_t * e) {
+    settings.theme_auto_evening = lv_slider_get_value(lv_event_get_target(e)) * 15;
+    fmt_hhmm(lbl_ta_evening, settings.theme_auto_evening);
+}
+static void on_ta_night(lv_event_t * e) {
+    settings.theme_auto_night = lv_slider_get_value(lv_event_get_target(e)) * 15;
+    fmt_hhmm(lbl_ta_night, settings.theme_auto_night);
+}
+/* Rows under the picker; returns their design height. */
+static int theme_auto_rows(lv_obj_t * p, int y) {
+    int y0 = y;
+    static const char * mode_nl[3] = { "Vast", "Op tijd", "Op zon" };
+    static const char * mode_en[3] = { "Fixed", "By time", "By sun" };
+    lv_obj_t * r = panel_row(p, y, tr("Thema wisselt", "Theme changes"), NULL);
+    lv_obj_t * hint = lv_label_create(r);
+    lv_label_set_text(hint, tr("overdag dagthema, avond Nacht, nacht Zwart",
+                               "day theme, evening Night, night Black"));
+    lv_obj_set_style_text_font(hint, SF(14), 0);
+    lv_obj_set_style_text_color(hint, lv_color_hex(THEME_TEXT_DIM), 0);
+    lv_obj_align(hint, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    row_segments(r, settings.language == LANG_EN ? mode_en : mode_nl, 3, settings.theme_auto, on_theme_auto_mode);
+    y += 82;
+    static const char * day_nl[2] = { "Licht", "Warm" };
+    static const char * day_en[2] = { "Light", "Warm" };
+    r = panel_row(p, y, tr("Dagthema", "Day theme"), NULL);
+    row_segments(r, settings.language == LANG_EN ? day_en : day_nl, 2,
+                 settings.theme_auto_day == UI_THEME_WARM ? 1 : 0, on_theme_auto_day);
+    y += 82;
+    r = panel_row(p, y, tr("Dag vanaf (bij Op tijd)", "Day from (by time)"), &lbl_ta_morning);
+    fmt_hhmm(lbl_ta_morning, settings.theme_auto_morning);
+    row_slider(r, 0, 95, settings.theme_auto_morning / 15, on_ta_morning);
+    y += 82;
+    r = panel_row(p, y, tr("Avond vanaf (bij Op tijd)", "Evening from (by time)"), &lbl_ta_evening);
+    fmt_hhmm(lbl_ta_evening, settings.theme_auto_evening);
+    row_slider(r, 0, 95, settings.theme_auto_evening / 15, on_ta_evening);
+    y += 82;
+    r = panel_row(p, y, tr("Nacht vanaf", "Night from"), &lbl_ta_night);
+    fmt_hhmm(lbl_ta_night, settings.theme_auto_night);
+    row_slider(r, 0, 95, settings.theme_auto_night / 15, on_ta_night);
+    y += 82;
+    return y - y0;
+}
+
 /* Theme row for a modal body at design y; returns its design height. */
 static int theme_picker_row(lv_obj_t * p, int y) {
     const int row_h = 168;
@@ -993,6 +1094,7 @@ static void open_display_modal(lv_event_t * e) {
 
     /* Colour theme first: the most visible choice on this screen. */
     y += theme_picker_row(p, y);
+    y += theme_auto_rows(p, y);
 
     r = panel_row(p, y, tr("Automatisch dimmen bij inactiviteit", "Auto-dim when idle"), NULL);
     sw_enable = row_switch(r, settings.auto_dim_enabled, on_enable_change);

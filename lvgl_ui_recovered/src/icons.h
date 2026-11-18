@@ -48,6 +48,9 @@ const lv_img_dsc_t * moon_phase_icon(int size_px);
 /* 1 if the sun is currently above the horizon (daytime), else 0. Sunrise/sunset
    computed for the Netherlands; used to hide the night moon during the day. */
 int is_daytime_now(void);
+/* Today's sunrise / sunset at the weather location, local minutes after
+ * midnight. 0 = ok, -1 = polar day or night. */
+int sun_times_local(int * rise_min, int * set_min);
 extern const lv_img_dsc_t icon_wx_snow;
 extern const lv_img_dsc_t icon_wx_fog;
 

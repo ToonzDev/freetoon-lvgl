@@ -14,6 +14,8 @@
 #define FT_HOST 1
 #include "theme.h"
 #include "i18n.h"
+#include "icons.h"      /* sun_times_local */
+#include <time.h>
 
 static const ft_palette_t s_palettes[UI_THEME_COUNT] = {
     [UI_THEME_NIGHT] = {
@@ -96,6 +98,32 @@ const char * theme_name(int id) {
         case UI_THEME_BLACK: return tr("Zwart", "Black");
         default:             return tr("Nacht", "Night");
     }
+}
+
+/* Theme the automatic mode wants now, or -1 when it is off. Periods run
+ * day [morning, evening), evening [evening, night), night [night, morning);
+ * with the sun, morning = sunrise and evening = sunset. */
+int theme_auto_pick(void) {
+    if (settings.theme_auto != 1 && settings.theme_auto != 2) return -1;
+    int morning = settings.theme_auto_morning, evening = settings.theme_auto_evening;
+    if (settings.theme_auto == 2) {
+        int rise, set;
+        if (sun_times_local(&rise, &set) == 0) { morning = rise; evening = set; }
+    }
+    int night = settings.theme_auto_night;
+    time_t t = time(NULL);
+    struct tm tm;
+    localtime_r(&t, &tm);
+    int m = tm.tm_hour * 60 + tm.tm_min;
+    /* minutes since `from`, wrapping past midnight */
+    #define SINCE(from) ((m - (from) + 1440) % 1440)
+    int sd = SINCE(morning), se = SINCE(evening), sn = SINCE(night);
+    #undef SINCE
+    /* the period whose start is most recent wins */
+    int day_theme = (settings.theme_auto_day == UI_THEME_WARM) ? UI_THEME_WARM : UI_THEME_LIGHT;
+    if (sd <= se && sd <= sn) return day_theme;
+    if (se <= sn)             return UI_THEME_NIGHT;
+    return UI_THEME_BLACK;
 }
 
 void theme_set(int id) {

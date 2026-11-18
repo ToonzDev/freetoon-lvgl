@@ -404,6 +404,18 @@ typedef struct {
     int   night_rest_to;            /* default 07:00 = 420 */
     int   night_rest_black;         /* 1 = black screen, 0 = extra dim */
     int   night_rest_brightness;    /* backlight while extra dim (0..400) */
+
+    /* Automatic theme (theme.c theme_auto_pick): 0 = fixed (ui_theme as
+     * picked), 1 = by time, 2 = by the sun at the weather location. Day =
+     * theme_auto_day (Licht or Warm), evening = Nacht, night = Zwart.
+     * By time: day from _morning, evening from _evening, night from _night.
+     * By sun: day from sunrise, evening from sunset, night from _night.
+     * Minutes after midnight. Off by default. */
+    int   theme_auto;
+    int   theme_auto_day;
+    int   theme_auto_morning;       /* default 07:00 */
+    int   theme_auto_evening;       /* default 19:00 */
+    int   theme_auto_night;         /* default 23:00 */
 } settings_t;
 
 #define FORECAST_AUTO   0

@@ -99,6 +99,7 @@ const lv_img_dsc_t * waste_icon_for_label_lg(const char * label) {
 }
 
 #include "settings.h"
+#include <stdlib.h>
 #include "theme.h"
 
 /* Identity colours (bin colours): same meaning in every theme; only the
@@ -234,6 +235,41 @@ int is_daytime_now(void) {
     double rise = ut_event[0], set = ut_event[1];
     if (rise <= set) return (nowUT >= rise && nowUT < set);
     return !(nowUT >= set && nowUT < rise);    /* event wraps midnight UTC */
+}
+
+/* Today's sunrise and sunset in local minutes after midnight, at the
+ * weather location (settings.weather_lat/lon; the Netherlands when unset).
+ * Same NOAA approximation as is_daytime_now(). Returns 0 when the sun rises
+ * and sets today, -1 in polar day/night (outputs untouched). */
+int sun_times_local(int * rise_min, int * set_min) {
+    double lat = settings.weather_lat[0] ? atof(settings.weather_lat) : 52.1;
+    double lon = settings.weather_lon[0] ? atof(settings.weather_lon) : 5.1;
+    time_t now = time(NULL);
+    struct tm lt;
+    localtime_r(&now, &lt);
+    int off_min = (int)(lt.tm_gmtoff / 60);   /* local offset from UTC, DST included */
+
+    const double ZENITH = 90.833, D2R = M_PI / 180.0, R2D = 180.0 / M_PI;
+    const double lngHour = lon / 15.0;
+    int N = lt.tm_yday + 1;
+    int out[2];
+    for (int w = 0; w < 2; w++) {
+        double t = N + (((w == 0 ? 6 : 18) - lngHour) / 24.0);
+        double M = (0.9856 * t) - 3.289;
+        double L = fmod(M + (1.916 * sin(M * D2R)) + (0.020 * sin(2 * M * D2R)) + 282.634 + 360.0, 360.0);
+        double RA = fmod(R2D * atan(0.91764 * tan(L * D2R)) + 360.0, 360.0);
+        RA = (RA + (floor(L / 90.0) * 90.0) - (floor(RA / 90.0) * 90.0)) / 15.0;
+        double sinDec = 0.39782 * sin(L * D2R), cosDec = cos(asin(sinDec));
+        double cosH = (cos(ZENITH * D2R) - (sinDec * sin(lat * D2R))) / (cosDec * cos(lat * D2R));
+        if (cosH > 1.0 || cosH < -1.0) return -1;
+        double H = ((w == 0) ? (360.0 - R2D * acos(cosH)) : (R2D * acos(cosH))) / 15.0;
+        double T = H + RA - (0.06571 * t) - 6.622;
+        double utc_h = fmod(T - lngHour + 48.0, 24.0);
+        out[w] = ((int)(utc_h * 60.0 + 0.5) + off_min + 2880) % 1440;
+    }
+    if (rise_min) *rise_min = out[0];
+    if (set_min)  *set_min  = out[1];
+    return 0;
 }
 
 const lv_img_dsc_t * moon_phase_icon(int size_px) {
