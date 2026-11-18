@@ -39,6 +39,7 @@
 #include "update_modal.h"
 #include "app_updates.h"
 #include "homewizard.h"
+#include "rrd_repair.h"
 #include "anim_overlay.h"
 #include "telegram.h"
 #include "pwa_server.h"
@@ -3607,6 +3608,84 @@ static void offer_p1_energy_source(void) {
     p1src_btn(card, tr("Ja, gebruiken", "Yes, use it"), 0x2e6e3a, LV_ALIGN_BOTTOM_RIGHT, on_p1src_yes);
 }
 
+/* ---- "Energiegeschiedenis herstellen" (rrd_repair.c) ----
+ * Check first (dry run), show what was found, repair only on confirmation.
+ * The work runs on a thread; a timer copies its status into the dialog. */
+static lv_obj_t * s_fix_dlg = NULL, * s_fix_lbl = NULL, * s_fix_go = NULL, * s_fix_close = NULL;
+static lv_timer_t * s_fix_tmr = NULL;
+
+static void fix_close(void) {
+    if (s_fix_tmr) { lv_timer_del(s_fix_tmr); s_fix_tmr = NULL; }
+    if (s_fix_dlg) { lv_obj_del_async(s_fix_dlg); s_fix_dlg = NULL; }
+    s_fix_lbl = s_fix_go = s_fix_close = NULL;
+}
+static void on_fix_close(lv_event_t * e) {
+    (void)e;
+    int st = rrd_repair_status(NULL, 0, NULL);
+    if (st == RRD_REPAIR_APPLYING) return;    /* let it finish */
+    fix_close();
+}
+static void on_fix_go(lv_event_t * e) {
+    (void)e;
+    rrd_repair_apply_start();
+}
+static void fix_tick(lv_timer_t * t) {
+    (void)t;
+    if (!s_fix_lbl) return;
+    static char txt[1024];
+    int have = 0;
+    int st = rrd_repair_status(txt, sizeof txt, &have);
+    lv_label_set_text(s_fix_lbl, txt);
+    int busy = st == RRD_REPAIR_SCANNING || st == RRD_REPAIR_APPLYING;
+    if (st == RRD_REPAIR_SCANNED && have) lv_obj_clear_flag(s_fix_go, LV_OBJ_FLAG_HIDDEN);
+    else                                  lv_obj_add_flag(s_fix_go, LV_OBJ_FLAG_HIDDEN);
+    if (busy) lv_obj_add_flag(s_fix_close, LV_OBJ_FLAG_HIDDEN);
+    else      lv_obj_clear_flag(s_fix_close, LV_OBJ_FLAG_HIDDEN);
+}
+static void open_history_fix(lv_event_t * e) {
+    (void)e;
+    if (s_fix_dlg) return;
+    s_fix_dlg = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(s_fix_dlg, LV_HOR_RES, LV_VER_RES);
+    lv_obj_set_pos(s_fix_dlg, 0, 0);
+    lv_obj_set_style_bg_color(s_fix_dlg, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(s_fix_dlg, LV_OPA_60, 0);
+    lv_obj_set_style_border_width(s_fix_dlg, 0, 0);
+    lv_obj_clear_flag(s_fix_dlg, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t * card = lv_obj_create(s_fix_dlg);
+    lv_obj_set_size(card, SX(680), SY(400));
+    lv_obj_center(card);
+    lv_obj_set_style_bg_color(card, lv_color_hex(THEME_CARD_BG), 0);
+    lv_obj_set_style_border_color(card, lv_color_hex(THEME_BORDER), 0);
+    lv_obj_set_style_border_width(card, 1, 0);
+    lv_obj_set_style_radius(card, 16, 0);
+    lv_obj_set_style_pad_all(card, SX(20), 0);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t * h = lv_label_create(card);
+    lv_obj_set_style_text_color(h, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(h, SF(22), 0);
+    lv_label_set_text(h, tr("Energiegeschiedenis herstellen", "Repair energy history"));
+    lv_obj_align(h, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    s_fix_lbl = lv_label_create(card);
+    lv_obj_set_width(s_fix_lbl, SX(630));
+    lv_label_set_long_mode(s_fix_lbl, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_color(s_fix_lbl, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(s_fix_lbl, SF(18), 0);
+    lv_label_set_text(s_fix_lbl, "");
+    lv_obj_align(s_fix_lbl, LV_ALIGN_TOP_LEFT, 0, SY(40));
+
+    s_fix_close = p1src_btn(card, tr("Sluiten", "Close"), 0x4a5a6a, LV_ALIGN_BOTTOM_LEFT, on_fix_close);
+    s_fix_go    = p1src_btn(card, tr("Herstellen", "Repair"), 0x2e6e3a, LV_ALIGN_BOTTOM_RIGHT, on_fix_go);
+    lv_obj_add_flag(s_fix_go, LV_OBJ_FLAG_HIDDEN);
+
+    rrd_repair_scan_start();              /* no-op while a run is busy: shows its status */
+    s_fix_tmr = lv_timer_create(fix_tick, 400, NULL);
+    fix_tick(NULL);
+}
+
 static void on_int_hw_field(lv_event_t * e) {
     lv_event_code_t c = lv_event_get_code(e);
     if (c != LV_EVENT_DEFOCUSED && c != LV_EVENT_DELETE) return;
@@ -3743,6 +3822,24 @@ static void open_integrations_modal(lv_event_t * e) {
     lv_obj_align(dd_energy_src, LV_ALIGN_RIGHT_MID, SX(-12), 0);
     lv_obj_add_event_cb(dd_energy_src, on_int_energy_src, LV_EVENT_VALUE_CHANGED, NULL);
     y += 84;
+
+    /* After a switch from the meter adapter to a P1: repair the jump in the
+     * gas/electricity history (rrd_repair.c). Master only — hcb_rrd is local. */
+    if (!settings.client_mode) {
+        r = panel_row(p, y, tr("Energiegeschiedenis", "Energy history"), NULL);
+        lv_obj_t * b = lv_btn_create(r);
+        lv_obj_set_size(b, SX(300), SY(44));
+        lv_obj_align(b, LV_ALIGN_RIGHT_MID, SX(-12), 0);
+        lv_obj_set_style_bg_color(b, lv_color_hex(0x2a4a6a), 0);
+        lv_obj_set_style_radius(b, 10, 0);
+        lv_obj_add_event_cb(b, open_history_fix, LV_EVENT_CLICKED, NULL);
+        lv_obj_t * bl = lv_label_create(b);
+        lv_label_set_text(bl, tr("Controleren / herstellen", "Check / repair"));
+        lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_font(bl, SF(18), 0);
+        lv_obj_center(bl);
+        y += 84;
+    }
 
     /* Zuidwijk SlimmeLezer (or any ESPHome `dsmr` reader) — needs ESPHome's
      * web_server enabled on port 80, which Zuidwijk's stock config ships with. */

@@ -158,6 +158,34 @@ static int block_device(const char * blk, char * dev, size_t devsz) {
     return 0;
 }
 
+/* hcb_rrd's own uuid of a logger (its .dat/.rra file names), 0 = found.
+ * Restricted to uuid characters: it is used in a cp command line. */
+int rrd_logger_uuid(const char * name, char * out, size_t outsz) {
+    char * cfg = NULL;
+    for (size_t i = 0; !cfg && i < sizeof rrd_cfg_paths / sizeof rrd_cfg_paths[0]; i++)
+        cfg = read_file(rrd_cfg_paths[i]);
+    if (!cfg) return -1;
+    static char blk[4096];
+    static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
+    int rc = -1;
+    pthread_mutex_lock(&mtx);
+    if (logger_block(cfg, name, blk, sizeof blk) == 0) {
+        const char * p = strstr(blk, "<uuid>");
+        const char * e = p ? strstr(p, "</uuid>") : NULL;
+        if (e) {
+            p += strlen("<uuid>");
+            size_t n = (size_t)(e - p);
+            int ok = n > 0 && n < outsz;
+            for (const char * q = p; ok && q < e; q++)
+                if (!((*q >= '0' && *q <= '9') || (*q >= 'a' && *q <= 'f') || *q == '-')) ok = 0;
+            if (ok) { snprintf(out, outsz, "%.*s", (int)n, p); rc = 0; }
+        }
+    }
+    pthread_mutex_unlock(&mtx);
+    free(cfg);
+    return rc;
+}
+
 /* Send blk with its <deviceUuid> replaced by dev. */
 static int send_with_device(const char * blk, const char * dev) {
     const char * p = strstr(blk, "<deviceUuid>");
@@ -207,7 +235,16 @@ static int dev_ok(const char * d) {
     return 1;
 }
 
+static void meter_loggers_sync_locked(void);
 void rrd_meter_loggers_sync(void) {
+    /* the sync thread and the history repair (rrd_repair.c) both call this */
+    static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
+    pthread_mutex_lock(&mtx);
+    meter_loggers_sync_locked();
+    pthread_mutex_unlock(&mtx);
+}
+
+static void meter_loggers_sync_locked(void) {
     if (settings.client_mode) return;
     int p1 = settings.energy_source == 1 || settings.energy_source == 2;
     char * cfg = NULL;
@@ -218,7 +255,7 @@ void rrd_meter_loggers_sync(void) {
     char saved[N_METER_LOGGERS][64];
     saved_load(saved);
     int changed = 0;
-    static char blk[4096];   /* only the sync thread calls this */
+    static char blk[4096];   /* guarded by rrd_meter_loggers_sync's mutex */
     for (size_t i = 0; i < N_METER_LOGGERS; i++) {
         char dev[64];
         if (logger_block(cfg, meter_loggers[i], blk, sizeof blk) != 0 ||

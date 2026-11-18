@@ -23,6 +23,9 @@ int rrd_create_counter_logger(const char * name);
  * sampling the meter adapter (deviceUuid -> placeholder, original saved);
  * back on the meter adapter, restore the saved device. Master only. */
 void rrd_meter_loggers_sync(void);
+/* hcb_rrd's uuid of logger `name` (= its data file names). 0 = found. */
+#include <stddef.h>
+int  rrd_logger_uuid(const char * name, char * out, size_t outsz);
 int  rrd_meter_loggers_start(void);   /* background: after 90 s, then every 10 min */
 
 #endif
