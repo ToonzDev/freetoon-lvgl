@@ -394,6 +394,16 @@ typedef struct {
      * home_light_mode above stays in step (1 exactly when Light) for plugins
      * that only know light/dark; set both through theme_set(). */
     int   ui_theme;
+
+    /* Night rest: from night_rest_from to night_rest_to (minutes after
+     * midnight, may wrap past midnight) the idle dim goes extra dark —
+     * fully black (backlight off) or night_rest_brightness. A touch wakes,
+     * as always. Off by default. */
+    int   night_rest_enabled;
+    int   night_rest_from;          /* default 23:00 = 1380 */
+    int   night_rest_to;            /* default 07:00 = 420 */
+    int   night_rest_black;         /* 1 = black screen, 0 = extra dim */
+    int   night_rest_brightness;    /* backlight while extra dim (0..400) */
 } settings_t;
 
 #define FORECAST_AUTO   0

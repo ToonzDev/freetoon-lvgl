@@ -27,6 +27,8 @@ void ui_request_theme_refresh(void);
 void ui_replace_screen(lv_obj_t * old_scr, lv_obj_t * new_scr);
 /* Delete a cached screen for a rebuild, safe when it is the active one. */
 void ui_del_screen(lv_obj_t * scr);
+/* 1 when local time lies in [from, to) minutes after midnight (may wrap). */
+int ui_time_in_window(int from, int to);
 void ui_request_restart(void);   /* clean _exit(0) restart; drops the launcher crash-guard marker */
 void ui_request_reboot(void);    /* full device reboot (sync + /sbin/reboot) */
 

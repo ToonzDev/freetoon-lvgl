@@ -122,6 +122,11 @@ settings_t settings = {
     .home_theme               = 0,
     .home_light_mode          = 0,
     .ui_theme                 = 0,   /* UI_THEME_NIGHT */
+    .night_rest_enabled       = 0,
+    .night_rest_from          = 23 * 60,
+    .night_rest_to            = 7 * 60,
+    .night_rest_black         = 1,
+    .night_rest_brightness    = 20,
     .stock_tiles              = "",
     .stock_big_indoor         = 1,
     .calendar_ha_entity  = "",
@@ -380,6 +385,11 @@ void settings_load(void) {
         else if (strcmp(k, "home_theme")         == 0) settings.home_theme = iv;
         else if (strcmp(k, "home_light_mode")    == 0) settings.home_light_mode = iv;
         else if (strcmp(k, "ui_theme")           == 0) { settings.ui_theme = iv; seen_ui_theme = 1; }
+        else if (strcmp(k, "night_rest_enabled") == 0) settings.night_rest_enabled = iv;
+        else if (strcmp(k, "night_rest_from")    == 0) settings.night_rest_from = (iv >= 0 && iv < 1440) ? iv : 23 * 60;
+        else if (strcmp(k, "night_rest_to")      == 0) settings.night_rest_to = (iv >= 0 && iv < 1440) ? iv : 7 * 60;
+        else if (strcmp(k, "night_rest_black")   == 0) settings.night_rest_black = iv;
+        else if (strcmp(k, "night_rest_brightness") == 0) settings.night_rest_brightness = iv < 0 ? 0 : (iv > 400 ? 400 : iv);
         else if (strcmp(k, "stock_tiles")        == 0) snprintf(settings.stock_tiles, sizeof settings.stock_tiles, "%s", v);
         else if (strcmp(k, "stock_big_indoor")   == 0) settings.stock_big_indoor = iv;
         else if (strcmp(k, "calendar_ha_entity") == 0) snprintf(settings.calendar_ha_entity, sizeof settings.calendar_ha_entity, "%s", v);
@@ -1067,6 +1077,11 @@ static void settings_write_file(void) {
     fprintf(f, "home_theme=%d\n", settings.home_theme);
     fprintf(f, "home_light_mode=%d\n", settings.home_light_mode);
     fprintf(f, "ui_theme=%d\n", settings.ui_theme);
+    fprintf(f, "night_rest_enabled=%d\n", settings.night_rest_enabled);
+    fprintf(f, "night_rest_from=%d\n", settings.night_rest_from);
+    fprintf(f, "night_rest_to=%d\n", settings.night_rest_to);
+    fprintf(f, "night_rest_black=%d\n", settings.night_rest_black);
+    fprintf(f, "night_rest_brightness=%d\n", settings.night_rest_brightness);
     if (settings.stock_tiles[0]) fprintf(f, "stock_tiles=%s\n", settings.stock_tiles);
     fprintf(f, "stock_big_indoor=%d\n", settings.stock_big_indoor);
     fprintf(f, "calendar_notify_lead_min=%d\n", settings.calendar_notify_lead_min);

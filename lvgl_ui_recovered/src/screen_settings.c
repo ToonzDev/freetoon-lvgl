@@ -131,6 +131,31 @@ static void on_dim_bars_vertical_change(lv_event_t * e) {
     settings.dim_bars_vertical = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
     settings_save();
 }
+/* Time sliders (night rest, auto theme): quarter hours, 0..95 -> "23:15". */
+static void fmt_hhmm(lv_obj_t * lbl, int minutes) {
+    if (lbl) lv_label_set_text_fmt(lbl, "%02d:%02d", (minutes / 60) % 24, minutes % 60);
+}
+static lv_obj_t * lbl_night_from_val = NULL, * lbl_night_to_val = NULL, * lbl_night_bri_val = NULL;
+static void on_night_rest_change(lv_event_t * e) {
+    settings.night_rest_enabled = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    settings_save();
+}
+static void on_night_from_change(lv_event_t * e) {
+    settings.night_rest_from = lv_slider_get_value(lv_event_get_target(e)) * 15;
+    fmt_hhmm(lbl_night_from_val, settings.night_rest_from);
+}
+static void on_night_to_change(lv_event_t * e) {
+    settings.night_rest_to = lv_slider_get_value(lv_event_get_target(e)) * 15;
+    fmt_hhmm(lbl_night_to_val, settings.night_rest_to);
+}
+static void on_night_black_change(lv_event_t * e) {
+    settings.night_rest_black = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    settings_save();
+}
+static void on_night_bri_change(lv_event_t * e) {
+    settings.night_rest_brightness = lv_slider_get_value(lv_event_get_target(e));
+    if (lbl_night_bri_val) lv_label_set_text_fmt(lbl_night_bri_val, "%d", settings.night_rest_brightness);
+}
 static void on_dim_sleep_away_black_change(lv_event_t * e) {
     settings.dim_sleep_away_black = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
     settings_save();
@@ -1000,6 +1025,26 @@ static void open_display_modal(lv_event_t * e) {
     /* Screen off on sleep / away presets (pure black + backlight 0) */
     r = panel_row(p, y, tr("Scherm uit bij Slapen en Weg", "Screen off on Sleep and Away"), NULL);
     row_switch(r, settings.dim_sleep_away_black, on_dim_sleep_away_black_change);
+    y += 82;
+
+    /* Night rest: a darker dim between two times (off by default). */
+    r = panel_row(p, y, tr("Nachtrust (extra donker in de nacht)", "Night rest (extra dark at night)"), NULL);
+    row_switch(r, settings.night_rest_enabled, on_night_rest_change);
+    y += 82;
+    r = panel_row(p, y, tr("Nachtrust vanaf", "Night rest from"), &lbl_night_from_val);
+    fmt_hhmm(lbl_night_from_val, settings.night_rest_from);
+    row_slider(r, 0, 95, settings.night_rest_from / 15, on_night_from_change);
+    y += 82;
+    r = panel_row(p, y, tr("Nachtrust tot", "Night rest until"), &lbl_night_to_val);
+    fmt_hhmm(lbl_night_to_val, settings.night_rest_to);
+    row_slider(r, 0, 95, settings.night_rest_to / 15, on_night_to_change);
+    y += 82;
+    r = panel_row(p, y, tr("Nachtrust: scherm helemaal uit", "Night rest: screen fully off"), NULL);
+    row_switch(r, settings.night_rest_black, on_night_black_change);
+    y += 82;
+    r = panel_row(p, y, tr("Helderheid nachtrust (als niet uit)", "Night rest brightness (when not off)"), &lbl_night_bri_val);
+    lv_label_set_text_fmt(lbl_night_bri_val, "%d", settings.night_rest_brightness);
+    row_slider(r, 0, 400, settings.night_rest_brightness, on_night_bri_change);
     y += 82;
 
 #ifndef TOON1

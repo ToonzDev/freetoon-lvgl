@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <time.h>
 #ifdef SIM
 #include "layout.h"
 #endif
@@ -180,6 +181,32 @@ static inline int is_sleep_or_away(void) {
     return (toon_state.active_state == 2 || toon_state.active_state == 3);
 }
 
+/* 1 when now (local time) lies in [from, to) minutes after midnight; the
+ * window may wrap past midnight (23:00-07:00). */
+int ui_time_in_window(int from, int to) {
+    time_t t = time(NULL);
+    struct tm tm;
+    localtime_r(&t, &tm);
+    int m = tm.tm_hour * 60 + tm.tm_min;
+    if (from == to) return 0;
+    return (from < to) ? (m >= from && m < to) : (m >= from || m < to);
+}
+
+static int night_rest_now(void) {
+    return settings.night_rest_enabled &&
+           ui_time_in_window(settings.night_rest_from, settings.night_rest_to);
+}
+
+/* Dimmed state wanted right now: black (backlight off) for Sleep/Away when
+ * that option is on, or during night rest in black mode. */
+static int want_black(void) {
+    return (settings.dim_sleep_away_black && is_sleep_or_away()) ||
+           (night_rest_now() && settings.night_rest_black);
+}
+static int dim_level(void) {
+    return night_rest_now() ? settings.night_rest_brightness : settings.dim_brightness;
+}
+
 static void push_impl(lv_obj_t * scr, int own) {
     if (!scr) return;
     if (sp >= STACK_MAX) {
@@ -230,12 +257,12 @@ void ui_dim_now(void) {
     screen_waste_close();
     screen_home_dismiss_modals();
     screen_settings_close_modals();
-    if (settings.dim_sleep_away_black && is_sleep_or_away()) {
+    if (want_black()) {
         backlight_set(0);
         ui_push(screen_black_create());
         is_black_screen = 1;
     } else {
-        backlight_set(settings.dim_brightness);
+        backlight_set(dim_level());
         ui_push(screen_dim_create());
         is_black_screen = 0;
     }
@@ -330,7 +357,7 @@ void ui_idle_tick(void) {
                 /* Screen is black because state was Slapen (2) or Weg (3).
                  * If state changed to something else (e.g. Thuis (1), Comfort (0), Manual (-1)),
                  * wake up automatically. */
-                if (!is_sleep_or_away()) {
+                if (!want_black()) {
                     fprintf(stderr, "[ui] active_state changed from %d to %d -> waking from black screen\n",
                             prev_as, toon_state.active_state);
                     ui_wake_now();
@@ -339,7 +366,7 @@ void ui_idle_tick(void) {
             } else {
                 /* Screen is dimmed on normal dim screen.
                  * If state changed to Slapen (2) or Weg (3), switch to black screen. */
-                if (settings.dim_sleep_away_black && is_sleep_or_away()) {
+                if (want_black()) {
                     fprintf(stderr, "[ui] active_state changed from %d to %d while dimmed -> switching to black screen\n",
                             prev_as, toon_state.active_state);
                     backlight_set(0);
@@ -355,14 +382,33 @@ void ui_idle_tick(void) {
         }
     }
 
-    /* Live settings change: if user disabled dim_sleep_away_black while dimmed black, switch back to normal dim */
-    if (is_dimmed && is_black_screen && !settings.dim_sleep_away_black) {
-        backlight_set(settings.dim_brightness);
+    /* Black no longer wanted while dimmed black (option switched off, night
+     * rest over): back to the normal dim screen. Night rest starting while
+     * dimmed: go black, or follow its brightness (checked every ~20 s). */
+    if (is_dimmed && is_black_screen && !want_black()) {
+        backlight_set(dim_level());
         if (sp > 1) {
             stack[sp - 1] = screen_dim_create();
             lv_scr_load(stack[sp - 1]);
         }
         is_black_screen = 0;
+    }
+    {
+        static uint32_t last_night_ms = 0;
+        uint32_t nt = lv_tick_get();
+        if (is_dimmed && !is_black_screen && nt - last_night_ms > 20000) {
+            last_night_ms = nt;
+            if (want_black()) {
+                backlight_set(0);
+                if (sp > 1) {
+                    stack[sp - 1] = screen_black_create();
+                    lv_scr_load(stack[sp - 1]);
+                }
+                is_black_screen = 1;
+            } else {
+                backlight_set(dim_level());
+            }
+        }
     }
 
     uint32_t now = lv_tick_get();
@@ -418,19 +464,20 @@ void ui_idle_tick(void) {
         }
     }
 
-    if (!settings.auto_dim_enabled) return;
+    /* Night rest dims after the idle time even when auto-dim is off. */
+    if (!settings.auto_dim_enabled && !night_rest_now()) return;
     uint32_t threshold = (uint32_t)settings.auto_dim_seconds * 1000u;
     if (!is_dimmed && elapsed_ms >= threshold) {
         fprintf(stderr, "[ui] dimming after %u ms idle\n", elapsed_ms);
         screen_calendar_close();
         screen_waste_close();
         screen_home_dismiss_modals();
-        if (settings.dim_sleep_away_black && is_sleep_or_away()) {
+        if (want_black()) {
             backlight_set(0);
             ui_push(screen_black_create());
             is_black_screen = 1;
         } else {
-            backlight_set(settings.dim_brightness);
+            backlight_set(dim_level());
             ui_push(screen_dim_create());
             is_black_screen = 0;
         }
