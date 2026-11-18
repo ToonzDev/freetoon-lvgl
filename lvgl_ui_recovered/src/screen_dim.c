@@ -830,7 +830,9 @@ lv_obj_t * screen_dim_create(void) {
     ui_obj_set_style_text_font(lbl_dim_nilm, SF(16), 0);
     lv_obj_set_style_text_align(lbl_dim_nilm, LV_TEXT_ALIGN_CENTER, 0);
     ui_label_set_text(lbl_dim_nilm, "");
-    ui_obj_align(lbl_dim_nilm, LV_ALIGN_BOTTOM_MID, 0, -SY(22));
+    /* Just above the forecast strip (strip_y below): at -22 it sat on top
+     * of the middle forecast column. */
+    ui_obj_align(lbl_dim_nilm, LV_ALIGN_TOP_MID, 0, ((DISP_VER < 600) ? 398 : SY(508)) - SY(30));
     ui_obj_add_flag(lbl_dim_nilm, LV_OBJ_FLAG_HIDDEN);
 
     /* All labels positioned against screen center with explicit Y offsets so
