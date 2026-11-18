@@ -159,11 +159,11 @@ extern const ft_palette_t * ft_theme_cur __attribute__((weak));
  * One radius per level of hierarchy, one gap. Design px (1024x600); Toon 1
  * code scales where it already does. */
 #define THEME_RADIUS_PANEL  18   /* modal panels, dialogs */
-#define THEME_RADIUS_TILE   14   /* home tiles, settings tiles, cards */
+#define THEME_RADIUS_TILE   16   /* home tiles, settings tiles, cards */
 #define THEME_RADIUS_BTN    10   /* buttons, rows */
-#define THEME_RADIUS_SMALL   6   /* chips, small badges */
+#define THEME_RADIUS_SMALL   8   /* controls inside a tile, chips */
 #define THEME_GAP            8   /* between tiles */
-#define THEME_PAD           12   /* inside a tile */
+#define THEME_PAD           10   /* inside a tile */
 #define THEME_BAR_H          3   /* tile accent bar */
 
 /* --- type scale ------------------------------------------------------------

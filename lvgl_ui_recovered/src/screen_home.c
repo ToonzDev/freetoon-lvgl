@@ -306,9 +306,15 @@ static int s_rain_compact           = 0;
 static lv_obj_t * devices_btn       = NULL;   /* top-right, opens the Devices hub */
 
 /* Settings gear floating in the top-right corner of the home screen. */
-#define HOME_GEAR_SZ   54
+#define HOME_GEAR_SZ   48
 #define HOME_GEAR_MX    6   /* gap to the right screen edge */
-#define HOME_GEAR_MY    4   /* gap to the top screen edge   */
+#define HOME_GEAR_MY    6   /* gap to the top screen edge   */
+/* The round status buttons left of the gear (devices, inbox, update) share
+ * its size and row; HOME_BTN_X(n) is the x offset of the n-th slot left of
+ * the gear (n = 0 is right next to it). */
+#define HOME_BTN_SZ    HOME_GEAR_SZ
+#define HOME_BTN_STEP  (HOME_BTN_SZ + 8)
+#define HOME_BTN_X(n)  (-(HOME_GEAR_MX + HOME_GEAR_SZ + 8 + (n) * HOME_BTN_STEP))
 
 /* Swipeable tile pages. The five built-in tiles (Waste/Energy/Vent/Family/
  * Water) are "page 0". Swiping left in the tile zone reveals page 1 — an
@@ -416,29 +422,19 @@ static void make_tile(lv_obj_t * parent, int x, int y, int w, int h, int ltype,
     if (start_hidden) ui_obj_add_flag(t, LV_OBJ_FLAG_HIDDEN);
     ui_obj_set_style_bg_color(t, lv_color_hex(COL_TILE_BG), 0);
     ui_obj_set_style_border_width(t, 0, 0);
-    lv_obj_set_style_radius(t, 14, 0);
-    lv_obj_set_style_pad_all(t, 10, 0);
+    lv_obj_set_style_radius(t, THEME_RADIUS_TILE, 0);
+    lv_obj_set_style_pad_all(t, THEME_PAD, 0);
     ui_obj_clear_flag(t, LV_OBJ_FLAG_SCROLLABLE);
     if (click_cb) {
         ui_obj_add_flag(t, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_event_cb(t, tile_click_wrapper, LV_EVENT_CLICKED, (void *)click_cb);
     }
 
-    /* Thin accent bar on top. The settings gear floats over the top-right
-     * corner of the screen; stop the bar short of it so the gear doesn't cut
-     * through the bar of whichever tile sits there. */
-    int bar_w = w - 20;
-    if (parent == scr_root) {
-        int gear_x0 = DISP_HOR - HOME_GEAR_MX - HOME_GEAR_SZ;
-        int gear_y1 = HOME_GEAR_MY + HOME_GEAR_SZ;
-        int bar_x0  = x + 10;                       /* tile pad_all = 10 */
-        if (y + 10 < gear_y1 && bar_x0 + bar_w > gear_x0 - 8) {
-            bar_w = gear_x0 - 8 - bar_x0;
-            if (bar_w < 0) bar_w = 0;
-        }
-    }
+    /* Accent: a short tab in the tile's identity colour above the title
+     * (design 1.1). The old full-width bar shouted on every tile and was
+     * cut by the floating gear; the tab still tells tiles apart. */
     lv_obj_t * bar = lv_obj_create(t);
-    lv_obj_set_size(bar, bar_w, 4);
+    lv_obj_set_size(bar, SUNI(28), THEME_BAR_H);
     lv_obj_set_pos(bar, 0, 0);
     ui_obj_set_style_bg_color(bar, lv_color_hex(accent_color), 0);
     ui_obj_set_style_border_width(bar, 0, 0);
@@ -680,7 +676,7 @@ static void build_pin_tile(lv_obj_t * parent, int dev_idx, int slot) {
     lv_obj_set_pos(t, 20, 386 + slot * 48);
     ui_obj_set_style_bg_color(t, lv_color_hex(COL_TILE_BG), 0);
     ui_obj_set_style_border_width(t, 0, 0);
-    lv_obj_set_style_radius(t, 12, 0);
+    lv_obj_set_style_radius(t, THEME_RADIUS_BTN, 0);
     lv_obj_set_style_pad_all(t, 6, 0);
     ui_obj_clear_flag(t, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -714,7 +710,7 @@ static void build_pin_tile(lv_obj_t * parent, int dev_idx, int slot) {
             lv_obj_set_size(b, 70, 32);
             ui_obj_align(b, LV_ALIGN_RIGHT_MID, cb[i].x, 0);
             ui_obj_set_style_bg_color(b, lv_color_hex(cb[i].col), 0);
-            lv_obj_set_style_radius(b, 8, 0);
+            lv_obj_set_style_radius(b, THEME_RADIUS_SMALL, 0);
             lv_obj_add_event_cb(b, cb[i].cb, LV_EVENT_CLICKED, ud);
             lv_obj_t * l = lv_label_create(b);
             ui_obj_set_style_text_color(l, lv_color_hex(THEME_ON_ACCENT), 0);
@@ -1381,7 +1377,7 @@ static slot_hue_view_t * make_slot_hue(lv_obj_t * tile, lv_obj_t * title) {
     v->btn = lv_btn_create(v->root);
     lv_obj_set_size(v->btn, SX(72), SY(38));
     ui_obj_align(v->btn, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
-    lv_obj_set_style_radius(v->btn, 8, 0);
+    lv_obj_set_style_radius(v->btn, THEME_RADIUS_SMALL, 0);
     lv_obj_set_ext_click_area(v->btn, 10);
     lv_obj_add_event_cb(v->btn, on_slot_hue_toggle, LV_EVENT_CLICKED, NULL);
     v->btn_lbl = lv_label_create(v->btn);
@@ -1501,7 +1497,7 @@ static slot_templogger_view_t * make_slot_templogger(lv_obj_t * tile) {
     lv_obj_set_pos(root, 0, 0);
     ui_obj_set_style_bg_color(root, lv_color_hex(COL_TILE_BG), 0);
     ui_obj_set_style_bg_opa(root, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(root, 10, 0);
+    lv_obj_set_style_radius(root, THEME_RADIUS_TILE, 0);
     lv_obj_set_style_pad_all(root, SX(6), 0);
     ui_obj_set_style_border_width(root, 0, 0);
     ui_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
@@ -3374,10 +3370,10 @@ static void refresh_cb(lv_timer_t * t) {
             if (dv) ui_obj_clear_flag(devices_btn, LV_OBJ_FLAG_HIDDEN);
             else    ui_obj_add_flag(devices_btn, LV_OBJ_FLAG_HIDDEN);
         }
-        int off = dv ? 52 : 0;                    /* envelopes one slot left of it */
-        if (envelope_btn)   ui_obj_align(envelope_btn,   LV_ALIGN_TOP_RIGHT,  -66 - off, 4);
-        if (envelope_badge) ui_obj_align(envelope_badge, LV_ALIGN_TOP_RIGHT,  -60 - off, 2);
-        if (update_env_btn) ui_obj_align(update_env_btn, LV_ALIGN_TOP_RIGHT, -118 - off, 4);
+        int off = dv ? 1 : 0;                     /* envelopes one slot left of it */
+        if (envelope_btn)   ui_obj_align(envelope_btn,   LV_ALIGN_TOP_RIGHT, HOME_BTN_X(off), HOME_GEAR_MY);
+        if (envelope_badge) ui_obj_align(envelope_badge, LV_ALIGN_TOP_RIGHT, HOME_BTN_X(off) + 6, HOME_GEAR_MY - 2);
+        if (update_env_btn) ui_obj_align(update_env_btn, LV_ALIGN_TOP_RIGHT, HOME_BTN_X(off + 1), HOME_GEAR_MY);
     }
     /* No lv_obj_invalidate(scr_root) here: with the ui_lazy.h setters an
      * idle tick changes nothing, and LVGL already invalidates what does. */
@@ -4139,7 +4135,7 @@ lv_obj_t * screen_home_create(void) {
     }
     ui_obj_set_style_bg_color(tile_clock, lv_color_hex(COL_TILE_BG), 0);
     ui_obj_set_style_border_width(tile_clock, 0, 0);
-    lv_obj_set_style_radius(tile_clock, 18, 0);
+    lv_obj_set_style_radius(tile_clock, THEME_RADIUS_TILE, 0);
     lv_obj_set_style_pad_all(tile_clock, 8, 0);
     ui_obj_clear_flag(tile_clock, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_flex_flow(tile_clock, LV_FLEX_FLOW_COLUMN);
@@ -4214,7 +4210,7 @@ lv_obj_t * screen_home_create(void) {
 
     ui_obj_set_style_bg_color(th, lv_color_hex(COL_TILE_BG), 0);
     ui_obj_set_style_border_width(th, 0, 0);
-    lv_obj_set_style_radius(th, 18, 0);
+    lv_obj_set_style_radius(th, THEME_RADIUS_TILE, 0);
     lv_obj_set_style_pad_all(th, th_is_compact ? 6 : 10, 0);
     ui_obj_clear_flag(th, LV_OBJ_FLAG_SCROLLABLE);
     ui_obj_add_flag(th, LV_OBJ_FLAG_CLICKABLE);
@@ -4375,7 +4371,7 @@ lv_obj_t * screen_home_create(void) {
         tile_btn_preset[i] = lv_btn_create(p_row);
         lv_obj_set_size(tile_btn_preset[i], p_btn_w, p_btn_h);
         ui_obj_align(tile_btn_preset[i], LV_ALIGN_LEFT_MID, i * (p_btn_w + p_gap), 0);
-        lv_obj_set_style_radius(tile_btn_preset[i], 6, 0);
+        lv_obj_set_style_radius(tile_btn_preset[i], THEME_RADIUS_SMALL, 0);
         ui_obj_set_style_border_width(tile_btn_preset[i], 0, 0);
         ui_obj_set_style_border_color(tile_btn_preset[i], lv_color_hex(THEME_TEXT_HI), 0);
         ui_obj_set_style_bg_color(tile_btn_preset[i], lv_color_hex(THEME_BTN_BG), 0);
@@ -4603,7 +4599,7 @@ lv_obj_t * screen_home_create(void) {
         lv_obj_set_size(b, 60, 28);
         ui_obj_align(b, btn[i].a, btn[i].x, btn[i].y);
         ui_obj_set_style_bg_color(b, lv_color_hex(btn[i].col), 0);
-        lv_obj_set_style_radius(b, 8, 0);
+        lv_obj_set_style_radius(b, THEME_RADIUS_SMALL, 0);
         /* Pre-style border to 0 so the refresh-side toggle is a single
          * width change (color always white when shown). */
         ui_obj_set_style_border_color(b, lv_color_hex(THEME_TEXT_HI), 0);
@@ -4760,7 +4756,7 @@ lv_obj_t * screen_home_create(void) {
         tile_lights_btn1 = lv_btn_create(lt.tile);
         lv_obj_set_size(tile_lights_btn1, LV_PCT(92), btn_h);
         ui_obj_align(tile_lights_btn1, LV_ALIGN_TOP_MID, 0, y1);
-        lv_obj_set_style_radius(tile_lights_btn1, 8, 0);
+        lv_obj_set_style_radius(tile_lights_btn1, THEME_RADIUS_SMALL, 0);
         ui_obj_set_style_bg_color(tile_lights_btn1, lv_color_hex(THEME_ROW_BG), 0);
         ui_obj_set_style_border_width(tile_lights_btn1, 0, 0);
         lv_obj_set_style_pad_hor(tile_lights_btn1, 6, 0);
@@ -4778,7 +4774,7 @@ lv_obj_t * screen_home_create(void) {
         tile_lights_sw1 = lv_obj_create(tile_lights_btn1);
         lv_obj_set_size(tile_lights_sw1, SX(56), SY(28));
         ui_obj_align(tile_lights_sw1, LV_ALIGN_RIGHT_MID, SX(-2), 0);
-        lv_obj_set_style_radius(tile_lights_sw1, 6, 0);
+        lv_obj_set_style_radius(tile_lights_sw1, THEME_RADIUS_SMALL, 0);
         ui_obj_set_style_border_width(tile_lights_sw1, 0, 0);
         ui_obj_set_style_bg_color(tile_lights_sw1, lv_color_hex(THEME_OFF), 0);
         lv_obj_set_style_pad_all(tile_lights_sw1, 0, 0);
@@ -4795,7 +4791,7 @@ lv_obj_t * screen_home_create(void) {
         tile_lights_btn2 = lv_btn_create(lt.tile);
         lv_obj_set_size(tile_lights_btn2, LV_PCT(92), btn_h);
         ui_obj_align(tile_lights_btn2, LV_ALIGN_TOP_MID, 0, y2);
-        lv_obj_set_style_radius(tile_lights_btn2, 8, 0);
+        lv_obj_set_style_radius(tile_lights_btn2, THEME_RADIUS_SMALL, 0);
         ui_obj_set_style_bg_color(tile_lights_btn2, lv_color_hex(THEME_ROW_BG), 0);
         ui_obj_set_style_border_width(tile_lights_btn2, 0, 0);
         lv_obj_set_style_pad_hor(tile_lights_btn2, 6, 0);
@@ -4813,7 +4809,7 @@ lv_obj_t * screen_home_create(void) {
         tile_lights_sw2 = lv_obj_create(tile_lights_btn2);
         lv_obj_set_size(tile_lights_sw2, SX(56), SY(28));
         ui_obj_align(tile_lights_sw2, LV_ALIGN_RIGHT_MID, SX(-2), 0);
-        lv_obj_set_style_radius(tile_lights_sw2, 6, 0);
+        lv_obj_set_style_radius(tile_lights_sw2, THEME_RADIUS_SMALL, 0);
         ui_obj_set_style_border_width(tile_lights_sw2, 0, 0);
         ui_obj_set_style_bg_color(tile_lights_sw2, lv_color_hex(THEME_OFF), 0);
         lv_obj_set_style_pad_all(tile_lights_sw2, 0, 0);
@@ -5068,10 +5064,10 @@ lv_obj_t * screen_home_create(void) {
         ui_obj_add_flag(news_box, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_event_cb(news_box, on_news_tap, LV_EVENT_CLICKED, NULL);
 
-        /* Accent bar on top */
+        /* Accent tab on top, like make_tile() */
         lv_obj_t * bar = lv_obj_create(news_box);
-        lv_obj_set_size(bar, ntw > 20 ? ntw - 20 : ntw, 4);
-        ui_obj_align(bar, LV_ALIGN_TOP_MID, 0, 0);
+        lv_obj_set_size(bar, SUNI(28), THEME_BAR_H);
+        ui_obj_align(bar, LV_ALIGN_TOP_LEFT, 0, 0);
         ui_obj_set_style_bg_color(bar, lv_color_hex(HUE_NEWS_BAR), 0);
         ui_obj_set_style_border_width(bar, 0, 0);
         lv_obj_set_style_radius(bar, 2, 0);
@@ -5274,10 +5270,10 @@ lv_obj_t * screen_home_create(void) {
      * update banner; tap re-opens the update modal. Sits left of the inbox
      * envelope. Hidden until dismissed. */
     update_env_btn = lv_btn_create(scr_root);
-    lv_obj_set_size(update_env_btn, 44, 44);
-    ui_obj_align(update_env_btn, LV_ALIGN_TOP_RIGHT, -118, 4);
+    lv_obj_set_size(update_env_btn, HOME_BTN_SZ, HOME_BTN_SZ);
+    ui_obj_align(update_env_btn, LV_ALIGN_TOP_RIGHT, HOME_BTN_X(1), HOME_GEAR_MY);
     ui_obj_set_style_bg_color(update_env_btn, lv_color_hex(THEME_SUCCESS_BG), 0);
-    lv_obj_set_style_radius(update_env_btn, 22, 0);
+    lv_obj_set_style_radius(update_env_btn, HOME_BTN_SZ / 2, 0);
     lv_obj_set_ext_click_area(update_env_btn, 14);
     lv_obj_add_event_cb(update_env_btn, on_update_modal_open_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t * uenv = lv_label_create(update_env_btn);
@@ -5288,10 +5284,10 @@ lv_obj_t * screen_home_create(void) {
     ui_obj_add_flag(update_env_btn, LV_OBJ_FLAG_HIDDEN);
 
     envelope_btn = lv_btn_create(scr_root);
-    lv_obj_set_size(envelope_btn, 44, 44);
-    ui_obj_align(envelope_btn, LV_ALIGN_TOP_RIGHT, -66, 4);
+    lv_obj_set_size(envelope_btn, HOME_BTN_SZ, HOME_BTN_SZ);
+    ui_obj_align(envelope_btn, LV_ALIGN_TOP_RIGHT, HOME_BTN_X(0), HOME_GEAR_MY);
     ui_obj_set_style_bg_color(envelope_btn, lv_color_hex(THEME_BTN_BG), 0);
-    lv_obj_set_style_radius(envelope_btn, 22, 0);
+    lv_obj_set_style_radius(envelope_btn, HOME_BTN_SZ / 2, 0);
     lv_obj_set_ext_click_area(envelope_btn, 14);
     lv_obj_add_event_cb(envelope_btn, open_inbox, LV_EVENT_CLICKED, NULL);
     lv_obj_t * env_lbl = lv_label_create(envelope_btn);
@@ -5302,7 +5298,7 @@ lv_obj_t * screen_home_create(void) {
 
     envelope_badge = lv_obj_create(scr_root);
     lv_obj_set_size(envelope_badge, 20, 20);
-    ui_obj_align(envelope_badge, LV_ALIGN_TOP_RIGHT, -60, 2);
+    ui_obj_align(envelope_badge, LV_ALIGN_TOP_RIGHT, HOME_BTN_X(0) + 6, HOME_GEAR_MY - 2);
     ui_obj_set_style_bg_color(envelope_badge, lv_color_hex(THEME_DANGER), 0);
     lv_obj_set_style_radius(envelope_badge, 10, 0);
     ui_obj_set_style_border_width(envelope_badge, 2, 0);
@@ -5329,10 +5325,10 @@ lv_obj_t * screen_home_create(void) {
     devices_btn = NULL;
     if (!have_lights_tile) {
         devices_btn = lv_btn_create(scr_root);
-        lv_obj_set_size(devices_btn, 44, 44);
-        ui_obj_align(devices_btn, LV_ALIGN_TOP_RIGHT, -66, 4);
+        lv_obj_set_size(devices_btn, HOME_BTN_SZ, HOME_BTN_SZ);
+        ui_obj_align(devices_btn, LV_ALIGN_TOP_RIGHT, HOME_BTN_X(0), HOME_GEAR_MY);
         ui_obj_set_style_bg_color(devices_btn, lv_color_hex(THEME_BTN_BG), 0);
-        lv_obj_set_style_radius(devices_btn, 22, 0);
+        lv_obj_set_style_radius(devices_btn, HOME_BTN_SZ / 2, 0);
         lv_obj_set_ext_click_area(devices_btn, 14);
         lv_obj_add_event_cb(devices_btn, on_devices_btn, LV_EVENT_CLICKED, NULL);
         lv_obj_t * dl = lv_label_create(devices_btn);
@@ -5359,7 +5355,7 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_pos(tile_rain, rtx, rty);
     ui_obj_set_style_bg_color(tile_rain, lv_color_hex(COL_TILE_BG), 0);
     ui_obj_set_style_border_width(tile_rain, 0, 0);
-    lv_obj_set_style_radius(tile_rain, 18, 0);
+    lv_obj_set_style_radius(tile_rain, THEME_RADIUS_TILE, 0);
     lv_obj_set_style_pad_all(tile_rain, 8, 0);
     ui_obj_clear_flag(tile_rain, LV_OBJ_FLAG_SCROLLABLE);
     ui_obj_add_flag(tile_rain, LV_OBJ_FLAG_CLICKABLE);
