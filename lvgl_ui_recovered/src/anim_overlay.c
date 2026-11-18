@@ -388,6 +388,9 @@ static void spawn_heart(particle_t * p, int stagger) {
 static void spawn_firework_burst(int group) {
     int start_idx = group * (MAX_PARTICLES / 2);
     int count = MAX_PARTICLES / 2;
+#ifdef TOON1
+    count /= 2;   /* Toon 1: 6 sparks per burst (see the active_limit note) */
+#endif
 
     float cx = frand(DISP_HOR * 0.18f, DISP_HOR * 0.82f);
     float cy = frand(DISP_VER * 0.18f, DISP_VER * 0.52f);
@@ -750,6 +753,12 @@ static void anim_overlay_apply_trigger(anim_effect_t effect, int duration_sec) {
         else if (effect == ANIM_EFFECT_LEAVES) active_limit = 12;
         else if (effect == ANIM_EFFECT_SNOW || effect == ANIM_EFFECT_CONFETTI) active_limit = 14;
     }
+#ifdef TOON1
+    /* Toon 1: half the sprites (user request) — smaller 800x480 panel and a
+     * much slower CPU (ARM926) than the Toon 2. */
+    active_limit /= 2;
+    if (active_limit < 4) active_limit = 4;
+#endif
 
     /* Initialize particles for chosen effect */
     for (int i = 0; i < active_limit; i++) {
