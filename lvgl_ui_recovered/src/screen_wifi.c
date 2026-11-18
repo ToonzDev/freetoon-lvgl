@@ -188,31 +188,50 @@ static void open_connect_modal(ap_t * a) {
     lv_obj_set_style_border_width(g_conn_modal, 0, 0);
     lv_obj_clear_flag(g_conn_modal, LV_OBJ_FLAG_SCROLLABLE);
 
+    /* Secured: near-fullscreen card so the keyboard gets usable key sizes
+     * (esp. on the 800x480 Toon 1). Title, password field, keyboard and
+     * buttons are stacked from measured heights so nothing overlaps. */
+    const int pad = 12;
+    int card_w = a->secured ? LV_HOR_RES - 16 : SX(660);
+    int card_h = a->secured ? LV_VER_RES - 16 : SY(340);
+
     lv_obj_t * card = lv_obj_create(g_conn_modal);
-    lv_obj_set_size(card, SX(660), SY(340));
+    lv_obj_set_size(card, card_w, card_h);
     lv_obj_center(card);
     lv_obj_set_style_bg_color(card, lv_color_hex(COL_CARD), 0);
     lv_obj_set_style_border_width(card, 0, 0);
     lv_obj_set_style_radius(card, 14, 0);
+    lv_obj_set_style_pad_all(card, pad, 0);
     lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t * t = lv_label_create(card);
     lv_obj_set_style_text_color(t, lv_color_hex(COL_TEXT_HI), 0);
     lv_obj_set_style_text_font(t, SF(22), 0);
     lv_label_set_text_fmt(t, tr("Verbind met %s", "Connect to %s"), a->ssid);
-    lv_obj_align(t, LV_ALIGN_TOP_LEFT, SX(8), SY(6));
+    lv_obj_align(t, LV_ALIGN_TOP_LEFT, 0, 0);
 
     if (a->secured) {
+        const int gap = 8;
+        int content_w = card_w - 2 * pad;
+        int content_h = card_h - 2 * pad;
+
         g_conn_ta = lv_textarea_create(card);
         lv_textarea_set_one_line(g_conn_ta, true);
         lv_textarea_set_password_mode(g_conn_ta, true);
         lv_textarea_set_placeholder_text(g_conn_ta, tr("wachtwoord", "password"));
-        lv_obj_set_width(g_conn_ta, SX(620));
-        lv_obj_align(g_conn_ta, LV_ALIGN_TOP_MID, 0, SY(44));
+        lv_obj_set_style_text_font(g_conn_ta, SF(20), 0);
+        lv_obj_set_width(g_conn_ta, content_w);
+        lv_obj_update_layout(card);
+        int ta_y = lv_obj_get_height(t) + gap;
+        lv_obj_align(g_conn_ta, LV_ALIGN_TOP_LEFT, 0, ta_y);
+        lv_obj_update_layout(card);
 
+        int kb_y = ta_y + lv_obj_get_height(g_conn_ta) + gap;
+        int kb_h = content_h - kb_y - SY(44) - gap;
         lv_obj_t * kb = lv_keyboard_create(card);
-        lv_obj_set_size(kb, SX(640), SY(190));
-        lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, SY(-50));
+        lv_obj_set_style_text_font(kb, SF(20), 0);
+        lv_obj_set_size(kb, content_w, kb_h);
+        lv_obj_align(kb, LV_ALIGN_TOP_LEFT, 0, kb_y);
         lv_keyboard_set_textarea(kb, g_conn_ta);
     } else {
         lv_obj_t * o = lv_label_create(card);
@@ -224,7 +243,7 @@ static void open_connect_modal(ap_t * a) {
 
     lv_obj_t * go = lv_btn_create(card);
     lv_obj_set_size(go, SX(150), SY(44));
-    lv_obj_align(go, LV_ALIGN_BOTTOM_RIGHT, SX(-8), SY(-4));
+    lv_obj_align(go, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     lv_obj_set_style_bg_color(go, lv_color_hex(COL_OK), 0);
     lv_obj_add_event_cb(go, on_conn_go, LV_EVENT_CLICKED, NULL);
     lv_obj_t * gl = lv_label_create(go); lv_label_set_text(gl, tr("Verbind", "Connect"));
@@ -232,11 +251,19 @@ static void open_connect_modal(ap_t * a) {
 
     lv_obj_t * cancel = lv_btn_create(card);
     lv_obj_set_size(cancel, SX(130), SY(44));
-    lv_obj_align(cancel, LV_ALIGN_BOTTOM_LEFT, SX(8), SY(-4));
+    lv_obj_align(cancel, LV_ALIGN_BOTTOM_LEFT, 0, 0);
     lv_obj_set_style_bg_color(cancel, lv_color_hex(COL_OFF), 0);
     lv_obj_add_event_cb(cancel, on_conn_cancel, LV_EVENT_CLICKED, NULL);
     lv_obj_t * cl = lv_label_create(cancel); lv_label_set_text(cl, tr("Annuleer", "Cancel"));
     lv_obj_center(cl);
+}
+
+/* Headless sim: no wifi scan results, so open the connect modal directly. */
+void screen_wifi_sim_connect(const char * ssid) {
+    static ap_t a;
+    snprintf(a.ssid, sizeof a.ssid, "%s", ssid);
+    a.secured = 1;
+    open_connect_modal(&a);
 }
 
 static void on_ap_clicked(lv_event_t * e) {

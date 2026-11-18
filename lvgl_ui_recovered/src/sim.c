@@ -1270,6 +1270,12 @@ int main(int argc, char ** argv) {
             pump(20);
             continue;
         }
+        if (!strncmp(argv[a], "wificonn:", 9)) {   /* wifi: open the password modal for <ssid> */
+            extern void screen_wifi_sim_connect(const char * ssid);
+            screen_wifi_sim_connect(argv[a] + 9);
+            pump(20);
+            continue;
+        }
         if (!strncmp(argv[a], "scroll:", 7)) {
             lv_coord_t best = 0;
             lv_obj_t * sc = sb_find_scroller(lv_layer_top(), &best);   /* open modal first */
