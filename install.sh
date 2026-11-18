@@ -569,11 +569,17 @@ CFG
     fi
     if [ -n "$QUBY_BRIDGE_BIN" ] && [ -e "$QUBY_BRIDGE_BIN" ]; then
         install_file "$QUBY_BRIDGE_BIN" /mnt/data/quby_bridge
-        # Only enable OT bridge proxy if FreeToon is active; stock qt-gui needs direct UART access
-        if remote "[ \"\$(cat /mnt/data/ui_choice 2>/dev/null)\" != 'qt-gui' ]"; then
-            remote "/mnt/data/ot_mode_switch.sh proxy" || true
-        else
+        # Stock qt-gui needs direct UART access: bridge off. With FreeToon,
+        # keep the OT bridge mode the user picked (Settings > OT Bridge,
+        # ot_bridge_mode in toonui.cfg); an update used to switch every Toon
+        # to proxy, also one set to "off" whose boiler then lost contact.
+        # Only a Toon without a choice yet (fresh install) gets the default.
+        if remote "[ \"\$(cat /mnt/data/ui_choice 2>/dev/null)\" = 'qt-gui' ]"; then
             remote "/mnt/data/ot_mode_switch.sh off" || true
+        else
+            remote "m=\$(sed -n 's/^ot_bridge_mode=//p' /mnt/data/toonui.cfg 2>/dev/null | tail -n 1); \
+                    case \"\$m\" in off|proxy|wireless) ;; *) m=proxy ;; esac; \
+                    /mnt/data/ot_mode_switch.sh \"\$m\"" || true
         fi
     else
         echo "  (skipping bridge install — quby_bridge absent; OT bridge stays off)"
