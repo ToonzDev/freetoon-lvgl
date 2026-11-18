@@ -38,6 +38,7 @@ typedef enum {
     LT_CLOCK,           /* standalone clock and date tile */
     LT_RAINFALL,        /* Buienradar rain forecast graph */
     LT_SMARTPLUG,       /* Z-Wave smart plug switch / monitor */
+    LT_CLIMATE,         /* Binnenklimaat: humidity + CO2 + TVOC (Toon 2 sensor) */
     LT_COUNT
 } layout_tile_type_t;
 

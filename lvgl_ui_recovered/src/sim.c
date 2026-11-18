@@ -438,6 +438,8 @@ static void mock_state(void) {
     toon_state.setpoint      = 19.5f;
     toon_state.ch_setpoint   = 55.0f;
     toon_state.humidity      = 53.0f;
+    toon_state.eco2          = 650;   /* ppm — Binnenklimaat tile */
+    toon_state.tvoc          = 120;   /* ppb */
     toon_state.boiler_in_temp  = 35.0f;
     toon_state.boiler_out_temp = 42.0f;
     toon_state.modulation_level = 0.0f;

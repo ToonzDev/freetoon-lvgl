@@ -650,7 +650,7 @@
 - **Later (separate)**: option B — a ReToon app host on QuickJS (ReToon app API levels 1–10) so ReToon apps run unchanged as separate downloads; large and a moving target, not planned.
 
 ### 56. Indoor humidity from the Toon's own sensor on screen
-- **Status**: Open (user request, 2026-11-18).
+- **Status**: Done (2026-11-18): option (3), new "Binnenklimaat" layout tile (`LT_CLIMATE`, appended to the enum; min 2x2): humidity big, air-quality word (coloured, "Lucht: Goed" on wider tiles), CO2 + TVOC line; "--" for unreported values. Not offered in the Toon 1 layout editor (no sensor). Sim-verified at 2x2 and 3x2.
 - **Situation**: `toon_state.humidity` is already filled from the Toon 2's own sensor (BoxTalk `HumiditySensor` / thermostatInfo `currentHumidity`) and exported over MQTT and the PWA, and the classic theme has a "Luchtvochtigheid" tile — but the FreeToon dashboard shows it nowhere (`lbl_t_humidity` is a leftover of the old thermostat tile and always NULL). Toon 1 has no humidity sensor.
 - **Options**: (1) add "RV 45%" to the dim screen's metrics row (TVOC / CO2 / CV bar / air quality) in `screen_dim.c` + `screen_dim_grid.c` — small; (2) small "RV 45%" on the home thermostat tile — small, but that tile is already full on Toon 1; (3) new "Binnenklimaat" layout tile (humidity + CO2 + TVOC + air-quality label) — append the LT_* value at the end of the enum. In all cases hide it when no value is reported (Toon 1).
 

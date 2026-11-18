@@ -127,6 +127,14 @@ static lv_obj_t * btn_lt_sp_toggle = NULL;
 static lv_obj_t * lbl_lt_sp_toggle = NULL;
 static lv_obj_t * lbl_lt_sp_power = NULL;
 
+/* Binnenklimaat tile (LT_CLIMATE, #56): the Toon 2's own humidity + CO2/TVOC
+ * sensor (toon_state.humidity / eco2 / tvoc). */
+static lv_obj_t * tile_climate = NULL;
+static lv_obj_t * lbl_cl_hum = NULL;       /* big "45%" */
+static lv_obj_t * lbl_cl_quality = NULL;   /* air-quality word, coloured */
+static lv_obj_t * lbl_cl_air = NULL;       /* "CO2 650  TVOC 120" */
+static int        cl_wide = 0;             /* tile wide enough for "Lucht: Goed" */
+
 /* Bottom-row labels (Energy/Weather/Waste) — updated by refresh_cb */
 static lv_obj_t * lbl_bot_energy;
 static lv_obj_t * lbl_bot_weather;
@@ -1989,6 +1997,38 @@ static void update_tile_smartplug(void) {
     }
 }
 
+/* Binnenklimaat tile: "--" for any value the sensor hasn't reported (0). */
+static void update_tile_climate(void) {
+    if (!tile_climate) return;
+    float hum = toon_state.humidity;
+    int eco2 = toon_state.eco2, tvoc = toon_state.tvoc;
+    if (lbl_cl_hum) {
+        if (hum > 0.5f) ui_label_set_text_fmt(lbl_cl_hum, "%d%%", (int)(hum + 0.5f));
+        else            ui_label_set_text(lbl_cl_hum, "--%");
+    }
+    if (lbl_cl_air) {
+        /* One line, no units, so it fits the 2x2 minimum (ppm / ppb). */
+        char co2[16] = "--", voc[16] = "--";
+        if (eco2 > 0) snprintf(co2, sizeof co2, "%d", eco2);
+        if (tvoc > 0) snprintf(voc, sizeof voc, "%d", tvoc);
+        ui_label_set_text_fmt(lbl_cl_air, "CO2 %s  TVOC %s", co2, voc);
+    }
+    if (lbl_cl_quality) {
+        const char * q = air_quality_label(eco2, tvoc);   /* English word or "" */
+        const char * t = "";
+        switch (q[0]) {
+            case 'E': t = tr("Uitstekend", "Excellent"); break;
+            case 'G': t = tr("Goed", "Good");            break;
+            case 'F': t = tr("Matig", "Fair");           break;
+            case 'P': t = tr("Slecht", "Poor");          break;
+            case 'B': t = tr("Zeer slecht", "Bad");      break;
+        }
+        if (*t && cl_wide) ui_label_set_text_fmt(lbl_cl_quality, "%s %s", tr("Lucht:", "Air:"), t);
+        else               ui_label_set_text(lbl_cl_quality, t);
+        ui_obj_set_style_text_color(lbl_cl_quality, lv_color_hex(air_quality_color(eco2, tvoc)), 0);
+    }
+}
+
 static void update_tile_lights(void) {
     if (!tile_lights_lbl_default && !tile_lights_btn1) return;
     tile_light_src_t idx1 = tile_light_src(0);
@@ -2048,6 +2088,7 @@ static void refresh_cb(lv_timer_t * t) {
 
     update_tile_lights();
     update_tile_smartplug();
+    update_tile_climate();
     update_rain_tile_ui();
 
     /* Only manage page-0 tile visibility while page 0 is showing — otherwise
@@ -3388,6 +3429,13 @@ static void home_show_page(int n) {
         if (Lsp && Lsp->page == 0) {
             if (n == 0 && Lsp->visible) ui_obj_clear_flag(tile_smartplug, LV_OBJ_FLAG_HIDDEN);
             else ui_obj_add_flag(tile_smartplug, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    if (tile_climate) {
+        const layout_tile_t * Lc = settings.custom_layout_enabled ? layout_find(LT_CLIMATE) : NULL;
+        if (Lc && Lc->page == 0) {
+            if (n == 0 && Lc->visible) ui_obj_clear_flag(tile_climate, LV_OBJ_FLAG_HIDDEN);
+            else ui_obj_add_flag(tile_climate, LV_OBJ_FLAG_HIDDEN);
         }
     }
     home_set_dot(n);
@@ -4817,6 +4865,43 @@ lv_obj_t * screen_home_create(void) {
         ui_obj_set_style_text_font(lbl_lt_sp_power, SF(19), 0);
         ui_obj_align(lbl_lt_sp_power, LV_ALIGN_BOTTOM_MID, 0, -SY(4));
         ui_label_set_text(lbl_lt_sp_power, "--- W");
+
+        /* Binnenklimaat tile (#56), stacked so it fits the 2x2 minimum:
+         * humidity big + caption, then the air-quality word (coloured) and
+         * CO2 / TVOC on one line. Not tappable (no detail screen). */
+        tile_t cl_t;
+        make_tile(scr_root, 0, 0, 200, 150, LT_CLIMATE, tr("Binnenklimaat", "Indoor climate"), 0x4fb3a9, NULL, &cl_t);
+        tile_climate = cl_t.tile;
+
+        lbl_cl_hum = lv_label_create(tile_climate);
+        ui_obj_set_style_text_color(lbl_cl_hum, lv_color_hex(COL_TEXT_HI), 0);
+        ui_obj_set_style_text_font(lbl_cl_hum, SF(28), 0);
+        ui_obj_align(lbl_cl_hum, LV_ALIGN_TOP_LEFT, 0, SY(40));
+        ui_label_set_text(lbl_cl_hum, "--%");
+
+        lv_obj_t * cap = lv_label_create(tile_climate);
+        ui_obj_set_style_text_color(cap, lv_color_hex(COL_TEXT_DIM), 0);
+        ui_obj_set_style_text_font(cap, SF(14), 0);
+        ui_label_set_text(cap, tr("luchtvochtigheid", "humidity"));
+        ui_obj_align(cap, LV_ALIGN_TOP_LEFT, 0, SY(72));
+
+        /* Quality word right-aligned on the humidity row: the 2x2 minimum is
+         * too low for a separate line. "Lucht:" prefix only on wider tiles. */
+        lv_obj_update_layout(tile_climate);
+        cl_wide = lv_obj_get_content_width(tile_climate) >= SX(200);
+        lbl_cl_quality = lv_label_create(tile_climate);
+        ui_obj_set_style_text_font(lbl_cl_quality, SF(16), 0);
+        ui_obj_align(lbl_cl_quality, LV_ALIGN_TOP_RIGHT, 0, SY(48));
+        ui_label_set_text(lbl_cl_quality, "");
+
+        lbl_cl_air = lv_label_create(tile_climate);
+        ui_obj_set_style_text_color(lbl_cl_air, lv_color_hex(COL_TEXT_DIM), 0);
+        ui_obj_set_style_text_font(lbl_cl_air, SF(14), 0);
+        lv_obj_set_width(lbl_cl_air, LV_PCT(100));
+        lv_label_set_long_mode(lbl_cl_air, LV_LABEL_LONG_DOT);
+        ui_obj_align(lbl_cl_air, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+        ui_label_set_text(lbl_cl_air, "CO2 --  TVOC --");
+        update_tile_climate();
     }
     tile_water = water_t.tile;
     lbl_title_slot[TILE_SLOT_WATER] = water_t.title;
@@ -5507,6 +5592,10 @@ void screen_home_destroy(void) {
         btn_lt_sp_toggle = NULL;
         lbl_lt_sp_toggle = NULL;
         lbl_lt_sp_power = NULL;
+        tile_climate = NULL;
+        lbl_cl_hum = NULL;
+        lbl_cl_quality = NULL;
+        lbl_cl_air = NULL;
         tile_news_sum_lbl = NULL;
         tile_cal_dates = NULL;
         tile_cal_times = NULL;
