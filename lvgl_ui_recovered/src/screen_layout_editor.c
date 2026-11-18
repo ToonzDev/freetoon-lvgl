@@ -77,6 +77,7 @@ static lv_obj_t * name_ta;                   /* its text area */
 static const int PALETTE[] = {
     LT_CLOCK, LT_THERMOSTAT, LT_FORECAST, LT_RAINFALL, LT_NEWS_TICKER, LT_NEWS_SUMMARY, LT_CALENDAR,
     LT_ENERGY, LT_WATER, LT_VENT, LT_FAMILY, LT_WASTE, LT_LIGHTS, LT_SONOS, LT_SMARTPLUG,
+    LT_CLOCKSTUDIO,
 #ifndef TOON1
     LT_CLIMATE,     /* Toon 1 has no humidity / air-quality sensor */
 #endif
@@ -90,7 +91,7 @@ static const uint32_t TYPE_COL[LT_COUNT] = {
     [LT_NEWS_SUMMARY]=0x6666aa, [LT_CALENDAR]=0x4477cc, [LT_ENERGY]=0xaa77ff,
     [LT_WATER]=0x44aaff, [LT_VENT]=0x66bbdd, [LT_FAMILY]=0xff8866,
     [LT_WASTE]=0x88dd66, [LT_LIGHTS]=0xddaa44, [LT_SLOT]=0x778899,
-    [LT_SONOS]=0x2077a0, [LT_SMARTPLUG]=0x3fbf7f, [LT_CLIMATE]=0x4fb3a9,
+    [LT_SONOS]=0x2077a0, [LT_SMARTPLUG]=0x3fbf7f, [LT_CLIMATE]=0x4fb3a9, [LT_CLOCKSTUDIO]=0x5577cc,
 };
 
 static void place_rect(int i);

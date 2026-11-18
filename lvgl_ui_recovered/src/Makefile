@@ -152,7 +152,7 @@ APP_SRC       := $(ENTRY) $(GLIBC_SRC) boxtalk.c ui_stack.c screen_home.c screen
                  notify.c healthcheck.c pwa_server.c canonical_state.c packages.c mqtt_client.c \
                  schedule.c icons.c backlight.c settings.c bootpick.c update_check.c app_updates.c telegram.c \
                  tile_slots.c client_link.c news.c doorbell.c calendar.c layout.c \
-                 toon1_touch.c pin_modal.c update_modal.c video.c ui_cmd.c anim_overlay.c \
+                 toon1_touch.c pin_modal.c update_modal.c video.c ui_cmd.c anim_overlay.c clock_studio.c \
                  lv_font_montserrat_96_custom.c lv_font_montserrat_64_custom.c lv_font_montserrat_76_bold.c \
                  lv_font_montserrat_96_thin.c lv_font_montserrat_76_thin.c \
                  lv_font_os_light_30.c lv_font_os_light_40.c lv_font_os_light_50.c lv_font_os_light_90.c \

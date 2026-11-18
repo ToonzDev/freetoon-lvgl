@@ -41,6 +41,7 @@
 #include "homewizard.h"
 #include "rrd_repair.h"
 #include "anim_overlay.h"
+#include "clock_studio.h"
 #include "telegram.h"
 #include "pwa_server.h"
 #include <stdio.h>
@@ -994,6 +995,8 @@ static void on_vnc_change(lv_event_t * e) {
 
 /* ============================ category modals ============================ */
 
+static void on_clockstudio_open(lv_event_t * e) { (void)e; cs_open_settings(CS_HOME); }
+
 static void open_display_modal(lv_event_t * e) {
     (void)e;
     lv_obj_t * p = modal_open(tr("Scherm", "Display"), 560);
@@ -1042,6 +1045,19 @@ static void open_display_modal(lv_event_t * e) {
     r = panel_row(p, y, tr("Dunne letters op dimscherm (klok en temperatuur)",
                            "Thin font on dim screen (clock and temperature)"), NULL);
     row_switch(r, settings.dim_thin_font, on_dim_thin_font_change);
+    y += 82;
+
+    /* Klok Studio (#55): clock faces for the home tile and the dim screen */
+    r = panel_row(p, y, tr("Klok Studio (wijzerplaten)", "Clock Studio (clock faces)"), NULL);
+    {
+        lv_obj_t * b = lv_btn_create(r);
+        lv_obj_set_size(b, SX(150), SY(44));
+        lv_obj_align(b, LV_ALIGN_RIGHT_MID, SX(-4), 0);
+        lv_obj_add_event_cb(b, on_clockstudio_open, LV_EVENT_CLICKED, NULL);
+        lv_obj_t * bl = lv_label_create(b);
+        lv_label_set_text(bl, tr("Instellen", "Configure"));
+        lv_obj_center(bl);
+    }
     y += 82;
 
 #ifndef TOON1

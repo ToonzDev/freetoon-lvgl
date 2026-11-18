@@ -39,6 +39,7 @@ typedef enum {
     LT_RAINFALL,        /* Buienradar rain forecast graph */
     LT_SMARTPLUG,       /* Z-Wave smart plug switch / monitor */
     LT_CLIMATE,         /* Binnenklimaat: humidity + CO2 + TVOC (Toon 2 sensor) */
+    LT_CLOCKSTUDIO,     /* Klok Studio: configurable clock face (clock_studio.c, #55) */
     LT_COUNT
 } layout_tile_type_t;
 
@@ -80,6 +81,7 @@ typedef enum {
     DB_RAINFALL,     /* Buienradar 3h rain graph */
     DB_SOLAR,        /* solar power production (W) value + mini-bar */
     DB_EDAY,         /* electricity day total (kWh) value + mini-bar */
+    DB_CLOCKSTUDIO,  /* Klok Studio clock face (clock_studio.c, #55) */
     DB_COUNT
 } dim_block_id_t;
 

@@ -30,6 +30,7 @@
 #include "packages.h"
 #include "tile_slots.h"
 #include "layout.h"
+#include "clock_studio.h"
 #include "update_check.h"
 #include "pin_modal.h"
 #include "update_modal.h"
@@ -130,6 +131,8 @@ static lv_obj_t * lbl_lt_sp_power = NULL;
 /* Binnenklimaat tile (LT_CLIMATE, #56): the Toon 2's own humidity + CO2/TVOC
  * sensor (toon_state.humidity / eco2 / tvoc). */
 static lv_obj_t * tile_climate = NULL;
+static lv_obj_t * tile_clockstudio = NULL;   /* Klok Studio (LT_CLOCKSTUDIO, #55) */
+static void on_clockstudio_click(lv_event_t * e) { (void)e; cs_open_fullscreen(); }
 static lv_obj_t * lbl_cl_hum = NULL;       /* big "45%" */
 static lv_obj_t * lbl_cl_quality = NULL;   /* air-quality word, coloured */
 static lv_obj_t * lbl_cl_air = NULL;       /* "CO2 650  TVOC 120" */
@@ -3438,6 +3441,13 @@ static void home_show_page(int n) {
             else ui_obj_add_flag(tile_climate, LV_OBJ_FLAG_HIDDEN);
         }
     }
+    if (tile_clockstudio) {
+        const layout_tile_t * Lk = settings.custom_layout_enabled ? layout_find(LT_CLOCKSTUDIO) : NULL;
+        if (Lk && Lk->page == 0) {
+            if (n == 0 && Lk->visible) ui_obj_clear_flag(tile_clockstudio, LV_OBJ_FLAG_HIDDEN);
+            else ui_obj_add_flag(tile_clockstudio, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
     home_set_dot(n);
 }
 static void on_page1_slot(lv_event_t * e) {
@@ -4115,7 +4125,9 @@ lv_obj_t * screen_home_create(void) {
             x += 4; y += 4; w -= 8; h -= 8;     /* inter-tile margin */
             lv_obj_set_pos(tile_clock, x, y);
             lv_obj_set_size(tile_clock, w, h);
-        } else if (Lc) {
+        } else {
+            /* hidden, or not in the layout at all (e.g. replaced by a Klok
+             * Studio tile): don't leave it at its fixed default spot */
             ui_obj_add_flag(tile_clock, LV_OBJ_FLAG_HIDDEN);
         }
     }
@@ -4902,6 +4914,18 @@ lv_obj_t * screen_home_create(void) {
         ui_obj_align(lbl_cl_air, LV_ALIGN_BOTTOM_LEFT, 0, 0);
         ui_label_set_text(lbl_cl_air, "CO2 --  TVOC --");
         update_tile_climate();
+
+        /* Klok Studio tile (#55): the face object is the tile; tap = full screen */
+        const layout_tile_t * Lks = layout_find(LT_CLOCKSTUDIO);
+        if (Lks) {
+            int kx, ky, kw, kh;
+            layout_cell_px(Lks->col, Lks->row, Lks->w, Lks->h, &kx, &ky, &kw, &kh);
+            kx += 4; ky += 4; kw -= 8; kh -= 8;     /* inter-tile margin */
+            tile_clockstudio = cs_create(scr_root, CS_HOME, CS_CTX_TILE, kx, ky, kw, kh);
+            if (!Lks->visible || Lks->page != 0) ui_obj_add_flag(tile_clockstudio, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(tile_clockstudio, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_add_event_cb(tile_clockstudio, tile_click_wrapper, LV_EVENT_CLICKED, (void *)on_clockstudio_click);
+        }
     }
     tile_water = water_t.tile;
     lbl_title_slot[TILE_SLOT_WATER] = water_t.title;
@@ -5593,6 +5617,7 @@ void screen_home_destroy(void) {
         lbl_lt_sp_toggle = NULL;
         lbl_lt_sp_power = NULL;
         tile_climate = NULL;
+        tile_clockstudio = NULL;
         lbl_cl_hum = NULL;
         lbl_cl_quality = NULL;
         lbl_cl_air = NULL;

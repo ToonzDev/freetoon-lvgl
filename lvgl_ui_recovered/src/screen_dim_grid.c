@@ -19,6 +19,7 @@
 #include "calendar.h"
 #include "meteradapter.h"   /* meter_state — for the restored dim energy bar */
 #include "layout.h"         /* customizable dim block layout (g_dim_blocks) */
+#include "clock_studio.h"    /* Klok Studio dim block (#55) */
 #include "icons.h"
 #include "buienradar_rain.h"
 #include <stdio.h>
@@ -1188,6 +1189,13 @@ lv_obj_t * screen_dim_grid_create(void) {
     en_eday_w = edbw - 8;
     en_make_bar(bx_ed, en_eday_w, 6, 0xffffff, &en_eday_track, &en_eday_fill, &en_eday_lbl);
     en_make_vbar(bx_ed, edbw, edbh, en_eday_segs, &en_eday_vlbl, &en_eday_vunit);
+
+    /* ---- Klok Studio clock face (DB_CLOCKSTUDIO, #55) ---- */
+    if (g_dim_blocks[DB_CLOCKSTUDIO].visible) {
+        int kbw = 0, kbh = 0;
+        lv_obj_t * bx_k = dim_box(DB_CLOCKSTUDIO, &kbw, &kbh);
+        cs_create(bx_k, CS_DIM, CS_CTX_DIM, 0, 0, kbw, kbh);
+    }
 
     /* ---- AGENDA: next calendar event(s) — 2-column, height-adaptive, all white text ---- */
     int abw = 0, abh = 0; lv_obj_t * bx_a = dim_box(DB_AGENDA, &abw, &abh);

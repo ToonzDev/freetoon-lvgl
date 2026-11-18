@@ -440,6 +440,22 @@ static void mock_state(void) {
     toon_state.humidity      = 53.0f;
     toon_state.eco2          = 650;   /* ppm — Binnenklimaat tile */
     toon_state.tvoc          = 120;   /* ppb */
+    if (getenv("SIM_CAL")) {          /* agenda mock: Klok Studio calendar face */
+        time_t now = time(NULL);
+        static const char * what[] = { "Tandarts", "Voetbaltraining Daan", "Verjaardag oma",
+                                       "Afval: GFT aan de straat", "Etentje bij Sanne" };
+        static const char * when[] = { "14:00", "18:30", "", "07:00", "19:00" };
+        static const int day[] = { 0, 0, 1, 2, 4 };
+        for (int i = 0; i < 5; i++) {
+            time_t t = now + day[i] * 86400;
+            struct tm tm; localtime_r(&t, &tm);
+            strftime(calendar_state.ev[i].date, sizeof calendar_state.ev[i].date, "%Y-%m-%d", &tm);
+            snprintf(calendar_state.ev[i].time, sizeof calendar_state.ev[i].time, "%s", when[i]);
+            snprintf(calendar_state.ev[i].summary, sizeof calendar_state.ev[i].summary, "%s", what[i]);
+        }
+        calendar_state.count = 5;
+        calendar_state.connected = 1;
+    }
     toon_state.boiler_in_temp  = 35.0f;
     toon_state.boiler_out_temp = 42.0f;
     toon_state.modulation_level = 0.0f;
@@ -1268,6 +1284,13 @@ int main(int argc, char ** argv) {
             extern void screen_meteradapters_sim_pulse(const char * uuid);
             screen_meteradapters_sim_pulse("a0835b8f-9b1e-439c-9f59-c96019142247");
             pump(20);
+            continue;
+        }
+        if (!strcmp(argv[a], "csfull") || !strncmp(argv[a], "csset:", 6)) {   /* Klok Studio views */
+            extern void cs_open_fullscreen(void);
+            extern void cs_open_settings(int which);
+            if (argv[a][2] == 'f') cs_open_fullscreen(); else cs_open_settings(atoi(argv[a] + 6));
+            pump(30);
             continue;
         }
         if (!strncmp(argv[a], "wificonn:", 9)) {   /* wifi: open the password modal for <ssid> */

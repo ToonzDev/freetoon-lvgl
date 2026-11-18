@@ -18,6 +18,7 @@
 #include <unistd.h>
 #ifdef SIM
 #include "layout.h"
+#include "clock_studio.h"
 #endif
 
 #define STACK_MAX 8
@@ -178,6 +179,7 @@ void ui_dim_now(void) {
     screen_waste_close();
     screen_home_dismiss_modals();
     screen_settings_close_modals();
+    cs_close_settings();
     if (settings.dim_sleep_away_black && is_sleep_or_away()) {
         backlight_set(0);
         ui_push(screen_black_create());
@@ -344,6 +346,7 @@ void ui_idle_tick(void) {
             screen_waste_close();
             screen_home_dismiss_modals();
             screen_settings_close_modals();
+            cs_close_settings();
             screen_home_reset_to_main();
             /* A sub-screen that hid the top layer (HA entity picker, HA
              * device manager) never got to restore it — do it here, or later

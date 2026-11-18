@@ -428,6 +428,7 @@ void layout_type_min(int type, int * min_w, int * min_h) {
         case LT_RAINFALL:     w = 3; h = 2; break;
         case LT_SMARTPLUG:    w = 2; h = 2; break;
         case LT_CLIMATE:      w = 2; h = 2; break;
+        case LT_CLOCKSTUDIO:  w = 2; h = 2; break;
         default:              w = 0; h = 0; break;
     }
     if (min_w) *min_w = w;
@@ -453,6 +454,7 @@ const char * layout_type_name(int type) {
         case LT_RAINFALL:    return "Neerslag";
         case LT_SMARTPLUG:   return "Slimme stekker";
         case LT_CLIMATE:     return "Binnenklimaat";
+        case LT_CLOCKSTUDIO: return "Klok Studio";
         default:             return "?";
     }
 }
@@ -488,6 +490,7 @@ static const dim_block_t DIM_DEFAULTS[DB_COUNT] = {
     [DB_RAINFALL] = { 0, 6, 4, 2, 0 },   /* buienradar 3h rain graph (default hidden) */
     [DB_SOLAR]    = { 9, 5, 3, 1, 0 },   /* solar production (default hidden) */
     [DB_EDAY]     = { 9, 5, 3, 1, 0 },   /* electricity day total (default hidden) */
+    [DB_CLOCKSTUDIO] = { 0, 0, 3, 3, 0 },  /* Klok Studio (default hidden) */
 };
 
 void dim_layout_reset_default(void) {
@@ -549,6 +552,7 @@ const char * dim_block_name(int id) {
         case DB_RAINFALL: return "Neerslag";
         case DB_SOLAR:    return "Zon";
         case DB_EDAY:     return "Stroom dag";
+        case DB_CLOCKSTUDIO: return "Klok Studio";
     }
     return "?";
 }
