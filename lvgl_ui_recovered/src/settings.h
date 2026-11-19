@@ -395,9 +395,11 @@ typedef struct {
     int dim_elec_max_kwh;     /* 5..50 kWh — full scale for electricity day total bar (default 15) */
     int dim_thin_font;        /* 1 = dim clock + indoor/outdoor temp in the original thin
                                  Montserrat Regular (same size); 0 = Bold (default) */
-    int   dyn_tariff;         /* 1 = dynamic contract: hourly EnergyZero day-ahead prices (#44) */
+    int   dyn_elec;           /* 1 = dynamic electricity contract: hourly EnergyZero day-ahead prices (#44)
+                                 (was dyn_tariff, which covered both; same slot) */
     float dyn_elec_surcharge; /* EUR per kWh incl. VAT on top of market x 1.21 (mark-up + energy tax) */
     float dyn_gas_surcharge;  /* EUR per m3 incl. VAT on top of market x 1.21 */
+    int   dyn_gas;            /* 1 = dynamic gas contract: EnergyZero gas-day prices */
 } settings_t;
 
 #define FORECAST_AUTO   0

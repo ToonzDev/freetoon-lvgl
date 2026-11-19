@@ -25,7 +25,8 @@ enum { EP_ELEC = 0, EP_GAS = 1 };
 /* Usage-weighted day prices are cached per kind. */
 enum { EP_K_AVG_E = 0, EP_K_AVG_G, EP_K_ELEC, EP_K_GAS, EP_K_SOLAR, EP_K_COUNT };
 
-int    ep_dynamic(void);                       /* settings.dyn_tariff */
+int    ep_dynamic(int com);                    /* settings.dyn_elec / dyn_gas */
+int    ep_dynamic_any(void);                   /* either one */
 double ep_allin(int com, double market);       /* market x 1.21 + surcharge */
 
 /* Market price (EUR excl. VAT per kWh / m3) of the hour containing t.

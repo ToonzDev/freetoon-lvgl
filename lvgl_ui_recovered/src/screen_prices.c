@@ -1,7 +1,8 @@
 /*
  * screen_prices.c — "Energieprijzen" (#44): today's and tomorrow's hourly
  * all-in electricity prices as bars, the current hour marked, the cheapest
- * 2-hour block highlighted, plus the gas price of the day.
+ * 2-hour block highlighted, plus the gas price of the day. Gas-only dynamic
+ * contract: just today's / tomorrow's gas price.
  * Opened from Statistics (dynamic contract only). Owned screen: built fresh
  * on every open, freed when it leaves the stack.
  */
@@ -36,9 +37,35 @@ static long local_midnight(void) {
     return (long)mktime(&tm);
 }
 
+/* Gas-only dynamic contract: no hourly power chart, just the gas day prices. */
+static void build_gas_only(void) {
+    char b1[32], b2[32], line[160];
+    double mk;
+    long mid = local_midnight();
+    if (ep_market_at(EP_GAS, (long)time(NULL), &mk)) {
+        eur(b1, sizeof b1, ep_allin(EP_GAS, mk), 2);
+        /* the gas day runs 06:00-06:00: tomorrow noon is tomorrow's price */
+        if (ep_market_at(EP_GAS, mid + 86400 + 12 * 3600, &mk)) {
+            eur(b2, sizeof b2, ep_allin(EP_GAS, mk), 2);
+            snprintf(line, sizeof line, tr("Gas vandaag %s/m3    |    morgen %s/m3", "Gas today %s/m3    |    tomorrow %s/m3"), b1, b2);
+        } else
+            snprintf(line, sizeof line, tr("Gas vandaag %s/m3", "Gas today %s/m3"), b1);
+    } else {
+        snprintf(line, sizeof line, "%s", ep_busy() ? tr("Prijzen laden...", "Loading prices...")
+                                                    : tr("Geen prijzen (geen internet?)", "No prices (no internet?)"));
+    }
+    lv_label_set_text(lbl_now, line);
+    lv_label_set_text(lbl_cheap, "");
+    eur(b1, sizeof b1, settings.dyn_gas_surcharge, 3);
+    snprintf(line, sizeof line, tr("All-in: marktprijs (EnergyZero) x 1,21 + opslag %s/m3. Stroom: vast tarief.",
+                                   "All-in: market price (EnergyZero) x 1.21 + surcharge %s/m3. Power: fixed rate."), b1);
+    lv_label_set_text(lbl_note, line);
+}
+
 static void build_chart(void) {
     if (!area) return;
     lv_obj_clean(area);
+    if (!ep_dynamic(EP_ELEC)) { build_gas_only(); return; }
     lv_obj_update_layout(area);
     int W = lv_obj_get_content_width(area), Hh = lv_obj_get_content_height(area);
 
@@ -143,7 +170,7 @@ static void build_chart(void) {
     double mk;
     if (ep_market_at(EP_ELEC, (long)time(NULL), &mk)) {
         eur(b1, sizeof b1, ep_allin(EP_ELEC, mk), 2);
-        if (ep_market_at(EP_GAS, (long)time(NULL), &mk)) {
+        if (ep_dynamic(EP_GAS) && ep_market_at(EP_GAS, (long)time(NULL), &mk)) {
             eur(b2, sizeof b2, ep_allin(EP_GAS, mk), 2);
             snprintf(line, sizeof line, tr("Nu %s/kWh    |    Gas vandaag %s/m3", "Now %s/kWh    |    Gas today %s/m3"), b1, b2);
         } else
@@ -166,8 +193,12 @@ static void build_chart(void) {
     } else lv_label_set_text(lbl_cheap, "");
     eur(b1, sizeof b1, settings.dyn_elec_surcharge, 3);
     eur(b2, sizeof b2, settings.dyn_gas_surcharge, 3);
-    snprintf(line, sizeof line, tr("All-in: marktprijs (EnergyZero) x 1,21 + opslag %s/kWh, gas + %s/m3",
-                                   "All-in: market price (EnergyZero) x 1.21 + surcharge %s/kWh, gas + %s/m3"), b1, b2);
+    if (ep_dynamic(EP_GAS))
+        snprintf(line, sizeof line, tr("All-in: marktprijs (EnergyZero) x 1,21 + opslag %s/kWh, gas + %s/m3",
+                                       "All-in: market price (EnergyZero) x 1.21 + surcharge %s/kWh, gas + %s/m3"), b1, b2);
+    else
+        snprintf(line, sizeof line, tr("All-in: marktprijs (EnergyZero) x 1,21 + opslag %s/kWh. Gas: vast tarief.",
+                                       "All-in: market price (EnergyZero) x 1.21 + surcharge %s/kWh. Gas: fixed rate."), b1);
     lv_label_set_text(lbl_note, line);
 }
 

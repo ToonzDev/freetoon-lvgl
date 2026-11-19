@@ -1089,8 +1089,9 @@ static double calculate_nice_top(double hi) {
 }
 
 /* ---- dynamic contract (#44) ---------------------------------------------
- * With settings.dyn_tariff the Euro view prices every sample at its own
- * hour's (or day's usage-weighted) all-in price instead of one fixed rate. */
+ * With a dynamic contract for the metric's commodity (settings.dyn_elec /
+ * dyn_gas) the Euro view prices every sample at its own hour's (or day's
+ * usage-weighted) all-in price instead of one fixed rate. */
 static int g_dyn_applied = 0;     /* samples already in EUR (x1000) */
 static int g_dyn_pending = 0;     /* some prices still loading: fixed rate used */
 
@@ -1100,7 +1101,7 @@ static float fixed_rate(void) {
 }
 /* EUR per kWh / m3 right now: the all-in hour price, or the fixed rate. */
 static double rate_now(void) {
-    if (ep_dynamic()) {
+    if (ep_dynamic(metric_com())) {
         double mk;
         if (ep_market_at(metric_com(), (long)time(NULL), &mk)) return ep_allin(metric_com(), mk);
         g_dyn_pending = 1;
@@ -1217,7 +1218,7 @@ static void render_chart(void) {
 
     g_dyn_applied = 0;
     g_dyn_pending = 0;
-    if (is_cum && settings.stats_show_euro && metric_has_euro() && ep_dynamic())
+    if (is_cum && settings.stats_show_euro && metric_has_euro() && ep_dynamic(metric_com()))
         apply_dynamic_prices(n);
 
     g_bar_count = 0;
@@ -1511,38 +1512,40 @@ static void render_chart(void) {
     }
 }
 
-/* Rate buttons: the fixed rates, or (dynamic contract) the all-in price of
- * the current hour. The caption says which, and when prices are loading. */
+/* Rate buttons: per commodity the fixed rate, or (dynamic contract) the
+ * all-in price right now. The caption says which, and when prices load. */
 static lv_obj_t * btn_prices = NULL;
 static void update_rate_labels(void) {
     char b[64];
     double mk;
-    if (ep_dynamic()) {
-        if (lbl_rate_elec) {
-            if (ep_market_at(EP_ELEC, (long)time(NULL), &mk))
-                snprintf(b, sizeof b, tr("Stroom nu: € %.2f/kWh", "Power now: € %.2f/kWh"), ep_allin(EP_ELEC, mk));
-            else
-                snprintf(b, sizeof b, "%s", tr("Stroom: dynamisch", "Power: dynamic"));
-            lv_label_set_text(lbl_rate_elec, b);
-        }
-        if (lbl_rate_gas) {
-            if (ep_market_at(EP_GAS, (long)time(NULL), &mk))
-                snprintf(b, sizeof b, tr("Gas nu: € %.2f/m3", "Gas now: € %.2f/m3"), ep_allin(EP_GAS, mk));
-            else
-                snprintf(b, sizeof b, "%s", tr("Gas: dynamisch", "Gas: dynamic"));
-            lv_label_set_text(lbl_rate_gas, b);
-        }
-        if (lbl_rates_title)
-            lv_label_set_text(lbl_rates_title,
-                (g_dyn_pending && settings.stats_show_euro)
-                    ? tr("Prijzen laden... (tijdelijk vast tarief)", "Loading prices... (fixed rate for now)")
-                    : tr("Dynamisch tarief (tik = wijzig):", "Dynamic rate (tap = edit):"));
-        if (btn_prices) lv_obj_clear_flag(btn_prices, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        if (lbl_rate_elec) lv_label_set_text_fmt(lbl_rate_elec, "Stroom: € %.2f/kWh", (double)settings.rate_elec_kwh);
-        if (lbl_rate_gas)  lv_label_set_text_fmt(lbl_rate_gas, "Gas: € %.2f/m3", (double)settings.rate_gas_m3);
-        if (lbl_rates_title) lv_label_set_text(lbl_rates_title, tr("Tarieven (tik = wijzig):", "Rates (tap = edit):"));
-        if (btn_prices) lv_obj_add_flag(btn_prices, LV_OBJ_FLAG_HIDDEN);
+    int de = ep_dynamic(EP_ELEC), dg = ep_dynamic(EP_GAS);
+    if (lbl_rate_elec) {
+        if (!de)
+            snprintf(b, sizeof b, "Stroom: € %.2f/kWh", (double)settings.rate_elec_kwh);
+        else if (ep_market_at(EP_ELEC, (long)time(NULL), &mk))
+            snprintf(b, sizeof b, tr("Stroom nu: € %.2f/kWh", "Power now: € %.2f/kWh"), ep_allin(EP_ELEC, mk));
+        else
+            snprintf(b, sizeof b, "%s", tr("Stroom: dynamisch", "Power: dynamic"));
+        lv_label_set_text(lbl_rate_elec, b);
+    }
+    if (lbl_rate_gas) {
+        if (!dg)
+            snprintf(b, sizeof b, "Gas: € %.2f/m3", (double)settings.rate_gas_m3);
+        else if (ep_market_at(EP_GAS, (long)time(NULL), &mk))
+            snprintf(b, sizeof b, tr("Gas nu: € %.2f/m3", "Gas now: € %.2f/m3"), ep_allin(EP_GAS, mk));
+        else
+            snprintf(b, sizeof b, "%s", tr("Gas: dynamisch", "Gas: dynamic"));
+        lv_label_set_text(lbl_rate_gas, b);
+    }
+    if (lbl_rates_title)
+        lv_label_set_text(lbl_rates_title,
+            (g_dyn_pending && settings.stats_show_euro)
+                ? tr("Prijzen laden... (tijdelijk vast tarief)", "Loading prices... (fixed rate for now)")
+            : (de && dg) ? tr("Dynamisch tarief (tik = wijzig):", "Dynamic rate (tap = edit):")
+                         : tr("Tarieven (tik = wijzig):", "Rates (tap = edit):"));
+    if (btn_prices) {
+        if (de || dg) lv_obj_clear_flag(btn_prices, LV_OBJ_FLAG_HIDDEN);
+        else          lv_obj_add_flag(btn_prices, LV_OBJ_FLAG_HIDDEN);
     }
 }
 
@@ -1557,7 +1560,7 @@ static void on_price_news(void) { g_price_news = 1; }
 static void price_timer_cb(lv_timer_t * t) {
     (void)t;
     if (!g_price_news || !scr_root || lv_scr_act() != scr_root) return;
-    if (!ep_dynamic()) { g_price_news = 0; return; }
+    if (!ep_dynamic_any()) { g_price_news = 0; return; }
     long now = (long)time(NULL);
     if (ep_busy() && now - g_price_redraw < 10) return;
     g_price_news = 0;
@@ -1670,7 +1673,7 @@ static void on_rate_save(lv_event_t * e) {
         } else if (val > 0.0001f) {
             if (gas) settings.rate_gas_m3 = val; else settings.rate_elec_kwh = val;
         }
-        settings.dyn_tariff = g_rate_dyn;
+        if (gas) settings.dyn_gas = g_rate_dyn; else settings.dyn_elec = g_rate_dyn;
         settings_save();
         if (g_rate_dyn) ep_start();
     }
@@ -1707,16 +1710,18 @@ static void open_rate_modal(int target) {
     lv_obj_set_style_pad_all(panel, 12, 0);
     lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
 
-    g_rate_dyn = settings.dyn_tariff;
+    g_rate_dyn = ep_dynamic(target ? EP_GAS : EP_ELEC);
 
     g_rate_title = lv_label_create(panel);
     lv_obj_set_style_text_color(g_rate_title, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(g_rate_title, SF(20), 0);
     lv_obj_align(g_rate_title, LV_ALIGN_TOP_MID, 0, 0);
 
-    /* Vast / Dynamisch (hourly EnergyZero prices, #44) */
+    /* Vast / Dynamisch (EnergyZero prices, #44), per commodity: plenty of
+     * households have a dynamic power contract and fixed gas, or vice versa */
     lv_obj_t * dl = lv_label_create(panel);
-    lv_label_set_text(dl, tr("Dynamisch contract (uurprijzen)", "Dynamic contract (hourly prices)"));
+    lv_label_set_text(dl, target ? tr("Dynamisch gascontract (dagprijs)", "Dynamic gas contract (daily price)")
+                                 : tr("Dynamisch stroomcontract (uurprijs)", "Dynamic power contract (hourly)"));
     lv_obj_set_style_text_color(dl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(dl, SF(16), 0);
     lv_obj_align(dl, LV_ALIGN_TOP_LEFT, 0, SY(42));
@@ -1868,7 +1873,7 @@ lv_obj_t * screen_stats_create(void) {
     lv_obj_set_style_text_color(pbl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(pbl, SF(18), 0);
     lv_obj_center(pbl);
-    if (!ep_dynamic()) lv_obj_add_flag(btn_prices, LV_OBJ_FLAG_HIDDEN);
+    if (!ep_dynamic_any()) lv_obj_add_flag(btn_prices, LV_OBJ_FLAG_HIDDEN);
     ep_add_listener(on_price_news);
     if (!g_price_timer) g_price_timer = lv_timer_create(price_timer_cb, 1000, NULL);
 

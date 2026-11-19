@@ -609,7 +609,8 @@ void ep_start(void) {
     pthread_attr_destroy(&at);
 }
 
-int ep_dynamic(void) { return settings.dyn_tariff; }
+int ep_dynamic(int com) { return com == EP_GAS ? settings.dyn_gas : settings.dyn_elec; }
+int ep_dynamic_any(void) { return settings.dyn_elec || settings.dyn_gas; }
 
 double ep_allin(int com, double market) {
     return market * VAT + (com == EP_GAS ? settings.dyn_gas_surcharge : settings.dyn_elec_surcharge);

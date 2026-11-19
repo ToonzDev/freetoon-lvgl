@@ -168,7 +168,8 @@ settings_t settings = {
     .rate_elec_kwh       = 0.30f,
     .rate_gas_m3         = 1.35f,
     .stats_show_euro     = 0,
-    .dyn_tariff          = 0,
+    .dyn_elec            = 0,
+    .dyn_gas             = 0,
     .dyn_elec_surcharge  = 0.15f,
     .dyn_gas_surcharge   = 0.75f,
 
@@ -250,7 +251,9 @@ void settings_load(void) {
         else if (strcmp(k, "dim_bars_vertical") == 0) settings.dim_bars_vertical = iv;
         else if (strcmp(k, "dim_elec_max_kwh")  == 0) settings.dim_elec_max_kwh  = (iv < 5 ? 5 : (iv > 100 ? 100 : iv));
         else if (strcmp(k, "dim_thin_font")     == 0) settings.dim_thin_font     = iv ? 1 : 0;
-        else if (strcmp(k, "dyn_tariff")        == 0) settings.dyn_tariff        = iv ? 1 : 0;
+        else if (strcmp(k, "dyn_tariff")        == 0) settings.dyn_elec = settings.dyn_gas = iv ? 1 : 0; /* legacy: both */
+        else if (strcmp(k, "dyn_elec")          == 0) settings.dyn_elec          = iv ? 1 : 0;
+        else if (strcmp(k, "dyn_gas")           == 0) settings.dyn_gas           = iv ? 1 : 0;
         else if (strcmp(k, "dyn_elec_surcharge") == 0) settings.dyn_elec_surcharge = strtof(v, NULL);
         else if (strcmp(k, "dyn_gas_surcharge")  == 0) settings.dyn_gas_surcharge  = strtof(v, NULL);
         else if (strcmp(k, "dim_waste_lead_days") == 0) settings.dim_waste_lead_days = iv;
@@ -1069,6 +1072,10 @@ static void settings_write_file(void) {
     fprintf(f, "rate_elec_kwh=%.4f\n", settings.rate_elec_kwh);
     fprintf(f, "rate_gas_m3=%.4f\n",   settings.rate_gas_m3);
     fprintf(f, "stats_show_euro=%d\n", settings.stats_show_euro);
+    fprintf(f, "dyn_elec=%d\n",        settings.dyn_elec);
+    fprintf(f, "dyn_gas=%d\n",         settings.dyn_gas);
+    fprintf(f, "dyn_elec_surcharge=%.4f\n", settings.dyn_elec_surcharge);
+    fprintf(f, "dyn_gas_surcharge=%.4f\n",  settings.dyn_gas_surcharge);
     for (int i = 0; i < 12; i++)
         fprintf(f, "tile_slot_p1_%d=%s\n", i, settings.tile_slot_page1[i]);
     fprintf(f, "tile_rotate_enabled=%d\n", settings.tile_rotate_enabled);

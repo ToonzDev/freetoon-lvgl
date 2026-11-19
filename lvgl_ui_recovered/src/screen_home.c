@@ -2759,7 +2759,7 @@ static void refresh_cb(lv_timer_t * t) {
          * plus the start of the cheapest 2-hour block. */
         if (lbl_energy_today) {
             double mk, q1, q3;
-            if (ep_dynamic() && ep_market_at(EP_ELEC, (long)time(NULL), &mk)) {
+            if (ep_dynamic(EP_ELEC) && ep_market_at(EP_ELEC, (long)time(NULL), &mk)) {
                 double p = ep_allin(EP_ELEC, mk);
                 char pb[48];
                 long cs; double ca;
@@ -2788,7 +2788,7 @@ static void refresh_cb(lv_timer_t * t) {
             float g = energy_gas_today_m3();
             if (g >= 0) {
                 char gb[40];
-                if (ep_dynamic())   /* shorter: the price shares the bottom line */
+                if (ep_dynamic(EP_ELEC))   /* shorter: the price shares the bottom line */
                     snprintf(gb, sizeof gb, tr("Gas %.2f m3", "Gas %.2f m3"), g);
                 else
                     snprintf(gb, sizeof gb, tr("Gas vandaag %.2f m3", "Gas today %.2f m3"), g);
