@@ -11,6 +11,7 @@
 #include "settings.h"
 #include "theme.h"
 #include "pin_modal.h"
+#include "ui_lazy.h"
 #include <stdio.h>
 #include <time.h>
 
@@ -85,21 +86,21 @@ static void refresh_cb(lv_timer_t * t) {
     localtime_r(&now, &tm);
     char clk[16];
     strftime(clk, sizeof(clk), "%H:%M", &tm);
-    lv_label_set_text(lbl_clock, clk);
+    ui_label_set_text(lbl_clock, clk);
     char dt[48];
     strftime(dt, sizeof(dt), "%A %d %B %Y", &tm);
-    lv_label_set_text(lbl_date, dt);
+    ui_label_set_text(lbl_date, dt);
 
     if (toon_state.connected) {
-        lv_obj_add_flag(lbl_conn, LV_OBJ_FLAG_HIDDEN);
+        ui_obj_add_flag(lbl_conn, LV_OBJ_FLAG_HIDDEN);
     } else {
-        lv_label_set_text(lbl_conn, tr("BoxTalk: verbinden...", "BoxTalk: connecting..."));
-        lv_obj_set_style_text_color(lbl_conn, lv_color_hex(0xff8866), 0);
-        lv_obj_clear_flag(lbl_conn, LV_OBJ_FLAG_HIDDEN);
+        ui_label_set_text(lbl_conn, tr("BoxTalk: verbinden...", "BoxTalk: connecting..."));
+        ui_obj_set_style_text_color(lbl_conn, lv_color_hex(0xff8866), 0);
+        ui_obj_clear_flag(lbl_conn, LV_OBJ_FLAG_HIDDEN);
     }
 
     if (toon_state.indoor_temp > 0)
-        lv_label_set_text_fmt(lbl_temp, "%.1f°C", toon_state.indoor_temp);
+        ui_label_set_text_fmt(lbl_temp, "%.1f°C", toon_state.indoor_temp);
 
     /* Highlight logic: the mode button (Scheduled[0] or Off[1]) gets a white
      * border based on whether we're on the schedule (program_state 1, 2, 3, 8);
@@ -126,41 +127,41 @@ static void refresh_cb(lv_timer_t * t) {
         if (!btn_prog[i]) continue;
         if (i >= 2) {
             if (!on_schedule) {
-                lv_obj_add_flag(btn_prog[i], LV_OBJ_FLAG_HIDDEN);
+                ui_obj_add_flag(btn_prog[i], LV_OBJ_FLAG_HIDDEN);
                 continue;
             } else {
-                lv_obj_clear_flag(btn_prog[i], LV_OBJ_FLAG_HIDDEN);
+                ui_obj_clear_flag(btn_prog[i], LV_OBJ_FLAG_HIDDEN);
             }
         }
         int active = (i == mode_idx) || (i == preset_idx);
-        lv_obj_set_style_border_width(btn_prog[i], active ? 2 : 0, 0);
-        lv_obj_set_style_border_color(btn_prog[i],
+        ui_obj_set_style_border_width(btn_prog[i], active ? 2 : 0, 0);
+        ui_obj_set_style_border_color(btn_prog[i],
                                       lv_color_hex(settings.home_light_mode ? 0x1e2838 : 0xffffff), 0);
-        lv_obj_set_style_bg_color(btn_prog[i],
+        ui_obj_set_style_bg_color(btn_prog[i],
                                   lv_color_hex(active ? prog_cols[i] : (settings.home_light_mode ? 0xd0d8e2 : 0x243242)), 0);
         lv_obj_t * bl = lv_obj_get_child(btn_prog[i], 0);
         if (bl) {
-            lv_obj_set_style_text_color(bl, lv_color_hex(active ? 0xffffff : (settings.home_light_mode ? 0x1e2838 : 0x88aabb)), 0);
+            ui_obj_set_style_text_color(bl, lv_color_hex(active ? 0xffffff : (settings.home_light_mode ? 0x1e2838 : 0x88aabb)), 0);
         }
     }
     if (toon_state.humidity > 0)
-        lv_label_set_text_fmt(lbl_humidity, tr("RV %.0f%%", "RH %.0f%%"), toon_state.humidity);
+        ui_label_set_text_fmt(lbl_humidity, tr("RV %.0f%%", "RH %.0f%%"), toon_state.humidity);
     if (toon_state.eco2 || toon_state.tvoc)
-        lv_label_set_text_fmt(lbl_voc, tr("eCO2 %d ppm", "eCO2 %d ppm"), toon_state.eco2);
+        ui_label_set_text_fmt(lbl_voc, tr("eCO2 %d ppm", "eCO2 %d ppm"), toon_state.eco2);
 
     if (hw_state.connected_water) {
         /* 3 decimals — every litre poured ticks the displayed total. */
         if (hw_state.water_lpm > 0.05f)
-            lv_label_set_text_fmt(lbl_water, "%.3f m3  /  %.1f L/min",
+            ui_label_set_text_fmt(lbl_water, "%.3f m3  /  %.1f L/min",
                                   hw_state.water_total_m3, hw_state.water_lpm);
         else
-            lv_label_set_text_fmt(lbl_water, "%.3f m3",
+            ui_label_set_text_fmt(lbl_water, "%.3f m3",
                                   hw_state.water_total_m3);
     } else {
-        lv_label_set_text(lbl_water, tr("Water -- m3", "Water -- m3"));
+        ui_label_set_text(lbl_water, tr("Water -- m3", "Water -- m3"));
     }
     if (toon_state.setpoint > 0)
-        lv_label_set_text_fmt(lbl_setpoint, tr("Streefwaarde: %.1f°C", "Setpoint: %.1f°C"), toon_state.setpoint);
+        ui_label_set_text_fmt(lbl_setpoint, tr("Streefwaarde: %.1f°C", "Setpoint: %.1f°C"), toon_state.setpoint);
 
     /* Status line — short word only ("Heating" / "Hot water" / "Boiler idle").
      * The radiator+flame glyph next to the indoor temp carries the visual,
@@ -171,49 +172,49 @@ static void refresh_cb(lv_timer_t * t) {
         /* qt-gui: "To 20.0° in 1h30" — the next block's setpoint. */
         char eta[32];
         boxtalk_preheat_eta(eta, sizeof eta);
-        lv_label_set_text_fmt(lbl_burner, tr("Voorverwarmen naar %.1f°%s", "Pre-heating to %.1f°%s"),
+        ui_label_set_text_fmt(lbl_burner, tr("Voorverwarmen naar %.1f°%s", "Pre-heating to %.1f°%s"),
                               boxtalk_preheat_target(), eta);
-        lv_obj_set_style_text_color(lbl_burner, lv_color_hex(0xffaa44), 0);
+        ui_obj_set_style_text_color(lbl_burner, lv_color_hex(0xffaa44), 0);
     } else if (toon_state.burner_on) {
-        lv_label_set_text(lbl_burner, tr("Verwarmen", "Heating"));
-        lv_obj_set_style_text_color(lbl_burner, lv_color_hex(0xff6644), 0);
+        ui_label_set_text(lbl_burner, tr("Verwarmen", "Heating"));
+        ui_obj_set_style_text_color(lbl_burner, lv_color_hex(0xff6644), 0);
     } else if (toon_state.dhw_on) {
-        lv_label_set_text(lbl_burner, tr("Warm water", "Hot water"));
-        lv_obj_set_style_text_color(lbl_burner, lv_color_hex(0x44aaff), 0);
+        ui_label_set_text(lbl_burner, tr("Warm water", "Hot water"));
+        ui_obj_set_style_text_color(lbl_burner, lv_color_hex(0x44aaff), 0);
     } else {
-        lv_label_set_text(lbl_burner, tr("Ketel rust", "Boiler idle"));
-        lv_obj_set_style_text_color(lbl_burner, lv_color_hex(0x88aabb), 0);
+        ui_label_set_text(lbl_burner, tr("Ketel rust", "Boiler idle"));
+        ui_obj_set_style_text_color(lbl_burner, lv_color_hex(0x88aabb), 0);
     }
-    lv_obj_add_flag(img_flame,  LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(img_faucet, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(img_drop,   LV_OBJ_FLAG_HIDDEN);
+    ui_obj_add_flag(img_flame,  LV_OBJ_FLAG_HIDDEN);
+    ui_obj_add_flag(img_faucet, LV_OBJ_FLAG_HIDDEN);
+    ui_obj_add_flag(img_drop,   LV_OBJ_FLAG_HIDDEN);
 
     /* CH water inlet/outlet temps. Flow falls back to the boiler
        TemperatureSensor (always present) if the boilerTemps query hasn't
        answered; return comes only from the boilerRetTemps query. */
     float flow = toon_state.boiler_out_temp > 0 ? toon_state.boiler_out_temp
                                                 : toon_state.boiler_temp;
-    if (flow > 0) lv_label_set_text_fmt(lbl_flow, tr("Aanvoer  %.1f°C", "Flow  %.1f°C"), flow);
-    else          lv_label_set_text(lbl_flow, tr("Aanvoer  -- C", "Flow  -- C"));
+    if (flow > 0) ui_label_set_text_fmt(lbl_flow, tr("Aanvoer  %.1f°C", "Flow  %.1f°C"), flow);
+    else          ui_label_set_text(lbl_flow, tr("Aanvoer  -- C", "Flow  -- C"));
     if (toon_state.boiler_in_temp > 0)
-        lv_label_set_text_fmt(lbl_return, tr("Retour  %.1f°C", "Return  %.1f°C"), toon_state.boiler_in_temp);
+        ui_label_set_text_fmt(lbl_return, tr("Retour  %.1f°C", "Return  %.1f°C"), toon_state.boiler_in_temp);
     else
         /* Many boilers leave OT DID 28 (CH return temp) unimplemented; OTGW
          * reports returnwatertemperature=0 in that case and happ_thermstat
          * forwards the zero unchanged. Mark it n/a so this row doesn't look
          * like a UI bug. */
-        lv_label_set_text(lbl_return, tr("Retour  n.v.t.", "Return  n/a"));
+        ui_label_set_text(lbl_return, tr("Retour  n.v.t.", "Return  n/a"));
 
     /* Radiator+flame next to the big indoor-temp — visible while CH fires. */
     if (img_temp_flame) {
         if (toon_state.burner_on)
-            lv_obj_clear_flag(img_temp_flame, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_clear_flag(img_temp_flame, LV_OBJ_FLAG_HIDDEN);
         else
-            lv_obj_add_flag(img_temp_flame, LV_OBJ_FLAG_HIDDEN);
+            ui_obj_add_flag(img_temp_flame, LV_OBJ_FLAG_HIDDEN);
     }
-
-    /* Force a full screen invalidate to defeat any partial-flush quirk. */
-    lv_obj_invalidate(scr_root);
+    /* No lv_obj_invalidate(scr_root): with the ui_lazy.h setters only what
+     * changed is redrawn (was a full-screen redraw every 500 ms, as home and
+     * dim were before 1df1144). */
 }
 
 static int scr_light_mode = -1;

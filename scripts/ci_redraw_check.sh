@@ -16,12 +16,11 @@ SECS="${2:-5}"
 # screen  max-screens/s   (measured 2026-11-19: home 0.00, dim 0.16-0.20,
 #                          dimgrid 0.13-0.17; a regression is ~2 screens/s)
 BUDGET="
-home    0.05
-dim     0.50
-dimgrid 0.50
+home       0.05
+dim        0.50
+dimgrid    0.50
+thermostat 0.05
 "
-# Not yet guarded: thermostat (redraws the whole screen every 500 ms, 1.90
-# screens/s; add it here once screen_thermostat.c uses the ui_lazy.h setters).
 
 fail=0
 work=$(mktemp -d)
