@@ -12,6 +12,17 @@ set -eu
 
 SIM="$1"
 SECS="${2:-5}"
+# Absolute: the sim runs from a scratch dir (it writes its cfg/cache there).
+case "$SIM" in /*) ;; *) SIM="$(pwd)/$SIM" ;; esac
+[ -x "$SIM" ] || { echo "ci_redraw_check: no executable sim at $SIM" >&2; exit 2; }
+
+# On GitHub Actions also emit an annotation, so the result is visible on the
+# run summary (and through the API) without opening the step log.
+note() {   # note <error|notice> <text>
+    echo "$2"
+    [ -n "${GITHUB_ACTIONS:-}" ] && echo "::$1 title=Idle redraw ($(basename "$SIM"))::$2"
+    return 0
+}
 
 # screen  max-screens/s   (measured 2026-11-19: home 0.00, dim 0.16-0.20,
 #                          dimgrid 0.13-0.17; a regression is ~2 screens/s)
@@ -22,19 +33,24 @@ dimgrid    0.50
 thermostat 0.05
 "
 
-fail=0
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
+: > "$work/failed"
+# Every screen is measured, also after a failure, so one run shows them all.
 echo "$BUDGET" | while read -r scr max; do
     [ -n "$scr" ] || continue
-    line=$(cd "$work" && "$SIM" redrawstat "$SECS" "$scr" 2>&1 | grep 'redrawstat\] .* with refresh' | tail -1)
+    out=$(cd "$work" && "$SIM" redrawstat "$SECS" "$scr" 2>&1) || true
+    line=$(echo "$out" | grep 'redrawstat\] .* with refresh' | tail -1)
     rate=$(echo "$line" | sed -n 's/.*(\([0-9.]*\) screens\/s).*/\1/p')
     if [ -z "$rate" ]; then
-        echo "FAIL $scr: no redrawstat result"; echo "$line"; exit 1
+        note error "FAIL $scr: no redrawstat result: $(echo "$out" | tail -3 | tr '\n' ' ')"
+        echo "$scr" >> "$work/failed"
+    elif awk -v r="$rate" -v m="$max" 'BEGIN { exit !(r > m) }'; then
+        note error "FAIL $scr: $rate screens/s idle (budget $max)"
+        echo "$scr" >> "$work/failed"
+    else
+        echo "ok   $scr: $rate screens/s idle (budget $max)"
     fi
-    if awk -v r="$rate" -v m="$max" 'BEGIN { exit !(r > m) }'; then
-        echo "FAIL $scr: $rate screens/s idle (budget $max)"; exit 1
-    fi
-    echo "ok   $scr: $rate screens/s idle (budget $max)"
-done || fail=1
-exit "$fail"
+done
+[ ! -s "$work/failed" ] || exit 1
+note notice "All idle screens within budget"
