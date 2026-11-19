@@ -24,6 +24,20 @@ To apply them by hand:
   empty, and (importantly) skips the GCT byte read so it doesn't consume bytes
   belonging to the first frame block.
 
+- **`lvgl-0002-font-euro-and-superscript3-glyphs.patch`**
+  Adds the Euro sign (€) and superscript 3 (³, for m³) to the built-in
+  Montserrat fonts. Without it every price and gas volume shows a missing
+  glyph.
+
+- **`lvgl-0003-draw-sw-transform-alpha8-with-recolor.patch`**
+  The software renderer could not rotate or scale `LV_IMG_CF_ALPHA_8BIT`
+  images with recolor; the animation overlay (leaves, hearts) depends on it.
+
+0002 and 0003 were first committed inside the submodule itself (2026-11),
+which made the superproject point at a commit that exists only on one PC: a
+fresh clone could not build. Never commit inside the submodule; add a patch
+here instead.
+
 ## Adding a patch
 
     cd lvgl_ui_recovered/src/lvgl

@@ -1,0 +1,174 @@
+diff --git a/src/draw/lv_draw_img.c b/src/draw/lv_draw_img.c
+index 931c1f83d..05b54527a 100644
+--- a/src/draw/lv_draw_img.c
++++ b/src/draw/lv_draw_img.c
+@@ -255,11 +255,7 @@ static lv_res_t LV_ATTRIBUTE_FAST_MEM decode_and_draw(lv_draw_ctx_t * draw_ctx,
+     else cf = LV_IMG_CF_TRUE_COLOR;
+ 
+     if(cf == LV_IMG_CF_ALPHA_8BIT) {
+-        if(draw_dsc->angle || draw_dsc->zoom != LV_IMG_ZOOM_NONE) {
+-            /* resume normal method */
+-            cf = LV_IMG_CF_TRUE_COLOR_ALPHA;
+-            cdsc->dec_dsc.img_data = NULL;
+-        }
++        /* Supported natively with transform in lv_draw_sw_transform */
+     }
+ 
+     if(cdsc->dec_dsc.error_msg != NULL) {
+diff --git a/src/draw/sw/lv_draw_sw_transform.c b/src/draw/sw/lv_draw_sw_transform.c
+index 06d7e8cbe..7d20334b1 100644
+--- a/src/draw/sw/lv_draw_sw_transform.c
++++ b/src/draw/sw/lv_draw_sw_transform.c
+@@ -61,9 +61,13 @@ static void rgb565a8_no_aa(const uint8_t * src, lv_coord_t src_w, lv_coord_t src
+                            int32_t x_end, lv_color_t * cbuf, uint8_t * abuf);
+ #endif
+ 
++static void alpha_no_aa(const uint8_t * src, lv_coord_t src_w, lv_coord_t src_h, lv_coord_t src_stride,
++                        int32_t xs_ups, int32_t ys_ups, int32_t xs_step, int32_t ys_step,
++                        int32_t x_end, lv_color_t * cbuf, uint8_t * abuf, lv_color_t color);
++
+ static void argb_and_rgb_aa(const uint8_t * src, lv_coord_t src_w, lv_coord_t src_h, lv_coord_t src_stride,
+                             int32_t xs_ups, int32_t ys_ups, int32_t xs_step, int32_t ys_step,
+-                            int32_t x_end, lv_color_t * cbuf, uint8_t * abuf, lv_img_cf_t cf);
++                            int32_t x_end, lv_color_t * cbuf, uint8_t * abuf, lv_img_cf_t cf, const lv_draw_img_dsc_t * draw_dsc);
+ 
+ /**********************
+  *  STATIC VARIABLES
+@@ -140,12 +144,15 @@ void lv_draw_sw_transform(lv_draw_ctx_t * draw_ctx, const lv_area_t * dest_area,
+                     rgb565a8_no_aa(src_buf, src_w, src_h, src_stride, xs_ups, ys_ups, xs_step_256, ys_step_256, dest_w, cbuf, abuf);
+                     break;
+ #endif
++                case LV_IMG_CF_ALPHA_8BIT:
++                    alpha_no_aa(src_buf, src_w, src_h, src_stride, xs_ups, ys_ups, xs_step_256, ys_step_256, dest_w, cbuf, abuf, draw_dsc->recolor);
++                    break;
+                 default:
+                     break;
+             }
+         }
+         else {
+-            argb_and_rgb_aa(src_buf, src_w, src_h, src_stride, xs_ups, ys_ups, xs_step_256, ys_step_256, dest_w, cbuf, abuf, cf);
++            argb_and_rgb_aa(src_buf, src_w, src_h, src_stride, xs_ups, ys_ups, xs_step_256, ys_step_256, dest_w, cbuf, abuf, cf, draw_dsc);
+         }
+ 
+         cbuf += dest_w;
+@@ -264,9 +271,33 @@ static void rgb565a8_no_aa(const uint8_t * src, lv_coord_t src_w, lv_coord_t src
+ }
+ #endif
+ 
++static void alpha_no_aa(const uint8_t * src, lv_coord_t src_w, lv_coord_t src_h, lv_coord_t src_stride,
++                        int32_t xs_ups, int32_t ys_ups, int32_t xs_step, int32_t ys_step,
++                        int32_t x_end, lv_color_t * cbuf, uint8_t * abuf, lv_color_t color)
++{
++    int32_t xs_ups_start = xs_ups;
++    int32_t ys_ups_start = ys_ups;
++
++    lv_coord_t x;
++    for(x = 0; x < x_end; x++) {
++        xs_ups = xs_ups_start + ((xs_step * x) >> 8);
++        ys_ups = ys_ups_start + ((ys_step * x) >> 8);
++
++        int32_t xs_int = xs_ups >> 8;
++        int32_t ys_int = ys_ups >> 8;
++        if(xs_int < 0 || xs_int >= src_w || ys_int < 0 || ys_int >= src_h) {
++            abuf[x] = 0;
++        }
++        else {
++            cbuf[x] = color;
++            abuf[x] = src[ys_int * src_stride + xs_int];
++        }
++    }
++}
++
+ static void argb_and_rgb_aa(const uint8_t * src, lv_coord_t src_w, lv_coord_t src_h, lv_coord_t src_stride,
+                             int32_t xs_ups, int32_t ys_ups, int32_t xs_step, int32_t ys_step,
+-                            int32_t x_end, lv_color_t * cbuf, uint8_t * abuf, lv_img_cf_t cf)
++                            int32_t x_end, lv_color_t * cbuf, uint8_t * abuf, lv_img_cf_t cf, const lv_draw_img_dsc_t * draw_dsc)
+ {
+     int32_t xs_ups_start = xs_ups;
+     int32_t ys_ups_start = ys_ups;
+@@ -282,6 +313,10 @@ static void argb_and_rgb_aa(const uint8_t * src, lv_coord_t src_w, lv_coord_t sr
+             has_alpha = true;
+             px_size = LV_IMG_PX_SIZE_ALPHA_BYTE;
+             break;
++        case LV_IMG_CF_ALPHA_8BIT:
++            has_alpha = true;
++            px_size = 1;
++            break;
+         case LV_IMG_CF_TRUE_COLOR_CHROMA_KEYED: {
+                 has_alpha = true;
+                 px_size = sizeof(lv_color_t);
+@@ -369,6 +404,11 @@ static void argb_and_rgb_aa(const uint8_t * src, lv_coord_t src_w, lv_coord_t sr
+                     a_ver = *(a_tmp + ((ys_int + y_next) * src_stride) + xs_int);
+                 }
+ #endif
++                else if(cf == LV_IMG_CF_ALPHA_8BIT) {
++                    a_base = px_base[0];
++                    a_hor = px_hor[0];
++                    a_ver = px_ver[0];
++                }
+                 else if(cf == LV_IMG_CF_TRUE_COLOR_CHROMA_KEYED) {
+                     if(((lv_color_t *)px_base)->full == ck.full ||
+                        ((lv_color_t *)px_ver)->full == ck.full ||
+@@ -394,19 +434,26 @@ static void argb_and_rgb_aa(const uint8_t * src, lv_coord_t src_w, lv_coord_t sr
+ 
+                 if(abuf[x] == 0x00) continue;
+ 
++                if(cf == LV_IMG_CF_ALPHA_8BIT) {
++                    c_base = draw_dsc->recolor;
++                    c_ver = draw_dsc->recolor;
++                    c_hor = draw_dsc->recolor;
++                }
++                else {
+ #if LV_COLOR_DEPTH == 1 || LV_COLOR_DEPTH == 8
+-                c_base.full = px_base[0];
+-                c_ver.full = px_ver[0];
+-                c_hor.full = px_hor[0];
++                    c_base.full = px_base[0];
++                    c_ver.full = px_ver[0];
++                    c_hor.full = px_hor[0];
+ #elif LV_COLOR_DEPTH == 16
+-                c_base.full = px_base[0] + (px_base[1] << 8);
+-                c_ver.full = px_ver[0] + (px_ver[1] << 8);
+-                c_hor.full = px_hor[0] + (px_hor[1] << 8);
++                    c_base.full = px_base[0] + (px_base[1] << 8);
++                    c_ver.full = px_ver[0] + (px_ver[1] << 8);
++                    c_hor.full = px_hor[0] + (px_hor[1] << 8);
+ #elif LV_COLOR_DEPTH == 32
+-                c_base.full = *((uint32_t *)px_base);
+-                c_ver.full = *((uint32_t *)px_ver);
+-                c_hor.full = *((uint32_t *)px_hor);
++                    c_base.full = *((uint32_t *)px_base);
++                    c_ver.full = *((uint32_t *)px_ver);
++                    c_hor.full = *((uint32_t *)px_hor);
+ #endif
++                }
+             }
+             /*No alpha channel -> RGB*/
+             else {
+@@ -427,15 +474,23 @@ static void argb_and_rgb_aa(const uint8_t * src, lv_coord_t src_w, lv_coord_t sr
+         }
+         /*Partially out of the image*/
+         else {
++            if(cf == LV_IMG_CF_ALPHA_8BIT) {
++                cbuf[x] = draw_dsc->recolor;
++            }
++            else {
+ #if LV_COLOR_DEPTH == 1 || LV_COLOR_DEPTH == 8
+-            cbuf[x].full = src_tmp[0];
++                cbuf[x].full = src_tmp[0];
+ #elif LV_COLOR_DEPTH == 16
+-            cbuf[x].full = src_tmp[0] + (src_tmp[1] << 8);
++                cbuf[x].full = src_tmp[0] + (src_tmp[1] << 8);
+ #elif LV_COLOR_DEPTH == 32
+-            cbuf[x].full = *((uint32_t *)src_tmp);
++                cbuf[x].full = *((uint32_t *)src_tmp);
+ #endif
++            }
+             lv_opa_t a;
+             switch(cf) {
++                case LV_IMG_CF_ALPHA_8BIT:
++                    a = src_tmp[0];
++                    break;
+                 case LV_IMG_CF_TRUE_COLOR_ALPHA:
+                     a = src_tmp[LV_IMG_PX_SIZE_ALPHA_BYTE - 1];
+                     break;
