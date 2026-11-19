@@ -59,7 +59,6 @@ static lv_obj_t * dim_vent_lbl  = NULL;   /* "57 %" — actual ExhFanSpeed */
 static lv_obj_t * dim_img_water = NULL;   /* drop icon, visible while pouring */
 static lv_obj_t * dim_lbl_water = NULL;   /* "1.4 L/m" / "+1.4 L" */
 static int        dim_vent_period_ms = 0; /* current spin animation period */
-static lv_obj_t * lbl_dim_nilm  = NULL;  /* NILM transient device event */
 static lv_timer_t * refresh_timer = NULL;
 
 /* ---- usage bars flanking the clock: energy now (W) + gas day (m³) + energy day (kWh) ----
@@ -659,16 +658,6 @@ static void refresh_cb(lv_timer_t * t) {
         dim_bar_set(bar_eact_env, bar_eact_fill, bar_eact_cap, bar_eact_segs, show, er,  0xffffff, etxt);
         dim_bar_set(bar_eday_env, bar_eday_fill, bar_eday_cap, bar_eday_segs, show, edr, 0xffffff, edtxt);
     }
-    /* NILM transient device label */
-    if (lbl_dim_nilm) {
-        if (meter_state.nilm_event_ts &&
-            time(NULL) - (time_t)meter_state.nilm_event_ts < 10) {
-            ui_label_set_text(lbl_dim_nilm, meter_state.nilm_device);
-            ui_obj_clear_flag(lbl_dim_nilm, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            ui_obj_add_flag(lbl_dim_nilm, LV_OBJ_FLAG_HIDDEN);
-        }
-    }
 }
 
 void dim_set_outside_temp(lv_obj_t * lbl, float t, lv_coord_t max_w) {
@@ -832,15 +821,6 @@ lv_obj_t * screen_dim_create(void) {
     lv_obj_align_to(lbl_clock_h, lbl_clock_colon, LV_ALIGN_OUT_LEFT_MID, -SX(8), 0);
     lv_obj_align_to(lbl_clock_m, lbl_clock_colon, LV_ALIGN_OUT_RIGHT_MID, SX(8), 0);
 
-    /* NILM transient device label — floats above the energy bar cap at the
-     * bottom of the screen; hidden until a step-change event fires. */
-    lbl_dim_nilm = lv_label_create(scr_root);
-    ui_obj_set_style_text_color(lbl_dim_nilm, lv_color_hex(0xffffff), 0);
-    ui_obj_set_style_text_font(lbl_dim_nilm, SF(16), 0);
-    lv_obj_set_style_text_align(lbl_dim_nilm, LV_TEXT_ALIGN_CENTER, 0);
-    ui_label_set_text(lbl_dim_nilm, "");
-    ui_obj_align(lbl_dim_nilm, LV_ALIGN_BOTTOM_MID, 0, -SY(22));
-    ui_obj_add_flag(lbl_dim_nilm, LV_OBJ_FLAG_HIDDEN);
 
     /* All labels positioned against screen center with explicit Y offsets so
        different content widths can't drift them out of alignment. */
