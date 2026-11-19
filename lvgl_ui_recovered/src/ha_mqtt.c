@@ -17,6 +17,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <time.h>
+#include <sys/time.h>       /* struct timeval (not implied on Emscripten) */
 #include <pthread.h>
 #include <sys/socket.h>
 #include <netinet/in.h>

@@ -18,6 +18,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <sys/time.h>       /* struct timeval (not implied on Emscripten) */
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
 #include <netdb.h>

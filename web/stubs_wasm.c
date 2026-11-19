@@ -18,3 +18,4 @@ void video_init(void)     { }
 void video_shutdown(void) { }
 void video_open(void)     { }
 void video_close(void)    { }
+void video_set_enabled(int on) { (void)on; }

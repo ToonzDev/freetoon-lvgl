@@ -28,6 +28,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <sys/socket.h>
+#include <sys/time.h>       /* struct timeval (glibc pulls it in, Emscripten does not) */
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <errno.h>

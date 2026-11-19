@@ -24,6 +24,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <time.h>
+#include <sys/time.h>       /* struct timeval (not implied on Emscripten) */
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/socket.h>

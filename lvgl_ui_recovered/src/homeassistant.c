@@ -20,6 +20,7 @@
 #include <strings.h>   /* strncasecmp */
 #include <unistd.h>
 #include <time.h>
+#include <sys/time.h>       /* struct timeval (not implied on Emscripten) */
 #include <errno.h>
 #include <sys/socket.h>
 #include <sys/select.h>

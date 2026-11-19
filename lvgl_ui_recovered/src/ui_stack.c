@@ -16,10 +16,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include "clock_studio.h"     /* cs_close_settings: every build, not only SIM */
+#include "energy_prices.h"    /* ep_tick */
 #ifdef SIM
 #include "layout.h"
-#include "clock_studio.h"
-#include "energy_prices.h"
 #endif
 
 #define STACK_MAX 8
