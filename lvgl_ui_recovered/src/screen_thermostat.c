@@ -381,16 +381,16 @@ lv_obj_t * screen_thermostat_create(void) {
                  SY(-190) - (DISP_VER < 600 ? 8 : 0));
     lv_label_set_text(lbl_water, tr("Water -- m3", "Water -- m3"));
 
-    /* Setpoint row with +/- buttons. On Toon 1, keep the original 560x130
-       layout. On Toon 2, scale modestly so - and + buttons are well-proportioned
-       instead of oversized boxes. */
+    /* Setpoint row with +/- buttons: the Toon 2 proportions, scaled. Toon 1
+       used a fixed 560x130 here (70% of its 800 px width), whose frame ran
+       over the Water label on the left and Retour on the right. */
     int is_t1 = (DISP_VER < 600);
-    int sp_w  = is_t1 ? 560 : 580;
-    int sp_h  = is_t1 ? 130 : 92;
-    int btn_w = is_t1 ? 110 : 84;
-    int btn_h = is_t1 ? 100 : 70;
-    const lv_font_t * btn_f = is_t1 ? SF(28) : SF(30);
-    const lv_font_t * sp_f  = is_t1 ? SF(20) : SF(24);
+    int sp_w  = SX(580);
+    int sp_h  = SY(92);
+    int btn_w = SX(84);
+    int btn_h = SY(70);
+    const lv_font_t * btn_f = SF(30);
+    const lv_font_t * sp_f  = SF(24);
 
     lv_obj_t * sp_row = lv_obj_create(scr_root);
     lv_obj_set_size(sp_row, sp_w, sp_h);
