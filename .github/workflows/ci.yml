@@ -26,7 +26,7 @@ jobs:
     name: Static checks
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Settings keys (loaded = saved)
         run: sh scripts/check_settings_keys.sh
       - name: Shell syntax of the installer and on-device scripts
@@ -41,11 +41,20 @@ jobs:
     name: Simulator (ASan soak, redraw budget)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
+      # The runner image usually has the X11 headers already; install only if
+      # missing, with retries (the first CI run lost 5 min on an apt mirror).
       - name: Install host packages
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq libx11-dev
+        run: |
+          if [ -f /usr/include/X11/Xlib.h ]; then echo "libx11-dev already present"; exit 0; fi
+          for i in 1 2 3; do
+            sudo apt-get update -qq -o Acquire::Retries=3 &&
+            sudo apt-get install -y -qq --no-install-recommends -o Acquire::Retries=3 libx11-dev && exit 0
+            echo "apt attempt $i failed, retrying in 20 s"; sleep 20
+          done
+          exit 1
       - name: Build sim (ASan)
         working-directory: lvgl_ui_recovered/src
         run: >
@@ -87,7 +96,7 @@ jobs:
     env:
       TC_ROOT: ${{ github.workspace }}/../toolchains
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
           fetch-depth: 0          # git describe --tags -> BUILD_VERSION
