@@ -33,6 +33,9 @@ extern update_state_t g_update_state;
 int  update_check_start(void);
 void update_check_now(void);         /* on-demand probe, runs in caller thread */
 void update_install_now(void);       /* download + run the self-installer now */
+/* Detached self-installer for g_update_state.latest_version (install.sh and
+ * helper scripts from that tag), output to log_path, after delay_s. */
+void update_spawn_installer(const char * log_path, int delay_s);
 
 /* The version string the binary was compiled from. Set by the Makefile
  * via `-DBUILD_VERSION="..."`, or "dev" if the build env doesn't have

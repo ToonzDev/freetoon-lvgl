@@ -380,7 +380,7 @@
   - Toon 1 touch goes through `toon1_touch.c` (own calibration/scaling, 800x480); check the Y mapping near the top edge. Also check the buttons: sizes are hard-coded per screen (`x_w`/`x_h` with `DISP_VER < 600`) while positions use SY(); compare `lv_obj_set_ext_click_area` per screen.
 
 ### 32. Installer Takes Scripts From the Release Instead of `main`
-- **Status**: Open (2026-11-10).
+- **Status**: Done (2026-11-19). install.sh takes helper scripts from the release tag (main only as a logged fallback) and installs exactly the release in FREETOON_TAG when given. toonui (update button, nightly auto-update) fetches install.sh from the tag it found for its own channel and passes FREETOON_TAG, so a push to main no longer reaches updating Toons and a stable-channel Toon never gets a beta prerelease (install.sh used to pick the newest release incl. prereleases). Toons on <= 1.0.14 still run main's install.sh without a tag: newest release, but with matching scripts. Not device-tested yet.
 - **Description**:
   - `install.sh` downloads the binary from the latest release but the helper scripts (ui_launcher.sh, inittab_edit.sh, integrations-install.sh, ...) from the `main` branch, so every push to `main` is live for every updating Toon and the scripts can mismatch the binary.
 - **Approach**:

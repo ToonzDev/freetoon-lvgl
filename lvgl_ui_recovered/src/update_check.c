@@ -287,6 +287,47 @@ void update_check_now(void) {
     }
 }
 
+/* A release tag goes into a shell command: only [A-Za-z0-9._-]. */
+static int tag_is_safe(const char * t) {
+    if (!t || !t[0]) return 0;
+    for (; *t; t++)
+        if (!((*t >= 'a' && *t <= 'z') || (*t >= 'A' && *t <= 'Z') ||
+              (*t >= '0' && *t <= '9') || *t == '.' || *t == '_' || *t == '-'))
+            return 0;
+    return 1;
+}
+
+/* Run the self-installer detached, logging to log_path (#32). It installs
+ * the release this Toon found for its own channel: install.sh is taken from
+ * that tag and gets the tag as FREETOON_TAG, so binaries and helper scripts
+ * all come from the same release - a push to main no longer changes what
+ * updating Toons install, and a stable-channel Toon never gets a beta.
+ * Falls back to main's install.sh (still pinned to the tag) if the tagged
+ * file can't be fetched, and to the old unpinned behaviour without a tag.
+ * install.sh runs from stdin (sh -s) as before, so its $0 / HERE is
+ * unchanged. */
+void update_spawn_installer(const char * log_path, int delay_s) {
+    static const char raw[] = "https://raw.githubusercontent.com/ToonzDev/freetoon-lvgl/";
+    char tag[UPDATE_VERSION_MAX];
+    snprintf(tag, sizeof tag, "%s", g_update_state.latest_version);   /* other thread writes it */
+    char cmd[1024];
+    if (tag_is_safe(tag)) {
+        snprintf(cmd, sizeof cmd,
+            "nohup sh -c ': > %s; sleep %d; f=/var/volatile/tmp/ft_install.sh; rm -f $f; "
+            "{ curl -fsSL -4 -o $f %s%s/install.sh || "
+            "{ echo \"[update] install.sh not found at tag %s, using main\"; curl -fsSL -4 -o $f %smain/install.sh; }; } "
+            "&& env FORCE_DOWNLOAD=1 FREETOON_TAG=%s sh -s -- --update < $f; rm -f $f' >> %s 2>&1 &",
+            log_path, delay_s, raw, tag, tag, raw, tag, log_path);
+    } else {
+        if (tag[0]) fprintf(stderr, "[update] unexpected tag '%s', installing newest release\n", tag);
+        snprintf(cmd, sizeof cmd,
+            "nohup sh -c ': > %s; sleep %d; curl -fsSL -4 %smain/install.sh "
+            "| env FORCE_DOWNLOAD=1 sh -s -- --update' >> %s 2>&1 &",
+            log_path, delay_s, raw, log_path);
+    }
+    system(cmd);
+}
+
 /* Kick off the on-device self-installer (detached) + a Toon banner. Used by
  * the nightly auto-update and the "Update now" button. */
 void update_install_now(void) {
@@ -295,9 +336,7 @@ void update_install_now(void) {
              g_update_state.latest_version[0] ? g_update_state.latest_version : "nieuwste versie");
     notify_show("update", "freetoon", msg);
     fprintf(stderr, "[update] installing now: %s\n", g_update_state.latest_version);
-    system("nohup sh -c ': > /var/volatile/tmp/selfinstall.log; sleep 2; curl -fsSL -4 "
-           "https://raw.githubusercontent.com/ToonzDev/freetoon-lvgl/main/install.sh "
-           "| env FORCE_DOWNLOAD=1 sh -s -- --update' >> /var/volatile/tmp/selfinstall.log 2>&1 &");
+    update_spawn_installer("/var/volatile/tmp/selfinstall.log", 2);
 }
 
 static void * update_thread(void * arg) {

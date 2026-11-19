@@ -138,17 +138,33 @@ download_artefacts() {
     REPO="${REPO:-ToonzDev/freetoon-lvgl}"
     mkdir -p "$DL_DIR"
     echo "@@STEP 1/6: Nieuwste versie opzoeken"
-    say "Resolving latest release from GitHub ($REPO)..."
-    curl -fsSL -4 --connect-timeout 8 --max-time 15 \
-            "https://api.github.com/repos/$REPO/releases?per_page=1" > "$DL_DIR/release.json" 2>/dev/null || true
+    # FREETOON_TAG (#32): the on-device updater passes the release it found
+    # for the Toon's own channel, so exactly that release is installed - not
+    # whatever happens to be newest (which could be a beta prerelease).
+    FREETOON_TAG="${FREETOON_TAG:-}"
+    case "$FREETOON_TAG" in
+        *[!A-Za-z0-9._-]*) say "Ignoring invalid FREETOON_TAG"; FREETOON_TAG="" ;;
+    esac
+    if [ -n "$FREETOON_TAG" ]; then
+        say "Resolving release $FREETOON_TAG from GitHub ($REPO)..."
+        curl -fsSL -4 --connect-timeout 8 --max-time 15 \
+                "https://api.github.com/repos/$REPO/releases/tags/$FREETOON_TAG" > "$DL_DIR/release.json" 2>/dev/null || true
+    else
+        say "Resolving latest release from GitHub ($REPO)..."
+        curl -fsSL -4 --connect-timeout 8 --max-time 15 \
+                "https://api.github.com/repos/$REPO/releases?per_page=1" > "$DL_DIR/release.json" 2>/dev/null || true
+    fi
     TAG=$(grep -m1 '"tag_name"' "$DL_DIR/release.json" 2>/dev/null | sed 's/.*"tag_name"[^"]*"\([^"]*\)".*/\1/')
+    case "$TAG" in
+        *[!A-Za-z0-9._-]*) say "Unexpected tag name from GitHub"; TAG="" ;;
+    esac
 
     if [ -z "$TAG" ]; then
         echo "@@FAIL Kon nieuwste versie niet opvragen van GitHub"
         say "Notice: no release tag found on https://github.com/$REPO/releases (using local/existing binaries)."
         return 1
     fi
-    say "Latest release is $TAG (from $REPO)"
+    say "Release is $TAG (from $REPO)"
 
     has_asset() {
         grep -q "\"name\":[[:space:]]*\"$1\"" "$DL_DIR/release.json" 2>/dev/null
@@ -187,13 +203,20 @@ download_artefacts() {
     say "Binary verified ($BIN_ASSET, ${_sz} bytes)"
 
     echo "@@STEP 4/6: Helpers + assets"
-    # Helper scripts directly from user repository
-    RAW_BASE="https://raw.githubusercontent.com/$REPO/main"
+    # Helper scripts from the same release tag as the binary (#32), so a push
+    # to main never reaches updating Toons and scripts always match the
+    # binary. main only as a last resort, logged.
+    RAW_TAG="https://raw.githubusercontent.com/$REPO/$TAG"
+    RAW_MAIN="https://raw.githubusercontent.com/$REPO/main"
     for s in inittab_edit.sh ui_launcher.sh companion_gate.sh ot_mode_switch.sh toonvnc.sh integrations-install.sh; do
         if [ "$FORCE_DOWNLOAD" = 1 ] || { [ ! -f "$HERE/scripts/$s" ] && [ ! -f "$HERE/$s" ] && [ ! -f "/mnt/data/$s" ]; }; then
-            say "Fetching $s from $REPO..."
-            if fetch "$RAW_BASE/scripts/$s" "$DL_DIR/$s" 64 sh 30 \
-                    || fetch "$RAW_BASE/$s" "$DL_DIR/$s" 64 sh 30; then
+            say "Fetching $s ($TAG)..."
+            if fetch "$RAW_TAG/scripts/$s" "$DL_DIR/$s" 64 sh 30 \
+                    || fetch "$RAW_TAG/$s" "$DL_DIR/$s" 64 sh 30; then
+                chmod +x "$DL_DIR/$s"
+            elif fetch "$RAW_MAIN/scripts/$s" "$DL_DIR/$s" 64 sh 30 \
+                    || fetch "$RAW_MAIN/$s" "$DL_DIR/$s" 64 sh 30; then
+                say "Warning: $s not found at $TAG, took it from main"
                 chmod +x "$DL_DIR/$s"
             else
                 say "Warning: could not fetch a valid $s (keeping the installed copy, if any)"

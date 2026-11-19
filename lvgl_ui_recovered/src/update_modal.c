@@ -231,9 +231,7 @@ static void do_install_now(lv_event_t * e) {
         lv_obj_center(xl);
     }
 
-    system("nohup sh -c ': > " UPD_LOG_PATH "; sleep 1; curl -fsSL -4 "
-           "https://raw.githubusercontent.com/ToonzDev/freetoon-lvgl/main/install.sh "
-           "| env FORCE_DOWNLOAD=1 sh -s -- --update' >> " UPD_LOG_PATH " 2>&1 &");
+    update_spawn_installer(UPD_LOG_PATH, 1);
 
     if (!s_upd_prog_timer) {
         s_upd_prog_timer = lv_timer_create(upd_prog_tick, 400, NULL);
