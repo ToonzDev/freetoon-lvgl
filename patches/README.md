@@ -46,3 +46,7 @@ here instead.
 
 Keep the `git diff` format (paths relative to the submodule root) — that's what
 `git -C lvgl apply` expects.
+
+The submodule is marked `ignore = dirty` in `.gitmodules`, so the applied
+patches do not show up as uncommitted changes. Do not commit inside the
+submodule; that is what made fresh clones unbuildable.
