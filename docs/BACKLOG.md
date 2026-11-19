@@ -668,3 +668,19 @@
 ### 59. Release 1.0.15: dynamic tariff per commodity, fixes, CI
 - **Status**: Prepared (2026-11-19); tag 1.0.15 on the release commit, published as a normal release.
 - **Contents**: dynamic contract separately for electricity and gas (field request) + fix: 1.0.14 never saved the dynamic setting and surcharges (6aaca37); updates install exactly the release the Toon found, scripts from that tag (#32, 71a65b9); thermostat screen no longer redraws the whole screen twice a second (52ebf96); Toon 1 thermostat setpoint row no longer overlaps Water / Retour (a43ba76). Build side: lvgl submodule back on upstream + patches (a72f6fe), CI on every push (e6ea064 and follow-ups). First release that also ships the browser UI (index.html / index.js / index.wasm) since 1.0.12.
+
+### 60. Solar production: one holistic approach (all sources, all users)
+- **Status**: Open (2026-11-19), parked: design first, pick up later. Supersedes the scope of #52 (direct inverter reading becomes one part of this).
+- **Problem**: solar today has three unrelated entry points, none of them usable for a non-technical user without extra hardware: HomeWizard kWh meter (`hw_kwh_host` / `hw_kwh2_host`, needs a meter in the fuse box), meter adapter S0/analog solar (#54, rare, untested on real hardware), Home Assistant (`ha_solar_entity`, live W only). `energy_solar_w()` (energy.c) picks the first one that's set. The P1 meter only sees net export, not production.
+- **Gaps**:
+  - No route without Home Assistant or extra hardware (the old QML `solarPanel` app read inverters directly).
+  - Home Assistant: only live W from one hand-picked entity; the kWh total isn't read, so the Zon statistics (`elec_solar_flow` / `elec_solar_quantity` in hcb_rrd) stay empty. HA's Energy dashboard already knows the solar kWh sensor (websocket `energy/get_prefs`); the W sensor is usually on the same device (`device_class: power`).
+  - No rule against counting the same panels twice when several sources are configured.
+- **Inverter landscape** (from general knowledge, verify before building): readable on the home network: Enphase Envoy, SMA, Fronius, OpenDTU / AhoyDTU (Hoymiles); often cloud-only (account + API key) or Modbus: Growatt, Huawei, newer SolarEdge, GoodWe, Solax, Sungrow.
+- **To decide in the design**:
+  - One "Zonnepanelen" settings entry that lists every source (inverter, HomeWizard kWh, meter adapter, HA) with one active source, instead of separate settings per integration.
+  - Which inverter brands first; auto-discovery on the LAN so users needn't know the IP.
+  - Whether cloud-only brands are in scope at all (API keys are what these users want to avoid).
+  - HA: auto-pick the solar sensor from the Energy dashboard, and store the kWh total so statistics fill.
+  - Every source writes live W + hourly/daily kWh into hcb_rrd the same way (only closed bins, as for the HomeWizard sockets in #48).
+  - Before starting: ask users (forum) which inverter brands they actually have.
