@@ -1,0 +1,116 @@
+# FreeToon CI: catches the regression classes that reached users before.
+#   - ARM builds + ABI checks: binary must load on the Toons' glibc 2.21
+#     (Toon 1 and Toon 2); plugin_loader.c checks the settings_t offsets
+#     that marketplace plugins rely on at compile time (1.0.12).
+#   - settings keys: everything loaded is also saved (1.0.14 dynamic tariff).
+#   - ASan soak: open/close every owned screen, no leaks / use-after-free.
+#   - idle redraw budget: home/dim must not redraw the whole screen per tick
+#     (Toon 1 CPU).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Static checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Settings keys (loaded = saved)
+        run: sh scripts/check_settings_keys.sh
+      - name: Shell syntax of the installer and on-device scripts
+        run: |
+          for f in install.sh scripts/inittab_edit.sh scripts/ui_launcher.sh \
+                   scripts/companion_gate.sh scripts/ot_mode_switch.sh \
+                   toonvnc.sh scripts/integrations-install.sh; do
+            sh -n "$f" && echo "ok   $f"
+          done
+
+  sim:
+    name: Simulator (ASan soak, redraw budget)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install host packages
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libx11-dev
+      - name: Build sim (ASan)
+        working-directory: lvgl_ui_recovered/src
+        run: >
+          make TARGET=sim -j"$(nproc)"
+          SAN="-fsanitize=address -fno-omit-frame-pointer -g"
+          BUILDDIR=../build-sim-asan OUT=toonui-sim-asan
+      - name: Soak test (30 rounds, ASan)
+        run: |
+          cd "$(mktemp -d)"
+          "$GITHUB_WORKSPACE/lvgl_ui_recovered/build-sim-asan/toonui-sim-asan" soak 30
+      - name: Build sim (Toon 2 and Toon 1 geometry)
+        working-directory: lvgl_ui_recovered/src
+        run: |
+          make TARGET=sim  -j"$(nproc)"
+          make TARGET=sim1 -j"$(nproc)"
+      - name: Idle redraw budget (Toon 2 geometry)
+        run: sh scripts/ci_redraw_check.sh lvgl_ui_recovered/build-sim/toonui-sim 5
+      - name: Idle redraw budget (Toon 1 geometry)
+        run: sh scripts/ci_redraw_check.sh lvgl_ui_recovered/build-sim1/toonui-sim1 5
+
+  arm:
+    name: ${{ matrix.target }} build + ABI check
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: toon2
+            files: |
+              lvgl_ui_recovered/build/toonui
+              lvgl_ui_recovered/build/wastefetch
+              lvgl_ui_recovered/build/fbvnc_input
+          - target: toon1
+            files: |
+              lvgl_ui_recovered/build-toon1/toonui-toon1
+              lvgl_ui_recovered/build-toon1/wastefetch
+              lvgl_ui_recovered/build-toon1/fbvnc_input
+              lvgl_ui_recovered/build-toon1/doorbell_daemon
+    env:
+      TC_ROOT: ${{ github.workspace }}/../toolchains
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0          # git describe --tags -> BUILD_VERSION
+      - name: Install host packages
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq patchelf
+      # Only the downloaded tarballs are cached (the Linaro one is no longer
+      # on its original server); extracting them is quick.
+      - name: Cache toolchain tarballs
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/../toolchains/cache
+          key: toolchains-${{ hashFiles('scripts/setup-toolchains.sh') }}
+      - name: Set up cross toolchains
+        run: SKIP_WASM=1 sh scripts/setup-toolchains.sh
+      - name: Build
+        working-directory: lvgl_ui_recovered/src
+        run: make TARGET=${{ matrix.target }} -j"$(nproc)" TC_ROOT="$TC_ROOT"
+      - name: ABI check
+        working-directory: lvgl_ui_recovered/src
+        run: make TARGET=${{ matrix.target }} abi-check TC_ROOT="$TC_ROOT"
+      - name: Upload test binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: freetoon-${{ matrix.target }}-${{ github.sha }}
+          path: ${{ matrix.files }}
+          retention-days: 14

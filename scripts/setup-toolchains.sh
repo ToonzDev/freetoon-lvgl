@@ -73,6 +73,12 @@ else
 fi
 
 # --- WASM: emsdk + a python it will accept ----------------------------------
+# SKIP_WASM=1 (CI): only the ARM toolchains.
+if [ "${SKIP_WASM:-0}" = 1 ]; then
+    say "WASM (emsdk): skipped (SKIP_WASM=1)"
+    say "Done. TC_ROOT=$TC_ROOT"
+    exit 0
+fi
 # emscripten requires python >= 3.10 and resolves `python3` from PATH. Debian's
 # system python3 here is 3.9, which makes emcc abort. We do NOT install a python
 # (that's the system's business, and this repo doesn't own /usr/local) — we look
