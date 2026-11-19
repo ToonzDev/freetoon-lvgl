@@ -622,10 +622,12 @@ static void refresh_cb(lv_timer_t * t) {
         if (e < 0) e = 0;                          /* export → empty */
         float er = e / DIM_E_FULL_W;
         if (er > 1.0f) er = 1.0f;
+        /* Unit on its own line: two bars side by side are only ~58 px apart
+         * centre to centre, and "852 W" next to "23.7 kWh" overlapped. */
         char etxt[24];
-        if (e >= 1000) snprintf(etxt, sizeof etxt, "%.1f kW", e / 1000.0f);
-        else           snprintf(etxt, sizeof etxt, "%.0f W", e);
-        if (!e_conn) { er = 0; snprintf(etxt, sizeof etxt, "-- W"); }
+        if (e >= 1000) snprintf(etxt, sizeof etxt, "%.1f\nkW", e / 1000.0f);
+        else           snprintf(etxt, sizeof etxt, "%.0f\nW", e);
+        if (!e_conn) { er = 0; snprintf(etxt, sizeof etxt, "--\nW"); }
 
         /* 2. Gas dagtotaal (m³) */
         float g_today = energy_gas_today_m3();
@@ -635,9 +637,9 @@ static void refresh_cb(lv_timer_t * t) {
         float gr = (g_today >= 0) ? (g / 5.0f) : (g / DIM_G_FULL_M3H);
         if (gr > 1.0f) gr = 1.0f;
         char gtxt[24];
-        if (g_today >= 0) snprintf(gtxt, sizeof gtxt, "%.2f m3", g);
-        else              snprintf(gtxt, sizeof gtxt, "%.2f m3/h", g);
-        if (!g_conn) { gr = 0; snprintf(gtxt, sizeof gtxt, "-- m3"); }
+        if (g_today >= 0) snprintf(gtxt, sizeof gtxt, "%.2f\nm3", g);
+        else              snprintf(gtxt, sizeof gtxt, "%.2f\nm3/h", g);
+        if (!g_conn) { gr = 0; snprintf(gtxt, sizeof gtxt, "--\nm3"); }
 
         /* 3. Stroom dagtotaal (kWh) */
         float ed = energy_elec_today_kwh();
@@ -647,10 +649,10 @@ static void refresh_cb(lv_timer_t * t) {
         if (edr > 1.0f) edr = 1.0f;
         char edtxt[24];
         if (ed_conn) {
-            if (ed < 10.0f) snprintf(edtxt, sizeof edtxt, "%.2f kWh", ed);
-            else            snprintf(edtxt, sizeof edtxt, "%.1f kWh", ed);
+            if (ed < 10.0f) snprintf(edtxt, sizeof edtxt, "%.2f\nkWh", ed);
+            else            snprintf(edtxt, sizeof edtxt, "%.1f\nkWh", ed);
         } else {
-            snprintf(edtxt, sizeof edtxt, "-- kWh");
+            snprintf(edtxt, sizeof edtxt, "--\nkWh");
         }
 
         dim_bar_set(bar_gas_env,  bar_gas_fill,  bar_gas_cap,  bar_gas_segs,  show, gr,  0xffffff, gtxt);
