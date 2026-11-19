@@ -662,5 +662,9 @@
 - **Options**: (a) clearer label, e.g. "Integratie (bijv. Teletekst - koppelen op het scherm)" plus one line of explanation; (b) list the installed integrations in "+ Tegel" on page 2 and place the tile already bound. Page-2 slots are bound by position (slot 4+i), so (b) must keep a binding with its tile when tiles are moved or deleted in the editor.
 
 ### 58. Release 1.0.14: first non-beta release
-- **Status**: Prepared (2026-11-18); tag 1.0.14 on the release commit, published as a normal release (not prerelease).
+- **Status**: Published (2026-11-18), tag 1.0.14 on ed11e1a.
 - **Contents**: OT bridge Proxy mode removed (b984bd1, a5e0531, adcb532); Klok Studio (#55); dynamic energy contracts (#44); Binnenklimaat tile and dim block (#56); thin dim-screen font option; brighter Neerslag dim block; Toon 1: half the animation sprites, Wi-Fi keyboard, dim energy-bar gap; release notes without CRLF "r". The "- beta" label next to the version in the update screen is gone; the Beta / dev channel stays for test prereleases.
+
+### 59. Release 1.0.15: dynamic tariff per commodity, fixes, CI
+- **Status**: Prepared (2026-11-19); tag 1.0.15 on the release commit, published as a normal release.
+- **Contents**: dynamic contract separately for electricity and gas (field request) + fix: 1.0.14 never saved the dynamic setting and surcharges (6aaca37); updates install exactly the release the Toon found, scripts from that tag (#32, 71a65b9); thermostat screen no longer redraws the whole screen twice a second (52ebf96); Toon 1 thermostat setpoint row no longer overlaps Water / Retour (a43ba76). Build side: lvgl submodule back on upstream + patches (a72f6fe), CI on every push (e6ea064 and follow-ups). First release that also ships the browser UI (index.html / index.js / index.wasm) since 1.0.12.
