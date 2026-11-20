@@ -1037,12 +1037,14 @@ static void * cal_thread(void * arg) {
     sleep(5);                            /* initial settling delay for WiFi at boot */
     int since_refresh = 100000;          /* force a full fetch on the first tick */
     int partial_streak = 0;              /* quick retries for a missing feed */
+    int fail_streak = 0;                 /* refreshes in a row with nothing fetched */
     for (;;) {
         int has_source = settings.calendar_enabled &&
                          (settings.calendar_ha_entity[0] || settings.calendar_ics_url[0]);
         /* g_cal_last_ok, not calendar_state.connected: the latter is only
          * updated once the UI thread applies the published result. */
         if (since_refresh >= 1800 || (has_source && !g_cal_last_ok) || g_cal_wake) {
+            if (g_cal_wake) fail_streak = 0;   /* settings changed: fast retries again */
             g_cal_wake = 0;
             calendar_refresh_now();
             since_refresh = 0;
@@ -1052,12 +1054,19 @@ static void * cal_thread(void * arg) {
             if (g_cal_partial && ++partial_streak <= 3) since_refresh = 1800 - 60;
             else if (!g_cal_partial) partial_streak = 0;
             if (has_source && !g_cal_last_ok) {
-                /* WiFi still connecting or temporary network hiccup at boot:
-                 * retry quickly (every 10s) until initial data is acquired */
-                for (int s = 0; s < 10 && !g_cal_wake; s++)
+                /* WiFi still connecting or a network hiccup at boot: retry
+                 * every 10 s for the first minute, then back off (1, 2, 5,
+                 * 10 min, then the normal 30 min). A dead link used to be
+                 * retried every 10 s forever (field log full of "fetch failed"). */
+                static const int backoff[] = { 10, 10, 10, 10, 10, 10, 60, 120, 300, 600 };
+                int n_bo = (int)(sizeof backoff / sizeof backoff[0]);
+                int wait = fail_streak < n_bo ? backoff[fail_streak] : 1800;
+                fail_streak++;
+                for (int s = 0; s < wait && !g_cal_wake; s++)
                     sleep(1);
                 continue;
             }
+            fail_streak = 0;
         }
         calendar_check_notifications();  /* minute-resolution pre-event alerts */
         sleep(30);
