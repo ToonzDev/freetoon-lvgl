@@ -123,6 +123,7 @@ resolve_artefacts() {
     INTEG_INSTALLER="$(pick "${INTEG_INSTALLER:-}" "$DL_DIR/integrations-install.sh" "$HERE/integrations-install.sh" "$HERE/scripts/integrations-install.sh")"
     TOONVNC_SH="$(pick "${TOONVNC_SH:-}"           "$DL_DIR/toonvnc.sh"             "$HERE/toonvnc.sh"             "$HERE/scripts/toonvnc.sh")"
     OT_MODE_SH="$(pick "${OT_MODE_SH:-}"           "$DL_DIR/ot_mode_switch.sh"      "$HERE/ot_mode_switch.sh"      "$HERE/scripts/ot_mode_switch.sh")"
+    DIAG_SH="$(pick "${DIAG_SH:-}"                 "$DL_DIR/freetoon_diag.sh"       "$HERE/freetoon_diag.sh"       "$HERE/scripts/freetoon_diag.sh")"
 
     PWA_DIR="${PWA_DIR:-}"
     if [ -z "$PWA_DIR" ]; then
@@ -208,7 +209,7 @@ download_artefacts() {
     # binary. main only as a last resort, logged.
     RAW_TAG="https://raw.githubusercontent.com/$REPO/$TAG"
     RAW_MAIN="https://raw.githubusercontent.com/$REPO/main"
-    for s in inittab_edit.sh ui_launcher.sh companion_gate.sh ot_mode_switch.sh toonvnc.sh integrations-install.sh; do
+    for s in inittab_edit.sh ui_launcher.sh companion_gate.sh ot_mode_switch.sh toonvnc.sh integrations-install.sh freetoon_diag.sh; do
         if [ "$FORCE_DOWNLOAD" = 1 ] || { [ ! -f "$HERE/scripts/$s" ] && [ ! -f "$HERE/$s" ] && [ ! -f "/mnt/data/$s" ]; }; then
             say "Fetching $s ($TAG)..."
             if fetch "$RAW_TAG/scripts/$s" "$DL_DIR/$s" 64 sh 30 \
@@ -500,6 +501,7 @@ do_install() {
     install_file "$INTEG_INSTALLER" /mnt/data/integrations-install.sh
     install_file "$TOONVNC_SH"      /mnt/data/toonvnc.sh
     install_file "$OT_MODE_SH"      /mnt/data/ot_mode_switch.sh
+    install_file "$DIAG_SH"         /mnt/data/freetoon_diag.sh   # optional: absent in tags before it
     install_file "$FBVNC_INPUT"     /mnt/data/fbvnc_input
     if [ -n "$WASTEFETCH_BIN" ] && [ -e "$WASTEFETCH_BIN" ]; then
         install_file "$WASTEFETCH_BIN" /mnt/data/wastefetch
@@ -723,6 +725,9 @@ do_uninstall() {
         exit 1
     fi
     echo "[5/5] Removing files..."
+    # Diagnostics loop (started by ui_launcher.sh, also under the stock UI) and
+    # its port-80 symlink + RAM report.
+    remote "[ -f /var/volatile/tmp/freetoon_diag.pid ] && kill \$(cat /var/volatile/tmp/freetoon_diag.pid) 2>/dev/null; rm -f /var/volatile/tmp/freetoon_diag.pid /var/volatile/tmp/freetoon-diag.txt /qmf/www/freetoon-diag.txt /mnt/data/freetoon_diag.sh; true"
     remote "rm -f /mnt/data/toonui /mnt/data/inittab_edit.sh /mnt/data/ui_launcher.sh /mnt/data/companion_gate.sh /mnt/data/toonvnc.sh /mnt/data/ot_mode_switch.sh /mnt/data/fbvnc_input /mnt/data/ui_choice /mnt/data/toonvnc.plain /mnt/data/toonui.cfg"
     remote "rm -rf /mnt/data/pwa"
     remote "kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true"

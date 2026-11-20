@@ -1947,6 +1947,7 @@ static int path_is_public(const char * path) {
     if (!strcmp(path, "/set-password"))  return !settings.pwa_login_pass[0];
     if (!strcmp(path, "/logout"))        return 1;
     if (!strcmp(path, "/logs") || !strcmp(path, "/logs/") || !strcmp(path, "/api/logs")) return 1;
+    if (!strcmp(path, "/diag") || !strcmp(path, "/diag?view")) return 1;   /* no secrets in it */
     if (!strcmp(path, "/log") || !strcmp(path, "/api/log") || !strncmp(path, "/log?", 5) || !strncmp(path, "/api/log?", 9) || !strncmp(path, "/log/", 5) || !strncmp(path, "/api/log/", 9)) return 1;
     if (!strncmp(path, "/api/v1/marketplace/", 20)) return 1;
     return 0;
@@ -2374,6 +2375,44 @@ static int handle_log_get(int fd, const char * path) {
     return 0;
 }
 
+/* /diag: run /mnt/data/freetoon_diag.sh now and stream its report as a
+ * download (support without SSH). The same report is refreshed every minute
+ * on port 80 as /freetoon-diag.txt by ui_launcher.sh, also under the stock
+ * UI, so users can send one from each UI. Public like /logs: the script only
+ * prints process names and a fixed set of non-secret settings. Each
+ * connection has its own thread, so the few seconds it takes block nothing. */
+static int handle_diag_get(int fd, int inline_view) {
+    if (access("/mnt/data/freetoon_diag.sh", X_OK) != 0)
+        return send_status(fd, 404, "Not Found", "freetoon_diag.sh is not installed\n");
+    FILE * p = popen("/mnt/data/freetoon_diag.sh 2>&1", "r");
+    if (!p) return send_status(fd, 500, "Internal Server Error", "cannot run freetoon_diag.sh\n");
+
+    char fname[64];
+    time_t now = time(NULL);
+    struct tm tm;
+    localtime_r(&now, &tm);
+    strftime(fname, sizeof fname, "freetoon-diag-%Y%m%d-%H%M.txt", &tm);
+
+    /* No Content-Length (the size isn't known up front): the body ends when
+     * the connection closes. */
+    char hdr[384];
+    int hn = snprintf(hdr, sizeof(hdr),
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: text/plain; charset=utf-8\r\n"
+        "Content-Disposition: %s; filename=\"%s\"\r\n"
+        "Cache-Control: no-cache\r\n"
+        "Connection: close\r\n\r\n", inline_view ? "inline" : "attachment", fname);
+    if (sock_send_all(fd, hdr, hn) < 0) { pclose(p); return -1; }
+
+    char buf[4096];
+    size_t rd;
+    while ((rd = fread(buf, 1, sizeof(buf), p)) > 0) {
+        if (sock_send_all(fd, buf, rd) < 0) break;
+    }
+    pclose(p);
+    return 0;
+}
+
 static int handle_logs_index_get(int fd) {
     const char * files[] = {
         "toonui.log",
@@ -2383,7 +2422,7 @@ static int handle_logs_index_get(int fd) {
     };
     int nfiles = sizeof(files) / sizeof(files[0]);
 
-    char body[4096];
+    char body[8192];   /* 4 KB was nearly full before the diagnose block */
     int pos = snprintf(body, sizeof(body),
         "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
@@ -2429,7 +2468,15 @@ static int handle_logs_index_get(int fd) {
     }
 
     pos += snprintf(body + pos, sizeof(body) - pos,
-        "</ul><p style=\"margin-top:20px;text-align:center\"><a href=\"/\" class=\"btn btn-sec\">&larr; Terug naar Toon</a></p>"
+        "</ul>"
+        "<p style=\"margin-top:20px\">Diagnose voor support: processen, OT Bridge, ketelstatus en "
+        "de laatste ketelregels uit de logs, zonder wachtwoorden. Werkt ook onder de Eneco-software: "
+        "<span style=\"font-family:monospace\">http://&lt;ip-van-de-toon&gt;/freetoon-diag.txt</span> "
+        "(elke minuut ververst).</p>"
+        "<ul><li><div><span class=\"fname\">freetoon-diag.txt</span></div>"
+        "<div class=\"actions\"><a class=\"btn btn-sec\" href=\"/diag?view\" target=\"_blank\">Bekijken</a>"
+        "<a class=\"btn\" href=\"/diag\" download>Download</a></div></li></ul>"
+        "<p style=\"margin-top:20px;text-align:center\"><a href=\"/\" class=\"btn btn-sec\">&larr; Terug naar Toon</a></p>"
         "</div></body></html>");
 
     char hdr[256];
@@ -2503,6 +2550,8 @@ static int dispatch(int fd, char * req) {
             return handle_logs_index_get(fd);
         if (!strcmp(path, "/log") || !strcmp(path, "/api/log") || !strncmp(path, "/log?", 5) || !strncmp(path, "/api/log?", 9) || !strncmp(path, "/log/", 5) || !strncmp(path, "/api/log/", 9))
             return handle_log_get(fd, path);
+        if (!strcmp(path, "/diag") || !strcmp(path, "/diag?view"))
+            return handle_diag_get(fd, path[5] == '?');
         if (!strcmp(path, "/") || !strcmp(path, "/index.html") || !strncmp(path, "/?", 2))
             return handle_remote_page(fd);
         return serve_static(fd, path);

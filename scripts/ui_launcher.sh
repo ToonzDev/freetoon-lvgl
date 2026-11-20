@@ -279,6 +279,22 @@ VNCLOG=/var/volatile/tmp/x11vnc.log
 ) >/dev/null 2>&1 &
     echo $! > "$LOGROT_PIDFILE"
 
+# Diagnostics report for support without SSH: refreshed every 60 s in RAM and
+# served by the stock web server as http://<toon>/freetoon-diag.txt. Started
+# here, before the UI choice, so it runs under the stock UI too and a user
+# can send the same report from both UIs. Same stale-kill as the log rotator.
+DIAG_SH=/mnt/data/freetoon_diag.sh
+DIAG_PIDFILE=/var/volatile/tmp/freetoon_diag.pid
+if [ -f "$DIAG_PIDFILE" ]; then
+    diag_pid=
+    read diag_pid < "$DIAG_PIDFILE" 2>/dev/null || true
+    [ -n "${diag_pid:-}" ] && kill "$diag_pid" 2>/dev/null || true
+fi
+if [ -x "$DIAG_SH" ]; then
+    "$DIAG_SH" --loop >/dev/null 2>&1 &
+    echo $! > "$DIAG_PIDFILE"
+fi
+
 # Expose the PWA (pwa_server :10081) and VNC (x11vnc :5900) on the LAN. The
 # stock Toon firewall's HCB-INPUT chain drops all inbound TCP except 22/80, so
 # these are unreachable otherwise. Re-add the ACCEPTs every boot (idempotent,
