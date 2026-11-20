@@ -797,25 +797,12 @@ static void heating_tick(void) {
         return;
     }
 
-    /* If in OpenTherm mode and communication error is flagged (e.g. no boiler attached
-     * to keteladapter), immediately revert back to On/Off (CR6). */
-    if (toon_state.boiler_type == 0 && toon_state.ot_comm_error != 0) {
-        s_ot_check_countdown = -1;
-        s_ot_err_display_countdown = 6; /* Display error explanation for 6 seconds */
-        boxtalk_set_boiler_type(1);
-        toon_state.boiler_type = 1;
-        if (sw_boiler) {
-            lv_obj_add_state(sw_boiler, LV_STATE_CHECKED);
-        }
-        if (lbl_boiler_mode) {
-            lv_label_set_text(lbl_boiler_mode, tr("Huidige modus: On/Off (OT-fout)", "Current mode: On/Off (OT error)"));
-        }
-        if (lbl_boiler_ot) {
-            lv_label_set_text(lbl_boiler_ot, tr("Geen ketelreactie: teruggezet naar On/Off", "No boiler response: reverted to On/Off"));
-        }
-        return;
-    }
-
+    /* The automatic revert to On/Off (CR6) only happens at the end of the
+     * check that follows the user's own switch to OpenTherm (below). It used
+     * to fire whenever this modal was open and happ_thermstat reported an OT
+     * error, even a transient one, and wrote On/Off to the device: an
+     * OpenTherm boiler then never fired again (field report). Any other OT
+     * error is only shown ("OT-link FOUT"), the setting is left alone. */
     if (s_ot_check_countdown > 0) {
         s_ot_check_countdown--;
         if (lbl_boiler_mode) {
