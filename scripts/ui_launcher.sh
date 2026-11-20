@@ -290,8 +290,10 @@ if [ -f "$DIAG_PIDFILE" ]; then
     read diag_pid < "$DIAG_PIDFILE" 2>/dev/null || true
     [ -n "${diag_pid:-}" ] && kill "$diag_pid" 2>/dev/null || true
 fi
-if [ -x "$DIAG_SH" ]; then
-    "$DIAG_SH" --loop >/dev/null 2>&1 &
+# Run through sh: a copy made from Windows (scp/sftp) arrives without the exec
+# bit, and then the loop silently never started (found on .16).
+if [ -f "$DIAG_SH" ]; then
+    sh "$DIAG_SH" --loop >/dev/null 2>&1 &
     echo $! > "$DIAG_PIDFILE"
 fi
 

@@ -2382,9 +2382,10 @@ static int handle_log_get(int fd, const char * path) {
  * prints process names and a fixed set of non-secret settings. Each
  * connection has its own thread, so the few seconds it takes block nothing. */
 static int handle_diag_get(int fd, int inline_view) {
-    if (access("/mnt/data/freetoon_diag.sh", X_OK) != 0)
+    /* Via sh, so a copy without the exec bit (scp/sftp from Windows) works. */
+    if (access("/mnt/data/freetoon_diag.sh", R_OK) != 0)
         return send_status(fd, 404, "Not Found", "freetoon_diag.sh is not installed\n");
-    FILE * p = popen("/mnt/data/freetoon_diag.sh 2>&1", "r");
+    FILE * p = popen("sh /mnt/data/freetoon_diag.sh 2>&1", "r");
     if (!p) return send_status(fd, 500, "Internal Server Error", "cannot run freetoon_diag.sh\n");
 
     char fname[64];
