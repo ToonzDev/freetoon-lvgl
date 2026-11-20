@@ -385,10 +385,54 @@ static void dim_climate_update(void) {
     ui_obj_set_style_text_color(dim_cl_q, lv_color_hex(air_quality_color(eco2, tvoc)), 0);
 }
 
+/* Ketel block (DB_BOILER): flow / return temperature + CH pressure. Flow and
+ * return come from happ_thermstat (BoilerInfo / dataset), the OTGW or the
+ * master's rrd; an on/off boiler has none, then "--". Pressure colours follow
+ * the home-screen banner: < 0.6 bar red, < 0.8 bar amber. */
+static lv_obj_t * dim_bo_flow = NULL, * dim_bo_ret = NULL, * dim_bo_pres = NULL;
+static void dim_boiler_update(void) {
+    if (!dim_bo_flow) return;
+    float fl = toon_state.boiler_out_temp, rt = toon_state.boiler_in_temp;
+    float p  = toon_state.water_pressure;
+    if (fl > 0.5f) ui_label_set_text_fmt(dim_bo_flow, "%.1f°", fl);
+    else           ui_label_set_text(dim_bo_flow, "--");
+    if (rt > 0.5f) ui_label_set_text_fmt(dim_bo_ret, "%.1f°", rt);
+    else           ui_label_set_text(dim_bo_ret, "--");
+    uint32_t pc = 0xffffff;
+    if (p > 0.1f) {
+        ui_label_set_text_fmt(dim_bo_pres, "%.1f bar", p);
+        if (p < 0.6f)      pc = 0xff3344;
+        else if (p < 0.8f) pc = 0xffcc44;
+    } else {
+        ui_label_set_text(dim_bo_pres, "-- bar");
+    }
+    ui_obj_set_style_text_color(dim_bo_pres, lv_color_hex(pc), 0);
+}
+
+/* One "caption  value" row of the Ketel block; returns the value label. */
+static lv_obj_t * dim_boiler_row(lv_obj_t * col, int w, const char * caption, const lv_font_t * vf) {
+    lv_obj_t * row = lv_obj_create(col);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, w, LV_SIZE_CONTENT);
+    ui_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_t * cap = lv_label_create(row);
+    ui_obj_set_style_text_color(cap, lv_color_hex(0xc4dcee), 0);
+    ui_obj_set_style_text_font(cap, SF(16), 0);
+    ui_label_set_text(cap, caption);
+    lv_obj_align(cap, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_obj_t * val = lv_label_create(row);
+    ui_obj_set_style_text_color(val, lv_color_hex(0xffffff), 0);
+    ui_obj_set_style_text_font(val, vf, 0);
+    ui_label_set_text(val, "--");
+    lv_obj_align(val, LV_ALIGN_RIGHT_MID, 0, 0);
+    return val;
+}
+
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
     if (lv_scr_act() != scr_root) return;
     dim_climate_update();
+    dim_boiler_update();
 
     time_t now = time(NULL);
     struct tm tm;
@@ -1260,6 +1304,29 @@ lv_obj_t * screen_dim_grid_create(void) {
         ui_label_set_text(dim_cl_air, "");
         dim_cl_wide = cbw >= SX(250);
         dim_climate_update();
+    }
+
+    /* ---- Ketel (DB_BOILER): flow, return, CH pressure as three
+     * "caption  value" rows. Both Toons. ---- */
+    dim_bo_flow = dim_bo_ret = dim_bo_pres = NULL;
+    if (g_dim_blocks[DB_BOILER].visible) {
+        int bbw = 0, bbh = 0;
+        lv_obj_t * bx = dim_box(DB_BOILER, &bbw, &bbh);
+        int pad = SX(12);
+        int rw = bbw - 2 * pad;
+        lv_obj_t * col = lv_obj_create(bx);
+        lv_obj_remove_style_all(col);
+        lv_obj_set_size(col, rw, LV_SIZE_CONTENT);
+        lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_flex_align(col, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_pad_row(col, bbh >= SY(150) ? SY(10) : SY(2), 0);
+        ui_obj_clear_flag(col, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_center(col);
+        const lv_font_t * vf = bbh >= SY(150) ? SF(28) : SF(22);
+        dim_bo_flow = dim_boiler_row(col, rw, tr("Aanvoer", "Flow"),     vf);
+        dim_bo_ret  = dim_boiler_row(col, rw, tr("Retour", "Return"),    vf);
+        dim_bo_pres = dim_boiler_row(col, rw, tr("Druk", "Pressure"),    vf);
+        dim_boiler_update();
     }
 
     /* ---- AGENDA: next calendar event(s) — 2-column, height-adaptive, all white text ---- */
