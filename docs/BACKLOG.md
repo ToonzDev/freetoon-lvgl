@@ -686,5 +686,5 @@
   - Before starting: ask users (forum) which inverter brands they actually have.
 
 ### 61. Release 1.0.16: diagnose report, Ketel dim block, OT bridge and boiler-type safety
-- **Status**: Prepared (2026-11-20); tag 1.0.16 on the release commit, published as a normal release.
+- **Status**: Published (2026-11-20), tag 1.0.16 on efcab22 (binaries built from 2fa940f, same code). The Toon 1 serial-line fix of the diagnose report (6c39643) came after the tag and ships with 1.0.17.
 - **Contents**: diagnose report for support without SSH (56bde25, 990807c: :10081/diag, port 80 /freetoon-diag.txt under both UIs); dim block "Ketel" with flow / return / CH pressure (efcab22); OT bridge "Draadloos" renamed "Via OTGW" and only allowed with an OTGW host, quby_bridge gets the configured host instead of a built-in test address, updates fall back to Direct without one (9266104); no automatic switch of the boiler type to On/Off outside the user's own OpenTherm check (489579a); calendar backs off for a dead feed instead of retrying every 10 s (b5ef15f); classic dim: units under the bar values (2d86a50), NILM label removed from the forecast strip (7e14166); missing glyphs in the big readout fonts fall back to Montserrat 48 (178f1a8); waste: no provider fetch without an address (96dc739).
