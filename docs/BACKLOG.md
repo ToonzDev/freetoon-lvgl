@@ -666,7 +666,7 @@
 - **Contents**: OT bridge Proxy mode removed (b984bd1, a5e0531, adcb532); Klok Studio (#55); dynamic energy contracts (#44); Binnenklimaat tile and dim block (#56); thin dim-screen font option; brighter Neerslag dim block; Toon 1: half the animation sprites, Wi-Fi keyboard, dim energy-bar gap; release notes without CRLF "r". The "- beta" label next to the version in the update screen is gone; the Beta / dev channel stays for test prereleases.
 
 ### 59. Release 1.0.15: dynamic tariff per commodity, fixes, CI
-- **Status**: Prepared (2026-11-19); tag 1.0.15 on the release commit, published as a normal release.
+- **Status**: Published (2026-11-19), tag 1.0.15 on 874d306.
 - **Contents**: dynamic contract separately for electricity and gas (field request) + fix: 1.0.14 never saved the dynamic setting and surcharges (6aaca37); updates install exactly the release the Toon found, scripts from that tag (#32, 71a65b9); thermostat screen no longer redraws the whole screen twice a second (52ebf96); Toon 1 thermostat setpoint row no longer overlaps Water / Retour (a43ba76). Build side: lvgl submodule back on upstream + patches (a72f6fe), CI on every push (e6ea064 and follow-ups). First release that also ships the browser UI (index.html / index.js / index.wasm) since 1.0.12.
 
 ### 60. Solar production: one holistic approach (all sources, all users)
@@ -684,3 +684,7 @@
   - HA: auto-pick the solar sensor from the Energy dashboard, and store the kWh total so statistics fill.
   - Every source writes live W + hourly/daily kWh into hcb_rrd the same way (only closed bins, as for the HomeWizard sockets in #48).
   - Before starting: ask users (forum) which inverter brands they actually have.
+
+### 61. Release 1.0.16: diagnose report, Ketel dim block, OT bridge and boiler-type safety
+- **Status**: Prepared (2026-11-20); tag 1.0.16 on the release commit, published as a normal release.
+- **Contents**: diagnose report for support without SSH (56bde25, 990807c: :10081/diag, port 80 /freetoon-diag.txt under both UIs); dim block "Ketel" with flow / return / CH pressure (efcab22); OT bridge "Draadloos" renamed "Via OTGW" and only allowed with an OTGW host, quby_bridge gets the configured host instead of a built-in test address, updates fall back to Direct without one (9266104); no automatic switch of the boiler type to On/Off outside the user's own OpenTherm check (489579a); calendar backs off for a dead feed instead of retrying every 10 s (b5ef15f); classic dim: units under the bar values (2d86a50), NILM label removed from the forecast strip (7e14166); missing glyphs in the big readout fonts fall back to Montserrat 48 (178f1a8); waste: no provider fetch without an address (96dc739).
