@@ -48,24 +48,28 @@ report() {
         # Kernel threads have an empty cmdline; skip them (bioset, kworker...).
         # Read it: /proc files always report size 0, so `[ -s ]` is useless.
         # Only tested for emptiness, never printed (it can hold tokens).
-        c=$(tr -d '\000' < "$d/cmdline" 2>/dev/null)   # BusyBox head has no -c
+        # Braces: the redirect must also cover the shell's own open of the
+        # file (a process that exits mid-scan). BusyBox head has no -c.
+        c=$( { tr -d '\000' < "$d/cmdline"; } 2>/dev/null)
         [ -n "$c" ] || continue
         name=$(cat "$d/comm" 2>/dev/null) || continue
         [ -n "$name" ] && echo "${d#/proc/} $name"
     done | sort -n
 
-    section "Boiler serial line (/dev/ttymxc0)"
-    found=0
-    for fd in /proc/[0-9]*/fd/*; do
+    # The boiler UART is ttymxc0 on a Toon 2 but ttymxc1 on a Toon 1 (Z-Wave
+    # is ttymxc2 there), so list every ttymxc holder: the line happ_thermstat
+    # holds is the boiler one.
+    section "Serial lines (/dev/ttymxc*; the boiler is the one happ_thermstat holds)"
+    holders=$(for fd in /proc/[0-9]*/fd/*; do
         t=$(readlink "$fd" 2>/dev/null) || continue
-        case "$t" in *ttymxc0*)
+        case "$t" in *ttymxc*)
             p=${fd#/proc/}; p=${p%%/*}
-            echo "pid $p ($(cat /proc/$p/comm 2>/dev/null)) has $t open"
-            found=1 ;;
+            echo "pid $p ($(cat /proc/$p/comm 2>/dev/null)) has $t open" ;;
         esac
-    done
-    [ "$found" = 1 ] || echo "nobody has /dev/ttymxc0 open"
-    grep ttymxc /proc/mounts 2>/dev/null && echo "^ WARNING: something is mounted over the boiler UART" || echo "no mount over /dev/ttymxc0"
+    done | sort -u)
+    if [ -n "$holders" ]; then echo "$holders"; else echo "nobody has a /dev/ttymxc* open"; fi
+    case "$holders" in *happ_thermstat*) ;; *) echo "WARNING: happ_thermstat holds no serial line";; esac
+    grep ttymxc /proc/mounts 2>/dev/null && echo "^ WARNING: something is mounted over a serial line (bridge?)" || echo "no mount over /dev/ttymxc*"
 
     section "inittab (active rows)"
     grep -v '^#' /etc/inittab 2>/dev/null | grep -v '^[[:space:]]*$'
