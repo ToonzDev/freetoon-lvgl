@@ -592,7 +592,7 @@ CFG
     fi
     if [ -n "$QUBY_BRIDGE_BIN" ] && [ -e "$QUBY_BRIDGE_BIN" ]; then
         install_file "$QUBY_BRIDGE_BIN" /mnt/data/quby_bridge
-        # The OT bridge runs only when the user chose Draadloos (Instellingen
+        # The OT bridge runs only when the user chose Via OTGW (Instellingen
         # -> OT Bridge: ot_bridge_mode=wireless in toonui.cfg). Default is
         # Direct (off): happ_thermstat keeps the boiler UART to itself, like
         # the stock Toon. This used to switch every install/update to the
@@ -604,6 +604,17 @@ CFG
         # more (and no extra happ_thermstat restart).
         _otb=$(remote "sed -n 's/^ot_bridge_mode=//p' /mnt/data/toonui.cfg 2>/dev/null | head -n 1" | tr -d ' \r\n')
         case "$_otb" in wireless) ;; *) _otb=off ;; esac
+        # Wireless only with an OTGW to talk to: without one the bridge
+        # answers for the keteladapter and the boiler never gets a heat
+        # demand (field report: on/off boiler stayed off under FreeToon).
+        if [ "$_otb" = wireless ]; then
+            _otgw=$(remote "sed -n 's/^otgw_host=//p' /mnt/data/toonui.cfg 2>/dev/null | head -n 1" | tr -d ' \r\n')
+            if [ -z "$_otgw" ]; then
+                say "OT bridge: Via OTGW chosen but no OTGW host set - using Direct"
+                remote "sed -i 's/^ot_bridge_mode=.*/ot_bridge_mode=off/' /mnt/data/toonui.cfg" || true
+                _otb=off
+            fi
+        fi
         # stock qt-gui needs direct UART access
         if remote "[ \"\$(cat /mnt/data/ui_choice 2>/dev/null)\" = 'qt-gui' ]"; then _otb=off; fi
         if [ "$_otb" != off ]; then

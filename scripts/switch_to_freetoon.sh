@@ -149,7 +149,7 @@ else
 fi
 
 # (The OpenTherm proxy bridge was removed 2026-11-18: no bridge is started
-# here. Draadloos / wireless is set from toonui's OT Bridge screen.)
+# here. Via OTGW (wireless) is set from toonui's OT Bridge screen.)
 
 log "Signaling init to reload inittab..."
 kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true

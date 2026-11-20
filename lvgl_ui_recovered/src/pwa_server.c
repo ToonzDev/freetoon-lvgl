@@ -1549,11 +1549,13 @@ static int handle_settings_post(int fd, const char * body) {
             buienradar_rain_refresh_async();
         }
     }
-    if (extract_str(body, "ot_bridge_mode", sv, sizeof sv) &&
-        (!strcmp(sv, "off") || !strcmp(sv, "wireless")))   /* proxy mode removed */
-        snprintf(settings.ot_bridge_mode, sizeof settings.ot_bridge_mode, "%s", sv);
     if (extract_str(body, "otgw_host", sv, sizeof sv))
         snprintf(settings.otgw_host, sizeof settings.otgw_host, "%s", sv);
+    /* proxy mode removed; wireless (Via OTGW) only with an OTGW host, else
+     * the bridge answers for the keteladapter and the boiler never fires. */
+    if (extract_str(body, "ot_bridge_mode", sv, sizeof sv) &&
+        (!strcmp(sv, "off") || (!strcmp(sv, "wireless") && settings.otgw_host[0])))
+        snprintf(settings.ot_bridge_mode, sizeof settings.ot_bridge_mode, "%s", sv);
     if (extract_str(body, "mqtt_host", sv, sizeof sv))
         snprintf(settings.mqtt_host, sizeof settings.mqtt_host, "%s", sv);
     if (extract_str(body, "mqtt_user", sv, sizeof sv))

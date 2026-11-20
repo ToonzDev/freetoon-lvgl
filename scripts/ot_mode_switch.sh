@@ -23,12 +23,21 @@
 # Survives reboot via the inittab edit (kill -HUP 1 re-reads it).
 set -e
 MODE="${1:-off}"
-QBRI_ACTIVE='qbri:345:respawn:/mnt/data/quby_bridge -m active >> /var/volatile/tmp/quby_bridge.log 2>&1'
-OTGW_HOST="${OTGW_HOST:-192.168.99.21}"
 
 log() { echo "[$(date +%H:%M:%S)] $*"; }
 
+# OTGW address: $OTGW_HOST, else otgw_host from toonui.cfg. No built-in
+# default any more: it used to fall back to the developer's test OTGW
+# (192.168.99.21), and quby_bridge got no -o at all, so wireless mode
+# talked to that address on every Toon.
+if [ -z "${OTGW_HOST:-}" ]; then
+    OTGW_HOST=$(sed -n 's/^otgw_host=//p' /mnt/data/toonui.cfg 2>/dev/null | head -n 1 | tr -d ' \r\n')
+fi
+# Only host/IP characters: the value ends up in /etc/inittab.
+case "$OTGW_HOST" in *[!A-Za-z0-9.:-]*) log "ignoring invalid OTGW host '$OTGW_HOST'"; OTGW_HOST="" ;; esac
+
 set_otgw_cmd() {
+    [ -n "$OTGW_HOST" ] || return 0
     log "OTGW <- $1"
     /usr/bin/curl -s --max-time 5 -X POST \
         -H 'Content-Type: application/json' \
@@ -36,6 +45,7 @@ set_otgw_cmd() {
         "http://$OTGW_HOST/api/v0/otgw/command" > /dev/null || true
 }
 set_otgw_setting() {
+    [ -n "$OTGW_HOST" ] || return 0
     log "OTGW persist: $1=$2"
     /usr/bin/curl -s --max-time 5 -X POST \
         -H 'Content-Type: application/json' \
@@ -85,6 +95,14 @@ apply_mode_swap() {
     kill -HUP 1
 }
 
+# Wireless without an OTGW is a Toon that never heats: quby_bridge answers
+# for the keteladapter, so happ_thermstat's heat demand never reaches the
+# real boiler module (field report: on/off warm-air heater stayed off).
+if [ "$MODE" = wireless ] && [ -z "$OTGW_HOST" ]; then
+    log "ERROR: wireless mode needs an OTGW host (otgw_host in toonui.cfg) - switching to off instead"
+    MODE=off
+fi
+
 case "$MODE" in
 off|wired|proxy)   # legacy `wired`; proxy was removed -> off
     log "switching to OFF mode (no bridge, original keteladapter behaviour)"
@@ -97,7 +115,7 @@ wireless)
     log "switching to WIRELESS mode (bridge fakes keteladapter, OTGW drives boiler)"
     set_otgw_cmd      "GW=2"
     set_otgw_setting  "otgwcommands" "GW=2"
-    apply_mode_swap "$QBRI_ACTIVE"
+    apply_mode_swap "qbri:345:respawn:/mnt/data/quby_bridge -m active -o $OTGW_HOST >> /var/volatile/tmp/quby_bridge.log 2>&1"
     log "wireless mode applied — happ handshake takes 45-60s, then writes via port 25238"
     ;;
 *)

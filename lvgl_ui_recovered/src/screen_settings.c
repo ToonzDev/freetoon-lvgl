@@ -4844,7 +4844,7 @@ static void on_check_click(lv_event_t * e) {
     if (pthread_create(&t, NULL, check_thread, NULL) == 0) pthread_detach(t);
 }
 
-/* Two mode-pick buttons (Direct / Draadloos); pointers cached so the click
+/* Two mode-pick buttons (Direct / Via OTGW); pointers cached so the click
  * handler can update their "checked" highlight state. The actual destructive
  * mode-swap runs on Apply, not on tap — taps just record the *intended* mode +
  * repaint. We also cache each button's label child because lv_btn doesn't
@@ -4861,7 +4861,8 @@ static int s_old_proxy_running = 0;   /* inittab still has the removed proxy row
 static const char * mode_label(const char * m) {
     /* Hyphens (not em-dashes): Montserrat at this size lacks the em-dash
      * glyph and would render it as a missing-glyph square. */
-    if (strcmp(m, "wireless") == 0) return tr("Draadloos - bridge bootst Quby na, OTGW stuurt de ketel", "Wireless - bridge fakes Quby, OTGW drives boiler");
+    if (strcmp(m, "wireless") == 0) return tr("Via OTGW (experimenteel) - alleen met een OpenTherm Gateway, niet voor een draadloze ketelmodule",
+                                              "Via OTGW (experimental) - only with an OpenTherm Gateway, not for a wireless boiler module");
     return                             tr("Direct - keteladapter is de OT-master (origineel qt-gui-gedrag, geen bridge-script)", "Direct - keteladapter is the OT master (original qt-gui behaviour, no bridge script)");
 }
 
@@ -4923,16 +4924,29 @@ static void on_apply_click(lv_event_t * e) {
     snprintf(settings.otgw_host, sizeof(settings.otgw_host), "%s", h ? h : "");
     snprintf(settings.otgw_user, sizeof(settings.otgw_user), "%s", u ? u : "");
     snprintf(settings.otgw_pass, sizeof(settings.otgw_pass), "%s", p ? p : "");
+
+    /* ot_bridge_mode can also be set from the PWA: only the two modes the
+     * script knows are ever passed to the shell. */
+    const char * mode = settings.ot_bridge_mode;
+    if (strcmp(mode, "wireless")) mode = "off";
+    /* Via OTGW without an OTGW: the bridge would answer for the keteladapter
+     * and the boiler would never get a heat demand. Refuse before saving;
+     * nothing is written or switched. */
+    if (!strcmp(mode, "wireless") && !settings.otgw_host[0]) {
+        lv_label_set_text(lbl_apply_warning,
+            tr("Vul eerst het OTGW-adres in. Zonder OpenTherm Gateway krijgt de ketel "
+               "in deze modus geen warmtevraag - kies dan Direct.",
+               "Enter the OTGW address first. Without an OpenTherm Gateway the boiler "
+               "gets no heat demand in this mode - choose Direct instead."));
+        return;
+    }
     settings_save();
     if (!settings.client_mode) otgw_start();   /* boiler telemetry without a restart */
 
     /* Apply mode switch via shell. We shell out because rewriting inittab
      * + pkill + umount is messy to do via syscalls. The script lives at
-     * /mnt/data/ot_mode_switch.sh and accepts off|wireless. */
-    /* ot_bridge_mode can also be set from the PWA: only the two modes the
-     * script knows are ever passed to the shell. */
-    const char * mode = settings.ot_bridge_mode;
-    if (strcmp(mode, "wireless")) mode = "off";
+     * /mnt/data/ot_mode_switch.sh, accepts off|wireless and reads the OTGW
+     * host from toonui.cfg (saved just above). */
     s_old_proxy_running = 0;
     char cmd[256];
     snprintf(cmd, sizeof(cmd),
@@ -4989,7 +5003,7 @@ static void open_otbridge_modal(lv_event_t * e) {
     lv_obj_t * p = modal_open("OT Bridge", 600);
     int y = 70;
 
-    /* Mode picker — Direct / Draadloos. */
+    /* Mode picker — Direct / Via OTGW. */
     lv_obj_t * mode_lbl = lv_label_create(p);
     lv_obj_set_style_text_color(mode_lbl, lv_color_hex(THEME_TEXT_HI), 0);
     lv_obj_set_style_text_font(mode_lbl, SF(22), 0);
@@ -5000,7 +5014,7 @@ static void open_otbridge_modal(lv_event_t * e) {
                    const char * caption;
                    lv_event_cb_t cb; int x; } picks[] = {
         { &btn_off,      &lbl_off,      tr("Direct", "Direct"),     on_mode_off_click,      120 },
-        { &btn_wireless, &lbl_wireless, tr("Draadloos", "Wireless"), on_mode_wireless_click, 270 },
+        { &btn_wireless, &lbl_wireless, tr("Via OTGW", "Via OTGW"), on_mode_wireless_click, 270 },
     };
     for (unsigned i = 0; i < sizeof picks / sizeof picks[0]; i++) {
         lv_obj_t * b = lv_btn_create(p);
@@ -5026,7 +5040,7 @@ static void open_otbridge_modal(lv_event_t * e) {
     lv_label_set_text(lbl_otmode, mode_label(settings.ot_bridge_mode));
     lv_obj_align(lbl_otmode, LV_ALIGN_TOP_LEFT, SX(4), y);
     paint_mode_buttons();
-    y += 50;
+    y += 64;   /* room for a two-line description (50 left it touching the host row) */
 
     /* OTGW host */
     lv_obj_t * lbl_host = lv_label_create(p);
@@ -5068,7 +5082,7 @@ static void open_otbridge_modal(lv_event_t * e) {
     y += 60;
 
     /* Enable/disable host/user/pass per current mode */
-    int wireless = strcmp(settings.ot_bridge_mode, "otgw") == 0;
+    int wireless = strcmp(settings.ot_bridge_mode, "wireless") == 0;   /* was "otgw": never matched */
     if (!wireless) {
         lv_obj_add_state(ta_otgw_host, LV_STATE_DISABLED);
         lv_obj_add_state(ta_otgw_user, LV_STATE_DISABLED);
@@ -6077,7 +6091,7 @@ lv_obj_t * screen_settings_create(void) {
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_LIST, tr("Nieuwslezer", "Newsreader"),
               tr("RSS-koppenticker", "RSS headlines ticker"), open_news_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_GPS, "OT Bridge",
-              tr("direct / draadloos", "direct / wireless"), open_otbridge_modal); n++;
+              tr("direct / via OTGW", "direct / via OTGW"), open_otbridge_modal); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_CHARGE, "Philips Hue",
               tr("bridge koppelen & lampen", "bridge pairing & lights"), open_hue); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_OK, tr("Pincode", "PIN code"),
