@@ -1,9 +1,11 @@
 /*
  * Devices hub ("Apparaten", BACKLOG #53 stage 1) — one screen listing the
  * switchable devices of every enabled backend: Hue lamps, Home Assistant
- * devices, Domoticz switches/dimmers/blinds, Z-Wave plugs, HomeWizard Energy
- * Sockets and the efanlamp. Grouped by room: Hue rooms and HA areas are
- * merged by name; devices without a room are grouped under their source.
+ * devices, Domoticz switches/dimmers/blinds, Homey devices and manual flows,
+ * Z-Wave plugs, HomeWizard Energy Sockets and the efanlamp. Grouped by room:
+ * Hue rooms, HA areas and Homey zones are merged by name; devices without a
+ * room are grouped under their source. Homey locks are left out on purpose
+ * (no one-tap unlock on a wall panel).
  * Each row has a name, a state line with a small source badge, and the
  * control (on/off, open/stop/close, run). The per-backend screens stay
  * reachable through the chips at the top (dimming, groups, scenes, pairing).
@@ -22,6 +24,7 @@
 #include "hue.h"
 #include "homeassistant.h"
 #include "domoticz.h"
+#include "homey.h"
 #include "homewizard.h"
 #include "efanlamp.h"
 #include "screen_zwave.h"
@@ -39,10 +42,10 @@
 #define COL_OFF       THEME_OFF
 #define COL_OFFLINE   (settings.home_light_mode ? 0x94a3b8 : 0x6e6e6e)
 
-enum { SRC_HUE, SRC_HA, SRC_DZ, SRC_ZW, SRC_HWS, SRC_EFAN, SRC_COUNT };
+enum { SRC_HUE, SRC_HA, SRC_DZ, SRC_HY, SRC_HYFLOW, SRC_ZW, SRC_HWS, SRC_EFAN, SRC_COUNT };
 enum { CTL_TOGGLE, CTL_COVER, CTL_RUN };
 
-#define HUB_MAX_ITEMS 96
+#define HUB_MAX_ITEMS 160   /* a Homey install alone can bring ~100 switchables */
 
 typedef struct {
     uint8_t    src, ctl;
@@ -69,6 +72,8 @@ static const char * src_badge(int s) {
     case SRC_HUE:  return "Hue";
     case SRC_HA:   return "HA";
     case SRC_DZ:   return "Domoticz";
+    case SRC_HY:
+    case SRC_HYFLOW: return "Homey";
     case SRC_ZW:   return "Z-Wave";
     case SRC_HWS:  return "HomeWizard";
     default:       return tr("Ventilator", "Fan");
@@ -79,6 +84,8 @@ static const char * src_group(int s) {
     case SRC_HUE:  return "Philips Hue";
     case SRC_HA:   return "Home Assistant";
     case SRC_DZ:   return "Domoticz";
+    case SRC_HY:   return "Homey";
+    case SRC_HYFLOW: return tr("Homey flows", "Homey flows");
     case SRC_ZW:   return tr("Z-Wave stekkers", "Z-Wave plugs");
     case SRC_HWS:  return tr("HomeWizard stekkers", "HomeWizard sockets");
     default:       return tr("Ventilatorlamp", "Fan lamp");
@@ -90,6 +97,9 @@ static int hue_on(void) { return settings.hue_enabled || hue_state.count > 0; }
 static int ha_on(void)  { return settings.enable_ha && ha_device_count > 0; }
 static int dz_on(void)  { return settings.enable_domoticz || (settings.client_mode && domoticz_state.count > 0); }
 static int efan_on(void){ return settings.efanlamp_host[0] != 0; }
+static int homey_on(void) {
+    return settings.enable_homey && (homey_state.ndev > 0 || homey_state.nflow > 0);
+}
 
 /* Fingerprint of everything that changes the row set or the grouping. When
  * it moves (a backend finished loading, HA areas arrived, a device was added
@@ -102,6 +112,9 @@ static unsigned long hub_sig(void) {
     MIX(settings.enable_ha ? ha_device_count : -1);
     MIX(ha_device_area_gen);
     MIX(dz_on() ? domoticz_state.count : -1);
+    MIX(homey_on() ? homey_state.ndev : -1);
+    MIX(homey_on() ? homey_state.nflow : -1);
+    MIX(homey_on() ? homey_state.nzone : -1);
     MIX(zwave_switch_count_cached());
     for (int i = 0; i < HW_SOCKET_MAX; i++) MIX(homewizard_socket_present(i));
     MIX(efan_on());
@@ -126,6 +139,42 @@ static domoticz_dev_t * find_dz(const hub_item_t * it) {
         if (domoticz_state.dev[i].idx == dz_idx) return &domoticz_state.dev[i];
     return NULL;
 }
+/* Homey: the device in homey_state for this item, NULL if gone. it->idx is a
+ * hint (the table is replaced wholesale on each poll). Caller holds
+ * homey_lock(). */
+static const hy_dev_t * find_hy_id(const char * id, int hint) {
+    if (hint >= 0 && hint < homey_state.ndev &&
+        strcmp(homey_state.dev[hint].id, id) == 0) return &homey_state.dev[hint];
+    for (int i = 0; i < homey_state.ndev; i++)
+        if (strcmp(homey_state.dev[i].id, id) == 0) return &homey_state.dev[i];
+    return NULL;
+}
+static const hy_dev_t * find_hy(const hub_item_t * it) { return find_hy_id(it->key, it->idx); }
+static int hy_setable(const hy_dev_t * d, const char * cap) {
+    const hy_cap_t * c = hy_dev_cap(d, cap);
+    return c && c->setable;
+}
+/* What the hub does with a Homey device: CTL_*, or -1 to leave it out. */
+static int hy_ctl(const hy_dev_t * d) {
+    if (d->kind == HY_K_LOCK) return -1;
+    if (d->kind == HY_K_COVER &&
+        (hy_setable(d, "windowcoverings_state") || hy_setable(d, "windowcoverings_set"))) return CTL_COVER;
+    if (hy_setable(d, "onoff")) return CTL_TOGGLE;
+    if (hy_setable(d, "play_scene") || hy_setable(d, "button")) return CTL_RUN;
+    return -1;
+}
+/* Cover command: windowcoverings_state up/idle/down, or position 1/0 for
+ * covers that only have windowcoverings_set (no stop there). */
+static void hy_cover(const char * id, const char * state) {
+    homey_lock();
+    const hy_dev_t * d = find_hy_id(id, -1);
+    int has_state = d && hy_setable(d, "windowcoverings_state");
+    homey_unlock();
+    if (has_state) homey_cover(id, state);
+    else if (!strcmp(state, "up"))   homey_set_num(id, "windowcoverings_set", 1.0);
+    else if (!strcmp(state, "down")) homey_set_num(id, "windowcoverings_set", 0.0);
+}
+
 /* Z-Wave: returns the switch ordinal (what zwave_toggle_switch takes), -1 if gone. */
 static int find_zw(const hub_item_t * it, zwave_dev_t * out) {
     for (int i = 0; zwave_get_switch(i, out); i++)
@@ -134,6 +183,8 @@ static int find_zw(const hub_item_t * it, zwave_dev_t * out) {
 }
 
 /* ---- actions ---- */
+static void refresh_rows(void);
+
 static hub_item_t * ev_item(lv_event_t * e) {
     int i = (int)(intptr_t)lv_event_get_user_data(e);
     return (i >= 0 && i < item_count) ? &items[i] : NULL;
@@ -156,6 +207,21 @@ static void on_toggle(lv_event_t * e) {
         if (d) domoticz_switch_async(d->idx, "Toggle");
         break;
     }
+    case SRC_HY: {
+        /* The homey_* setters take the lock themselves: read, unlock, act. */
+        if (it->ctl == CTL_RUN) { homey_press(it->key); break; }
+        int on = -1;
+        homey_lock();
+        const hy_dev_t * d = find_hy(it);
+        const hy_cap_t * c = d ? hy_dev_cap(d, "onoff") : NULL;
+        if (c) on = c->num != 0;
+        homey_unlock();
+        if (on >= 0 && homey_onoff(it->key, !on) == 0) refresh_rows();   /* optimistic */
+        break;
+    }
+    case SRC_HYFLOW:
+        homey_start_flow(it->key);
+        break;
     case SRC_ZW: {
         zwave_dev_t zd;
         int n = find_zw(it, &zd);
@@ -179,7 +245,7 @@ static void on_toggle(lv_event_t * e) {
 /* Cover buttons: user_data = item index, the command sits in the button's
  * own user field via a tiny lookup on the label text would be fragile — so
  * three separate callbacks. */
-static void cover_cmd(lv_event_t * e, const char * ha_cmd, const char * dz_cmd) {
+static void cover_cmd(lv_event_t * e, const char * ha_cmd, const char * dz_cmd, const char * hy_cmd) {
     hub_item_t * it = ev_item(e);
     if (!it) return;
     if (it->src == SRC_HA) {
@@ -188,11 +254,14 @@ static void cover_cmd(lv_event_t * e, const char * ha_cmd, const char * dz_cmd) 
     } else if (it->src == SRC_DZ) {
         domoticz_dev_t * d = find_dz(it);
         if (d) domoticz_switch_async(d->idx, dz_cmd);
+    } else if (it->src == SRC_HY) {
+        hy_cover(it->key, hy_cmd);
+        refresh_rows();
     }
 }
-static void on_cover_open (lv_event_t * e) { cover_cmd(e, "open",  "Open");  }
-static void on_cover_stop (lv_event_t * e) { cover_cmd(e, "stop",  "Stop");  }
-static void on_cover_close(lv_event_t * e) { cover_cmd(e, "close", "Close"); }
+static void on_cover_open (lv_event_t * e) { cover_cmd(e, "open",  "Open",  "up");   }
+static void on_cover_stop (lv_event_t * e) { cover_cmd(e, "stop",  "Stop",  "idle"); }
+static void on_cover_close(lv_event_t * e) { cover_cmd(e, "close", "Close", "down"); }
 
 /* ---- navigation ---- */
 static void back_async(void * unused) { (void)unused; ui_pop(); }
@@ -246,6 +315,18 @@ static void collect_items(void) {
             snprintf(buf, sizeof buf, "%d", d->idx);
             add_item(SRC_DZ, d->kind == DZ_BLIND ? CTL_COVER : CTL_TOGGLE, i, buf, d->name, "");
         }
+    if (homey_on()) {
+        homey_lock();
+        for (int i = 0; i < homey_state.ndev; i++) {
+            const hy_dev_t * d = &homey_state.dev[i];
+            int ctl = hy_ctl(d);
+            if (ctl < 0) continue;
+            add_item(SRC_HY, ctl, i, d->id, d->name, homey_zone_name(d->zone));
+        }
+        for (int i = 0; i < homey_state.nflow; i++)
+            add_item(SRC_HYFLOW, CTL_RUN, i, homey_state.flow[i].id, homey_state.flow[i].name, "");
+        homey_unlock();
+    }
     {
         zwave_dev_t zd;
         for (int i = 0; zwave_get_switch(i, &zd); i++) {
@@ -482,6 +563,48 @@ static void item_state(const hub_item_t * it, row_state_t * o) {
         else snprintf(o->txt, sizeof o->txt, "%s - %s", badge, d->on ? tr("aan", "on") : tr("uit", "off"));
         break;
     }
+    case SRC_HY: {
+        homey_lock();
+        const hy_dev_t * d = find_hy(it);
+        if (!d) { homey_unlock(); break; }
+        if (!d->available) {
+            snprintf(o->txt, sizeof o->txt, "%s - offline", badge);
+        } else if (it->ctl == CTL_RUN) {
+            snprintf(o->txt, sizeof o->txt, "%s - %s", badge,
+                     hy_dev_cap(d, "play_scene") ? tr("scene", "scene") : tr("knop", "button"));
+            o->state = 0;
+        } else if (it->ctl == CTL_COVER) {
+            const hy_cap_t * s = hy_dev_cap(d, "windowcoverings_state");
+            const hy_cap_t * p = hy_dev_cap(d, "windowcoverings_set");
+            const char * st = "";
+            if (s && s->type == HY_V_STR)
+                st = !strcmp(s->str, "up") ? "open" : !strcmp(s->str, "down") ? tr("dicht", "closed")
+                   : !strcmp(s->str, "idle") ? tr("gestopt", "stopped") : "";
+            if (p && p->type == HY_V_NUM)
+                snprintf(o->txt, sizeof o->txt, "%s - %s%s%d%%", badge, st, st[0] ? " " : "",
+                         (int)(p->num * 100 + 0.5));
+            else
+                snprintf(o->txt, sizeof o->txt, "%s - %s", badge, st[0] ? st : "--");
+            o->state = 0;
+        } else {
+            const hy_cap_t * on  = hy_dev_cap(d, "onoff");
+            const hy_cap_t * dim = hy_dev_cap(d, "dim");
+            const hy_cap_t * pw  = hy_dev_cap(d, "measure_power");
+            o->state = (on && on->num != 0) ? 1 : 0;
+            if (o->state && dim && dim->type == HY_V_NUM)
+                snprintf(o->txt, sizeof o->txt, "%s - %s %d%%", badge, tr("aan", "on"), (int)(dim->num * 100 + 0.5));
+            else if (o->state && pw && pw->type == HY_V_NUM && pw->num > 0.5)
+                snprintf(o->txt, sizeof o->txt, "%s - %s %.0f W", badge, tr("aan", "on"), pw->num);
+            else
+                snprintf(o->txt, sizeof o->txt, "%s - %s", badge, o->state ? tr("aan", "on") : tr("uit", "off"));
+        }
+        homey_unlock();
+        break;
+    }
+    case SRC_HYFLOW:
+        snprintf(o->txt, sizeof o->txt, "%s - flow", badge);
+        o->state = 0;
+        break;
     case SRC_ZW: {
         zwave_dev_t zd;
         if (find_zw(it, &zd) < 0 || zd.state < 0) break;
@@ -605,8 +728,8 @@ lv_obj_t * screen_devices_create(void) {
     lv_label_set_long_mode(empty_hint, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_align(empty_hint, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(empty_hint,
-        tr("Nog geen apparaten.\nKoppel Philips Hue, Home Assistant, Domoticz,\nZ-Wave stekkers of HomeWizard stekkers via Instellingen.",
-           "No devices yet.\nConnect Philips Hue, Home Assistant, Domoticz,\nZ-Wave plugs or HomeWizard sockets in Settings."));
+        tr("Nog geen apparaten.\nKoppel Philips Hue, Home Assistant, Domoticz, Homey,\nZ-Wave stekkers of HomeWizard stekkers via Instellingen.",
+           "No devices yet.\nConnect Philips Hue, Home Assistant, Domoticz, Homey,\nZ-Wave plugs or HomeWizard sockets in Settings."));
     lv_obj_align(empty_hint, LV_ALIGN_CENTER, 0, SY(30));
     lv_obj_add_flag(empty_hint, LV_OBJ_FLAG_HIDDEN);
 
@@ -618,7 +741,7 @@ lv_obj_t * screen_devices_create(void) {
 /* Home shows its devices button only when there is something to control.
  * Cheap (no polling): called from the home refresh tick. */
 int devices_hub_available(void) {
-    if (hue_on() || settings.enable_ha || dz_on() || efan_on()) return 1;
+    if (hue_on() || settings.enable_ha || dz_on() || efan_on() || homey_on()) return 1;
     if (zwave_switch_count_cached() > 0) return 1;
     return homewizard_socket_count() > 0;
 }

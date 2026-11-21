@@ -184,6 +184,67 @@ static void copy_str(char * dst, size_t dsz, const jval_t * v) {
     }
 }
 
+/* Latin-1 trail byte (after 0xC3) -> plain ASCII letter, 0 if none. Same
+ * mapping as calendar.c: the UI fonts hold ASCII, ° and icon symbols only. */
+static char latin1_ascii(unsigned char n) {
+    if (n >= 0xA0 && n <= 0xA5) return 'a';
+    if (n == 0xA7) return 'c';
+    if (n >= 0xA8 && n <= 0xAB) return 'e';
+    if (n >= 0xAC && n <= 0xAF) return 'i';
+    if (n == 0xB1) return 'n';
+    if ((n >= 0xB2 && n <= 0xB6) || n == 0xB8) return 'o';
+    if (n >= 0xB9 && n <= 0xBC) return 'u';
+    if (n == 0xBD || n == 0xBF) return 'y';
+    if (n >= 0x80 && n <= 0x85) return 'A';
+    if (n == 0x87) return 'C';
+    if (n >= 0x88 && n <= 0x8B) return 'E';
+    if (n >= 0x8C && n <= 0x8F) return 'I';
+    if (n == 0x91) return 'N';
+    if ((n >= 0x92 && n <= 0x96) || n == 0x98) return 'O';
+    if (n >= 0x99 && n <= 0x9C) return 'U';
+    if (n == 0x9D) return 'Y';
+    if (n == 0x9F) return 's';
+    return 0;
+}
+
+void hy_fold_text(char * s) {
+    char * w = s;
+    const unsigned char * r = (const unsigned char *)s;
+    while (*r) {
+        unsigned char c = *r;
+        char a = 0;
+        if (c < 0x80) {
+            a = (c < 0x20 || c == 0x7F) ? ' ' : (char)c;
+            r++;
+        } else {
+            if (c == 0xC3 && r[1]) a = latin1_ascii(r[1]);
+            else if (c == 0xC2 && r[1] == 0xA0) a = ' ';
+            else if (c == 0xE2 && r[1] == 0x80 && r[2]) {
+                unsigned char t = r[2];
+                if (t == 0x98 || t == 0x99) a = '\'';
+                else if (t == 0x9C || t == 0x9D) a = '"';
+                else if (t == 0x93 || t == 0x94) a = '-';
+                else if (t == 0xA6) a = '.';
+            }
+            r++;                                            /* lead byte */
+            while ((*r & 0xC0) == 0x80) r++;                /* its continuation bytes */
+            if (!a) continue;                               /* emoji etc.: dropped */
+        }
+        if (a == ' ' && (w == s || w[-1] == ' ')) continue; /* no leading/double spaces */
+        *w++ = a;
+    }
+    while (w > s && w[-1] == ' ') w--;
+    *w = 0;
+}
+
+/* Display name: folded to the font, never empty (an emoji-only name). */
+static void copy_name(char * dst, size_t dsz, const jval_t * v) {
+    copy_str(dst, dsz, v);
+    if (!dst[0]) return;                 /* really absent: caller skips the entry */
+    hy_fold_text(dst);
+    if (!dst[0]) snprintf(dst, dsz, "Homey");
+}
+
 /* Iterate the top-level collection: object keyed by id, or array. Calls
  * cb(j, ctx) with j->p at each element value; cb must consume the value.
  * Returns 0 on success, -1 on a shape error. */
@@ -356,7 +417,7 @@ static int dev_cb(jp_t * j, void * vctx) {
             if (!jstring(j, key, sizeof key) || !eat(j, ':')) return 0;
             jval_t v;
             if (!strcmp(key, "id"))                 { if (!read_value(j, &v)) return 0; copy_str(tmp.id, sizeof tmp.id, &v); }
-            else if (!strcmp(key, "name"))          { if (!read_value(j, &v)) return 0; copy_str(tmp.name, sizeof tmp.name, &v); }
+            else if (!strcmp(key, "name"))          { if (!read_value(j, &v)) return 0; copy_name(tmp.name, sizeof tmp.name, &v); }
             else if (!strcmp(key, "zone"))          { if (!read_value(j, &v)) return 0; copy_str(tmp.zone, sizeof tmp.zone, &v); }
             else if (!strcmp(key, "class"))         { if (!read_value(j, &v)) return 0; copy_str(tmp.cls, sizeof tmp.cls, &v); }
             else if (!strcmp(key, "virtualClass"))  { if (!read_value(j, &v)) return 0; copy_str(tmp.vcls, sizeof tmp.vcls, &v); }
@@ -423,7 +484,7 @@ static int zone_cb(jp_t * j, void * vctx) {
             if (!jstring(j, key, sizeof key) || !eat(j, ':')) return 0;
             jval_t v;
             if (!strcmp(key, "id"))        { if (!read_value(j, &v)) return 0; copy_str(z.id, sizeof z.id, &v); }
-            else if (!strcmp(key, "name")) { if (!read_value(j, &v)) return 0; copy_str(z.name, sizeof z.name, &v); }
+            else if (!strcmp(key, "name")) { if (!read_value(j, &v)) return 0; copy_name(z.name, sizeof z.name, &v); }
             else if (!skip_value(j, 0)) return 0;
             if (eat(j, ',')) continue;
             if (!eat(j, '}')) return 0;
@@ -503,7 +564,7 @@ static int flow_cb(jp_t * j, void * vctx) {
             if (!jstring(j, key, sizeof key) || !eat(j, ':')) return 0;
             jval_t v;
             if (!strcmp(key, "id"))           { if (!read_value(j, &v)) return 0; copy_str(f.id, sizeof f.id, &v); }
-            else if (!strcmp(key, "name"))    { if (!read_value(j, &v)) return 0; copy_str(f.name, sizeof f.name, &v); }
+            else if (!strcmp(key, "name"))    { if (!read_value(j, &v)) return 0; copy_name(f.name, sizeof f.name, &v); }
             else if (!strcmp(key, "enabled")) { if (!read_value(j, &v)) return 0; enabled = !(v.type == HY_V_BOOL && v.num == 0); }
             else if (!strcmp(key, "trigger") && !ctx->advanced) {
                 /* Standard flow: exactly one trigger card; check its id. */

@@ -32,6 +32,7 @@
 #include "hue.h"
 #include "calendar.h"
 #include "energy_prices.h"
+#include "homey.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1271,6 +1272,13 @@ int main(int argc, char ** argv) {
     create_fn fn = screen_home_create;
     for (int i = 0; i < N_SCREENS; i++)
         if (!strcmp(mode, SCREENS[i].name)) { fn = SCREENS[i].fn; break; }
+    /* Homey as on the Toon (main.c): with enable_homey + homey_host in the
+     * cfg (TOONUI_DATA_DIR) and HOMEY_SIM_KEY, e.g. against a local mock. */
+    if (settings.enable_homey && settings.homey_host[0]) {
+        homey_start();
+        for (int w = 0; w < 50 && !homey_state.ndev; w++) usleep(100000);
+        for (int w = 0; w < 20 && !homey_state.nflow; w++) usleep(100000);
+    }
     lv_obj_t * scr = fn();
     lv_scr_load(scr);
     pump(150);

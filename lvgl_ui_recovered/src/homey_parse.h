@@ -88,6 +88,12 @@ int hy_parse_zones(const char * body, size_t len, hy_zone_t * out, int max);
 int hy_parse_flows(const char * body, size_t len, int advanced,
                    hy_flow_t * out, int already, int max);
 
+/* In place: UTF-8 -> what the UI fonts can draw (ASCII). Accented Latin-1
+ * letters fold to their base letter, typographic quotes/dashes to ASCII,
+ * anything else (emoji) is dropped; spaces are trimmed and collapsed.
+ * Applied to every device, zone and flow name by the parsers. */
+void hy_fold_text(char * s);
+
 /* Lookup helpers. */
 const hy_cap_t * hy_dev_cap(const hy_dev_t * d, const char * cap_id);
 const char * hy_kind_name(int kind);

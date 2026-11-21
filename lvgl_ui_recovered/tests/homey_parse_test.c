@@ -60,6 +60,25 @@ int main(int argc, char ** argv) {
     char path[512];
     size_t len;
 
+    /* ---- name folding (UI fonts are ASCII only) ---- */
+    {
+        static const struct { const char * in, * out; } T[] = {
+            { "Caf\xc3\xa9 \xc3\x84rger \xc3\x9f",         "Cafe Arger s" },
+            { "\xf0\x9f\x92\xa1 Lamp \xf0\x9f\x92\xa1",       "Lamp" },
+            { "\xe2\x80\x9cTV\xe2\x80\x9d \xe2\x80\x93 hal",  "\"TV\" - hal" },
+            { "a\xc2\xa0\xc2\xa0" "b\t c",                    "a b c" },
+            { "\xf0\x9f\x92\xa1",                             "" },
+            { "trunc\xe2\x80",                                "trunc" },   /* cut mid-sequence */
+            { "\xe4\xb8\xad\xe6\x96\x87x",                    "x" },
+        };
+        for (size_t i = 0; i < sizeof T / sizeof T[0]; i++) {
+            char s[64];
+            snprintf(s, sizeof s, "%s", T[i].in);
+            hy_fold_text(s);
+            if (strcmp(s, T[i].out)) { fprintf(stderr, "FAIL fold #%zu: '%s'\n", i, s); fails++; }
+        }
+    }
+
     /* ---- devices ---- */
     snprintf(path, sizeof path, "%s/homey_devices.json", dir);
     char * b = slurp(path, &len);
@@ -78,7 +97,7 @@ int main(int argc, char ** argv) {
         CHECK(!strcmp(x->cls, "socket") && !strcmp(x->vcls, "light"));
     }
     /* \u escapes incl. a surrogate pair decode to UTF-8. */
-    CHECK((x = find(d, n, "Kitchen Strip \xc3\xa9\xf0\x9f\x92\xa1")) && x->kind == HY_K_LIGHT && x->ncap == 6);
+    CHECK((x = find(d, n, "Kitchen Strip e")) && x->kind == HY_K_LIGHT && x->ncap == 6);   /* é + emoji folded */
     if (x) {
         const hy_cap_t * c = hy_dev_cap(x, "light_mode");
         CHECK(c && c->type == HY_V_STR && !strcmp(c->str, "color"));
