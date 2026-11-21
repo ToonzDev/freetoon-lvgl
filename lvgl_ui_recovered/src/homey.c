@@ -89,6 +89,9 @@ int homey_set_key(const char * key) {
     mode_t old = umask(077);
     FILE * f = fopen(HOMEY_KEY_PATH, "w");
     umask(old);
+#ifdef SIM
+    if (!f) { snprintf(g_key, sizeof g_key, "%s", clean); homey_kick(); return 0; }  /* no /mnt/data on a PC */
+#endif
     if (!f) return -1;
     fprintf(f, "%s\n", clean);
     fclose(f);

@@ -21,6 +21,7 @@
 #include "theme.h"
 #include "i18n.h"
 #include "domoticz.h"
+#include "homey.h"
 #include "otgw.h"
 #include "ventilation.h"
 #include "ha_mqtt.h"
@@ -2033,6 +2034,192 @@ static void open_domoticz(lv_event_t * e) {
     lv_label_set_long_mode(lbl_domoticz_result, LV_LABEL_LONG_WRAP);
     lv_obj_align(lbl_domoticz_result, LV_ALIGN_TOP_LEFT, SX(4), y);
     lv_label_set_text(lbl_domoticz_result, tr("Stel de Domoticz-host in en kies Opslaan + verbinden.", "Set the Domoticz host, then Save + connect."));
+}
+
+/* Athom Homey Pro config (BACKLOG #28): host + API key + connection test.
+ * The test (a full device fetch, up to ~20 s) runs on a worker thread; the
+ * modal timer picks up the result and otherwise shows the live poller
+ * status. */
+static lv_obj_t * ta_homey_host = NULL;
+static lv_obj_t * ta_homey_key  = NULL;
+static lv_obj_t * lbl_homey_result = NULL;
+static lv_obj_t * lbl_homey_status = NULL;
+static lv_obj_t * sw_homey = NULL;
+static volatile int g_homey_test_busy = 0;
+static volatile int g_homey_test_done = 0;
+static volatile int g_homey_test_rc   = 0;
+
+static void * homey_test_thread(void * arg) {
+    (void)arg;
+    g_homey_test_rc = homey_probe();
+    g_homey_test_done = 1;
+    g_homey_test_busy = 0;
+    return NULL;
+}
+
+static void homey_show_result(int rc) {
+    if (!lbl_homey_result) return;
+    if (rc >= 0)
+        lv_label_set_text_fmt(lbl_homey_result, tr("Verbonden - %d apparaten.", "Connected - %d devices."), rc);
+    else if (rc == -HOMEY_ST_AUTH)
+        lv_label_set_text(lbl_homey_result, tr("Fout: API-sleutel geweigerd (verkeerde sleutel of te weinig rechten).",
+                                               "Error: API key rejected (wrong key or missing permissions)."));
+    else if (rc == -HOMEY_ST_BADDATA)
+        lv_label_set_text(lbl_homey_result, tr("Fout: onverwacht antwoord - is dit het adres van een Homey Pro?",
+                                               "Error: unexpected answer - is this the address of a Homey Pro?"));
+    else
+        lv_label_set_text(lbl_homey_result, tr("Fout: geen verbinding - controleer het adres.",
+                                               "Error: no connection - check the address."));
+}
+
+static void homey_tick(void) {
+    if (g_homey_test_done) {
+        g_homey_test_done = 0;
+        homey_show_result(g_homey_test_rc);
+    }
+    if (!lbl_homey_status) return;
+    if (!settings.enable_homey || !settings.homey_host[0]) {
+        lv_label_set_text(lbl_homey_status, tr("Status: uit", "Status: off"));
+        return;
+    }
+    int st = homey_state.status;
+    long ago = homey_state.last_ok ? (long)time(NULL) - homey_state.last_ok : -1;
+    homey_lock();
+    int nd = homey_state.ndev, nf = homey_state.nflow;
+    homey_unlock();
+    if (st == HOMEY_ST_OK)
+        lv_label_set_text_fmt(lbl_homey_status, tr("Status: verbonden - %d apparaten, %d flows (%lds geleden bijgewerkt)",
+                                                  "Status: connected - %d devices, %d flows (updated %lds ago)"),
+                              nd, nf, ago < 0 ? 0 : ago);
+    else if (st == HOMEY_ST_AUTH)
+        lv_label_set_text(lbl_homey_status, tr("Status: API-sleutel geweigerd", "Status: API key rejected"));
+    else if (st == HOMEY_ST_NOCONN)
+        lv_label_set_text(lbl_homey_status, tr("Status: geen verbinding", "Status: no connection"));
+    else if (st == HOMEY_ST_BADDATA)
+        lv_label_set_text(lbl_homey_status, tr("Status: onverwacht antwoord", "Status: unexpected answer"));
+    else
+        lv_label_set_text(lbl_homey_status, tr("Status: verbinden...", "Status: connecting..."));
+}
+
+static void on_homey_enabled_change(lv_event_t * e) {
+    settings.enable_homey = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    settings_save();
+    if (settings.enable_homey && settings.homey_host[0]) homey_start();   /* once; reads the flag live */
+    homey_tick();
+}
+
+static void on_homey_apply_click(lv_event_t * e) {
+    (void)e;
+    if (!lbl_homey_result) return;
+    const char * h = lv_textarea_get_text(ta_homey_host);
+    snprintf(settings.homey_host, sizeof settings.homey_host, "%s", h ? h : "");
+    const char * k = lv_textarea_get_text(ta_homey_key);
+    if (k && k[0]) {
+        char cur[160];
+        homey_get_key(cur, sizeof cur);
+        if (strcmp(k, cur) != 0 && homey_set_key(k) != 0) {
+            lv_label_set_text(lbl_homey_result, tr("Fout: dit is geen geldige API-sleutel (alleen letters, cijfers en : . _ -).",
+                                                   "Error: not a valid API key (letters, digits and : . _ - only)."));
+            return;
+        }
+    }
+    if (settings.homey_host[0]) {
+        settings.enable_homey = 1;
+        if (sw_homey) lv_obj_add_state(sw_homey, LV_STATE_CHECKED);
+    }
+    settings_save();
+    if (!settings.homey_host[0]) {
+        lv_label_set_text(lbl_homey_result, tr("Vul eerst het adres van de Homey in (ip of ip:poort).",
+                                               "Enter the Homey address first (ip or ip:port)."));
+        return;
+    }
+    { char cur[160]; homey_get_key(cur, sizeof cur);
+      if (!cur[0]) {
+          lv_label_set_text(lbl_homey_result, tr("Vul eerst de API-sleutel in.", "Enter the API key first."));
+          return;
+      } }
+    homey_start();   /* starts the poller, or wakes it to use the new host/key */
+    if (g_homey_test_busy) return;
+    g_homey_test_busy = 1;
+    lv_label_set_text(lbl_homey_result, tr("Bezig met testen...", "Testing..."));
+    pthread_t t;
+    if (pthread_create(&t, NULL, homey_test_thread, NULL) == 0) pthread_detach(t);
+    else { g_homey_test_busy = 0; lv_label_set_text(lbl_homey_result, tr("Test kon niet starten.", "Could not start the test.")); }
+}
+
+static lv_obj_t * homey_label(lv_obj_t * p, int y, const char * txt, int font, uint32_t color) {
+    lv_obj_t * l = lv_label_create(p);
+    lv_obj_set_style_text_color(l, lv_color_hex(color), 0);
+    lv_obj_set_style_text_font(l, SF(font), 0);
+    lv_obj_set_width(l, SX(770));
+    lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
+    lv_obj_align(l, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_label_set_text(l, txt);
+    return l;
+}
+
+static void open_homey(lv_event_t * e) {
+    (void)e;
+    g_homey_test_done = 0;   /* a test still running from a closed modal: drop its result */
+    lv_obj_t * p = modal_open("Homey", 600);
+    int is_t1 = (DISP_VER < 600);
+    int y = is_t1 ? 60 : 70;
+
+    lv_obj_t * r_en = panel_row(p, y, tr("Homey inschakelen", "Homey enabled"), NULL);
+    sw_homey = row_switch(r_en, settings.enable_homey, on_homey_enabled_change);
+    y += is_t1 ? 72 : 88;
+
+    lv_obj_t * lh = lv_label_create(p);
+    lv_obj_set_style_text_color(lh, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(lh, SF(22), 0);
+    lv_label_set_text(lh, tr("Adres (ip):", "Address (ip):"));
+    lv_obj_align(lh, LV_ALIGN_TOP_LEFT, SX(4), y + (is_t1 ? 2 : 4));
+    ta_homey_host = lv_textarea_create(p); ta_make_numeric(ta_homey_host);
+    lv_obj_set_size(ta_homey_host, SX(420), SY(44));
+    lv_obj_align(ta_homey_host, LV_ALIGN_TOP_LEFT, SX(260), y);
+    lv_textarea_set_one_line(ta_homey_host, true);
+    lv_textarea_set_placeholder_text(ta_homey_host, "192.168.1.50");
+    lv_textarea_set_text(ta_homey_host, settings.homey_host);
+    y += is_t1 ? 48 : 58;
+
+    lv_obj_t * lk = lv_label_create(p);
+    lv_obj_set_style_text_color(lk, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(lk, SF(22), 0);
+    lv_label_set_text(lk, tr("API-sleutel:", "API key:"));
+    lv_obj_align(lk, LV_ALIGN_TOP_LEFT, SX(4), y + (is_t1 ? 2 : 4));
+    ta_homey_key = lv_textarea_create(p);
+    lv_obj_set_size(ta_homey_key, SX(420), SY(44));
+    lv_obj_align(ta_homey_key, LV_ALIGN_TOP_LEFT, SX(260), y);
+    lv_textarea_set_one_line(ta_homey_key, true);
+    lv_textarea_set_password_mode(ta_homey_key, true);
+    lv_textarea_set_max_length(ta_homey_key, 159);
+    lv_obj_set_scrollbar_mode(ta_homey_key, LV_SCROLLBAR_MODE_OFF);   /* ~110 masked chars overflow */
+    lv_textarea_set_placeholder_text(ta_homey_key, "API key");
+    { char k[160]; homey_get_key(k, sizeof k); if (k[0]) lv_textarea_set_text(ta_homey_key, k); }
+    y += is_t1 ? 52 : 62;
+
+    lv_obj_t * b_apply = lv_btn_create(p);
+    lv_obj_set_size(b_apply, SX(220), SY(48));
+    lv_obj_align(b_apply, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_set_style_bg_color(b_apply, lv_color_hex(0xc06030), 0);
+    lv_obj_add_event_cb(b_apply, on_homey_apply_click, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * la = lv_label_create(b_apply); lv_label_set_text(la, tr("Opslaan + testen", "Save + test")); lv_obj_center(la);
+    y += is_t1 ? 56 : 64;
+
+    lbl_homey_result = homey_label(p, y, tr("Vul adres en API-sleutel in en kies Opslaan + testen.",
+                                            "Enter the address and API key, then Save + test."), 18, 0xa8c4dc);
+    y += is_t1 ? 44 : 50;
+    lbl_homey_status = homey_label(p, y, "", 18, 0xa8c4dc);
+    y += is_t1 ? 44 : 50;
+    homey_label(p, y, tr("API-sleutel maken: Homey web-app (my.homey.app) > Instellingen > API-sleutels. "
+                         "Rechten: apparaten bekijken + bedienen, zones bekijken, flows bekijken + starten.",
+                         "Create an API key in the Homey web app (my.homey.app) > Settings > API keys. "
+                         "Permissions: view + control devices, view zones, view + start flows."),
+                16, 0x8090a0);
+
+    homey_tick();
+    modal_tick_fn = homey_tick;
+    modal_timer = lv_timer_create(modal_timer_cb, 1000, NULL);
 }
 
 /* Philips Hue config & pairing modal */
@@ -6073,6 +6260,8 @@ lv_obj_t * screen_settings_create(void) {
               tr("grafieken & verbruik", "charts & usage"), open_energy_stats); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_HOME, "Home Assistant",
               tr("host, token, entiteiten", "host, token, entities"), open_ha_entities_modal); n++;
+    make_tile(GX(n), GY(n), NULL, LV_SYMBOL_HOME, "Homey",
+              tr("adres & API-sleutel", "address & API key"), open_homey); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_EDIT, tr("Indeling", "Layout"),
               tr("tegelindeling bewerken", "tile layout editor"), open_layout_editor); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_PLUS, tr("Integraties", "Integrations"),
