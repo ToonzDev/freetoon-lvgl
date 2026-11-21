@@ -336,7 +336,17 @@
     - Standaard afvalwijzer provider ingesteld op *Overige gemeentes* voor verbeterde directe werking.
 
 ### 28. Homey Integration
-- **Status**: Requester has a Homey Pro (2023) -> local API key route confirmed; waiting for sample API data (no Homey available to the developer; 2026-11-10).
+- **Status**: Requester has a Homey Pro (2023) -> local API key route confirmed (2026-11-10). Sample data received 2026-11-21 (devices + flows export, ~130 devices); not stored in the repo because it holds the requester's third-party passwords/API keys in device `settings`. Poller + parser built 2026-11-21 (homey.c, homey_parse.c, synthetic fixtures + `make test-homey`, ASan); real exports only in the git-ignored tests/local/. Next: control (set capability, start flow), Settings screen (host + API key), devices on the Lights screen.
+- **Findings from the sample (2026-11-21)**:
+  - Devices: object keyed by id; per device `name`, `zone` (uuid only: names need `GET manager/zones/zone/`), `class`, `virtualClass`, `capabilities[]`, `capabilitiesObj{cap:{value,units,setable,getable,min,max,decimals,values[]}}`, `available`, `ready`, `unavailableMessage`.
+  - Classify by `virtualClass` first: many lights are `class:"socket"` + `virtualClass:"light"` (KaKu, Fibaro, Zigbee strips); also `virtualClass` fan / coffeemachine.
+  - Unavailable devices (`available:false`, "App Unavailable" / Tuya "subscription expired") come with `capabilitiesObj:{}` and `settingsObj:null`: show greyed or skip, never crash on missing objects.
+  - Controls seen: `onoff`, `dim` (0..1), `light_temperature`/`light_hue`/`light_saturation` (0..1), `windowcoverings_state` enum up/idle/down (Somfy RTS + group devices, no position), `windowcoverings_set` 0..1 (curtain/Tuya blind), `play_scene` and `button` (momentary, `getable:false`), `locked` (Nuki), `target_temperature`.
+  - Sensors worth tiles: `measure_temperature`, `measure_humidity`, `measure_power`, `meter_power`, `alarm_contact`, `alarm_motion`, `measure_battery`/`alarm_battery`.
+  - 433 MHz devices (KaKu, Somfy) report assumed state only; remotes have `capabilities:[]` (skip).
+  - The requester's Homey also controls this Toon via the "Toon Water" app (`nl.toonwater.toonwater`, thermostat + water meter, polls the Toon's local IP; flows set `temperature_state` home/sleep and mirror `target_temperature` to an airco). Hide that device from FreeToon's Homey list (it is the Toon itself), and keep the stock local endpoints it uses working.
+  - Flows export holds only standard flows (`manager/flow/flow/`); advanced flows referenced by other flows need `manager/flow/advancedflow/`. Good trigger candidates: flows with `trigger.id == "homey:manager:flow:programmatic_trigger"`. The "Start a flow" ACTION card uses the same id, so advanced flows must check the card type too.
+  - Payload is large (full device list several hundred kB): stream/parse into a compact table, keep only id/name/zone/class/caps/values; never keep `settings`.
 - **Description**:
   - Add Athom Homey as a smart-home source next to Home Assistant and Domoticz: show and switch Homey devices (lights, plugs, blinds) and read sensors on FreeToon tiles.
 - **Decisions (2026-11-10)**:
