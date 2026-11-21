@@ -61,6 +61,7 @@
 #include <arpa/inet.h>
 #include <sys/time.h>
 #include "ketellog.h"
+#include "homey.h"
 
 #define PWA_PORT  10081
 #define PWA_ROOT  "/mnt/data/pwa"
@@ -2545,6 +2546,7 @@ static int handle_logs_index_get(int fd) {
     }
 
     pos += snprintf(body + pos, sizeof(body) - pos,
+        "<p style=\"margin-top:20px\">Koppelingen: <a href=\"/homey\" style=\"color:#38bdf8\">Homey (adres en API-sleutel)</a></p>"
         "<p style=\"margin-top:20px;text-align:center\"><a href=\"/\" class=\"btn btn-sec\">&larr; Terug naar Toon</a></p>"
         "</div></body></html>");
 
@@ -2559,6 +2561,144 @@ static int handle_logs_index_get(int fd) {
 
     if (sock_send_all(fd, hdr, hn) < 0) return -1;
     return sock_send_all(fd, body, pos);
+}
+
+/* ---------------------------------------------------------------- /homey
+ * Homey address + API key from a browser (BACKLOG #28): a ~110-character key
+ * is tedious on the Toon keyboard. Behind the normal login gate. The key is
+ * write-only: the page shows only whether one is set.
+ *
+ * With the web login off, port 10081 is open to the whole LAN and any web
+ * page can make the browser POST a form here. Two rules keep the key from
+ * being redirected to somebody else's server:
+ *   - a cross-site POST (Origin/Referer host != Host) is refused;
+ *   - changing the address requires entering the key again in the same
+ *     submit, so the stored key is never sent to a new address unasked. */
+
+/* Host part of the request's Host header, or of an Origin/Referer URL. */
+static int req_header(const char * req, const char * name, char * out, size_t n) {
+    char pat[32];
+    snprintf(pat, sizeof pat, "\n%s:", name);
+    const char * h = strcasestr(req, pat);
+    if (!h) return 0;
+    h += strlen(pat);
+    while (*h == ' ' || *h == '\t') h++;
+    size_t L = strcspn(h, "\r\n");
+    if (L >= n) L = n - 1;
+    memcpy(out, h, L); out[L] = 0;
+    return 1;
+}
+static void url_hostport(const char * url, char * out, size_t n) {
+    const char * p = strstr(url, "://");
+    p = p ? p + 3 : url;
+    size_t L = strcspn(p, "/?#");
+    if (L >= n) L = n - 1;
+    memcpy(out, p, L); out[L] = 0;
+}
+static int homey_same_origin(const char * req) {
+    char host[128] = "", src[256] = "", hp[128];
+    if (!req_header(req, "Host", host, sizeof host)) return 0;
+    if (req_header(req, "Origin", src, sizeof src)) {
+        if (!strcmp(src, "null")) return 0;   /* sandboxed/opaque origin: never ours */
+    } else if (!req_header(req, "Referer", src, sizeof src)) {
+        return 1;   /* no Origin and no Referer: not a cross-site browser form (curl, scripts) */
+    }
+    url_hostport(src, hp, sizeof hp);
+    return strcasecmp(hp, host) == 0;
+}
+
+static int homey_host_ok(const char * h) {
+    if (!*h) return 1;   /* empty = clear */
+    for (const char * p = h; *p; p++)
+        if (!(isalnum((unsigned char)*p) || strchr(".:-_/[]", *p))) return 0;
+    return 1;
+}
+
+static int handle_homey_get(int fd, const char * msg, int refresh) {
+    char host_esc[200], key[160], status[200];
+    html_attr_esc(host_esc, sizeof host_esc, settings.homey_host);
+    homey_get_key(key, sizeof key);
+    int st = homey_state.status;
+    homey_lock();
+    int nd = homey_state.ndev, nf = homey_state.nflow;
+    homey_unlock();
+    if (!settings.enable_homey || !settings.homey_host[0]) snprintf(status, sizeof status, "Uit.");
+    else if (st == HOMEY_ST_OK)
+        snprintf(status, sizeof status, "Verbonden: %d apparaten, %d flows (%lds geleden bijgewerkt).",
+                 nd, nf, (long)time(NULL) - homey_state.last_ok);
+    else if (st == HOMEY_ST_AUTH)    snprintf(status, sizeof status, "API-sleutel geweigerd (verkeerde sleutel of te weinig rechten).");
+    else if (st == HOMEY_ST_NOCONN)  snprintf(status, sizeof status, "Geen verbinding - controleer het adres.");
+    else if (st == HOMEY_ST_BADDATA) snprintf(status, sizeof status, "Onverwacht antwoord - is dit een Homey Pro?");
+    else                             snprintf(status, sizeof status, "Verbinden...");
+
+    char body[6144];
+    int pos = snprintf(body, sizeof body,
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">%s"
+        "<title>FreeToon - Homey</title><style>"
+        "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0f1a2a;color:#e2e8f0;margin:0;padding:24px;line-height:1.5}"
+        ".card{max-width:600px;margin:0 auto;background:#1e293b;border-radius:12px;padding:24px}"
+        "h1{margin-top:0;font-size:22px;color:#38bdf8}p{color:#94a3b8;font-size:14px}"
+        "label{display:block;margin:14px 0 4px;font-size:14px}"
+        "input[type=text],input[type=password]{width:100%%;box-sizing:border-box;padding:9px;border-radius:6px;border:1px solid #334155;background:#0f172a;color:#f8fafc;font-size:15px}"
+        ".btn{background:#2563eb;color:#fff;border:0;padding:9px 18px;border-radius:6px;font-size:14px;cursor:pointer;margin-top:18px;text-decoration:none;display:inline-block}"
+        ".btn-sec{background:#334155;color:#e2e8f0}.st{background:#0f172a;border-radius:8px;padding:10px 14px;margin-top:18px}"
+        ".msg{color:#fbbf24}</style></head><body><div class=\"card\"><h1>Homey</h1>"
+        "<p>Adres en API-sleutel van een Homey Pro (2023). Een API-sleutel maak je in de Homey web-app "
+        "(my.homey.app) &gt; Instellingen &gt; API-sleutels, met de rechten: apparaten bekijken en bedienen, "
+        "zones bekijken, flows bekijken en starten.</p>"
+        "%s%s%s"
+        "<form method=\"post\" action=\"/homey\">"
+        "<label>Adres (ip of ip:poort)</label>"
+        "<input type=\"text\" name=\"host\" value=\"%s\" placeholder=\"192.168.1.50\" autocomplete=\"off\">"
+        "<label>API-sleutel%s</label>"
+        "<input type=\"password\" name=\"key\" placeholder=\"%s\" autocomplete=\"off\">"
+        "<button class=\"btn\">Opslaan + verbinden</button></form>"
+        "<div class=\"st\"><b>Status:</b> %s</div>"
+        "<p style=\"margin-top:20px;text-align:center\"><a href=\"/\" class=\"btn btn-sec\">&larr; Terug naar Toon</a></p>"
+        "</div></body></html>",
+        refresh ? "<meta http-equiv=\"refresh\" content=\"4;url=/homey\">" : "",
+        msg ? "<p class=\"msg\">" : "", msg ? msg : "", msg ? "</p>" : "",
+        host_esc,
+        key[0] ? " (ingesteld - leeg laten om te houden)" : "",
+        key[0] ? "********" : "API key",
+        status);
+    if (pos < 0 || pos >= (int)sizeof body) return send_status(fd, 500, "Internal Server Error", "page too large");
+    char hdr[200];
+    int hn = snprintf(hdr, sizeof hdr,
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: %d\r\n"
+        "Cache-Control: no-store\r\nX-Frame-Options: DENY\r\nConnection: close\r\n\r\n", pos);
+    if (sock_send_all(fd, hdr, hn) < 0) return -1;
+    return sock_send_all(fd, body, pos);
+}
+
+static int handle_homey_post(int fd, const char * req, const char * body) {
+    if (!homey_same_origin(req))
+        return send_status(fd, 403, "Forbidden", "cross-site request refused");
+    char host[sizeof settings.homey_host], key[160] = "";
+    if (!form_get(body, "host", host, sizeof host)) host[0] = 0;
+    form_get(body, "key", key, sizeof key);
+    /* trim */
+    char * h = host; while (*h == ' ') h++;
+    memmove(host, h, strlen(h) + 1);
+    for (size_t L = strlen(host); L && host[L - 1] == ' '; ) host[--L] = 0;
+
+    if (!homey_host_ok(host))
+        return handle_homey_get(fd, "Ongeldig adres: alleen letters, cijfers en . : - _ / [ ].", 0);
+    if (strcmp(host, settings.homey_host) != 0 && !key[0]) {
+        char cur[160]; homey_get_key(cur, sizeof cur);
+        if (cur[0])
+            return handle_homey_get(fd, "Vul bij een nieuw adres ook de API-sleutel opnieuw in.", 0);
+    }
+    if (key[0] && homey_set_key(key) != 0)
+        return handle_homey_get(fd, "Dit is geen geldige API-sleutel (alleen letters, cijfers en : . _ -).", 0);
+    snprintf(settings.homey_host, sizeof settings.homey_host, "%s", host);
+    settings.enable_homey = host[0] ? 1 : 0;
+    settings_save();
+    if (settings.enable_homey) homey_start();   /* starts, or wakes it with the new values */
+    fprintf(stderr, "[pwa] homey settings saved via web (host %s, key %s)\n",
+            host[0] ? host : "-", key[0] ? "changed" : "kept");
+    return send_redirect(fd, "/homey?saved", NULL);
 }
 
 static int dispatch(int fd, char * req) {
@@ -2623,6 +2763,8 @@ static int dispatch(int fd, char * req) {
             return handle_diag_get(fd, path[5] == '?');
         if (!strcmp(path, "/ketellog") || !strcmp(path, "/ketellog?view"))
             return handle_ketellog_get(fd, path[9] == '?');
+        if (!strcmp(path, "/homey"))       return handle_homey_get(fd, NULL, 0);
+        if (!strcmp(path, "/homey?saved")) return handle_homey_get(fd, "Opgeslagen. De status ververst vanzelf.", 1);
         if (!strcmp(path, "/") || !strcmp(path, "/index.html") || !strncmp(path, "/?", 2))
             return handle_remote_page(fd);
         return serve_static(fd, path);
@@ -2653,6 +2795,7 @@ static int dispatch(int fd, char * req) {
          * restarts happ_thermstat. */
         if (!strcmp(path, "/ketellog/start")) { ketellog_start(60); return send_redirect(fd, "/logs", NULL); }
         if (!strcmp(path, "/ketellog/stop"))  { ketellog_stop();    return send_redirect(fd, "/logs", NULL); }
+        if (!strcmp(path, "/homey"))          return handle_homey_post(fd, req, body);
         /* POST /api/v1/marketplace/apps/<id>/state */
         if (!strncmp(path, "/api/v1/marketplace/apps/", 25)) {
             const char * tail = path + 25;

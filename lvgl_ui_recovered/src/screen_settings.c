@@ -2040,11 +2040,17 @@ static void open_domoticz(lv_event_t * e) {
  * The test (a full device fetch, up to ~20 s) runs on a worker thread; the
  * modal timer picks up the result and otherwise shows the live poller
  * status. */
+static void ft_lan_ip(char * out, size_t n);
 static lv_obj_t * ta_homey_host = NULL;
 static lv_obj_t * ta_homey_key  = NULL;
 static lv_obj_t * lbl_homey_result = NULL;
 static lv_obj_t * lbl_homey_status = NULL;
 static lv_obj_t * sw_homey = NULL;
+/* What the fields showed when the modal opened. Save writes only fields
+ * edited here, so a change made meanwhile via http://<toon>:10081/homey is
+ * not overwritten by the values this modal still shows. */
+static char homey_shown_host[sizeof settings.homey_host];
+static char homey_shown_key[160];
 static volatile int g_homey_test_busy = 0;
 static volatile int g_homey_test_done = 0;
 static volatile int g_homey_test_rc   = 0;
@@ -2073,6 +2079,21 @@ static void homey_show_result(int rc) {
 }
 
 static void homey_tick(void) {
+    /* Follow a change made via the web page, unless that field was edited here. */
+    if (ta_homey_host && strcmp(settings.homey_host, homey_shown_host) != 0 &&
+        !strcmp(lv_textarea_get_text(ta_homey_host), homey_shown_host)) {
+        snprintf(homey_shown_host, sizeof homey_shown_host, "%s", settings.homey_host);
+        lv_textarea_set_text(ta_homey_host, homey_shown_host);
+    }
+    if (ta_homey_key) {
+        char cur[160];
+        homey_get_key(cur, sizeof cur);
+        if (strcmp(cur, homey_shown_key) != 0 &&
+            !strcmp(lv_textarea_get_text(ta_homey_key), homey_shown_key)) {
+            snprintf(homey_shown_key, sizeof homey_shown_key, "%s", cur);
+            lv_textarea_set_text(ta_homey_key, cur);
+        }
+    }
     if (g_homey_test_done) {
         g_homey_test_done = 0;
         homey_show_result(g_homey_test_rc);
@@ -2112,12 +2133,14 @@ static void on_homey_apply_click(lv_event_t * e) {
     (void)e;
     if (!lbl_homey_result) return;
     const char * h = lv_textarea_get_text(ta_homey_host);
-    snprintf(settings.homey_host, sizeof settings.homey_host, "%s", h ? h : "");
+    if (h && strcmp(h, homey_shown_host) != 0) {
+        snprintf(settings.homey_host, sizeof settings.homey_host, "%s", h);
+        snprintf(homey_shown_host, sizeof homey_shown_host, "%s", h);
+    }
     const char * k = lv_textarea_get_text(ta_homey_key);
-    if (k && k[0]) {
-        char cur[160];
-        homey_get_key(cur, sizeof cur);
-        if (strcmp(k, cur) != 0 && homey_set_key(k) != 0) {
+    if (k && k[0] && strcmp(k, homey_shown_key) != 0) {
+        snprintf(homey_shown_key, sizeof homey_shown_key, "%s", k);
+        if (homey_set_key(k) != 0) {
             lv_label_set_text(lbl_homey_result, tr("Fout: dit is geen geldige API-sleutel (alleen letters, cijfers en : . _ -).",
                                                    "Error: not a valid API key (letters, digits and : . _ - only)."));
             return;
@@ -2180,6 +2203,7 @@ static void open_homey(lv_event_t * e) {
     lv_textarea_set_one_line(ta_homey_host, true);
     lv_textarea_set_placeholder_text(ta_homey_host, "192.168.1.50");
     lv_textarea_set_text(ta_homey_host, settings.homey_host);
+    snprintf(homey_shown_host, sizeof homey_shown_host, "%s", settings.homey_host);
     y += is_t1 ? 48 : 58;
 
     lv_obj_t * lk = lv_label_create(p);
@@ -2195,7 +2219,8 @@ static void open_homey(lv_event_t * e) {
     lv_textarea_set_max_length(ta_homey_key, 159);
     lv_obj_set_scrollbar_mode(ta_homey_key, LV_SCROLLBAR_MODE_OFF);   /* ~110 masked chars overflow */
     lv_textarea_set_placeholder_text(ta_homey_key, "API key");
-    { char k[160]; homey_get_key(k, sizeof k); if (k[0]) lv_textarea_set_text(ta_homey_key, k); }
+    homey_get_key(homey_shown_key, sizeof homey_shown_key);
+    if (homey_shown_key[0]) lv_textarea_set_text(ta_homey_key, homey_shown_key);
     y += is_t1 ? 52 : 62;
 
     lv_obj_t * b_apply = lv_btn_create(p);
@@ -2211,11 +2236,19 @@ static void open_homey(lv_event_t * e) {
     y += is_t1 ? 44 : 50;
     lbl_homey_status = homey_label(p, y, "", 18, 0xa8c4dc);
     y += is_t1 ? 44 : 50;
-    homey_label(p, y, tr("API-sleutel maken: Homey web-app (my.homey.app) > Instellingen > API-sleutels. "
-                         "Rechten: apparaten bekijken + bedienen, zones bekijken, flows bekijken + starten.",
-                         "Create an API key in the Homey web app (my.homey.app) > Settings > API keys. "
-                         "Permissions: view + control devices, view zones, view + start flows."),
-                16, 0x8090a0);
+    {
+        char ip[40], help[480];
+        ft_lan_ip(ip, sizeof ip);
+        snprintf(help, sizeof help,
+                 tr("API-sleutel maken: Homey web-app (my.homey.app) > Instellingen > API-sleutels. "
+                    "Rechten: apparaten bekijken + bedienen, zones bekijken, flows bekijken + starten. "
+                    "Plakken gaat makkelijker in een browser: http://%s:10081/homey",
+                    "Create an API key in the Homey web app (my.homey.app) > Settings > API keys. "
+                    "Permissions: view + control devices, view zones, view + start flows. "
+                    "Easier to paste in a browser: http://%s:10081/homey"),
+                 ip[0] ? ip : "<toon-ip>");
+        homey_label(p, y, help, 16, 0x8090a0);
+    }
 
     homey_tick();
     modal_tick_fn = homey_tick;
