@@ -91,7 +91,9 @@ pthread_attr_init@GLIBC_2.4
 pthread_attr_setdetachsta@GLIBC_2.4
 pthread_attr_setstacksize@GLIBC_2.4
 pthread_cond_broadcast@GLIBC_2.4
+pthread_cond_signal@GLIBC_2.4
 pthread_cond_timedwait@GLIBC_2.4
+pthread_cond_wait@GLIBC_2.4
 pthread_create@GLIBC_2.4
 pthread_detach@GLIBC_2.4
 pthread_mutex_lock@GLIBC_2.4

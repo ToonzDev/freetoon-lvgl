@@ -13,7 +13,12 @@
  * homey_lock()/homey_unlock() around access; the poller swaps in a fully
  * parsed table under the lock, so readers never see a half-parsed list.
  *
- * Control (set capability, start flow) comes in the next step. */
+ * Control: the homey_* setters below never block. They check the request
+ * against the known device list (capability present, setable, device
+ * available), update homey_state at once (optimistic) and queue the HTTP
+ * call for a worker thread; a device poll right after confirms or corrects
+ * the value. A newer value for the same device + capability replaces a
+ * queued one (dim slider drags send the last position). */
 
 #include "homey_parse.h"
 
@@ -37,7 +42,9 @@ typedef struct {
     hy_zone_t zone[HY_MAX_ZONE];
     int       nflow;
     hy_flow_t flow[HY_MAX_FLOW];
-    volatile unsigned gen;        /* bumped on every successful device update */
+    volatile unsigned gen;        /* bumped on every device update (poll or local set) */
+    volatile int      last_action_code;   /* HTTP status of the last control request, 0 = no connection */
+    volatile unsigned action_fail_gen;    /* bumped when a control request fails (for a toast) */
 } homey_state_t;
 
 extern homey_state_t homey_state;
@@ -61,5 +68,18 @@ int  homey_set_key(const char * key);
 /* Settings "test": one synchronous device fetch. Returns the device count
  * (>= 0), or -HOMEY_ST_AUTH / -HOMEY_ST_NOCONN / -HOMEY_ST_BADDATA. */
 int  homey_probe(void);
+
+/* ---- control (non-blocking). All return 0 when queued, -1 when refused
+ * (unknown device/flow, capability missing or read-only, device
+ * unavailable, invalid value, queue full). ---- */
+int homey_set_bool(const char * dev_id, const char * cap, int on);
+int homey_set_num(const char * dev_id, const char * cap, double v);   /* 0..1 caps clamped */
+int homey_set_enum(const char * dev_id, const char * cap, const char * value);
+
+int homey_onoff(const char * dev_id, int on);
+int homey_dim(const char * dev_id, double level);           /* 0..1 */
+int homey_cover(const char * dev_id, const char * state);   /* "up" / "idle" / "down" */
+int homey_press(const char * dev_id);                       /* play_scene or button */
+int homey_start_flow(const char * flow_id);                 /* manual flows only */
 
 #endif
