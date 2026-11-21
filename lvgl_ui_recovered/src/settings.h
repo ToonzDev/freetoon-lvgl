@@ -400,6 +400,10 @@ typedef struct {
     float dyn_elec_surcharge; /* EUR per kWh incl. VAT on top of market x 1.21 (mark-up + energy tax) */
     float dyn_gas_surcharge;  /* EUR per m3 incl. VAT on top of market x 1.21 */
     int   dyn_gas;            /* 1 = dynamic gas contract: EnergyZero gas-day prices */
+    /* Athom Homey Pro (2023) local Web API (BACKLOG #28). The API key lives
+     * in /mnt/data/homey.key (0600), not here. */
+    int  enable_homey;
+    char homey_host[64];      /* "ip[:port]" or http(s)://... */
 } settings_t;
 
 #define FORECAST_AUTO   0

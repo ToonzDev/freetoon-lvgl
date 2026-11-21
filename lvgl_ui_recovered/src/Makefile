@@ -143,7 +143,7 @@ APP_SRC       := $(ENTRY) $(GLIBC_SRC) boxtalk.c ui_stack.c screen_home.c screen
                  screen_heater_advanced.c \
                  screen_vent_remote.c screen_vent_advanced.c \
                  screen_lights.c screen_devices.c screen_marketplace.c screen_zwave.c screen_wifi.c \
-                 screen_adapters.c ketellog.c screen_meteradapters.c ma_admin.c plugs.c screen_domoticz.c screen_hue.c screen_calendar.c screen_layout_editor.c screen_efanlamp.c \
+                 screen_adapters.c ketellog.c homey.c homey_parse.c screen_meteradapters.c ma_admin.c plugs.c screen_domoticz.c screen_hue.c screen_calendar.c screen_layout_editor.c screen_efanlamp.c \
                  screen_dim_layout_editor.c screen_dim_grid.c \
                  screen_crypto_picker.c screen_crypto.c screen_ha_picker.c screen_ha_devices.c \
                  screen_chart_24h.c screen_waste.c plugin_loader.c \
@@ -315,3 +315,12 @@ $(BUILDDIR)/wastefetch: wastefetch.c $(QJS_OBJ)
 
 clean:
 	rm -rf $(BUILDDIR)
+
+# Host-side unit test for the Homey parser (BACKLOG #28). Synthetic fixtures
+# only; uses the host gcc whatever TARGET is set to, with ASan/UBSan.
+.PHONY: test-homey
+test-homey:
+	@mkdir -p ../build-test
+	gcc -O1 -g -Wall -Wextra -fsanitize=address,undefined -fno-omit-frame-pointer \
+	    -o ../build-test/homey_parse_test ../tests/homey_parse_test.c homey_parse.c -lm
+	../build-test/homey_parse_test ../tests/fixtures

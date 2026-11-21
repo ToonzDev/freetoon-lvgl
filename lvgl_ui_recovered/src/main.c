@@ -199,6 +199,10 @@ int main(int argc, char** argv) {
         extern int domoticz_start(void);
         if (domoticz_start() != 0) fprintf(stderr, "[main] domoticz_start failed\n");
     }
+    if (settings.enable_homey && settings.homey_host[0]) {
+        extern int homey_start(void);
+        if (homey_start() != 0) fprintf(stderr, "[main] homey_start failed\n");
+    }
     if (settings.hue_enabled && settings.hue_host[0]) {
         extern int hue_start(void);
         if (hue_start() != 0) fprintf(stderr, "[main] hue_start failed\n");

@@ -34,3 +34,7 @@ __pycache__/
 build-*/
 release_*/
 .vscode/
+
+# Real user data for local testing only (e.g. a requester's Homey export):
+# never committed. Fixtures in tests/fixtures/ are synthetic.
+lvgl_ui_recovered/tests/local/

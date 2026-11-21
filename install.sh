@@ -747,7 +747,7 @@ do_uninstall() {
     # Boiler serial capture (#64): stop it and drop its HCBv2 hook block
     # BEFORE the tap is deleted (a happ_thermstat respawn must not look for it).
     remote "[ -f /mnt/data/ketellog.sh ] && sh /mnt/data/ketellog.sh stop >/dev/null 2>&1; rm -f /qmf/www/freetoon-ketellog.txt /var/volatile/tmp/ketellog.txt /var/volatile/tmp/ketellog.txt.old /mnt/data/ketellog.sh /mnt/data/libttysniff.so; true"
-    remote "rm -f /mnt/data/toonui /mnt/data/inittab_edit.sh /mnt/data/ui_launcher.sh /mnt/data/companion_gate.sh /mnt/data/toonvnc.sh /mnt/data/ot_mode_switch.sh /mnt/data/fbvnc_input /mnt/data/ui_choice /mnt/data/toonvnc.plain /mnt/data/toonui.cfg"
+    remote "rm -f /mnt/data/toonui /mnt/data/inittab_edit.sh /mnt/data/ui_launcher.sh /mnt/data/companion_gate.sh /mnt/data/toonvnc.sh /mnt/data/ot_mode_switch.sh /mnt/data/fbvnc_input /mnt/data/ui_choice /mnt/data/toonvnc.plain /mnt/data/toonui.cfg /mnt/data/homey.key"
     remote "rm -rf /mnt/data/pwa"
     remote "kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true"
     echo "Uninstalled. Stock qt-gui takes over on next launcher cycle."
