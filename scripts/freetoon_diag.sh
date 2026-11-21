@@ -87,6 +87,18 @@ report() {
     section "toonui.log boiler/thermostat lines (last 40)"
     grep -E '\[bxt\]|\[otgw\]|\[uimode\]|boiler|Boiler' /var/volatile/tmp/toonui.log 2>/dev/null | tail -n 40
 
+    # Boiler serial capture (BACKLOG #64): status and the line settings here,
+    # the full log as http://<toon>/freetoon-ketellog.txt.
+    KL=/var/volatile/tmp/ketellog.txt
+    if [ -f /mnt/data/ketellog.sh ] || [ -f "$KL" ]; then
+        section "Ketel-log (boiler serial capture)"
+        if [ -f /mnt/data/ketellog.sh ]; then sh /mnt/data/ketellog.sh status; fi
+        if [ -f "$KL" ]; then
+            echo "lines: W $(grep -c ' W ' "$KL")  R $(grep -c ' R ' "$KL")  S $(grep -c ' S ' "$KL")"
+            grep -E ' [T*] ' "$KL" | tail -n 20
+        fi
+    fi
+
     section "Memory / storage"
     free 2>/dev/null
     df -h / /var/volatile 2>/dev/null
@@ -96,6 +108,12 @@ if [ "${1:-}" = "--loop" ]; then
     sp=
     trap '[ -n "$sp" ] && kill "$sp" 2>/dev/null; exit 0' TERM INT
     while :; do
+        # Ketel-log: a thermostat status line per minute while it runs, and
+        # drop the HCBv2 hook once its time is up (#64). Runs under both UIs.
+        if [ -f /mnt/data/ketellog.sh ] && [ -f /tmp/etc-default-HCBv2 ]; then
+            sh /mnt/data/ketellog.sh note >/dev/null 2>&1
+            sh /mnt/data/ketellog.sh expire >/dev/null 2>&1
+        fi
         report > "$OUT.tmp" 2>&1 && mv -f "$OUT.tmp" "$OUT"
         # Point the stock web root at the RAM copy (once; a symlink, so the
         # 60 s refresh never writes flash).

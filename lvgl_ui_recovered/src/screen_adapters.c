@@ -24,6 +24,7 @@
 #include "theme.h"
 #include "boxtalk.h"
 #include "meteradapter.h"
+#include "ketellog.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -45,6 +46,8 @@ static lv_obj_t * lbl_met_state = NULL;
 static lv_obj_t * lbl_met_sub   = NULL;
 static lv_obj_t * lbl_ket_state = NULL;
 static lv_obj_t * lbl_ket_sub   = NULL;
+static lv_obj_t * btn_ketlog    = NULL;   /* boiler serial capture (#64) */
+static lv_obj_t * lbl_ketlog    = NULL;
 static lv_timer_t * refresh_timer = NULL;
 
 static int  g_met_found  = 0;     /* HAE_METER node present in Z-Wave list */
@@ -108,9 +111,41 @@ static void update_ket_labels(void) {
             (double)toon_state.boiler_out_temp, (double)toon_state.modulation_level);
     else
         lv_label_set_text(lbl_ket_state, tr("Offline - OpenTherm communicatiefout", "Offline - OpenTherm comm error"));
-    lv_label_set_text(lbl_ket_sub,
-        tr("Bedrade OpenTherm-adapter (/dev/ttymxc0) - koppelen niet nodig.",
-           "Wired OpenTherm adapter (/dev/ttymxc0) - no pairing needed."));
+
+    /* Boiler serial capture (#64): its status replaces the subtitle while it
+     * runs or has a log, so the user sees it is recording and where the log is. */
+    ketellog_status_t kl;
+    ketellog_get_status(&kl);
+    if (btn_ketlog) {
+        if (kl.available) lv_obj_clear_flag(btn_ketlog, LV_OBJ_FLAG_HIDDEN);
+        else              lv_obj_add_flag(btn_ketlog, LV_OBJ_FLAG_HIDDEN);
+        if (lbl_ketlog)
+            lv_label_set_text(lbl_ketlog, kl.active || kl.starting ? tr("Ketel-log stop", "Stop boiler log")
+                                                                   : tr("Ketel-log", "Boiler log"));
+    }
+    if (kl.available && kl.starting) {
+        lv_label_set_text(lbl_ket_sub, tr("Ketel-log starten (happ_thermstat herstart, max. 1 minuut)...",
+                                          "Starting boiler log (happ_thermstat restarts, up to 1 minute)..."));
+    } else if (kl.available && kl.active) {
+        lv_label_set_text_fmt(lbl_ket_sub,
+            tr("Ketel-log loopt nog %ld min (%ld kB), ook na wisselen naar de Eneco-software. "
+               "Ophalen: http://<ip-van-de-toon>/freetoon-ketellog.txt",
+               "Boiler log running, %ld min left (%ld kB), also after switching to the stock UI. "
+               "Fetch: http://<toon-ip>/freetoon-ketellog.txt"),
+            kl.minutes_left, kl.log_bytes / 1024);
+    } else if (kl.available && kl.result[0] && strncmp(kl.result, "OK", 2) != 0
+               && strcmp(kl.result, "stopped") != 0) {
+        lv_label_set_text_fmt(lbl_ket_sub, tr("Ketel-log: %s", "Boiler log: %s"), kl.result);
+    } else if (kl.available && kl.log_bytes > 0) {
+        lv_label_set_text_fmt(lbl_ket_sub,
+            tr("Ketel-log klaar (%ld kB): http://<ip-van-de-toon>/freetoon-ketellog.txt",
+               "Boiler log ready (%ld kB): http://<toon-ip>/freetoon-ketellog.txt"),
+            kl.log_bytes / 1024);
+    } else {
+        lv_label_set_text(lbl_ket_sub,
+            tr("Bedrade OpenTherm-adapter (/dev/ttymxc0) - koppelen niet nodig.",
+               "Wired OpenTherm adapter (/dev/ttymxc0) - no pairing needed."));
+    }
 }
 
 /* ===================================================================== */
@@ -129,6 +164,16 @@ static void on_ket_test(lv_event_t * e) {
     (void)e;
     boxtalk_request_boiler_refresh();
     lv_label_set_text(lbl_ket_sub, tr("Ketel opnieuw opvragen (happ_thermstat)...", "Re-querying boiler (happ_thermstat)..."));
+}
+
+/* Boiler serial capture (#64): start 60 min, or stop a running one. */
+static void on_ketlog(lv_event_t * e) {
+    (void)e;
+    ketellog_status_t kl;
+    ketellog_get_status(&kl);
+    if (kl.active || kl.starting) ketellog_stop();
+    else                          ketellog_start(60);
+    update_ket_labels();
 }
 
 /* --- manage: add / configure / remove meter adapters (screen_meteradapters.c) */
@@ -294,6 +339,8 @@ lv_obj_t * screen_adapters_create(void) {
     mk_btn(kcard, tr("Test", "Test"), 0x2a4060, on_ket_test, NULL);
     lv_obj_t * ket_test = lv_obj_get_child(kcard, lv_obj_get_child_cnt(kcard) - 1);
     lv_obj_align(ket_test, LV_ALIGN_TOP_RIGHT, 0, 0);
+    btn_ketlog = mk_btn(kcard, tr("Ketel-log", "Boiler log"), 0x2a4060, on_ketlog, &lbl_ketlog);
+    lv_obj_align(btn_ketlog, LV_ALIGN_TOP_RIGHT, 0, SY(64));
 
     update_meter_labels();
     update_ket_labels();

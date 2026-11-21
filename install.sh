@@ -124,6 +124,12 @@ resolve_artefacts() {
     TOONVNC_SH="$(pick "${TOONVNC_SH:-}"           "$DL_DIR/toonvnc.sh"             "$HERE/toonvnc.sh"             "$HERE/scripts/toonvnc.sh")"
     OT_MODE_SH="$(pick "${OT_MODE_SH:-}"           "$DL_DIR/ot_mode_switch.sh"      "$HERE/ot_mode_switch.sh"      "$HERE/scripts/ot_mode_switch.sh")"
     DIAG_SH="$(pick "${DIAG_SH:-}"                 "$DL_DIR/freetoon_diag.sh"       "$HERE/freetoon_diag.sh"       "$HERE/scripts/freetoon_diag.sh")"
+    KETELLOG_SH="$(pick "${KETELLOG_SH:-}"         "$DL_DIR/ketellog.sh"            "$HERE/ketellog.sh"            "$HERE/scripts/ketellog.sh")"
+    # Boiler serial tap (#64): Toon 2 only for now (Toon 1 build untested).
+    TTYSNIFF_LIB=""
+    if [ "$IS_TOON1" != 1 ]; then
+        TTYSNIFF_LIB="$(pick "${TTYSNIFF_LIB:-}" "$DL_DIR/libttysniff.so" "$(find_cand libttysniff.so "$HERE/libttysniff.so" "$HERE/ttysniff/libttysniff.so")")"
+    fi
 
     PWA_DIR="${PWA_DIR:-}"
     if [ -z "$PWA_DIR" ]; then
@@ -209,7 +215,7 @@ download_artefacts() {
     # binary. main only as a last resort, logged.
     RAW_TAG="https://raw.githubusercontent.com/$REPO/$TAG"
     RAW_MAIN="https://raw.githubusercontent.com/$REPO/main"
-    for s in inittab_edit.sh ui_launcher.sh companion_gate.sh ot_mode_switch.sh toonvnc.sh integrations-install.sh freetoon_diag.sh; do
+    for s in inittab_edit.sh ui_launcher.sh companion_gate.sh ot_mode_switch.sh toonvnc.sh integrations-install.sh freetoon_diag.sh ketellog.sh; do
         if [ "$FORCE_DOWNLOAD" = 1 ] || { [ ! -f "$HERE/scripts/$s" ] && [ ! -f "$HERE/$s" ] && [ ! -f "/mnt/data/$s" ]; }; then
             say "Fetching $s ($TAG)..."
             if fetch "$RAW_TAG/scripts/$s" "$DL_DIR/$s" 64 sh 30 \
@@ -250,6 +256,14 @@ download_artefacts() {
         say "Fetching $P1_ASSET..."
         if fetch "$BASE/$P1_ASSET" "$DL_DIR/p1bridge" 10000 elf 60; then
             chmod +x "$DL_DIR/p1bridge" && P1_BRIDGE_BIN="$DL_DIR/p1bridge"
+        fi
+    fi
+
+    # Boiler serial tap for support (#64), Toon 2 only.
+    if [ "$IS_TOON1" != 1 ] && has_asset "libttysniff.so"; then
+        say "Fetching libttysniff.so..."
+        if fetch "$BASE/libttysniff.so" "$DL_DIR/libttysniff.so" 1000 elf 60; then
+            TTYSNIFF_LIB="$DL_DIR/libttysniff.so"
         fi
     fi
 
@@ -502,6 +516,8 @@ do_install() {
     install_file "$TOONVNC_SH"      /mnt/data/toonvnc.sh
     install_file "$OT_MODE_SH"      /mnt/data/ot_mode_switch.sh
     install_file "$DIAG_SH"         /mnt/data/freetoon_diag.sh   # optional: absent in tags before it
+    install_file "$KETELLOG_SH"     /mnt/data/ketellog.sh        # optional (#64)
+    install_file "$TTYSNIFF_LIB"    /mnt/data/libttysniff.so     # optional, Toon 2 (#64)
     install_file "$FBVNC_INPUT"     /mnt/data/fbvnc_input
     if [ -n "$WASTEFETCH_BIN" ] && [ -e "$WASTEFETCH_BIN" ]; then
         install_file "$WASTEFETCH_BIN" /mnt/data/wastefetch
@@ -728,6 +744,9 @@ do_uninstall() {
     # Diagnostics loop (started by ui_launcher.sh, also under the stock UI) and
     # its port-80 symlink + RAM report.
     remote "[ -f /var/volatile/tmp/freetoon_diag.pid ] && kill \$(cat /var/volatile/tmp/freetoon_diag.pid) 2>/dev/null; rm -f /var/volatile/tmp/freetoon_diag.pid /var/volatile/tmp/freetoon-diag.txt /qmf/www/freetoon-diag.txt /mnt/data/freetoon_diag.sh; true"
+    # Boiler serial capture (#64): stop it and drop its HCBv2 hook block
+    # BEFORE the tap is deleted (a happ_thermstat respawn must not look for it).
+    remote "[ -f /mnt/data/ketellog.sh ] && sh /mnt/data/ketellog.sh stop >/dev/null 2>&1; rm -f /qmf/www/freetoon-ketellog.txt /var/volatile/tmp/ketellog.txt /var/volatile/tmp/ketellog.txt.old /mnt/data/ketellog.sh /mnt/data/libttysniff.so; true"
     remote "rm -f /mnt/data/toonui /mnt/data/inittab_edit.sh /mnt/data/ui_launcher.sh /mnt/data/companion_gate.sh /mnt/data/toonvnc.sh /mnt/data/ot_mode_switch.sh /mnt/data/fbvnc_input /mnt/data/ui_choice /mnt/data/toonvnc.plain /mnt/data/toonui.cfg"
     remote "rm -rf /mnt/data/pwa"
     remote "kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true"

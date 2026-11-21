@@ -60,6 +60,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <sys/time.h>
+#include "ketellog.h"
 
 #define PWA_PORT  10081
 #define PWA_ROOT  "/mnt/data/pwa"
@@ -1948,6 +1949,9 @@ static int path_is_public(const char * path) {
     if (!strcmp(path, "/logout"))        return 1;
     if (!strcmp(path, "/logs") || !strcmp(path, "/logs/") || !strcmp(path, "/api/logs")) return 1;
     if (!strcmp(path, "/diag") || !strcmp(path, "/diag?view")) return 1;   /* no secrets in it */
+    /* Boiler serial log (#64): frames + thermostat values only; port 80
+     * serves the same file without login anyway. */
+    if (!strcmp(path, "/ketellog") || !strcmp(path, "/ketellog?view")) return 1;
     if (!strcmp(path, "/log") || !strcmp(path, "/api/log") || !strncmp(path, "/log?", 5) || !strncmp(path, "/api/log?", 9) || !strncmp(path, "/log/", 5) || !strncmp(path, "/api/log/", 9)) return 1;
     if (!strncmp(path, "/api/v1/marketplace/", 20)) return 1;
     return 0;
@@ -2414,6 +2418,37 @@ static int handle_diag_get(int fd, int inline_view) {
     return 0;
 }
 
+/* /ketellog: the boiler serial capture (#64) as a view or a download. */
+static int handle_ketellog_get(int fd, int inline_view) {
+    FILE * f = fopen(KETELLOG_LOG, "r");
+    if (!f) return send_status(fd, 404, "Not Found", "no boiler log yet (start one first)\n");
+    struct stat st;
+    long sz = (fstat(fileno(f), &st) == 0) ? (long)st.st_size : 0;
+    char fname[64];
+    time_t now = time(NULL);
+    struct tm tm;
+    localtime_r(&now, &tm);
+    strftime(fname, sizeof fname, "freetoon-ketellog-%Y%m%d-%H%M.txt", &tm);
+    /* No Content-Length: the tap may still append while we send. */
+    char hdr[384];
+    int hn = snprintf(hdr, sizeof(hdr),
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: text/plain; charset=utf-8\r\n"
+        "Content-Disposition: %s; filename=\"%s\"\r\n"
+        "Cache-Control: no-cache\r\n"
+        "Connection: close\r\n\r\n", inline_view ? "inline" : "attachment", fname);
+    if (sock_send_all(fd, hdr, hn) < 0) { fclose(f); return -1; }
+    char buf[4096];
+    size_t rd;
+    long sent = 0;
+    while (sent < sz && (rd = fread(buf, 1, sizeof(buf), f)) > 0) {
+        if (sock_send_all(fd, buf, rd) < 0) break;
+        sent += (long)rd;
+    }
+    fclose(f);
+    return 0;
+}
+
 static int handle_logs_index_get(int fd) {
     const char * files[] = {
         "toonui.log",
@@ -2423,7 +2458,7 @@ static int handle_logs_index_get(int fd) {
     };
     int nfiles = sizeof(files) / sizeof(files[0]);
 
-    char body[8192];   /* 4 KB was nearly full before the diagnose block */
+    char body[12288];  /* 4 KB was nearly full before the diagnose block; + ketel-log block */
     int pos = snprintf(body, sizeof(body),
         "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
@@ -2476,7 +2511,40 @@ static int handle_logs_index_get(int fd) {
         "(elke minuut ververst).</p>"
         "<ul><li><div><span class=\"fname\">freetoon-diag.txt</span></div>"
         "<div class=\"actions\"><a class=\"btn btn-sec\" href=\"/diag?view\" target=\"_blank\">Bekijken</a>"
-        "<a class=\"btn\" href=\"/diag\" download>Download</a></div></li></ul>"
+        "<a class=\"btn\" href=\"/diag\" download>Download</a></div></li></ul>");
+
+    /* Boiler serial capture (#64): only where the tap is installed. */
+    ketellog_status_t kl;
+    ketellog_get_status(&kl);
+    if (kl.available) {
+        char state[200];
+        if (kl.starting)
+            snprintf(state, sizeof state, "Bezig met starten (happ_thermstat herstart, max. 1 minuut)...");
+        else if (kl.active)
+            snprintf(state, sizeof state, "Loopt nog %ld min, %ld kB.", kl.minutes_left, kl.log_bytes / 1024);
+        else if (kl.result[0] && strncmp(kl.result, "OK", 2) && strcmp(kl.result, "stopped"))
+            snprintf(state, sizeof state, "Fout: %s", kl.result);   /* script text, no user input */
+        else if (kl.log_bytes > 0)
+            snprintf(state, sizeof state, "Gestopt, log %ld kB.", kl.log_bytes / 1024);
+        else
+            snprintf(state, sizeof state, "Uit.");
+        pos += snprintf(body + pos, sizeof(body) - pos,
+            "<p style=\"margin-top:20px\">Ketel-log voor support: legt 60 minuten vast wat de thermostaat "
+            "via de seri&euml;le lijn met de ketelmodule uitwisselt, ook na wisselen naar de Eneco-software "
+            "(ophalen: <span style=\"font-family:monospace\">http://&lt;ip-van-de-toon&gt;/freetoon-ketellog.txt</span>). "
+            "Starten herstart happ_thermstat even.<br><b>%s</b></p>"
+            "<ul><li><div><span class=\"fname\">freetoon-ketellog.txt</span></div>"
+            "<div class=\"actions\">"
+            "<form method=\"post\" action=\"/ketellog/%s\" style=\"margin:0\">"
+            "<button class=\"btn btn-sec\" style=\"border:0;cursor:pointer\">%s</button></form>"
+            "%s</div></li></ul>",
+            state, (kl.active || kl.starting) ? "stop" : "start",
+            (kl.active || kl.starting) ? "Stoppen" : "Starten (60 min)",
+            kl.log_bytes > 0 ? "<a class=\"btn btn-sec\" href=\"/ketellog?view\" target=\"_blank\">Bekijken</a>"
+                               "<a class=\"btn\" href=\"/ketellog\" download>Download</a>" : "");
+    }
+
+    pos += snprintf(body + pos, sizeof(body) - pos,
         "<p style=\"margin-top:20px;text-align:center\"><a href=\"/\" class=\"btn btn-sec\">&larr; Terug naar Toon</a></p>"
         "</div></body></html>");
 
@@ -2553,6 +2621,8 @@ static int dispatch(int fd, char * req) {
             return handle_log_get(fd, path);
         if (!strcmp(path, "/diag") || !strcmp(path, "/diag?view"))
             return handle_diag_get(fd, path[5] == '?');
+        if (!strcmp(path, "/ketellog") || !strcmp(path, "/ketellog?view"))
+            return handle_ketellog_get(fd, path[9] == '?');
         if (!strcmp(path, "/") || !strcmp(path, "/index.html") || !strncmp(path, "/?", 2))
             return handle_remote_page(fd);
         return serve_static(fd, path);
@@ -2579,6 +2649,10 @@ static int dispatch(int fd, char * req) {
         if (!strcmp(path, "/api/install"))  return handle_install_post(fd, body, 0);
         if (!strcmp(path, "/api/uninstall")) return handle_install_post(fd, body, 1);
         if (!strcmp(path, "/api/vent"))     return handle_vent_post(fd, body);
+        /* Boiler serial capture (#64), from the /logs page. Not public: it
+         * restarts happ_thermstat. */
+        if (!strcmp(path, "/ketellog/start")) { ketellog_start(60); return send_redirect(fd, "/logs", NULL); }
+        if (!strcmp(path, "/ketellog/stop"))  { ketellog_stop();    return send_redirect(fd, "/logs", NULL); }
         /* POST /api/v1/marketplace/apps/<id>/state */
         if (!strncmp(path, "/api/v1/marketplace/apps/", 25)) {
             const char * tail = path + 25;
