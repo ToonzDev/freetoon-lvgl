@@ -662,10 +662,10 @@ static void poll_stock_master(void) {
             if (parse_json_float(buf, "boilerPressure", &fval) || parse_json_float(buf, "chPressure", &fval)) {
                 if (fval > 0.05f) client_set_water_pressure(fval);
             }
-            if (parse_json_float(buf, "boilerOutTemp", &fval) || parse_json_float(buf, "currentBoilerTemperature", &fval)) {
+            if (parse_json_float(buf, "boilerOutTemp", &fval) || parse_json_float(buf, "currentBoilerTemperature", &fval) || parse_json_float(buf, "boilerTemp", &fval)) {
                 if (fval > 0.0f) toon_state.boiler_out_temp = (fval > 150.0f) ? fval / 100.0f : fval;
             }
-            if (parse_json_float(buf, "boilerInTemp", &fval) || parse_json_float(buf, "currentBoilerReturnTemperature", &fval)) {
+            if (parse_json_float(buf, "boilerInTemp", &fval) || parse_json_float(buf, "currentBoilerReturnTemperature", &fval) || parse_json_float(buf, "boilerRetTemp", &fval)) {
                 if (fval > 0.0f) toon_state.boiler_in_temp = (fval > 150.0f) ? fval / 100.0f : fval;
             }
 
@@ -719,9 +719,10 @@ static void poll_stock_master(void) {
             }
         }
 
-        /* 3. Gas, Pressure & Boiler Temps from hcb_rrd every ~60 seconds */
+        /* 3. Gas, Pressure & Boiler Temps from hcb_rrd every ~60 seconds (or ~15s while missing) */
         rrd_counter++;
-        if (rrd_counter >= 20) {
+        int boiler_missing = (toon_state.boiler_out_temp <= 0.0f || toon_state.boiler_in_temp <= 0.0f);
+        if (rrd_counter >= (boiler_missing ? 5 : 20)) {
             rrd_counter = 0;
             time_t now_ts = time(NULL);
             struct tm ltm;
@@ -792,30 +793,45 @@ static void poll_stock_master(void) {
             }
 
             /* Boiler outgoing (flow) temperature from hcb_rrd */
-            static const char * flow_loggers[] = { "ch_temp", "boiler_temp", "ch_flow_temp", "boiler_out_temp" };
+            static const struct { const char * name; const char * rra; } flow_sources[] = {
+                { "thermstat_boilerTemp", "30days" },
+                { "thermstat_boilerTemp", "5min" },
+                { "ch_temp",              "5min" },
+                { "boiler_temp",          "5min" },
+                { "ch_flow_temp",         "5min" },
+                { "boiler_out_temp",      "5min" }
+            };
             static int flow_idx = 0;
-            get_stock_url(url, sizeof url, "hcb_rrd?action=getRrdData&loggerName=%s&rra=5min&samples=1",
-                     flow_loggers[flow_idx]);
+            int n_flow = (int)(sizeof(flow_sources) / sizeof(flow_sources[0]));
+            get_stock_url(url, sizeof url, "hcb_rrd?action=getRrdData&loggerName=%s&rra=%s&samples=1",
+                     flow_sources[flow_idx].name, flow_sources[flow_idx].rra);
             if (http_fetch_to(url, buf, sizeof buf, 2) == 0) {
                 float tf = 0.0f;
                 if (parse_rrd_val(buf, &tf) && tf > 0.0f) {
                     toon_state.boiler_out_temp = (tf > 150.0f) ? tf / 100.0f : tf;
                 } else {
-                    flow_idx = (flow_idx + 1) % 4;
+                    flow_idx = (flow_idx + 1) % n_flow;
                 }
             }
 
             /* Boiler incoming (return) temperature from hcb_rrd */
-            static const char * ret_loggers[] = { "ch_return_temp", "boiler_return_temp", "boiler_in_temp" };
+            static const struct { const char * name; const char * rra; } ret_sources[] = {
+                { "thermstat_boilerRetTemp", "30days" },
+                { "thermstat_boilerRetTemp", "5min" },
+                { "ch_return_temp",          "5min" },
+                { "boiler_return_temp",      "5min" },
+                { "boiler_in_temp",          "5min" }
+            };
             static int ret_idx = 0;
-            get_stock_url(url, sizeof url, "hcb_rrd?action=getRrdData&loggerName=%s&rra=5min&samples=1",
-                     ret_loggers[ret_idx]);
+            int n_ret = (int)(sizeof(ret_sources) / sizeof(ret_sources[0]));
+            get_stock_url(url, sizeof url, "hcb_rrd?action=getRrdData&loggerName=%s&rra=%s&samples=1",
+                     ret_sources[ret_idx].name, ret_sources[ret_idx].rra);
             if (http_fetch_to(url, buf, sizeof buf, 2) == 0) {
                 float tr = 0.0f;
                 if (parse_rrd_val(buf, &tr) && tr > 0.0f) {
                     toon_state.boiler_in_temp = (tr > 150.0f) ? tr / 100.0f : tr;
                 } else {
-                    ret_idx = (ret_idx + 1) % 3;
+                    ret_idx = (ret_idx + 1) % n_ret;
                 }
             }
         }

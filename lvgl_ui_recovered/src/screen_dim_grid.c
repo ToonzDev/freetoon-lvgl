@@ -392,7 +392,8 @@ static void dim_climate_update(void) {
 static lv_obj_t * dim_bo_flow = NULL, * dim_bo_ret = NULL, * dim_bo_pres = NULL;
 static void dim_boiler_update(void) {
     if (!dim_bo_flow) return;
-    float fl = toon_state.boiler_out_temp, rt = toon_state.boiler_in_temp;
+    float fl = toon_state.boiler_out_temp > 0.5f ? toon_state.boiler_out_temp : toon_state.boiler_temp;
+    float rt = toon_state.boiler_in_temp;
     float p  = toon_state.water_pressure;
     if (fl > 0.5f) ui_label_set_text_fmt(dim_bo_flow, "%.1f°", fl);
     else           ui_label_set_text(dim_bo_flow, "--");
