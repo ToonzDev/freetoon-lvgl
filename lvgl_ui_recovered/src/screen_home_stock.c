@@ -12,6 +12,7 @@
  * are Open Sans (fonts_opensans.h).
  */
 #include "screens.h"
+#include "ui_lazy.h"
 #include "i18n.h"
 #include "display.h"
 #include "fonts_opensans.h"
@@ -104,7 +105,10 @@ static lv_obj_t * tv = NULL;
 static lv_obj_t * pages[N_PAGES];
 static lv_obj_t * dots[N_PAGES];
 static slot_t     slots[N_SLOTS];
-static lv_obj_t * lbl_setpoint, * lbl_setpoint_lo, * lbl_prog;
+static lv_obj_t * lbl_setpoint, * lbl_setpoint_lo, * lbl_prog, * sw_prog;
+/* Thin button outline: SX(1) rounds to 0 on the 800 px Toon 1, which left the
+ * scene and +/- buttons without any outline there. */
+#define BORDER_THIN (SX(1) > 0 ? SX(1) : 1)
 static lv_obj_t * scene_btn[4], * scene_lbl[4];
 static lv_timer_t * refresh_timer = NULL;
 static lv_point_t   g_press_pt;
@@ -908,10 +912,22 @@ static void refresh_cb(lv_timer_t * t) {
     snprintf(lo,  sizeof lo,  "%.1f°", lo_v);  comma(lo);  lv_label_set_text(lbl_setpoint_lo, lo);
     int manual = (toon_state.program_state == 0);
     lv_label_set_text(lbl_prog, manual ? tr("Programma uit", "Program off") : tr("Programma aan", "Program on"));
+    /* The switch was never synced: it always started off, also next to
+     * "Programma aan". Setting the state doesn't fire VALUE_CHANGED, so this
+     * can't loop back into on_prog_toggle; only touched when it differs. */
+    if (sw_prog && lv_obj_has_state(sw_prog, LV_STATE_CHECKED) != !manual) {
+        if (manual) lv_obj_clear_state(sw_prog, LV_STATE_CHECKED);
+        else        lv_obj_add_state(sw_prog, LV_STATE_CHECKED);
+    }
+    /* Selected programme: accent text, grey fill and a thick accent border
+     * (user request: the fill + text colour alone were hard to see). Lazy
+     * setters: this runs every second and must not redraw the buttons. */
     for (int i = 0; i < 4; i++) {
         int active = (!manual && toon_state.active_state == scene_state[i]);
-        lv_obj_set_style_text_color(scene_lbl[i], lv_color_hex(active ? C_ACCENT : C_TITLE), 0);
-        lv_obj_set_style_bg_color(scene_btn[i], lv_color_hex(active ? C_HEADER : C_CARD), 0);
+        ui_obj_set_style_text_color(scene_lbl[i], lv_color_hex(active ? C_ACCENT : C_TITLE), 0);
+        ui_obj_set_style_bg_color(scene_btn[i], lv_color_hex(active ? C_HEADER : C_CARD), 0);
+        ui_obj_set_style_border_color(scene_btn[i], lv_color_hex(active ? C_ACCENT : 0xE0E0E0), 0);
+        ui_obj_set_style_border_width(scene_btn[i], active ? SX(3) : BORDER_THIN, 0);
     }
 }
 
@@ -1013,7 +1029,7 @@ lv_obj_t * screen_home_stock_create(void) {
     lv_obj_set_style_bg_color(bplus, lv_color_hex(C_CARD), 0);
     lv_obj_set_style_shadow_width(bplus, 0, 0);
     lv_obj_set_style_border_color(bplus, lv_color_hex(0xE0E0E0), 0);
-    lv_obj_set_style_border_width(bplus, SX(1), 0);
+    lv_obj_set_style_border_width(bplus, BORDER_THIN, 0);
     lv_obj_add_event_cb(bplus, on_sp_up, LV_EVENT_CLICKED, NULL);
     lv_obj_t * pl = mklabel(bplus, "+", OSL(40), C_TITLE); lv_obj_center(pl);
     lv_obj_t * bminus = lv_btn_create(panel);
@@ -1022,13 +1038,13 @@ lv_obj_t * screen_home_stock_create(void) {
     lv_obj_set_style_bg_color(bminus, lv_color_hex(C_CARD), 0);
     lv_obj_set_style_shadow_width(bminus, 0, 0);
     lv_obj_set_style_border_color(bminus, lv_color_hex(0xE0E0E0), 0);
-    lv_obj_set_style_border_width(bminus, SX(1), 0);
+    lv_obj_set_style_border_width(bminus, BORDER_THIN, 0);
     lv_obj_add_event_cb(bminus, on_sp_down, LV_EVENT_CLICKED, NULL);
     lv_obj_t * ml = mklabel(bminus, "-", OSL(40), C_TITLE); lv_obj_center(ml);
 
     lbl_prog = mklabel(panel, tr("Programma uit", "Program off"), OSR(15), C_TITLE);
     lv_obj_set_pos(lbl_prog, SX(20), SY(214));
-    lv_obj_t * sw = lv_switch_create(panel);
+    lv_obj_t * sw = sw_prog = lv_switch_create(panel);
     lv_obj_set_size(sw, SX(56), SY(28));
     lv_obj_set_pos(sw, SX(SP_W - 76), SY(210));
     lv_obj_set_style_bg_color(sw, lv_color_hex(C_ACCENT), LV_PART_INDICATOR | LV_STATE_CHECKED);
@@ -1044,7 +1060,7 @@ lv_obj_t * screen_home_stock_create(void) {
         lv_obj_set_style_bg_color(scene_btn[i], lv_color_hex(C_CARD), 0);
         lv_obj_set_style_shadow_width(scene_btn[i], 0, 0);
         lv_obj_set_style_border_color(scene_btn[i], lv_color_hex(0xE0E0E0), 0);
-        lv_obj_set_style_border_width(scene_btn[i], SX(1), 0);
+        lv_obj_set_style_border_width(scene_btn[i], BORDER_THIN, 0);
         lv_obj_set_style_radius(scene_btn[i], SX(3), 0);
         lv_obj_add_event_cb(scene_btn[i], on_scene, LV_EVENT_CLICKED, (void*)(intptr_t)i);
         scene_lbl[i] = mklabel(scene_btn[i], names[i], OSR(20), C_TITLE);
