@@ -277,7 +277,9 @@ static lv_obj_t * mk_card(int y, const char * title, const char * kind,
     lv_obj_t * sub = lv_label_create(card);
     lv_obj_set_style_text_font(sub, SF(14), 0);
     lv_obj_set_style_text_color(sub, lv_color_hex(COL_TEXT_DIM), 0);
-    lv_obj_set_width(sub, DISP_HOR - 280);
+    /* Stay left of the button column (buttons SX(220) wide, right-aligned at
+     * y 0 and SY(64)): card width - 2x16 padding - button - gap. */
+    lv_obj_set_width(sub, (DISP_HOR - 44) - 32 - SX(220) - SX(16));
     lv_label_set_long_mode(sub, LV_LABEL_LONG_WRAP);
     lv_label_set_text(sub, "");
     lv_obj_align(sub, LV_ALIGN_TOP_LEFT, 0, SY(104));
