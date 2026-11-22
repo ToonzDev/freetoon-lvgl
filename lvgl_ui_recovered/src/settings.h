@@ -404,6 +404,10 @@ typedef struct {
      * in /mnt/data/homey.key (0600), not here. */
     int  enable_homey;
     char homey_host[64];      /* "ip[:port]" or http(s)://... */
+    /* Homey devices pinned to the Verlichting home tile (device ids, "" =
+     * free); pinned on the Homey screen. */
+    char homey_pin1[40];
+    char homey_pin2[40];
 } settings_t;
 
 #define FORECAST_AUTO   0

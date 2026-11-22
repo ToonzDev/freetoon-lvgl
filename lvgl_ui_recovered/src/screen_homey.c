@@ -46,6 +46,7 @@ typedef struct {
     lv_obj_t * btn;
     lv_obj_t * btn_lbl;
     lv_obj_t * sl;
+    lv_obj_t * pin;                  /* "on the Verlichting home tile" toggle */
 } hrow_t;
 
 static lv_obj_t   * scr_root = NULL;
@@ -132,6 +133,25 @@ static void on_open (lv_event_t * e) { cover(e, "up"); }
 static void on_stop (lv_event_t * e) { cover(e, "idle"); }
 static void on_close(lv_event_t * e) { cover(e, "down"); }
 
+/* Pins for the Verlichting home tile: two slots (settings.homey_pin1/2).
+ * Pinning a third device drops the oldest pin. */
+static int is_pinned(const char * id) {
+    return !strcmp(settings.homey_pin1, id) || !strcmp(settings.homey_pin2, id);
+}
+static void on_pin(lv_event_t * e) {
+    hrow_t * r = ev_row(e);
+    if (!r) return;
+    char * p1 = settings.homey_pin1, * p2 = settings.homey_pin2;
+    if (!strcmp(p1, r->id))      { snprintf(p1, sizeof settings.homey_pin1, "%s", p2); p2[0] = 0; }
+    else if (!strcmp(p2, r->id)) { p2[0] = 0; }
+    else if (!p1[0])             { snprintf(p1, sizeof settings.homey_pin1, "%s", r->id); }
+    else if (!p2[0])             { snprintf(p2, sizeof settings.homey_pin2, "%s", r->id); }
+    else { snprintf(p1, sizeof settings.homey_pin1, "%s", p2);
+           snprintf(p2, sizeof settings.homey_pin2, "%s", r->id); }
+    settings_save();
+    refresh_rows();
+}
+
 static void back_async(void * unused) { (void)unused; ui_pop(); }
 static void on_back(lv_event_t * e) { (void)e; lv_async_call(back_async, NULL); }
 
@@ -189,7 +209,7 @@ static void build_card(int i) {
     lv_obj_set_style_pad_all(c, 8, 0);
     lv_obj_clear_flag(c, LV_OBJ_FLAG_SCROLLABLE);
 
-    int ctl_w = r->cover ? 3 * 52 + 8 : r->toggle ? 64 : r->run ? 84 : 0;
+    int ctl_w = r->cover ? 3 * 52 + 8 : r->toggle ? 64 + 44 : r->run ? 84 : 0;
     lv_obj_t * nm = lv_label_create(c);
     lv_obj_set_width(nm, lv_pct(100));
     lv_label_set_long_mode(nm, LV_LABEL_LONG_DOT);
@@ -216,6 +236,8 @@ static void build_card(int i) {
         r->btn = mk_btn(c, "--", 64, 34, COL_OFF, on_toggle, ri);
         r->btn_lbl = lv_obj_get_child(r->btn, 0);
         lv_obj_align(r->btn, LV_ALIGN_TOP_RIGHT, 0, 0);
+        r->pin = mk_btn(c, LV_SYMBOL_HOME, 38, 34, COL_OFF, on_pin, ri);
+        lv_obj_align(r->pin, LV_ALIGN_TOP_RIGHT, -70, 0);
     } else if (r->run) {
         lv_obj_t * b = mk_btn(c, tr("Start", "Run"), 84, 36, 0x2e5e8a, on_toggle, ri);
         lv_obj_set_style_text_color(lv_obj_get_child(b, 0), lv_color_hex(0xffffff), 0);
@@ -299,6 +321,8 @@ static void refresh_rows(void) {
             ui_label_set_text(r->btn_lbl, on == 1 ? tr("Aan", "On") : on == 0 ? tr("Uit", "Off") : "--");
             ui_obj_set_style_bg_color(r->btn, lv_color_hex(on == 1 ? COL_ON : COL_OFF), 0);
         }
+        if (r->pin)
+            ui_obj_set_style_bg_color(r->pin, lv_color_hex(is_pinned(r->id) ? 0xddaa44 : COL_OFF), 0);   /* Verlichting tile accent */
         if (r->sl && d && !lv_obj_has_state(r->sl, LV_STATE_PRESSED)) {
             if (!d->available) lv_obj_add_state(r->sl, LV_STATE_DISABLED);
             else lv_obj_clear_state(r->sl, LV_STATE_DISABLED);

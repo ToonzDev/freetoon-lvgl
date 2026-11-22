@@ -38,6 +38,7 @@
 #include "app_updates.h"
 #include "efanlamp.h"
 #include "domoticz.h"
+#include "homey.h"
 #include "hue.h"
 #include "templogger.h"
 #include "screen_chart_24h.h"
@@ -1881,23 +1882,31 @@ static int rotate_member_at(int n, char * out, size_t sz) {
 
 /* What button n (0/1) on the Verlichting tile controls.
  *  - Domoticz enabled: the two switches chosen in Settings > Domoticz.
- *  - Home Assistant enabled: lights/switches flagged "Home".
+ *  - Home Assistant enabled: lights/switches flagged "Home", then
+ *  - Homey: devices pinned on the Homey screen (settings.homey_pin1/2).
  *  - Z-Wave plugs/switches: available Z-Wave smart plug switches.
  * Resolved on every use. */
-typedef struct { int kind; int dz_idx; int ha_i; int zw_i; } tile_light_src_t;   /* kind: 0 none, 1 Domoticz, 2 HA, 3 Z-Wave */
+typedef struct { int kind; int dz_idx; int ha_i; int zw_i; char hy[40]; } tile_light_src_t;   /* kind: 0 none, 1 Domoticz, 2 HA, 3 Z-Wave, 4 Homey */
 
 static tile_light_src_t tile_light_src(int n) {
-    tile_light_src_t s = { 0, -1, -1, -1 };
+    tile_light_src_t s = { 0, -1, -1, -1, "" };
     if (settings.enable_domoticz || (settings.client_mode && domoticz_state.count > 0)) {
         int idx = n == 0 ? settings.domoticz_tile_idx1 : settings.domoticz_tile_idx2;
         if (idx >= 0) { s.kind = 1; s.dz_idx = idx; return s; }
     }
+    int seen = 0;
     if (settings.enable_ha) {
-        int seen = 0;
         for (int i = 0; i < ha_device_count; i++) {
             if (!ha_devices[i].pin_home) continue;
             if (ha_devices[i].type != HADEV_LIGHT && ha_devices[i].type != HADEV_SWITCH) continue;
             if (seen++ == n) { s.kind = 2; s.ha_i = i; return s; }
+        }
+    }
+    if (settings.enable_homey) {
+        const char * pins[2] = { settings.homey_pin1, settings.homey_pin2 };
+        for (int k = 0; k < 2; k++) {
+            if (!pins[k][0]) continue;
+            if (seen++ == n) { s.kind = 4; snprintf(s.hy, sizeof s.hy, "%s", pins[k]); return s; }
         }
     }
     /* Fallback / Z-Wave switches: find the n-th active Z-Wave switch */
@@ -1915,6 +1924,18 @@ static void tile_light_toggle(int n) {
     if (s.kind == 1) domoticz_switch_async(s.dz_idx, "Toggle");
     else if (s.kind == 2) ha_device_toggle_async(ha_devices[s.ha_i].type, ha_devices[s.ha_i].entity_id);
     else if (s.kind == 3) zwave_toggle_switch(s.zw_i);
+    else if (s.kind == 4) {
+        int on = -1;
+        homey_lock();
+        for (int i = 0; i < homey_state.ndev; i++)
+            if (!strcmp(homey_state.dev[i].id, s.hy)) {
+                const hy_cap_t * c = hy_dev_cap(&homey_state.dev[i], "onoff");
+                if (c && homey_state.dev[i].available) on = c->num != 0;
+                break;
+            }
+        homey_unlock();
+        if (on >= 0) homey_onoff(s.hy, !on);   /* takes the lock itself */
+    }
 }
 static void on_tile_light_btn1(lv_event_t * e) { (void)e; tile_light_toggle(0); }
 static void on_tile_light_btn2(lv_event_t * e) { (void)e; tile_light_toggle(1); }
@@ -1951,6 +1972,19 @@ static void update_tile_light_btn(lv_obj_t * btn, lv_obj_t * lbl_name, lv_obj_t 
             known = 1; on = (d.state == 1);
             if (lbl_name) ui_label_set_text(lbl_name, d.name[0] ? d.name : d.type);
         }
+    } else if (s.kind == 4) {
+        char name[HY_NAME_LEN] = "Homey";
+        homey_lock();
+        for (int i = 0; i < homey_state.ndev; i++) {
+            const hy_dev_t * d = &homey_state.dev[i];
+            if (strcmp(d->id, s.hy)) continue;
+            snprintf(name, sizeof name, "%s", d->name);
+            const hy_cap_t * c = hy_dev_cap(d, "onoff");
+            if (c && d->available) { known = 1; on = c->num != 0; }
+            break;
+        }
+        homey_unlock();
+        if (lbl_name) ui_label_set_text(lbl_name, name);
     }
     if (lbl_st) ui_label_set_text(lbl_st, !known ? "--" : on ? tr("AAN", "ON") : tr("UIT", "OFF"));
     ui_obj_set_style_bg_color(btn, lv_color_hex(settings.home_light_mode ? 0xedf2f7 : 0x1e2838), 0);
