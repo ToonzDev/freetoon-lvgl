@@ -156,6 +156,35 @@
     - Fixed input field overlap with labels on OT Bridge settings modal (Gebruiker en Wachtwoord fields overlapping label text, `screen_settings.c`).
     - Fixed Agenda settings modal layout and theming on Toon 1 (consistent `SY()` coordinate scaling preventing *"Meldingen"* row from covering ICS buttons, and themed calendar feeds list for light/dark mode, `screen_settings.c`).
 
+### 28. Homey Integration (Implemented)
+- **Status**: Done: released in 1.0.17 (2026-11-22) and confirmed working by the requester on his Homey Pro. History: Requester has a Homey Pro (2023) -> local API key route confirmed (2026-11-10). Sample data received 2026-11-21 (devices + flows export, ~130 devices); not stored in the repo because it holds the requester's third-party passwords/API keys in device `settings`. Poller + parser built 2026-11-21 (homey.c, homey_parse.c, synthetic fixtures + `make test-homey`, ASan); real exports only in the git-ignored tests/local/. Control queue + setters built 2026-11-21 (non-blocking, coalesced, optimistic). Settings -> Homey modal built 2026-11-21 (address, masked API key, threaded "Save + test", live status). Web page http://<toon>:10081/homey built 2026-11-21 (behind the web login; key write-only; cross-site POSTs refused; a new address needs the key again so the stored key cannot be redirected). The Toon modal writes only fields edited there and follows web changes live. Devices hub (Apparaten) shows Homey devices by zone (merged with Hue/HA rooms by name) and manual flows, 2026-11-21: on/off (state with dim % or W), covers open/stop/close (up/idle/down, or position 1/0), scene/button + flow Start; locks left out on purpose; hub cap 96 -> 160 rows; names folded to the ASCII fonts (accents -> base letter, emoji dropped). Homey screen (hub chip "Homey", screen_homey.c) 2026-11-22: per zone, dim and position sliders, setpoint -/+ (0.5), sensor values (temp, humidity, power, energy, lux, contact, motion, smoke, water, battery), locks and garage doors read-only (garage doors also left out of the hub). Test against tests/homey_mock.py (synthetic, --bind 0.0.0.0 for a real Toon). Verlichting home tile 2026-11-22: the home button on the Homey screen puts a device on the tile (a third drops the oldest). Tile chooser 2026-11-22: long press on the Verlichting tile opens a list of every switchable light (Domoticz, HA, Homey, Z-Wave) with buttons 1/2; stored as settings tile_light1/2 ("dz:<idx>", "ha:<entity>", "hy:<id>", "zw:<uuid>", "" or "auto" = the old Domoticz T1/T2 + HA Home + Z-Wave rule, fixed on the first change). Domoticz T1/T2, the HA Home flag and the Homey home button write the same two slots (tile_lights.c). Remote page (:10081) Lampen card 2026-11-22: Homey on/off devices (state "hy_devs", max 40, pins first; POST /api/homey/toggle only for listed switchable ids). Locks and garage doors are refused in the setters themselves (homey_read_only), not just hidden in the UI.
+- **Findings from the sample (2026-11-21)**:
+  - Devices: object keyed by id; per device `name`, `zone` (uuid only: names need `GET manager/zones/zone/`), `class`, `virtualClass`, `capabilities[]`, `capabilitiesObj{cap:{value,units,setable,getable,min,max,decimals,values[]}}`, `available`, `ready`, `unavailableMessage`.
+  - Classify by `virtualClass` first: many lights are `class:"socket"` + `virtualClass:"light"` (KaKu, Fibaro, Zigbee strips); also `virtualClass` fan / coffeemachine.
+  - Unavailable devices (`available:false`, "App Unavailable" / Tuya "subscription expired") come with `capabilitiesObj:{}` and `settingsObj:null`: show greyed or skip, never crash on missing objects.
+  - Controls seen: `onoff`, `dim` (0..1), `light_temperature`/`light_hue`/`light_saturation` (0..1), `windowcoverings_state` enum up/idle/down (Somfy RTS + group devices, no position), `windowcoverings_set` 0..1 (curtain/Tuya blind), `play_scene` and `button` (momentary, `getable:false`), `locked` (Nuki), `target_temperature`.
+  - Sensors worth tiles: `measure_temperature`, `measure_humidity`, `measure_power`, `meter_power`, `alarm_contact`, `alarm_motion`, `measure_battery`/`alarm_battery`.
+  - 433 MHz devices (KaKu, Somfy) report assumed state only; remotes have `capabilities:[]` (skip).
+  - The requester's Homey also controls this Toon via the "Toon Water" app (`nl.toonwater.toonwater`, thermostat + water meter, polls the Toon's local IP; flows set `temperature_state` home/sleep and mirror `target_temperature` to an airco). Hide that device from FreeToon's Homey list (it is the Toon itself), and keep the stock local endpoints it uses working.
+  - Flows export holds only standard flows (`manager/flow/flow/`); advanced flows referenced by other flows need `manager/flow/advancedflow/`. Good trigger candidates: flows with `trigger.id == "homey:manager:flow:programmatic_trigger"`. The "Start a flow" ACTION card uses the same id, so advanced flows must check the card type too.
+  - Payload is large (full device list several hundred kB): stream/parse into a compact table, keep only id/name/zone/class/caps/values; never keep `settings`.
+- **Description**:
+  - Add Athom Homey as a smart-home source next to Home Assistant and Domoticz: show and switch Homey devices (lights, plugs, blinds) and read sensors on FreeToon tiles.
+- **Decisions (2026-11-10)**:
+  - Built into toonui (like Domoticz/HA), not a Marketplace app: Settings -> Homey (IP + API key), devices on the Lights screen, home tile switches.
+  - First version: switch lights/plugs (on/off + dim), blinds/covers (open/close/position), sensor values on tiles, trigger Flows.
+  - Target the Homey Pro (2023) local Web API with an API key. Older Homey Pro / Homey Bridge need Athom cloud OAuth — only if the requester has one of those.
+- **API plan (Homey Pro 2023, local)**: `Authorization: Bearer <API key>` against `http://<homey>/api/`:
+  - devices: `GET manager/devices/device/` (class, capabilities, capabilitiesObj values/units, zone); control: `PUT manager/devices/device/<id>/capability/<cap>` `{"value": ...}` (onoff, dim 0..1, windowcoverings_state / windowcoverings_set).
+  - flows: `GET manager/flow/flow/` + `manager/flow/advancedflow/`; trigger: `POST .../<id>/trigger`.
+  - zones for grouping: `GET manager/zones/zone/`. Poll (~5 s); Homey's realtime API is socket.io, not worth it for v1.
+  - API key scopes needed: device read + control, flow start.
+  - Build/test against real JSON from the requester first (device list can be large; parser must be robust).
+- **Investigation Points**:
+  - **API**: Homey Pro exposes a local Web API (`http://<homey>/api/...`, bearer token / API key from the Homey developer tools); Homey Bridge/cloud-only setups need the cloud API. Decide which to support first.
+  - **Reuse**: Follow the Domoticz/HA pattern (`domoticz.c`, `homeassistant.c`): poller thread, device list picker, tile binding. TLS-verified fetches (Toon CA bundle is kept current via tsc).
+  - **Events**: Check whether Homey can push state changes (websocket / Flow webhook to the PWA server) instead of polling.
+
 ---
 
 ## Open / Backlog
@@ -334,35 +363,6 @@
   - **Quby Bridge & Afvalwijzer Optimalisaties**:
     - Logging reductie en automatische rotatie voor `quby-bridge` om tmpfs opslagruimte te besparen.
     - Standaard afvalwijzer provider ingesteld op *Overige gemeentes* voor verbeterde directe werking.
-
-### 28. Homey Integration
-- **Status**: Requester has a Homey Pro (2023) -> local API key route confirmed (2026-11-10). Sample data received 2026-11-21 (devices + flows export, ~130 devices); not stored in the repo because it holds the requester's third-party passwords/API keys in device `settings`. Poller + parser built 2026-11-21 (homey.c, homey_parse.c, synthetic fixtures + `make test-homey`, ASan); real exports only in the git-ignored tests/local/. Control queue + setters built 2026-11-21 (non-blocking, coalesced, optimistic). Settings -> Homey modal built 2026-11-21 (address, masked API key, threaded "Save + test", live status). Web page http://<toon>:10081/homey built 2026-11-21 (behind the web login; key write-only; cross-site POSTs refused; a new address needs the key again so the stored key cannot be redirected). The Toon modal writes only fields edited there and follows web changes live. Devices hub (Apparaten) shows Homey devices by zone (merged with Hue/HA rooms by name) and manual flows, 2026-11-21: on/off (state with dim % or W), covers open/stop/close (up/idle/down, or position 1/0), scene/button + flow Start; locks left out on purpose; hub cap 96 -> 160 rows; names folded to the ASCII fonts (accents -> base letter, emoji dropped). Homey screen (hub chip "Homey", screen_homey.c) 2026-11-22: per zone, dim and position sliders, setpoint -/+ (0.5), sensor values (temp, humidity, power, energy, lux, contact, motion, smoke, water, battery), locks and garage doors read-only (garage doors also left out of the hub). Test against tests/homey_mock.py (synthetic, --bind 0.0.0.0 for a real Toon). Verlichting home tile 2026-11-22: the home button on the Homey screen puts a device on the tile (a third drops the oldest). Tile chooser 2026-11-22: long press on the Verlichting tile opens a list of every switchable light (Domoticz, HA, Homey, Z-Wave) with buttons 1/2; stored as settings tile_light1/2 ("dz:<idx>", "ha:<entity>", "hy:<id>", "zw:<uuid>", "" or "auto" = the old Domoticz T1/T2 + HA Home + Z-Wave rule, fixed on the first change). Domoticz T1/T2, the HA Home flag and the Homey home button write the same two slots (tile_lights.c). Remote page (:10081) Lampen card 2026-11-22: Homey on/off devices (state "hy_devs", max 40, pins first; POST /api/homey/toggle only for listed switchable ids). Locks and garage doors are refused in the setters themselves (homey_read_only), not just hidden in the UI.
-- **Findings from the sample (2026-11-21)**:
-  - Devices: object keyed by id; per device `name`, `zone` (uuid only: names need `GET manager/zones/zone/`), `class`, `virtualClass`, `capabilities[]`, `capabilitiesObj{cap:{value,units,setable,getable,min,max,decimals,values[]}}`, `available`, `ready`, `unavailableMessage`.
-  - Classify by `virtualClass` first: many lights are `class:"socket"` + `virtualClass:"light"` (KaKu, Fibaro, Zigbee strips); also `virtualClass` fan / coffeemachine.
-  - Unavailable devices (`available:false`, "App Unavailable" / Tuya "subscription expired") come with `capabilitiesObj:{}` and `settingsObj:null`: show greyed or skip, never crash on missing objects.
-  - Controls seen: `onoff`, `dim` (0..1), `light_temperature`/`light_hue`/`light_saturation` (0..1), `windowcoverings_state` enum up/idle/down (Somfy RTS + group devices, no position), `windowcoverings_set` 0..1 (curtain/Tuya blind), `play_scene` and `button` (momentary, `getable:false`), `locked` (Nuki), `target_temperature`.
-  - Sensors worth tiles: `measure_temperature`, `measure_humidity`, `measure_power`, `meter_power`, `alarm_contact`, `alarm_motion`, `measure_battery`/`alarm_battery`.
-  - 433 MHz devices (KaKu, Somfy) report assumed state only; remotes have `capabilities:[]` (skip).
-  - The requester's Homey also controls this Toon via the "Toon Water" app (`nl.toonwater.toonwater`, thermostat + water meter, polls the Toon's local IP; flows set `temperature_state` home/sleep and mirror `target_temperature` to an airco). Hide that device from FreeToon's Homey list (it is the Toon itself), and keep the stock local endpoints it uses working.
-  - Flows export holds only standard flows (`manager/flow/flow/`); advanced flows referenced by other flows need `manager/flow/advancedflow/`. Good trigger candidates: flows with `trigger.id == "homey:manager:flow:programmatic_trigger"`. The "Start a flow" ACTION card uses the same id, so advanced flows must check the card type too.
-  - Payload is large (full device list several hundred kB): stream/parse into a compact table, keep only id/name/zone/class/caps/values; never keep `settings`.
-- **Description**:
-  - Add Athom Homey as a smart-home source next to Home Assistant and Domoticz: show and switch Homey devices (lights, plugs, blinds) and read sensors on FreeToon tiles.
-- **Decisions (2026-11-10)**:
-  - Built into toonui (like Domoticz/HA), not a Marketplace app: Settings -> Homey (IP + API key), devices on the Lights screen, home tile switches.
-  - First version: switch lights/plugs (on/off + dim), blinds/covers (open/close/position), sensor values on tiles, trigger Flows.
-  - Target the Homey Pro (2023) local Web API with an API key. Older Homey Pro / Homey Bridge need Athom cloud OAuth — only if the requester has one of those.
-- **API plan (Homey Pro 2023, local)**: `Authorization: Bearer <API key>` against `http://<homey>/api/`:
-  - devices: `GET manager/devices/device/` (class, capabilities, capabilitiesObj values/units, zone); control: `PUT manager/devices/device/<id>/capability/<cap>` `{"value": ...}` (onoff, dim 0..1, windowcoverings_state / windowcoverings_set).
-  - flows: `GET manager/flow/flow/` + `manager/flow/advancedflow/`; trigger: `POST .../<id>/trigger`.
-  - zones for grouping: `GET manager/zones/zone/`. Poll (~5 s); Homey's realtime API is socket.io, not worth it for v1.
-  - API key scopes needed: device read + control, flow start.
-  - Build/test against real JSON from the requester first (device list can be large; parser must be robust).
-- **Investigation Points**:
-  - **API**: Homey Pro exposes a local Web API (`http://<homey>/api/...`, bearer token / API key from the Homey developer tools); Homey Bridge/cloud-only setups need the cloud API. Decide which to support first.
-  - **Reuse**: Follow the Domoticz/HA pattern (`domoticz.c`, `homeassistant.c`): poller thread, device list picker, tile binding. TLS-verified fetches (Toon CA bundle is kept current via tsc).
-  - **Events**: Check whether Homey can push state changes (websocket / Flow webhook to the PWA server) instead of polling.
 
 ### 29. P1 Meter Readings (Meterstanden) Like the Stock QML UI
 - **Status**: Implemented (495d80a, 2026-11-10).
