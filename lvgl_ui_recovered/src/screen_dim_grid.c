@@ -1057,8 +1057,8 @@ lv_obj_t * screen_dim_grid_create(void) {
      * sits right next to the temperature and the pair stays centred in the
      * block — no matter how wide the block is — instead of the icon flying to
      * the left edge and the temp to the right edge. ---- */
-    int wbw = 0;
-    lv_obj_t * bx_w = dim_box(DB_WEATHER, &wbw, NULL);
+    int wbw = 0, wbh = 0;
+    lv_obj_t * bx_w = dim_box(DB_WEATHER, &wbw, &wbh);
     g_wx_box_w = wbw;
 
     /* Outside temp in the same big font as the room temp (readable from
@@ -1083,6 +1083,24 @@ lv_obj_t * screen_dim_grid_create(void) {
     ui_img_set_src(wx_icon, &icon_wx_cloud_lg);
     ui_obj_set_style_img_recolor(wx_icon, lv_color_hex(0xffffff), 0);
     ui_obj_set_style_img_recolor_opa(wx_icon, 255, 0);
+
+    /* A low block (e.g. 3x2) has no room for the 80 px icon under the big
+     * temperature: the box clipped it to its top half (a "half moon" at
+     * night). Scale the icon down to the room that is left; with
+     * SIZE_MODE_REAL the column (and its centring) follows the scaled size. */
+    if (wbh > 0) {
+        lv_obj_update_layout(scr_root);
+        lv_area_t ia, ba;
+        lv_obj_get_coords(wx_icon, &ia);
+        lv_obj_get_coords(bx_w, &ba);
+        int room = (int)ba.y2 - (int)ia.y1 - 4;           /* px left under the temp */
+        int full = lv_obj_get_height(wx_icon);            /* 80 */
+        if (full > 0 && room < full) {
+            if (room < full * 3 / 10) room = full * 3 / 10;  /* never smaller than ~24 px */
+            lv_img_set_size_mode(wx_icon, LV_IMG_SIZE_MODE_REAL);
+            lv_img_set_zoom(wx_icon, (uint16_t)(room * 256 / full));
+        }
+    }
 
     /* Line the outside temp up with the clock: both use SF(96), so equal
      * label tops give equal digit tops. Only when the clock's top falls

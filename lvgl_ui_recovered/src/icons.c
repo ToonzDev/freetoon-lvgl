@@ -163,19 +163,16 @@ const lv_img_dsc_t * weather_icon_for_lg(const char * letter) {
     }
 }
 
-/* Approximate moon phase 0..1 (0=new, 0.5=full) for the current UTC date.
- * Uses Conway's simple algorithm — accurate to about ±1 day, more than
- * enough to pick the right icon out of 8 slots. */
+/* Moon phase 0..1 (0 = new, 0.5 = full) now: time since a known new moon
+ * (2000-01-06 18:14 UTC) modulo the mean synodic month. Off by at most
+ * ~15 h against the true phase, well within one of the 8 icon slots.
+ * (The previous formula ran ~3.5 days behind: a half moon was shown when
+ * the moon was nearly full.) */
 static double current_moon_phase01(void) {
-    time_t now = time(NULL);
-    struct tm tm; gmtime_r(&now, &tm);
-    int y = tm.tm_year + 1900, m = tm.tm_mon + 1, d = tm.tm_mday;
-    if (m < 3) { y--; m += 12; }
-    double r = y % 100;
-    r = r * 1.2848 + d + 0.4115 * (m + 1);
-    r += (y > 1999) ? 8.3115 : 9.3115;
-    r = r - (int)(r / 30.0) * 30.0;
-    return r / 30.0;  /* 0..1 across the lunar month */
+    const double ref_new_moon = 947182440.0;      /* 2000-01-06 18:14:00 UTC */
+    const double synodic_s    = 29.530588853 * 86400.0;
+    double p = fmod(((double)time(NULL) - ref_new_moon) / synodic_s, 1.0);
+    return p < 0 ? p + 1.0 : p;
 }
 
 /* Day/night via the standard sunrise equation for the Netherlands
