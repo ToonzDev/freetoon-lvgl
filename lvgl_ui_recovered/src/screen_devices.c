@@ -28,6 +28,7 @@
 #include "homewizard.h"
 #include "efanlamp.h"
 #include "screen_zwave.h"
+#include "layout.h"
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
@@ -697,6 +698,23 @@ lv_obj_t * screen_devices_create(void) {
     lv_obj_set_style_text_font(title, SF(28), 0);
     lv_label_set_text(title, tr("Apparaten", "Devices"));
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 24, 16);
+
+    /* With a Verlichting tile on the home screen: how to choose its two
+     * lights (long press, screen_tile_lights.c). */
+    const layout_tile_t * lt = settings.custom_layout_enabled ? layout_find(LT_LIGHTS) : NULL;
+    if (lt && lt->visible) {
+        lv_obj_t * tip = lv_label_create(scr_root);
+        lv_obj_set_style_text_color(tip, lv_color_hex(COL_TEXT_DIM), 0);
+        lv_obj_set_style_text_font(tip, SF(16), 0);
+        lv_label_set_long_mode(tip, LV_LABEL_LONG_DOT);
+        lv_obj_update_layout(title);
+        /* one line between the title and the close button (~100 px + margin) */
+        lv_obj_set_width(tip, DISP_HOR - 24 - lv_obj_get_width(title) - 16 - SX(110));
+        lv_obj_set_height(tip, lv_font_get_line_height(SF(16)));
+        lv_label_set_text(tip, tr("Tip: houd de Verlichting-tegel ingedrukt om je favoriete lampen te kiezen.",
+                                  "Tip: press and hold the Lighting tile to choose your favourite lights."));
+        lv_obj_align_to(tip, title, LV_ALIGN_OUT_RIGHT_BOTTOM, 16, -4);
+    }
 
     int x_w = (DISP_VER < 600) ? 60 : 70;
     int x_h = (DISP_VER < 600) ? 46 : 50;
