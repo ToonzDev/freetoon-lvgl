@@ -82,4 +82,11 @@ int homey_cover(const char * dev_id, const char * state);   /* "up" / "idle" / "
 int homey_press(const char * dev_id);                       /* play_scene or button */
 int homey_start_flow(const char * flow_id);                 /* manual flows only */
 
+/* Shared UI rules (hub, Homey screen, remote page). read_only: locks and
+ * garage doors, which FreeToon shows but never operates (no one-tap
+ * unlock/open). switchable: a plain on/off device (setable onoff, not
+ * read-only, not a cover). */
+int homey_read_only(const hy_dev_t * d);
+int homey_switchable(const hy_dev_t * d);
+
 #endif

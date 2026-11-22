@@ -111,7 +111,10 @@ static int base_url(char * out, size_t n, int * tls) {
     if (!strncmp(h, "http://", 7)) h += 7;
     else if (!strncmp(h, "https://", 8)) { h += 8; *tls = 1; }
     char hp[sizeof settings.homey_host];
-    snprintf(hp, sizeof hp, "%s", h);
+    size_t L = 0;                            /* bounded copy: h points into settings */
+    while (L < sizeof hp - 1 && h[L]) L++;
+    memcpy(hp, h, L);
+    hp[L] = 0;
     hp[strcspn(hp, "/")] = 0;
     if (!hp[0] || !sh_is_hostport(hp)) return -1;
     snprintf(out, n, "%s://%s", *tls ? "https" : "http", hp);
@@ -476,6 +479,7 @@ static int local_set(const char * dev_id, const char * cap, int type, double num
         hy_dev_t * d = &homey_state.dev[i];
         if (strcmp(d->id, dev_id)) continue;
         if (!d->available) break;
+        if (homey_read_only(d)) break;   /* never unlock / open a garage door from here */
         for (int c = 0; c < d->ncap; c++) {
             hy_cap_t * k = &d->cap[c];
             if (strcmp(k->id, cap)) continue;
@@ -546,6 +550,16 @@ int homey_press(const char * dev_id) {
     /* Scenes (play_scene) and buttons (WOL etc.): write true. */
     if (homey_set_bool(dev_id, "play_scene", 1) == 0) return 0;
     return homey_set_bool(dev_id, "button", 1);
+}
+
+int homey_read_only(const hy_dev_t * d) {
+    return d->kind == HY_K_LOCK || !strcmp(d->cls, "garagedoor") || !strcmp(d->vcls, "garagedoor");
+}
+
+int homey_switchable(const hy_dev_t * d) {
+    if (homey_read_only(d) || d->kind == HY_K_COVER) return 0;
+    const hy_cap_t * c = hy_dev_cap(d, "onoff");
+    return c && c->setable;
 }
 
 int homey_start_flow(const char * flow_id) {

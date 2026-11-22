@@ -965,6 +965,7 @@ int main(int argc, char ** argv) {
         extern int pwa_start(void);
         signal(SIGPIPE, SIG_IGN);
         if (pwa_start() != 0) return 1;
+        if (settings.enable_homey && settings.homey_host[0]) homey_start();   /* as main.c */
         int secs = (argc > 2) ? atoi(argv[2]) : 600;
         for (int s = 0; s < secs; s++) sleep(1);
         return 0;

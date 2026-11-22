@@ -70,9 +70,7 @@ static int setable(const hy_dev_t * d, const char * cap) {
     const hy_cap_t * c = hy_dev_cap(d, cap);
     return c && c->setable;
 }
-static int read_only(const hy_dev_t * d) {
-    return d->kind == HY_K_LOCK || !strcmp(d->cls, "garagedoor") || !strcmp(d->vcls, "garagedoor");
-}
+static int read_only(const hy_dev_t * d) { return homey_read_only(d); }
 static double capnum(const hy_dev_t * d, const char * cap, double dflt) {
     const hy_cap_t * c = hy_dev_cap(d, cap);
     return (c && (c->type == HY_V_NUM || c->type == HY_V_BOOL)) ? c->num : dflt;

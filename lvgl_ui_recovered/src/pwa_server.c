@@ -303,6 +303,33 @@ static int render_state_json(char * body, size_t sz) {
     }
     if (p < end) p += snprintf(p, end-p, "],");
 
+    /* ---- Homey on/off devices (#28) for the Lampen tile: the two pinned to
+     * the Verlichting tile first, at most 40 (the page shows 12). Switched
+     * with POST /api/homey/toggle. Locks and garage doors are never listed. */
+    if (p < end) p += snprintf(p, end-p, "\"hy_devs\":[");
+    if (settings.enable_homey) {
+        int first = 1, count = 0;
+        homey_lock();
+        for (int pass = 0; pass < 2; pass++)
+            for (int i = 0; i < homey_state.ndev && count < 40; i++) {
+                const hy_dev_t * D = &homey_state.dev[i];
+                if (!homey_switchable(D)) continue;
+                int pin = !strcmp(D->id, settings.homey_pin1) || !strcmp(D->id, settings.homey_pin2);
+                if (pin != (pass == 0)) continue;
+                const hy_cap_t * c = hy_dev_cap(D, "onoff");
+                char name[HY_NAME_LEN];
+                json_strcpy(name, D->name, sizeof name);
+                if (!first && p < end) *p++ = ',';
+                first = 0;
+                count++;
+                if (p < end) p += snprintf(p, end-p,
+                    "{\"id\":\"%s\",\"name\":\"%s\",\"on\":%d,\"av\":%d,\"pin\":%d}",
+                    D->id, name, c && c->num != 0, D->available, pin);
+            }
+        homey_unlock();
+    }
+    if (p < end) p += snprintf(p, end-p, "],");
+
     /* ---- schedule entries (target_state + day/hh:mm window) */
     if (p < end) p += snprintf(p, end-p, "\"schedule\":[");
     for (int i = 0; i < schedule_count && i < SCHEDULE_MAX; i++) {
@@ -1334,6 +1361,29 @@ static int handle_ha_toggle(int fd, const char * body) {
         }
     }
     return send_status(fd, 404, "Not Found", "{\"err\":\"not a managed light or switch\"}");
+}
+
+/* POST /api/homey/toggle {"id":"<device id>"} — switch a Homey on/off device
+ * from the remote page. The id must be a switchable device in the polled
+ * list (never a lock or garage door); homey_onoff() validates again. */
+static int handle_homey_toggle(int fd, const char * body) {
+    char id[64];
+    if (!settings.enable_homey || !extract_str(body, "id", id, sizeof id) || !id[0])
+        return send_status(fd, 400, "Bad Request", "{\"err\":\"need {\\\"id\\\":\\\"device id\\\"}\"}");
+    int on = -1;
+    homey_lock();
+    for (int i = 0; i < homey_state.ndev; i++) {
+        const hy_dev_t * D = &homey_state.dev[i];
+        if (strcmp(D->id, id) || !homey_switchable(D)) continue;
+        if (D->available) on = hy_dev_cap(D, "onoff")->num != 0;
+        else on = -2;
+        break;
+    }
+    homey_unlock();
+    if (on == -1) return send_status(fd, 404, "Not Found", "{\"err\":\"not a Homey on/off device\"}");
+    if (on == -2 || homey_onoff(id, !on) != 0)
+        return send_status(fd, 409, "Conflict", "{\"err\":\"device unavailable\"}");
+    return send_status(fd, 200, "OK", "{\"ok\":1}");
 }
 
 /* POST /api/dz/toggle {"idx":N} — toggle a Domoticz switch that is in the
@@ -2784,6 +2834,7 @@ static int dispatch(int fd, char * req) {
         if (!strcmp(path, "/api/hw/socket")) return handle_hw_socket(fd, body);
         if (!strcmp(path, "/api/ha/toggle")) return handle_ha_toggle(fd, body);
         if (!strcmp(path, "/api/dz/toggle")) return handle_dz_toggle(fd, body);
+        if (!strcmp(path, "/api/homey/toggle")) return handle_homey_toggle(fd, body);
         if (!strcmp(path, "/api/settings")) return handle_settings_post(fd, body);
         if (!strcmp(path, "/api/update"))   return handle_update_post(fd);
         if (!strcmp(path, "/api/packages")) return handle_packages_post(fd, body);

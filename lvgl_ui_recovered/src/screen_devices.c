@@ -156,8 +156,7 @@ static int hy_setable(const hy_dev_t * d, const char * cap) {
 }
 /* What the hub does with a Homey device: CTL_*, or -1 to leave it out. */
 static int hy_ctl(const hy_dev_t * d) {
-    if (d->kind == HY_K_LOCK || !strcmp(d->cls, "garagedoor") || !strcmp(d->vcls, "garagedoor"))
-        return -1;   /* no one-tap unlock/open; state is on the Homey screen */
+    if (homey_read_only(d)) return -1;   /* no one-tap unlock/open; state is on the Homey screen */
     if (d->kind == HY_K_COVER &&
         (hy_setable(d, "windowcoverings_state") || hy_setable(d, "windowcoverings_set"))) return CTL_COVER;
     if (hy_setable(d, "onoff")) return CTL_TOGGLE;

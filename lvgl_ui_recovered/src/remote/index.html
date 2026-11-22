@@ -753,16 +753,21 @@ function renderNews() {
 }
 setInterval(function () { newsIdx++; if (S.news && S.news.length) renderNews(); }, 8000);
 
-/* Lights: the Home Assistant lights/switches from the Toon's device manager
- * (the ones on its Verlichting tile first) and the Domoticz switches. Each is
- * a button that toggles it; blinds and the legacy HA light list show state only. */
+/* Lights: the Home Assistant lights/switches from the Toon's device manager,
+ * the Homey on/off devices and the Domoticz switches; the ones on the Toon's
+ * Verlichting tile (HA "Home", Homey pins) first. Each is a button that
+ * toggles it; blinds and the legacy HA light list show state only. */
 var lightRows = [];
 function renderLights() {
   var rows = [], seen = {};
-  (S.ha_devs || []).slice().sort(function (a, b) { return (b.pin || 0) - (a.pin || 0); }).forEach(function (d) {
+  (S.ha_devs || []).forEach(function (d) {
     seen[d.id] = 1;
-    rows.push({n: d.name || d.id, on: d.on, av: d.av !== 0, src: d, path: "/api/ha/toggle", body: {id: d.id}});
+    rows.push({n: d.name || d.id, on: d.on, av: d.av !== 0, pin: d.pin || 0, src: d, path: "/api/ha/toggle", body: {id: d.id}});
   });
+  (S.hy_devs || []).forEach(function (d) {
+    rows.push({n: d.name || "Homey", on: d.on, av: d.av !== 0, pin: d.pin || 0, src: d, path: "/api/homey/toggle", body: {id: d.id}});
+  });
+  rows.sort(function (a, b) { return b.pin - a.pin; });   /* stable: pinned first, order kept */
   (S.ha_lights || []).forEach(function (l) {
     if (l.av !== 0 && !seen[l.id]) rows.push({n: l.name || l.id, on: l.on, av: true});
   });
