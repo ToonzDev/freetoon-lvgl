@@ -111,7 +111,7 @@ typedef struct {
     char domoticz_pass[48];
     int  domoticz_tile_idx1;   /* device idx pinned to tile switch 1 (-1 = none) */
     int  domoticz_tile_idx2;   /* device idx pinned to tile switch 2 (-1 = none) */
-    int  clock_moon_phase;     /* 0 = off (clean clock), 1 = show moon phase icon at night */
+    int  reserved_clock_moon;  /* unused (was clock_moon_phase); kept for the plugin ABI */
 
     /* Philips Hue Bridge (REST API on LAN, port 80) */
     int  hue_enabled;

@@ -90,7 +90,6 @@ settings_t settings = {
     .homey_host          = "",
     .tile_light1         = "auto",
     .tile_light2         = "auto",
-    .clock_moon_phase    = 0,
     .hue_enabled         = 0,
     .hue_host            = "",
     .hue_user            = "",
@@ -344,7 +343,6 @@ void settings_load(void) {
             snprintf(settings.tile_light1, sizeof settings.tile_light1, "%s", v);
         else if (strcmp(k, "tile_light2")     == 0)
             snprintf(settings.tile_light2, sizeof settings.tile_light2, "%s", v);
-        else if (strcmp(k, "clock_moon_phase") == 0) settings.clock_moon_phase = iv;
         else if (strcmp(k, "hue_enabled")     == 0) { settings.hue_enabled = iv; seen_hue = 1; }
         else if (strcmp(k, "hue_host")        == 0) snprintf(settings.hue_host, sizeof settings.hue_host, "%s", v);
         else if (strcmp(k, "hue_user")        == 0) snprintf(settings.hue_user, sizeof settings.hue_user, "%s", v);
@@ -1069,7 +1067,6 @@ static void settings_write_file(void) {
     fprintf(f, "homey_host=%s\n",      settings.homey_host);
     fprintf(f, "tile_light1=%s\n",     settings.tile_light1);
     fprintf(f, "tile_light2=%s\n",     settings.tile_light2);
-    fprintf(f, "clock_moon_phase=%d\n", settings.clock_moon_phase);
     fprintf(f, "hue_enabled=%d\n",     settings.hue_enabled);
     fprintf(f, "hue_host=%s\n",        settings.hue_host);
     fprintf(f, "hue_user=%s\n",        settings.hue_user);

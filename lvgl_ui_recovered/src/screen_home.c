@@ -78,7 +78,6 @@ static lv_obj_t * lbl_t_humidity;
 static lv_obj_t * lbl_t_ppm;
 static lv_obj_t * lbl_t_tvoc;
 static lv_obj_t * lbl_t_date;
-static lv_obj_t * moon_phase_img;  /* small moon-phase widget next to date */
 static lv_obj_t * lbl_t_aq;
 static lv_obj_t * lbl_waste_date;
 static lv_obj_t * lbl_waste_type;
@@ -2374,20 +2373,6 @@ static void refresh_cb(lv_timer_t * t) {
         i18n_date_short(dt, sizeof(dt), &tm);   /* localised — strftime is C-locale (always English) */
         ui_label_set_text(lbl_t_date, dt);
     }
-    /* Refresh the moon-phase icon at most once per refresh tick — phase
-     * changes daily, not by-the-second, but keep this cheap: a single
-     * src-swap when the phase slot moves. */
-    if (moon_phase_img) {
-        /* Only show if enabled in settings and it is nighttime */
-        if (!settings.clock_moon_phase || is_daytime_now()) {
-            ui_obj_add_flag(moon_phase_img, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            const lv_img_dsc_t * ph = moon_phase_icon(40);
-            if (lv_img_get_src(moon_phase_img) != ph)
-                ui_img_set_src(moon_phase_img, ph);
-            ui_obj_clear_flag(moon_phase_img, LV_OBJ_FLAG_HIDDEN);
-        }
-    }
 
     if (toon_state.indoor_temp > 0) {
         ui_label_set_text_fmt(lbl_t_temp, "%.1f°C", toon_state.indoor_temp);
@@ -4163,15 +4148,6 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_text_align(lbl_t_date, LV_TEXT_ALIGN_CENTER, 0);
     ui_label_set_text(lbl_t_date, "");
 
-    /* Moon phase icon (top-right corner, non-interfering) */
-    moon_phase_img = lv_img_create(tile_clock);
-    ui_obj_add_flag(moon_phase_img, LV_OBJ_FLAG_FLOATING);
-    ui_img_set_src(moon_phase_img, moon_phase_icon(40));
-    ui_obj_set_style_img_recolor(moon_phase_img, lv_color_hex(settings.home_light_mode ? 0x485868 : 0xffffff), 0);
-    ui_obj_set_style_img_recolor_opa(moon_phase_img, 255, 0);
-    ui_obj_align(moon_phase_img, LV_ALIGN_TOP_RIGHT, -4, 4);
-    ui_obj_add_flag(moon_phase_img, LV_OBJ_FLAG_HIDDEN);
-
     /* --- Compact Thermostat Tile (LT_THERMOSTAT) ---
      * Shows indoor temperature + flame icon next to it, setpoint, and +/- buttons.
      * Tapping the tile opens the full thermostat detail screen. */
@@ -5573,7 +5549,6 @@ void screen_home_destroy(void) {
         lbl_t_ppm = NULL;
         lbl_t_tvoc = NULL;
         lbl_t_date = NULL;
-        moon_phase_img = NULL;
         lbl_t_aq = NULL;
         lbl_waste_date = NULL;
         lbl_waste_type = NULL;
