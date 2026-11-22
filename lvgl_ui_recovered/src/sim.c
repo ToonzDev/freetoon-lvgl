@@ -658,6 +658,7 @@ static const struct { const char * name; create_fn fn; } SCREENS[] = {
     { "vent_adv",    screen_vent_advanced_create },
     { "lights",      screen_lights_create },
     { "devices",     screen_devices_create },
+    { "homey",       screen_homey_create },
     { "marketplace", screen_marketplace_create },
     { "zwave",       screen_zwave_create },
     { "wifi",        screen_wifi_create },

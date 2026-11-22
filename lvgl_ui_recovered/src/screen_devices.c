@@ -156,7 +156,8 @@ static int hy_setable(const hy_dev_t * d, const char * cap) {
 }
 /* What the hub does with a Homey device: CTL_*, or -1 to leave it out. */
 static int hy_ctl(const hy_dev_t * d) {
-    if (d->kind == HY_K_LOCK) return -1;
+    if (d->kind == HY_K_LOCK || !strcmp(d->cls, "garagedoor") || !strcmp(d->vcls, "garagedoor"))
+        return -1;   /* no one-tap unlock/open; state is on the Homey screen */
     if (d->kind == HY_K_COVER &&
         (hy_setable(d, "windowcoverings_state") || hy_setable(d, "windowcoverings_set"))) return CTL_COVER;
     if (hy_setable(d, "onoff")) return CTL_TOGGLE;
@@ -272,6 +273,7 @@ static void on_chip(lv_event_t * e) {
     case SRC_HUE:  ui_push_owned(screen_hue_create());      break;
     case SRC_HA:   ui_push(screen_lights_create());         break;
     case SRC_DZ:   ui_push(screen_domoticz_create());       break;
+    case SRC_HY:   ui_push_owned(screen_homey_create());    break;
     case SRC_ZW:   ui_push(screen_zwave_create());          break;
     case SRC_EFAN: ui_push_owned(screen_efanlamp_create()); break;
     default: break;
@@ -427,10 +429,12 @@ static int cmp_room(const void * a, const void * b) {
 }
 
 static void build_chips(void) {
-    static const int order[] = { SRC_HUE, SRC_HA, SRC_DZ, SRC_ZW, SRC_EFAN };
-    int live[] = { hue_on(), settings.enable_ha, dz_on(), zwave_switch_count_cached() > 0, efan_on() };
+    static const int order[] = { SRC_HUE, SRC_HA, SRC_DZ, SRC_HY, SRC_ZW, SRC_EFAN };
+    int live[] = { hue_on(), settings.enable_ha, dz_on(), settings.enable_homey,
+                   zwave_switch_count_cached() > 0, efan_on() };
+    enum { NCHIP = sizeof order / sizeof order[0] };
     int any = 0;
-    for (int k = 0; k < 5; k++) any |= live[k];
+    for (int k = 0; k < NCHIP; k++) any |= live[k];
     if (!any) return;
     lv_obj_t * row = lv_obj_create(list);
     lv_obj_set_size(row, lv_pct(100), LV_SIZE_CONTENT);
@@ -441,7 +445,7 @@ static void build_chips(void) {
     lv_obj_set_style_pad_column(row, 8, 0);
     lv_obj_set_style_pad_row(row, 8, 0);
     lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
-    for (int k = 0; k < 5; k++) {
+    for (int k = 0; k < NCHIP; k++) {
         if (!live[k]) continue;
         lv_obj_t * b = lv_btn_create(row);
         lv_obj_set_height(b, SY(40));
