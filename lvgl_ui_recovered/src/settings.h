@@ -404,10 +404,12 @@ typedef struct {
      * in /mnt/data/homey.key (0600), not here. */
     int  enable_homey;
     char homey_host[64];      /* "ip[:port]" or http(s)://... */
-    /* Homey devices pinned to the Verlichting home tile (device ids, "" =
-     * free); pinned on the Homey screen. */
-    char homey_pin1[40];
-    char homey_pin2[40];
+    /* The two switches on the Verlichting home tile: "dz:<idx>",
+     * "ha:<entity_id>", "hy:<homey id>", "zw:<uuid>", "" (empty) or "auto"
+     * (default: the old Domoticz T1/T2 + HA Home + Z-Wave rule). See
+     * tile_lights.h. */
+    char tile_light1[72];
+    char tile_light2[72];
 } settings_t;
 
 #define FORECAST_AUTO   0

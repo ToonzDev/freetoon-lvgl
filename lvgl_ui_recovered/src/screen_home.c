@@ -39,6 +39,7 @@
 #include "efanlamp.h"
 #include "domoticz.h"
 #include "homey.h"
+#include "tile_lights.h"
 #include "hue.h"
 #include "templogger.h"
 #include "screen_chart_24h.h"
@@ -1880,112 +1881,33 @@ static int rotate_member_at(int n, char * out, size_t sz) {
 }
 
 
-/* What button n (0/1) on the Verlichting tile controls.
- *  - Domoticz enabled: the two switches chosen in Settings > Domoticz.
- *  - Home Assistant enabled: lights/switches flagged "Home", then
- *  - Homey: devices pinned on the Homey screen (settings.homey_pin1/2).
- *  - Z-Wave plugs/switches: available Z-Wave smart plug switches.
- * Resolved on every use. */
-typedef struct { int kind; int dz_idx; int ha_i; int zw_i; char hy[40]; } tile_light_src_t;   /* kind: 0 none, 1 Domoticz, 2 HA, 3 Z-Wave, 4 Homey */
-
-static tile_light_src_t tile_light_src(int n) {
-    tile_light_src_t s = { 0, -1, -1, -1, "" };
-    if (settings.enable_domoticz || (settings.client_mode && domoticz_state.count > 0)) {
-        int idx = n == 0 ? settings.domoticz_tile_idx1 : settings.domoticz_tile_idx2;
-        if (idx >= 0) { s.kind = 1; s.dz_idx = idx; return s; }
-    }
-    int seen = 0;
-    if (settings.enable_ha) {
-        for (int i = 0; i < ha_device_count; i++) {
-            if (!ha_devices[i].pin_home) continue;
-            if (ha_devices[i].type != HADEV_LIGHT && ha_devices[i].type != HADEV_SWITCH) continue;
-            if (seen++ == n) { s.kind = 2; s.ha_i = i; return s; }
-        }
-    }
-    if (settings.enable_homey) {
-        const char * pins[2] = { settings.homey_pin1, settings.homey_pin2 };
-        for (int k = 0; k < 2; k++) {
-            if (!pins[k][0]) continue;
-            if (seen++ == n) { s.kind = 4; snprintf(s.hy, sizeof s.hy, "%s", pins[k]); return s; }
-        }
-    }
-    /* Fallback / Z-Wave switches: find the n-th active Z-Wave switch */
-    zwave_dev_t zd;
-    if (zwave_get_switch(n, &zd)) {
-        s.kind = 3;
-        s.zw_i = n;
-        return s;
-    }
-    return s;
-}
-
-static void tile_light_toggle(int n) {
-    tile_light_src_t s = tile_light_src(n);
-    if (s.kind == 1) domoticz_switch_async(s.dz_idx, "Toggle");
-    else if (s.kind == 2) ha_device_toggle_async(ha_devices[s.ha_i].type, ha_devices[s.ha_i].entity_id);
-    else if (s.kind == 3) zwave_toggle_switch(s.zw_i);
-    else if (s.kind == 4) {
-        int on = -1;
-        homey_lock();
-        for (int i = 0; i < homey_state.ndev; i++)
-            if (!strcmp(homey_state.dev[i].id, s.hy)) {
-                const hy_cap_t * c = hy_dev_cap(&homey_state.dev[i], "onoff");
-                if (c && homey_state.dev[i].available) on = c->num != 0;
-                break;
-            }
-        homey_unlock();
-        if (on >= 0) homey_onoff(s.hy, !on);   /* takes the lock itself */
-    }
-}
+/* The two buttons on the Verlichting tile: what they control is resolved on
+ * every use from settings.tile_light1/2 (tile_lights.c), chosen with a long
+ * press on the tile (screen_tile_lights.c). */
+static void tile_light_toggle(int n) { tl_toggle(n); }
 static void on_tile_light_btn1(lv_event_t * e) { (void)e; tile_light_toggle(0); }
 static void on_tile_light_btn2(lv_event_t * e) { (void)e; tile_light_toggle(1); }
-
-static const domoticz_dev_t * find_domoticz_dev(int idx) {
-    if (idx < 0) return NULL;
-    for (int i = 0; i < domoticz_state.count && i < DOMOTICZ_MAX_DEV; i++) {
-        if (domoticz_state.dev[i].idx == idx)
-            return &domoticz_state.dev[i];
-    }
-    return NULL;
+/* Long press on the tile or one of its buttons: the chooser. wait_release
+ * drops the release, so no CLICKED (no toggle, no hub) follows. */
+static void on_lights_tile_longpress(lv_event_t * e) {
+    (void)e;
+    lv_indev_t * in = lv_indev_get_act();
+    if (in) lv_indev_wait_release(in);
+    ui_push_owned(screen_tile_lights_create());
 }
 
-static void update_tile_light_btn(lv_obj_t * btn, lv_obj_t * lbl_name, lv_obj_t * sw_btn, lv_obj_t * lbl_st, tile_light_src_t s) {
+static void update_tile_light_btn(lv_obj_t * btn, lv_obj_t * lbl_name, lv_obj_t * sw_btn, lv_obj_t * lbl_st, tl_src_t s) {
     if (!btn) return;
-    if (s.kind == 0) {
+    if (s.kind == TL_NONE) {
         ui_obj_add_flag(btn, LV_OBJ_FLAG_HIDDEN);
         return;
     }
     ui_obj_clear_flag(btn, LV_OBJ_FLAG_HIDDEN);
     /* name + state from the source; known = 0 while the device isn't there */
-    int known = 0, on = 0;
-    if (s.kind == 1) {
-        const domoticz_dev_t * d = find_domoticz_dev(s.dz_idx);
-        if (d) { known = 1; on = d->on; if (lbl_name) ui_label_set_text(lbl_name, d->name); }
-        else if (lbl_name) ui_label_set_text_fmt(lbl_name, "Dev #%d", s.dz_idx);
-    } else if (s.kind == 2) {
-        const ha_device_t * d = &ha_devices[s.ha_i];
-        known = d->available; on = d->on;
-        if (lbl_name) ui_label_set_text(lbl_name, d->name);
-    } else if (s.kind == 3) {
-        zwave_dev_t d;
-        if (zwave_get_switch(s.zw_i, &d)) {
-            known = 1; on = (d.state == 1);
-            if (lbl_name) ui_label_set_text(lbl_name, d.name[0] ? d.name : d.type);
-        }
-    } else if (s.kind == 4) {
-        char name[HY_NAME_LEN] = "Homey";
-        homey_lock();
-        for (int i = 0; i < homey_state.ndev; i++) {
-            const hy_dev_t * d = &homey_state.dev[i];
-            if (strcmp(d->id, s.hy)) continue;
-            snprintf(name, sizeof name, "%s", d->name);
-            const hy_cap_t * c = hy_dev_cap(d, "onoff");
-            if (c && d->available) { known = 1; on = c->num != 0; }
-            break;
-        }
-        homey_unlock();
-        if (lbl_name) ui_label_set_text(lbl_name, name);
-    }
+    char name[80];
+    int on = 0;
+    int known = tl_status(&s, name, sizeof name, &on);
+    if (lbl_name) ui_label_set_text(lbl_name, name);
     if (lbl_st) ui_label_set_text(lbl_st, !known ? "--" : on ? tr("AAN", "ON") : tr("UIT", "OFF"));
     ui_obj_set_style_bg_color(btn, lv_color_hex(settings.home_light_mode ? 0xedf2f7 : 0x1e2838), 0);
     if (sw_btn) ui_obj_set_style_bg_color(sw_btn, lv_color_hex((known && on) ? 0x2e6e3a : (settings.home_light_mode ? 0xd0d8e2 : 0x283848)), 0);
@@ -2069,8 +1991,8 @@ static void update_tile_climate(void) {
 
 static void update_tile_lights(void) {
     if (!tile_lights_lbl_default && !tile_lights_btn1) return;
-    tile_light_src_t idx1 = tile_light_src(0);
-    tile_light_src_t idx2 = tile_light_src(1);
+    tl_src_t idx1 = tl_resolve(0);
+    tl_src_t idx2 = tl_resolve(1);
     int has1 = (idx1.kind != 0);
     int has2 = (idx2.kind != 0);
 
@@ -4810,6 +4732,7 @@ lv_obj_t * screen_home_create(void) {
          * backend as the retractable side handle). Hidden until added in the editor. */
         tile_t lt;
         make_tile(scr_root, 0, 0, 200, 150, LT_LIGHTS, tr("Verlichting", "Lighting"), 0xddaa44, on_lights_tile, &lt);
+        lv_obj_add_event_cb(lt.tile, on_lights_tile_longpress, LV_EVENT_LONG_PRESSED, NULL);
         tile_lights_lbl_default = lv_label_create(lt.tile);
         ui_obj_set_style_text_color(tile_lights_lbl_default, lv_color_hex(COL_TEXT_HI), 0);
         ui_obj_set_style_text_font(tile_lights_lbl_default, SF(28), 0);
@@ -4828,6 +4751,7 @@ lv_obj_t * screen_home_create(void) {
         lv_obj_set_style_pad_hor(tile_lights_btn1, 6, 0);
         lv_obj_set_style_pad_ver(tile_lights_btn1, 0, 0);
         lv_obj_add_event_cb(tile_lights_btn1, on_tile_light_btn1, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(tile_lights_btn1, on_lights_tile_longpress, LV_EVENT_LONG_PRESSED, NULL);
 
         tile_lights_lbl1_name = lv_label_create(tile_lights_btn1);
         ui_obj_set_style_text_font(tile_lights_lbl1_name, SF(16), 0);
@@ -4863,6 +4787,7 @@ lv_obj_t * screen_home_create(void) {
         lv_obj_set_style_pad_hor(tile_lights_btn2, 6, 0);
         lv_obj_set_style_pad_ver(tile_lights_btn2, 0, 0);
         lv_obj_add_event_cb(tile_lights_btn2, on_tile_light_btn2, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(tile_lights_btn2, on_lights_tile_longpress, LV_EVENT_LONG_PRESSED, NULL);
 
         tile_lights_lbl2_name = lv_label_create(tile_lights_btn2);
         ui_obj_set_style_text_font(tile_lights_lbl2_name, SF(16), 0);

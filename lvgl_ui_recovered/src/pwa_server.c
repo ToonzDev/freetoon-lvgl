@@ -62,6 +62,7 @@
 #include <sys/time.h>
 #include "ketellog.h"
 #include "homey.h"
+#include "tile_lights.h"
 
 #define PWA_PORT  10081
 #define PWA_ROOT  "/mnt/data/pwa"
@@ -285,6 +286,10 @@ static int render_state_json(char * body, size_t sz) {
     /* ---- HA devices from the device manager (Settings > Home Assistant >
      * Apparaten beheren): the lights and switches, for the remote page's
      * Lampen tile (shown + switchable there; POST /api/ha/toggle). */
+    /* What the Verlichting tile shows (tile_lights.h): those are "pin" below,
+     * so the remote page lists them first. */
+    char tile_ref[2][TL_REF_LEN + 4];
+    for (int k = 0; k < 2; k++) { tl_src_t s = tl_resolve(k); tl_ref(&s, tile_ref[k], sizeof tile_ref[k]); }
     if (p < end) p += snprintf(p, end-p, "\"ha_devs\":[");
     if (settings.enable_ha) {
         int first = 1;
@@ -298,7 +303,9 @@ static int render_state_json(char * body, size_t sz) {
             first = 0;
             if (p < end) p += snprintf(p, end-p,
                 "{\"id\":\"%s\",\"name\":\"%s\",\"on\":%d,\"av\":%d,\"pin\":%d}",
-                eid, name, D->on, D->available, D->pin_home);
+                eid, name, D->on, D->available,
+                D->pin_home || (!strncmp(tile_ref[0], "ha:", 3) && !strcmp(tile_ref[0] + 3, D->entity_id))
+                            || (!strncmp(tile_ref[1], "ha:", 3) && !strcmp(tile_ref[1] + 3, D->entity_id)));
         }
     }
     if (p < end) p += snprintf(p, end-p, "],");
@@ -314,7 +321,8 @@ static int render_state_json(char * body, size_t sz) {
             for (int i = 0; i < homey_state.ndev && count < 40; i++) {
                 const hy_dev_t * D = &homey_state.dev[i];
                 if (!homey_switchable(D)) continue;
-                int pin = !strcmp(D->id, settings.homey_pin1) || !strcmp(D->id, settings.homey_pin2);
+                int pin = (!strncmp(tile_ref[0], "hy:", 3) && !strcmp(tile_ref[0] + 3, D->id))
+                       || (!strncmp(tile_ref[1], "hy:", 3) && !strcmp(tile_ref[1] + 3, D->id));
                 if (pin != (pass == 0)) continue;
                 const hy_cap_t * c = hy_dev_cap(D, "onoff");
                 char name[HY_NAME_LEN];

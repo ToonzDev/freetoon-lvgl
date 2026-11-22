@@ -659,6 +659,7 @@ static const struct { const char * name; create_fn fn; } SCREENS[] = {
     { "lights",      screen_lights_create },
     { "devices",     screen_devices_create },
     { "homey",       screen_homey_create },
+    { "tilelights",  screen_tile_lights_create },
     { "marketplace", screen_marketplace_create },
     { "zwave",       screen_zwave_create },
     { "wifi",        screen_wifi_create },
@@ -1334,6 +1335,16 @@ int main(int argc, char ** argv) {
             continue;
         }
         if (!strncmp(argv[a], "shot:", 5)) { pump(30); dump_ppm(argv[a] + 5); continue; }
+        /* "hold:x,y": long press (~1 s) */
+        if (!strncmp(argv[a], "hold:", 5)) {
+            int hx, hy;
+            if (sscanf(argv[a] + 5, "%d,%d", &hx, &hy) == 2) {
+                tap_x = hx; tap_y = hy; tap_pressed = 1; pump(70);
+                tap_pressed = 0; pump(25);
+                taps++;
+            }
+            continue;
+        }
         /* "wait:<ms>": keep the UI running that long (background fetches) */
         if (!strncmp(argv[a], "wait:", 5)) {
             for (int ms = atoi(argv[a] + 5); ms > 0; ms -= 20) { lv_timer_handler(); lv_tick_inc(20); usleep(20000); ep_tick(); }

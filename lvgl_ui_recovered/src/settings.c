@@ -88,8 +88,8 @@ settings_t settings = {
     .domoticz_tile_idx2  = -1,
     .enable_homey        = 0,
     .homey_host          = "",
-    .homey_pin1          = "",
-    .homey_pin2          = "",
+    .tile_light1         = "auto",
+    .tile_light2         = "auto",
     .clock_moon_phase    = 0,
     .hue_enabled         = 0,
     .hue_host            = "",
@@ -340,10 +340,10 @@ void settings_load(void) {
         else if (strcmp(k, "enable_homey")    == 0) settings.enable_homey = iv;
         else if (strcmp(k, "homey_host")      == 0)
             snprintf(settings.homey_host, sizeof settings.homey_host, "%s", v);
-        else if (strcmp(k, "homey_pin1")      == 0)
-            snprintf(settings.homey_pin1, sizeof settings.homey_pin1, "%s", v);
-        else if (strcmp(k, "homey_pin2")      == 0)
-            snprintf(settings.homey_pin2, sizeof settings.homey_pin2, "%s", v);
+        else if (strcmp(k, "tile_light1")     == 0)
+            snprintf(settings.tile_light1, sizeof settings.tile_light1, "%s", v);
+        else if (strcmp(k, "tile_light2")     == 0)
+            snprintf(settings.tile_light2, sizeof settings.tile_light2, "%s", v);
         else if (strcmp(k, "clock_moon_phase") == 0) settings.clock_moon_phase = iv;
         else if (strcmp(k, "hue_enabled")     == 0) { settings.hue_enabled = iv; seen_hue = 1; }
         else if (strcmp(k, "hue_host")        == 0) snprintf(settings.hue_host, sizeof settings.hue_host, "%s", v);
@@ -871,7 +871,7 @@ static void sanitize_all_strings(void) {
         settings.ot_bridge_mode, settings.otgw_host, settings.otgw_user,
         settings.otgw_pass, settings.mqtt_host, settings.mqtt_user,
         settings.mqtt_pass, settings.domoticz_host, settings.homey_host,
-        settings.homey_pin1, settings.homey_pin2, settings.master_host,
+        settings.tile_light1, settings.tile_light2, settings.master_host,
         settings.master_web_user, settings.master_web_pass,
         settings.toonwater_host,
         settings.tile_rotate_members, settings.calendar_ha_entity,
@@ -1067,8 +1067,8 @@ static void settings_write_file(void) {
     fprintf(f, "domoticz_tile_idx2=%d\n", settings.domoticz_tile_idx2);
     fprintf(f, "enable_homey=%d\n",    settings.enable_homey);
     fprintf(f, "homey_host=%s\n",      settings.homey_host);
-    fprintf(f, "homey_pin1=%s\n",      settings.homey_pin1);
-    fprintf(f, "homey_pin2=%s\n",      settings.homey_pin2);
+    fprintf(f, "tile_light1=%s\n",     settings.tile_light1);
+    fprintf(f, "tile_light2=%s\n",     settings.tile_light2);
     fprintf(f, "clock_moon_phase=%d\n", settings.clock_moon_phase);
     fprintf(f, "hue_enabled=%d\n",     settings.hue_enabled);
     fprintf(f, "hue_host=%s\n",        settings.hue_host);

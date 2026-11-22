@@ -21,6 +21,7 @@
 #include "theme.h"
 #include "ui_lazy.h"
 #include "homey.h"
+#include "tile_lights.h"
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
@@ -131,22 +132,27 @@ static void on_open (lv_event_t * e) { cover(e, "up"); }
 static void on_stop (lv_event_t * e) { cover(e, "idle"); }
 static void on_close(lv_event_t * e) { cover(e, "down"); }
 
-/* Pins for the Verlichting home tile: two slots (settings.homey_pin1/2).
- * Pinning a third device drops the oldest pin. */
+/* The home button puts a device on the Verlichting tile (tile_lights.h):
+ * a free button, or else the second one (the first moves up). */
+static char g_tile_ref[2][TL_REF_LEN + 4];
+static void tile_refs(void) {
+    for (int k = 0; k < 2; k++) {
+        tl_src_t s = tl_resolve(k);
+        tl_ref(&s, g_tile_ref[k], sizeof g_tile_ref[k]);
+    }
+}
 static int is_pinned(const char * id) {
-    return !strcmp(settings.homey_pin1, id) || !strcmp(settings.homey_pin2, id);
+    for (int k = 0; k < 2; k++)
+        if (!strncmp(g_tile_ref[k], "hy:", 3) && !strcmp(g_tile_ref[k] + 3, id)) return 1;
+    return 0;
 }
 static void on_pin(lv_event_t * e) {
     hrow_t * r = ev_row(e);
     if (!r) return;
-    char * p1 = settings.homey_pin1, * p2 = settings.homey_pin2;
-    if (!strcmp(p1, r->id))      { snprintf(p1, sizeof settings.homey_pin1, "%s", p2); p2[0] = 0; }
-    else if (!strcmp(p2, r->id)) { p2[0] = 0; }
-    else if (!p1[0])             { snprintf(p1, sizeof settings.homey_pin1, "%s", r->id); }
-    else if (!p2[0])             { snprintf(p2, sizeof settings.homey_pin2, "%s", r->id); }
-    else { snprintf(p1, sizeof settings.homey_pin1, "%s", p2);
-           snprintf(p2, sizeof settings.homey_pin2, "%s", r->id); }
-    settings_save();
+    char ref[TL_REF_LEN + 4];
+    snprintf(ref, sizeof ref, "hy:%s", r->id);
+    tile_refs();
+    tl_pin(ref, !is_pinned(r->id), 1);
     refresh_rows();
 }
 
@@ -304,6 +310,7 @@ static int row_text(hrow_t * r, const hy_dev_t * d, char * out, size_t osz) {
 }
 
 static void refresh_rows(void) {
+    tile_refs();
     homey_lock();
     for (int i = 0; i < nrows; i++) {
         hrow_t * r = &rows[i];

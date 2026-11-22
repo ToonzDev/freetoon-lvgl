@@ -15,6 +15,7 @@
 #include "theme.h"
 #include "homeassistant.h"
 #include "layout.h"
+#include "tile_lights.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
@@ -48,7 +49,15 @@ static void on_add(lv_event_t * e) {
 static void on_pin(lv_event_t * e) {
     int i = (int)(intptr_t)lv_event_get_user_data(e);
     if (i >= 0 && i < ha_device_count) {
-        ha_device_set_pin(i, !ha_devices[i].pin_home);
+        int pin = !ha_devices[i].pin_home;
+        ha_device_set_pin(i, pin);
+        /* Home also puts a light/switch on a free Verlichting tile button
+         * (and takes it off again); the tile chooser can change that. */
+        if (ha_devices[i].type == HADEV_LIGHT || ha_devices[i].type == HADEV_SWITCH) {
+            char ref[TL_REF_LEN + 4];
+            snprintf(ref, sizeof ref, "ha:%s", ha_devices[i].entity_id);
+            tl_pin(ref, pin, 0);
+        }
         rebuild();
     }
 }
@@ -85,7 +94,6 @@ static void rebuild(void) {
 
     const layout_tile_t * lt_tile = settings.custom_layout_enabled ? layout_find(LT_LIGHTS) : NULL;
     int lights_tile = (lt_tile && lt_tile->visible);
-    int tile_rank = 0;
     for (int i = 0; i < ha_device_count; i++) {
         ha_device_t * D = &ha_devices[i];
         lv_obj_t * c = lv_obj_create(list);
@@ -110,14 +118,15 @@ static void rebuild(void) {
         lv_obj_align(tp, LV_ALIGN_LEFT_MID, 4, 12);
 
         /* Home-pin toggle + remove. With a Verlichting tile in the custom
-         * layout, the first two pinned lights/switches are that tile's two
-         * buttons: label them T1 / T2 (as the Domoticz screen does) so it is
-         * clear which devices the tile shows. */
+         * layout, a light/switch on one of that tile's two buttons is
+         * labelled T1 / T2 (as the Domoticz screen does). */
         const char * pin_txt = D->pin_home ? "Home " LV_SYMBOL_OK : "Home";
         if (D->pin_home && lights_tile && (D->type == HADEV_LIGHT || D->type == HADEV_SWITCH)) {
-            if (tile_rank == 0)      pin_txt = "T1 " LV_SYMBOL_OK;
-            else if (tile_rank == 1) pin_txt = "T2 " LV_SYMBOL_OK;
-            tile_rank++;
+            char ref[TL_REF_LEN + 4];
+            snprintf(ref, sizeof ref, "ha:%s", D->entity_id);
+            int slot = tl_slot_of(ref);
+            if (slot == 0)      pin_txt = "T1 " LV_SYMBOL_OK;
+            else if (slot == 1) pin_txt = "T2 " LV_SYMBOL_OK;
         }
         lv_obj_t * pinb = small_btn(c, pin_txt,
                                     D->pin_home ? COL_PIN_ON : COL_PIN_OFF,

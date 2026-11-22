@@ -12,6 +12,7 @@
 #include "theme.h"
 #include "domoticz.h"
 #include "homewizard.h"
+#include "tile_lights.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
@@ -38,20 +39,17 @@ static void on_toggle(lv_event_t * e) {
     int idx = (int)(intptr_t)lv_event_get_user_data(e);
     domoticz_switch_async(idx, "Toggle");
 }
-static void on_pin_tile1(lv_event_t * e) {
+/* T1/T2: the Verlichting tile's two slots (shared with HA, Homey and the
+ * tile chooser, see tile_lights.h). Tapping the active one empties it. */
+static void pin_tile(lv_event_t * e, int slot) {
     int idx = (int)(intptr_t)lv_event_get_user_data(e);
-    if (settings.domoticz_tile_idx1 == idx) settings.domoticz_tile_idx1 = -1;
-    else settings.domoticz_tile_idx1 = idx;
-    settings_save();
+    char ref[24];
+    snprintf(ref, sizeof ref, "dz:%d", idx);
+    tl_set(slot, tl_slot_of(ref) == slot ? "" : ref);
     build_rows();
 }
-static void on_pin_tile2(lv_event_t * e) {
-    int idx = (int)(intptr_t)lv_event_get_user_data(e);
-    if (settings.domoticz_tile_idx2 == idx) settings.domoticz_tile_idx2 = -1;
-    else settings.domoticz_tile_idx2 = idx;
-    settings_save();
-    build_rows();
-}
+static void on_pin_tile1(lv_event_t * e) { pin_tile(e, 0); }
+static void on_pin_tile2(lv_event_t * e) { pin_tile(e, 1); }
 static void on_blind_open (lv_event_t * e) { domoticz_switch_async((int)(intptr_t)lv_event_get_user_data(e), "Open");  }
 static void on_blind_stop (lv_event_t * e) { domoticz_switch_async((int)(intptr_t)lv_event_get_user_data(e), "Stop");  }
 static void on_blind_close(lv_event_t * e) { domoticz_switch_async((int)(intptr_t)lv_event_get_user_data(e), "Close"); }
@@ -111,8 +109,10 @@ static void build_rows(void) {
             mk_btn(row, tr("Open", "Open"), COL_OPEN, on_blind_open, d->idx, SX(120));
             lv_obj_align(lv_obj_get_child(row, lv_obj_get_child_cnt(row)-1), LV_ALIGN_RIGHT_MID, SX(-250), 0);
         } else {
-            int is_t1 = (settings.domoticz_tile_idx1 == d->idx);
-            int is_t2 = (settings.domoticz_tile_idx2 == d->idx);
+            char ref[24];
+            snprintf(ref, sizeof ref, "dz:%d", d->idx);
+            int slot = tl_slot_of(ref);
+            int is_t1 = slot == 0, is_t2 = slot == 1;
             lv_obj_t * b_t1 = mk_btn(row, is_t1 ? "[ T1 ]" : "T1", is_t1 ? 0x2a6088 : 0x223044, on_pin_tile1, d->idx, SX(72));
             lv_obj_align(b_t1, LV_ALIGN_RIGHT_MID, SX(-238), 0);
             lv_obj_t * b_t2 = mk_btn(row, is_t2 ? "[ T2 ]" : "T2", is_t2 ? 0x2a6088 : 0x223044, on_pin_tile2, d->idx, SX(72));
