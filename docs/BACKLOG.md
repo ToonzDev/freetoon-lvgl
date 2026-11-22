@@ -604,7 +604,7 @@
 - **Log rotation & capping**: `healthcheck.c` checks every 60 s and rotates `toonui.log` at 256 KB, and `scripts/ui_launcher.sh` watchdog checks all `/var/volatile/tmp/*.log` every 60 s, truncating in place with a `.1` copy kept.
 
 ### 52. Direct Solar Inverter Integration (Porting QML `solarPanel`)
-- **Status**: Open (user request, 2026-11-15).
+- **Status**: Merged into #60 (2026-11-22): the plan of approach for porting the QML `solarPanel` app lives there.
 - **Description**: The community QML app `solarPanel` (ToonSoftwareCollective / oepi-loepi) allowed rooted Toons to read solar power and cumulative yield directly from solar inverters over the local network (LAN / Wi-Fi) without needing a hardware meter adapter (ZonOpToon) or physical kWh submeter in the fusebox. Wanted: bring this capability natively into FreeToon.
 - **Background & QML Architecture**:
   - The QML `solarPanel` app uses `inverters.json` and brand-specific plugin definitions (`solarpanel-plugins`) to query inverters (Enphase Envoy, SolarEdge, SMA Sunny Boy, Fronius, Growatt, GoodWe, APSystems, Hoymiles/OpenDTU, etc.) or local platforms (Home Assistant).
@@ -680,7 +680,7 @@
 - **Contents**: dynamic contract separately for electricity and gas (field request) + fix: 1.0.14 never saved the dynamic setting and surcharges (6aaca37); updates install exactly the release the Toon found, scripts from that tag (#32, 71a65b9); thermostat screen no longer redraws the whole screen twice a second (52ebf96); Toon 1 thermostat setpoint row no longer overlaps Water / Retour (a43ba76). Build side: lvgl submodule back on upstream + patches (a72f6fe), CI on every push (e6ea064 and follow-ups). First release that also ships the browser UI (index.html / index.js / index.wasm) since 1.0.12.
 
 ### 60. Solar production: one holistic approach (all sources, all users)
-- **Status**: Open (2026-11-19), parked: design first, pick up later. Supersedes the scope of #52 (direct inverter reading becomes one part of this).
+- **Status**: Open; plan of approach agreed 2026-11-22 (below), not started. Supersedes #52 (porting the QML `solarPanel` app is part of this).
 - **Problem**: solar today has three unrelated entry points, none of them usable for a non-technical user without extra hardware: HomeWizard kWh meter (`hw_kwh_host` / `hw_kwh2_host`, needs a meter in the fuse box), meter adapter S0/analog solar (#54, rare, untested on real hardware), Home Assistant (`ha_solar_entity`, live W only). `energy_solar_w()` (energy.c) picks the first one that's set. The P1 meter only sees net export, not production.
 - **Gaps**:
   - No route without Home Assistant or extra hardware (the old QML `solarPanel` app read inverters directly).
@@ -694,6 +694,25 @@
   - HA: auto-pick the solar sensor from the Energy dashboard, and store the kWh total so statistics fill.
   - Every source writes live W + hourly/daily kWh into hcb_rrd the same way (only closed bins, as for the HomeWizard sockets in #48).
   - Before starting: ask users (forum) which inverter brands they actually have.
+- **Decisions (2026-11-22)**:
+  - Split: the core owns the solar pipeline (source choice, `energy_solar_w()`, hcb_rrd writing, tiles / dim / stats / remote page, no double counting); inverter drivers are a marketplace app. Matches STRATEGY pillar B ("solar as marketplace apps") and "no built-in integrations the maintainer cannot test".
+  - oepi-loepi (author of the QML `solarPanel` app and `solarpanel-plugins`) is in the team, so porting his driver logic is fine (both repos carry no license file; get his OK on the license of the port, MIT like the rest).
+- **The QML app (studied 2026-11-22, ToonSoftwareCollective/solarPanel 1.4.13 + solarpanel-plugins)**:
+  - 38 plugins in `inverters.json` (JS downloaded at run time). Local (~13): Enphase (old Envoy), Fronius, SMA, OpenDTU, Zeversolar, Omnik, Kostal, SAJ, FP4ALL, Domoticz, Home Assistant (2x), HomeWizard. Cloud (~25): Growatt, GoodWe SEMS, SolarEdge, Huawei FusionSolar, Solis / SolisCloud, Hoymiles, APS, Deye, Fox, Solax, Delta, Canadian Solar, Autarco, Solarman, PVOutput, Zonneplan, Enphase Enlighten / token. The "-T" variants get tokens through `solarPanel.sh` (curl).
+  - Reads current W, total kWh, today kWh; up to two inverters; own use = production minus P1 export; 6 tile variants; today / day / month graphs with sunrise/sunset (Buienradar); JSON for phones at `/solar.html`.
+  - hcb_rrd: merges three loggers into config_hcb_rrd.xml and reboots (`elec_solar_flow` 5 min avg, `elec_solar_quantity` 5yrhours + 10yrdays "last", `elec_produ_flow`), then `setRrdData` per 5 min / hour / day.
+- **Architecture**:
+  - Contract: one BoxTalk service (e.g. `solarSource`) every source speaks: `power_w`, `total_kwh`, optional `today_kwh`, per-inverter index. Third-party apps only need this contract.
+  - Core `solar.c`: exactly one active source (inverter app, HomeWizard kWh, Home Assistant, meter adapter) -> `energy_solar_w()`; creates the loggers via `SetObjectConfig` (no config edit, no reboot, as #48) and writes closed bins only; the app never writes hcb_rrd itself.
+  - Migration for QML-app users: their loggers have the same names but other `deviceUuid`s; repoint via `SetObjectConfig` keeps the history.
+- **Phases**:
+  - 0. Forum poll which brands users have; testers per brand (no driver to stable without a real inverter).
+  - 1. Core pipeline, testable in the sim with a synthetic fake source (like `tests/homey_mock.py`): `solar.c`, one "Zonnepanelen" settings entry listing every source, rrd writer, HA kWh sensor from the Energy dashboard (`energy/get_prefs`). Already useful on its own: HomeWizard and HA users get filled Zon statistics.
+  - 2. Marketplace app "Omvormers", local brands first (Fronius, SMA, OpenDTU / AhoyDTU, older Enphase, Zeversolar, Omnik, Kostal, SAJ); Domoticz / HA / HomeWizard stay in the core. Settings: a UI plugin `.so` (as Stocks / Sonos) or, preferred, settings fields declared in the manifest (STRATEGY pillar B; helps every app, needs a manifest extension first).
+  - 3. Cloud brands, opt-in and clearly labelled (same app or a separate "Omvormers (cloud)" app; open decision). Passwords / tokens never in logs or the diagnose report.
+  - 4. Extras from the QML app: own-use tile / dim block, two inverters summed, sunrise/sunset in the day graph, 5-min "today" graph.
+- **Risks**: double counting (one active source is a hard rule); Toon 1 CPU (poll ~30 s, slower at night, as the app does); cloud APIs change often (Growatt / Huawei fixes fill the app's changelog), another reason for app ownership per brand.
+- **Open decisions**: cloud brands in the same app or a separate one; app settings via UI plugin or manifest extension; start phase 1 now.
 
 ### 61. Release 1.0.16: diagnose report, Ketel dim block, OT bridge and boiler-type safety
 - **Status**: Published (2026-11-20), tag 1.0.16 on efcab22 (binaries built from 2fa940f, same code). The Toon 1 serial-line fix of the diagnose report (6c39643) came after the tag and ships with 1.0.17.
