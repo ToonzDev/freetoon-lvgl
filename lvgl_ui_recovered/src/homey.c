@@ -30,7 +30,15 @@ void homey_lock(void)   { pthread_mutex_lock(&g_mu); }
 void homey_unlock(void) { pthread_mutex_unlock(&g_mu); }
 
 static volatile int g_kick = 0;
-void homey_kick(void) { g_kick = 1; }
+/* Bumped on every settings change. The status of a poll that started with
+ * the old host/key is thrown away, so screens show "connecting" until the
+ * new values have been tried, not a stale "connected" or "key refused". */
+static volatile unsigned g_cfg_gen = 0;
+void homey_kick(void) {
+    __sync_fetch_and_add(&g_cfg_gen, 1);
+    homey_state.status = HOMEY_ST_OFF;   /* shown as "connecting" while enabled */
+    g_kick = 1;
+}
 
 /* Set by the control worker after each request: poll devices soon (without
  * reloading zones/flows) to confirm the optimistic value. */
@@ -288,7 +296,9 @@ static void * homey_thread(void * arg) {
             continue;
         }
         int n = 0;
+        unsigned cfg = g_cfg_gen;
         int st = poll_devices(&n);
+        if (cfg != g_cfg_gen) { g_kick = 0; last_meta = 0; continue; }   /* settings changed meanwhile: poll again with the new ones */
         homey_state.status = st;
         if (st != last_status) {
             if (st == HOMEY_ST_OK) fprintf(stderr, "[homey] connected: %d devices\n", n);
@@ -323,8 +333,14 @@ int homey_probe(void) {
     if (!settings.homey_host[0]) return -HOMEY_ST_NOCONN;
     if (!g_key[0]) load_key();
     if (!g_key[0]) return -HOMEY_ST_AUTH;
-    int n = 0;
-    int st = poll_devices(&n);
+    int n = 0, st = HOMEY_ST_NOCONN;
+    for (int tries = 0; tries < 2; tries++) {
+        unsigned cfg = g_cfg_gen;
+        st = poll_devices(&n);
+        if (cfg != g_cfg_gen) continue;          /* host/key changed during the test: test again */
+        homey_state.status = st;                 /* the status line agrees with the test result */
+        break;
+    }
     return st == HOMEY_ST_OK ? n : -st;
 }
 

@@ -54,7 +54,9 @@ void homey_unlock(void);
 
 /* Starts the poller once (it re-reads the settings every round). */
 int  homey_start(void);
-/* Wake the poller now (after a settings change). */
+/* Wake the poller now (after a settings change). Resets status to
+ * HOMEY_ST_OFF ("connecting" while enabled) until the new host/key is tried;
+ * a poll still running with the old values does not overwrite that. */
 void homey_kick(void);
 
 /* Zone name for a zone id, "" if unknown. Caller holds the lock. */

@@ -2054,6 +2054,14 @@ static char homey_shown_key[160];
 static volatile int g_homey_test_busy = 0;
 static volatile int g_homey_test_done = 0;
 static volatile int g_homey_test_rc   = 0;
+/* An error from the last test stays only while it is still true: it is
+ * replaced once the poller connects, or when the address or key is changed
+ * via the web page. */
+static int g_homey_result_err = 0;
+static const char * homey_hint(void) {
+    return tr("Vul adres en API-sleutel in en kies Opslaan + testen.",
+              "Enter the address and API key, then Save + test.");
+}
 
 static void * homey_test_thread(void * arg) {
     (void)arg;
@@ -2065,6 +2073,7 @@ static void * homey_test_thread(void * arg) {
 
 static void homey_show_result(int rc) {
     if (!lbl_homey_result) return;
+    g_homey_result_err = rc < 0;
     if (rc >= 0)
         lv_label_set_text_fmt(lbl_homey_result, tr("Verbonden - %d apparaten.", "Connected - %d devices."), rc);
     else if (rc == -HOMEY_ST_AUTH)
@@ -2084,6 +2093,7 @@ static void homey_tick(void) {
         !strcmp(lv_textarea_get_text(ta_homey_host), homey_shown_host)) {
         snprintf(homey_shown_host, sizeof homey_shown_host, "%s", settings.homey_host);
         lv_textarea_set_text(ta_homey_host, homey_shown_host);
+        if (lbl_homey_result && !g_homey_test_busy) { lv_label_set_text(lbl_homey_result, homey_hint()); g_homey_result_err = 0; }
     }
     if (ta_homey_key) {
         char cur[160];
@@ -2092,6 +2102,7 @@ static void homey_tick(void) {
             !strcmp(lv_textarea_get_text(ta_homey_key), homey_shown_key)) {
             snprintf(homey_shown_key, sizeof homey_shown_key, "%s", cur);
             lv_textarea_set_text(ta_homey_key, cur);
+            if (lbl_homey_result && !g_homey_test_busy) { lv_label_set_text(lbl_homey_result, homey_hint()); g_homey_result_err = 0; }
         }
     }
     if (g_homey_test_done) {
@@ -2105,6 +2116,10 @@ static void homey_tick(void) {
     }
     int st = homey_state.status;
     long ago = homey_state.last_ok ? (long)time(NULL) - homey_state.last_ok : -1;
+    if (st == HOMEY_ST_OK && g_homey_result_err && !g_homey_test_busy && lbl_homey_result) {
+        lv_label_set_text(lbl_homey_result, tr("Verbonden.", "Connected."));
+        g_homey_result_err = 0;
+    }
     homey_lock();
     int nd = homey_state.ndev, nf = homey_state.nflow;
     homey_unlock();
@@ -2162,9 +2177,10 @@ static void on_homey_apply_click(lv_event_t * e) {
           return;
       } }
     homey_start();   /* starts the poller, or wakes it to use the new host/key */
-    if (g_homey_test_busy) return;
-    g_homey_test_busy = 1;
     lv_label_set_text(lbl_homey_result, tr("Bezig met testen...", "Testing..."));
+    g_homey_result_err = 0;
+    if (g_homey_test_busy) return;   /* the running test re-tests if host/key changed */
+    g_homey_test_busy = 1;
     pthread_t t;
     if (pthread_create(&t, NULL, homey_test_thread, NULL) == 0) pthread_detach(t);
     else { g_homey_test_busy = 0; lv_label_set_text(lbl_homey_result, tr("Test kon niet starten.", "Could not start the test.")); }
@@ -2231,8 +2247,8 @@ static void open_homey(lv_event_t * e) {
     lv_obj_t * la = lv_label_create(b_apply); lv_label_set_text(la, tr("Opslaan + testen", "Save + test")); lv_obj_center(la);
     y += is_t1 ? 56 : 64;
 
-    lbl_homey_result = homey_label(p, y, tr("Vul adres en API-sleutel in en kies Opslaan + testen.",
-                                            "Enter the address and API key, then Save + test."), 18, 0xa8c4dc);
+    g_homey_result_err = 0;
+    lbl_homey_result = homey_label(p, y, homey_hint(), 18, 0xa8c4dc);
     y += is_t1 ? 44 : 50;
     lbl_homey_status = homey_label(p, y, "", 18, 0xa8c4dc);
     y += is_t1 ? 44 : 50;

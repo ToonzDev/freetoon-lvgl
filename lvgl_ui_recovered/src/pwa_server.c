@@ -2664,7 +2664,7 @@ static int homey_host_ok(const char * h) {
     return 1;
 }
 
-static int handle_homey_get(int fd, const char * msg, int refresh) {
+static int handle_homey_get(int fd, const char * msg) {
     char host_esc[200], key[160], status[200];
     html_attr_esc(host_esc, sizeof host_esc, settings.homey_host);
     homey_get_key(key, sizeof key);
@@ -2680,6 +2680,9 @@ static int handle_homey_get(int fd, const char * msg, int refresh) {
     else if (st == HOMEY_ST_NOCONN)  snprintf(status, sizeof status, "Geen verbinding - controleer het adres.");
     else if (st == HOMEY_ST_BADDATA) snprintf(status, sizeof status, "Onverwacht antwoord - is dit een Homey Pro?");
     else                             snprintf(status, sizeof status, "Verbinden...");
+    /* While the outcome is not known yet (just saved, or the poller is still
+     * trying the new address/key), reload every 2 s until it is. */
+    int refresh = settings.enable_homey && settings.homey_host[0] && st == HOMEY_ST_OFF;
 
     char body[6144];
     int pos = snprintf(body, sizeof body,
@@ -2707,7 +2710,7 @@ static int handle_homey_get(int fd, const char * msg, int refresh) {
         "<div class=\"st\"><b>Status:</b> %s</div>"
         "<p style=\"margin-top:20px;text-align:center\"><a href=\"/\" class=\"btn btn-sec\">&larr; Terug naar Toon</a></p>"
         "</div></body></html>",
-        refresh ? "<meta http-equiv=\"refresh\" content=\"4;url=/homey\">" : "",
+        refresh ? "<meta http-equiv=\"refresh\" content=\"2\">" : "",
         msg ? "<p class=\"msg\">" : "", msg ? msg : "", msg ? "</p>" : "",
         host_esc,
         key[0] ? " (ingesteld - leeg laten om te houden)" : "",
@@ -2734,14 +2737,14 @@ static int handle_homey_post(int fd, const char * req, const char * body) {
     for (size_t L = strlen(host); L && host[L - 1] == ' '; ) host[--L] = 0;
 
     if (!homey_host_ok(host))
-        return handle_homey_get(fd, "Ongeldig adres: alleen letters, cijfers en . : - _ / [ ].", 0);
+        return handle_homey_get(fd, "Ongeldig adres: alleen letters, cijfers en . : - _ / [ ].");
     if (strcmp(host, settings.homey_host) != 0 && !key[0]) {
         char cur[160]; homey_get_key(cur, sizeof cur);
         if (cur[0])
-            return handle_homey_get(fd, "Vul bij een nieuw adres ook de API-sleutel opnieuw in.", 0);
+            return handle_homey_get(fd, "Vul bij een nieuw adres ook de API-sleutel opnieuw in.");
     }
     if (key[0] && homey_set_key(key) != 0)
-        return handle_homey_get(fd, "Dit is geen geldige API-sleutel (alleen letters, cijfers en : . _ -).", 0);
+        return handle_homey_get(fd, "Dit is geen geldige API-sleutel (alleen letters, cijfers en : . _ -).");
     snprintf(settings.homey_host, sizeof settings.homey_host, "%s", host);
     settings.enable_homey = host[0] ? 1 : 0;
     settings_save();
@@ -2813,8 +2816,8 @@ static int dispatch(int fd, char * req) {
             return handle_diag_get(fd, path[5] == '?');
         if (!strcmp(path, "/ketellog") || !strcmp(path, "/ketellog?view"))
             return handle_ketellog_get(fd, path[9] == '?');
-        if (!strcmp(path, "/homey"))       return handle_homey_get(fd, NULL, 0);
-        if (!strcmp(path, "/homey?saved")) return handle_homey_get(fd, "Opgeslagen. De status ververst vanzelf.", 1);
+        if (!strcmp(path, "/homey"))       return handle_homey_get(fd, NULL);
+        if (!strcmp(path, "/homey?saved")) return handle_homey_get(fd, "Opgeslagen.");
         if (!strcmp(path, "/") || !strcmp(path, "/index.html") || !strncmp(path, "/?", 2))
             return handle_remote_page(fd);
         return serve_static(fd, path);
