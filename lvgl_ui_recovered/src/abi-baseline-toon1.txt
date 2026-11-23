@@ -33,6 +33,7 @@ execv@GLIBC_2.4
 fchmod@GLIBC_2.4
 fclose@GLIBC_2.4
 fcntl@GLIBC_2.4
+fdopen@GLIBC_2.4
 ferror@GLIBC_2.4
 fflush@GLIBC_2.4
 fgetc@GLIBC_2.4
@@ -55,6 +56,7 @@ getaddrinfo@GLIBC_2.4
 getenv@GLIBC_2.4
 gethostbyname@GLIBC_2.4
 gethostname@GLIBC_2.4
+getpeername@GLIBC_2.4
 getpid@GLIBC_2.4
 getsockname@GLIBC_2.4
 gettimeofday@GLIBC_2.4
