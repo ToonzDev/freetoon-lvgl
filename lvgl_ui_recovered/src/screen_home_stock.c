@@ -920,10 +920,13 @@ static void refresh_cb(lv_timer_t * t) {
         else        lv_obj_add_state(sw_prog, LV_STATE_CHECKED);
     }
     /* Selected programme: accent text, grey fill and a thick accent border
-     * (user request: the fill + text colour alone were hard to see). Lazy
-     * setters: this runs every second and must not redraw the buttons. */
+     * (user request: the fill + text colour alone were hard to see), also
+     * with the programme off: a programme picked by hand is still the active
+     * state (a free setpoint via +/- has no active state, so nothing is
+     * marked then). Lazy setters: this runs every second and must not
+     * redraw the buttons. */
     for (int i = 0; i < 4; i++) {
-        int active = (!manual && toon_state.active_state == scene_state[i]);
+        int active = (toon_state.active_state == scene_state[i]);
         ui_obj_set_style_text_color(scene_lbl[i], lv_color_hex(active ? C_ACCENT : C_TITLE), 0);
         ui_obj_set_style_bg_color(scene_btn[i], lv_color_hex(active ? C_HEADER : C_CARD), 0);
         ui_obj_set_style_border_color(scene_btn[i], lv_color_hex(active ? C_ACCENT : 0xE0E0E0), 0);
