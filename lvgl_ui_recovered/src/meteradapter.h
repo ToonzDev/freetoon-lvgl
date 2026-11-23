@@ -31,6 +31,15 @@ typedef struct {
      * reports a "solar" usage. solar_at = time() of the last reading. */
     volatile float solar_w;
     volatile long  solar_at;
+    /* The stock tiles' own values, from happ_pwrusage's powerUsage dataset:
+     * "value" = what the house uses now incl. own solar (stock "Verbruik
+     * nu"), "valueSolar" = solar now (stock "Zon nu"). The flow notify above
+     * (power_w) is the grid draw: it drops while the panels produce.
+     * ds_solar = 1 once valueSolar was > 0, i.e. there is a solar meter. */
+    volatile float house_w;
+    volatile long  house_at;
+    volatile long  ds_solar_at;
+    volatile int   ds_solar;
     /* NILM — step-change device detection */
     char   nilm_device[40];      /* matched device name + direction, e.g. "Fridge ON" */
     int    nilm_direction;       /* +1 = on, -1 = off */
@@ -47,5 +56,7 @@ void meteradapter_on_flow(float watts);
 void probe_happ_pwrusage(void);
 /* 1 while a solar meter on the adapter delivers readings (master only). */
 int  meteradapter_have_solar(void);
+/* "Verbruik nu" as the stock tile: house use with a solar meter, else the grid draw. */
+float meteradapter_power_w(void);
 
 #endif

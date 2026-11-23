@@ -218,6 +218,9 @@ static int usage_val(const char * buf, const char * obj, float * out) {
  * while an adapter reports a "solar" usage, so P1-only setups (where
  * powerProduction is the export) don't show it as solar. */
 static void poll_solar(void) {
+    /* The powerUsage dataset's valueSolar (what the stock "Zon nu" tile
+     * shows) wins; this HTTP field is only the fallback without it. */
+    if (meter_state.ds_solar_at && (long)time(NULL) - meter_state.ds_solar_at < 60) return;
     char buf[512];
     if (http_fetch_to("http://127.0.0.1:10080/happ_pwrusage?action=GetCurrentUsage", buf, sizeof buf, 2) != 0) return;
     float w;
@@ -230,7 +233,19 @@ static void poll_solar(void) {
 
 int meteradapter_have_solar(void) {
     return !settings.client_mode && meter_state.solar_at &&
-           (long)time(NULL) - meter_state.solar_at < 60 && ma_has_usage("solar");
+           (long)time(NULL) - meter_state.solar_at < 60 &&
+           (ma_has_usage("solar") || meter_state.ds_solar);
+}
+
+/* "Verbruik nu" as the stock tile shows it. With a solar meter that is the
+ * house's use (powerUsage dataset "value"), not the grid draw, which drops
+ * while the panels produce (user report: the energy tile went down with
+ * production). Without a solar meter both are the same: the grid draw. */
+float meteradapter_power_w(void) {
+    if (meteradapter_have_solar() && meter_state.house_at &&
+        (long)time(NULL) - meter_state.house_at < 60)
+        return meter_state.house_w;
+    return meter_state.power_w;
 }
 
 static int parse_rrd_delta(const char * body, float * out_delta, float * out_latest) {

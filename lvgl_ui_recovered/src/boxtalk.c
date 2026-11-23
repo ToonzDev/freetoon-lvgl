@@ -302,6 +302,25 @@ static void pwrusage_parse_dataset(const char * xml) {
         if (elem_text_double(pu, "meterReadingLow", &v) && v > 0)      meter_state.reading_elec_low_wh = v;
         if (elem_text_double(pu, "meterReadingProdu", &v) && v > 0)    meter_state.reading_prod_normal_wh = v;
         if (elem_text_double(pu, "meterReadingLowProdu", &v) && v > 0) meter_state.reading_prod_low_wh = v;
+        /* Live values as the stock tiles show them (GraphApp powerUsageData):
+         * value = house use now, valueSolar = solar now (W). */
+        long now = (long)time(NULL);
+        if (elem_text_double(pu, "value", &v) && v >= 0) {
+            meter_state.house_w  = (float)v;
+            meter_state.house_at = now;
+        }
+        if (elem_text_double(pu, "valueSolar", &v) && v >= 0) {
+            static int logged_solar = 0;
+            if (!logged_solar || (v > 0 && !meter_state.ds_solar)) {
+                logged_solar = 1;
+                fprintf(stderr, "[bxt-meter] powerUsage: valueSolar=%.0f W value=%.0f W\n",
+                        v, (double)meter_state.house_w);
+            }
+            meter_state.solar_w     = (float)v;
+            meter_state.solar_at    = now;
+            meter_state.ds_solar_at = now;
+            if (v > 0) meter_state.ds_solar = 1;
+        }
     }
     const char * gu = strstr(xml, "<gasUsage>");
     if (gu && elem_text_double(gu, "meterReading", &v) && v > 0)

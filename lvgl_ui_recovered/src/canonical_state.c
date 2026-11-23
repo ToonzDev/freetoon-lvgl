@@ -98,7 +98,7 @@ void canonical_state_get_energy(canonical_energy_t * out) {
         out->tariff           = hw_state.tariff;
         out->connected        = 1;
     } else if (meter_state.connected) {
-        out->power_w   = meter_state.power_w;
+        out->power_w   = meteradapter_power_w();   /* stock "Verbruik nu" */
         out->connected = 1;
     }
 }

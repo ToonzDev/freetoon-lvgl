@@ -38,7 +38,7 @@ float energy_power_w(void) {
         case 1:  return hw_state.power_w;
         case 2:  return p1esp_state.power_w;
         case 3:  return ha_state.energy_power_w;
-        default: return meter_state.power_w;
+        default: return meteradapter_power_w();
     }
 }
 
