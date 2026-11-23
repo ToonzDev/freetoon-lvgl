@@ -181,7 +181,13 @@ static void * solar_rrd_thread(void * arg) {
         if (now < 1600000000L) continue;       /* clock not set yet */
 
         if (!have_own_source()) {
-            if (owned) { loggers_give_back(); owned = 0; floored = 0; }
+            /* also after a restart: a saved device means FreeToon took the
+             * loggers over at some point and has not given them back yet */
+            if (owned || (now - last_take >= 600 && access(SAVED_PATH, F_OK) == 0)) {
+                loggers_give_back();
+                last_take = now;
+            }
+            owned = 0; floored = 0;
             continue;
         }
         if (!owned || now - last_take >= 600) {  /* also undoes happ_pwrusage re-pointing them */
@@ -207,6 +213,13 @@ static void * solar_rrd_thread(void * arg) {
                         fl, g_acc.total_wh);
             sacc_floor(&g_acc, fl);
             floored = 1;
+            /* A restart (update, UI switch) over a full hour would leave that
+             * hour without a value: write the hour (and day) that closed last
+             * now when the archive has nothing at its label yet. */
+            double x;
+            long ch = bin(now, 3600), cd = bin(now, 86400);
+            if (rrd_last_value(LOGGERS[0], "5yrhours", ch - 60, ch + 60, &x) != 0) last_h = 0;
+            if (rrd_last_value(LOGGERS[0], "10yrdays", cd - 60, cd + 60, &x) != 0) last_d = 0;
         }
 
         long b5 = bin(now, 300), bh = bin(now, 3600), bd = bin(now, 86400);
