@@ -4,6 +4,7 @@
 #include "homewizard.h"
 #include "p1esphome.h"
 #include "homeassistant.h"
+#include "solar_app.h"
 #include "i18n.h"
 #include "http.h"
 #include <pthread.h>
@@ -353,15 +354,19 @@ const char * energy_offline_label(void) {
     }
 }
 
-/* Solar: a HomeWizard kWh meter on the inverter wins when its IP is set;
- * then the HA production sensor; then a solar meter (S0 pulse sensor) on
- * the Toon's own meter adapter. */
+/* Solar: an inverter read by a marketplace app (solar_app.c) wins while it
+ * is active - the user installed and set it up for exactly this; then a
+ * HomeWizard kWh meter on the inverter when its IP is set; then the HA
+ * production sensor; then a solar meter (S0 pulse sensor) on the Toon's own
+ * meter adapter. One source at a time, so panels are never counted twice. */
 int   energy_have_solar(void) {
+    if (solar_app_active()) return 1;
     if (settings.hw_kwh_host[0] || settings.hw_kwh2_host[0]) return hw_state.connected_kwh;
     if (settings.enable_ha && ha_state.have_solar) return 1;
     return meteradapter_have_solar();
 }
 float energy_solar_w(void) {
+    if (solar_app_active()) return solar_app_power_w();
     if (settings.hw_kwh_host[0] || settings.hw_kwh2_host[0]) return hw_state.kwh_power_w;
     if (settings.enable_ha && ha_state.have_solar) return ha_state.solar_w;
     return meteradapter_have_solar() ? meter_state.solar_w : 0.0f;

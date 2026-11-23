@@ -62,6 +62,9 @@
 #include <sys/time.h>
 #include "ketellog.h"
 #include "homey.h"
+#include "solar_app.h"
+#include "app_settings.h"
+#include "energy.h"
 #include "tile_lights.h"
 
 #define PWA_PORT  10081
@@ -2013,6 +2016,8 @@ static int path_is_public(const char * path) {
     if (!strcmp(path, "/ketellog") || !strcmp(path, "/ketellog?view")) return 1;
     if (!strcmp(path, "/log") || !strcmp(path, "/api/log") || !strncmp(path, "/log?", 5) || !strncmp(path, "/api/log?", 9) || !strncmp(path, "/log/", 5) || !strncmp(path, "/api/log/", 9)) return 1;
     if (!strncmp(path, "/api/v1/marketplace/", 20)) return 1;
+    /* inverter app daemon on the Toon itself; the handler refuses other peers */
+    if (!strcmp(path, "/api/v1/solar/source")) return 1;
     return 0;
 }
 
@@ -2604,7 +2609,8 @@ static int handle_logs_index_get(int fd) {
     }
 
     pos += snprintf(body + pos, sizeof(body) - pos,
-        "<p style=\"margin-top:20px\">Koppelingen: <a href=\"/homey\" style=\"color:#38bdf8\">Homey (adres en API-sleutel)</a></p>"
+        "<p style=\"margin-top:20px\">Koppelingen: <a href=\"/homey\" style=\"color:#38bdf8\">Homey (adres en API-sleutel)</a>"
+        " &middot; <a href=\"/solar\" style=\"color:#38bdf8\">Zonnepanelen (omvormer)</a></p>"
         "<p style=\"margin-top:20px;text-align:center\"><a href=\"/\" class=\"btn btn-sec\">&larr; Terug naar Toon</a></p>"
         "</div></body></html>");
 
@@ -2762,6 +2768,124 @@ static int handle_homey_post(int fd, const char * req, const char * body) {
     return send_redirect(fd, "/homey?saved", NULL);
 }
 
+/* ---------------------------------------------------------------- /solar
+ * Solar production (BACKLOG #60). An inverter app (marketplace, e.g.
+ * "inverters") POSTs its readings to /api/v1/solar/source; this page shows
+ * which source the core uses and the app's settings form, generated from
+ * the "settings" block in its manifest (app_settings.c). Same cross-site
+ * rule as /homey, and a changed address needs its secrets typed again. */
+
+/* POST /api/v1/solar/source: only from the Toon itself (the app's daemon). */
+static int handle_solar_source_post(int fd, const char * body) {
+    struct sockaddr_in peer;
+    socklen_t pl = sizeof peer;
+    if (getpeername(fd, (struct sockaddr *)&peer, &pl) != 0 || peer.sin_family != AF_INET ||
+        ntohl(peer.sin_addr.s_addr) != 0x7f000001)
+        return send_status(fd, 403, "Forbidden", "{\"err\":\"local only\"}");
+    if (solar_app_post(body) != 0)
+        return send_status(fd, 400, "Bad Request", "{\"err\":\"need {\\\"app\\\":...}\"}");
+    return send_json_response(fd, 200, "{\"ok\":true}");
+}
+
+static time_t g_solar_saved_at;
+
+static const char * solar_source_name(char * buf, size_t n) {
+    solar_app_state_t a;
+    solar_app_get(&a);
+    if (solar_app_active()) snprintf(buf, n, "Omvormer-app (%s)", a.brand);
+    else if (settings.hw_kwh_host[0] || settings.hw_kwh2_host[0]) snprintf(buf, n, "HomeWizard kWh-meter");
+    else if (settings.enable_ha && ha_state.have_solar) snprintf(buf, n, "Home Assistant");
+    else if (meteradapter_have_solar()) snprintf(buf, n, "Zonnesensor op de meteradapter");
+    else snprintf(buf, n, "geen");
+    return buf;
+}
+
+static int handle_solar_get(int fd, const char * msg) {
+    size_t cap = 24 * 1024;
+    char * body = malloc(cap);
+    if (!body) return send_status(fd, 500, "Internal Server Error", "oom");
+    char app_id[48] = "", app_name[80] = "", src[80], ename[200];
+    int have_app = app_settings_find_solar(app_id, sizeof app_id, app_name, sizeof app_name);
+    solar_app_state_t a;
+    solar_app_get(&a);
+    time_t now = time(NULL);
+    /* Just saved: reload every 3 s until the app has posted with the new settings (max 30 s). */
+    int refresh = g_solar_saved_at && now - g_solar_saved_at < 30 && a.last_post <= g_solar_saved_at;
+
+    int pos = snprintf(body, cap,
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">%s"
+        "<title>FreeToon - Zonnepanelen</title><style>"
+        "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0f1a2a;color:#e2e8f0;margin:0;padding:24px;line-height:1.5}"
+        ".card{max-width:600px;margin:0 auto;background:#1e293b;border-radius:12px;padding:24px}"
+        "h1{margin-top:0;font-size:22px;color:#38bdf8}h2{font-size:17px;color:#38bdf8;margin:24px 0 4px}p{color:#94a3b8;font-size:14px}"
+        "label{display:block;margin:14px 0 4px;font-size:14px}.cb label{display:inline;margin-left:6px}"
+        "input[type=text],input[type=password],select{width:100%%;box-sizing:border-box;padding:9px;border-radius:6px;border:1px solid #334155;background:#0f172a;color:#f8fafc;font-size:15px}"
+        ".help{margin:4px 0 0;font-size:13px}"
+        ".btn{background:#2563eb;color:#fff;border:0;padding:9px 18px;border-radius:6px;font-size:14px;cursor:pointer;margin-top:18px;text-decoration:none;display:inline-block}"
+        ".btn-sec{background:#334155;color:#e2e8f0}.st{background:#0f172a;border-radius:8px;padding:10px 14px;margin-top:14px}"
+        ".msg{color:#fbbf24}</style></head><body><div class=\"card\"><h1>Zonnepanelen</h1>",
+        refresh ? "<meta http-equiv=\"refresh\" content=\"3\">" : "");
+    if (msg) {
+        html_attr_esc(ename, sizeof ename, msg);
+        pos += snprintf(body + pos, cap - pos, "<p class=\"msg\">%s</p>", ename);
+    }
+    pos += snprintf(body + pos, cap - pos,
+        "<div class=\"st\"><b>Bron:</b> %s<br><b>Nu:</b> %.0f W", solar_source_name(src, sizeof src),
+        energy_have_solar() ? (double)energy_solar_w() : 0.0);
+    if (have_app && a.last_post) {
+        char m[200];
+        html_attr_esc(m, sizeof m, a.msg);
+        if (a.ok) pos += snprintf(body + pos, cap - pos, "<br><b>Omvormer:</b> %.0f W", a.power_w);
+        else pos += snprintf(body + pos, cap - pos, "<br><b>Omvormer:</b> <span class=\"msg\">%s</span>", m);
+        if (a.today_wh >= 0) pos += snprintf(body + pos, cap - pos, ", vandaag %.1f kWh", a.today_wh / 1000.0);
+        if (a.total_wh >= 0) pos += snprintf(body + pos, cap - pos, ", totaal %.0f kWh", a.total_wh / 1000.0);
+        pos += snprintf(body + pos, cap - pos, " <small>(%lds geleden)</small>", (long)(now - a.last_post));
+    } else if (have_app) {
+        pos += snprintf(body + pos, cap - pos, "<br><b>Omvormer:</b> nog geen bericht van de app");
+    }
+    pos += snprintf(body + pos, cap - pos, "</div>");
+
+    if (have_app) {
+        html_attr_esc(ename, sizeof ename, app_name);
+        pos += snprintf(body + pos, cap - pos, "<h2>Omvormer (app %s)</h2>", ename);
+        if (app_settings_form(app_id, "/solar", body, cap, &pos) != 0)
+            pos += snprintf(body + pos, cap - pos, "<p>De app heeft geen instellingen.</p>");
+    } else {
+        pos += snprintf(body + pos, cap - pos,
+            "<h2>Omvormer</h2><p>Wil je je omvormer rechtstreeks uitlezen (Enphase, Solis, Omnik)? "
+            "Installeer dan de app <b>Omvormers</b> via de Marketplace op de Toon. "
+            "Daarna stel je hem hier in.</p>");
+    }
+    pos += snprintf(body + pos, cap - pos,
+        "<p style=\"margin-top:20px;text-align:center\"><a href=\"/\" class=\"btn btn-sec\">&larr; Terug naar Toon</a></p>"
+        "</div></body></html>");
+    if (pos < 0 || (size_t)pos >= cap) { free(body); return send_status(fd, 500, "Internal Server Error", "page too large"); }
+    char hdr[200];
+    int hn = snprintf(hdr, sizeof hdr,
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: %d\r\n"
+        "Cache-Control: no-store\r\nX-Frame-Options: DENY\r\nConnection: close\r\n\r\n", pos);
+    int rc = sock_send_all(fd, hdr, hn) < 0 ? -1 : sock_send_all(fd, body, pos);
+    free(body);
+    return rc;
+}
+
+static int handle_solar_post(int fd, const char * req, const char * body) {
+    if (!homey_same_origin(req))
+        return send_status(fd, 403, "Forbidden", "cross-site request refused");
+    const char * cl = strcasestr(req, "Content-Length:");
+    if (cl && strlen(body) < (size_t)atoi(cl + 15))
+        return handle_solar_get(fd, "Het formulier was te groot en is niet opgeslagen.");
+    char app_id[48] = "", app_name[80] = "", msg[300];
+    if (!app_settings_find_solar(app_id, sizeof app_id, app_name, sizeof app_name))
+        return handle_solar_get(fd, "Geen omvormer-app geïnstalleerd.");
+    if (app_settings_save(app_id, body, msg, sizeof msg) != 0)
+        return handle_solar_get(fd, msg);
+    g_solar_saved_at = time(NULL);
+    fprintf(stderr, "[pwa] solar: settings of app %s saved via web\n", app_id);
+    return send_redirect(fd, "/solar?saved", NULL);
+}
+
 static int dispatch(int fd, char * req) {
     char method[8] = "", path[256] = "";
     if (sscanf(req, "%7s %255s", method, path) != 2) {
@@ -2826,6 +2950,8 @@ static int dispatch(int fd, char * req) {
             return handle_ketellog_get(fd, path[9] == '?');
         if (!strcmp(path, "/homey"))       return handle_homey_get(fd, NULL);
         if (!strcmp(path, "/homey?saved")) return handle_homey_get(fd, "Opgeslagen.");
+        if (!strcmp(path, "/solar"))       return handle_solar_get(fd, NULL);
+        if (!strcmp(path, "/solar?saved")) return handle_solar_get(fd, "Opgeslagen. De app leest de omvormer binnen enkele seconden opnieuw uit.");
         if (!strcmp(path, "/") || !strcmp(path, "/index.html") || !strncmp(path, "/?", 2))
             return handle_remote_page(fd);
         return serve_static(fd, path);
@@ -2858,6 +2984,8 @@ static int dispatch(int fd, char * req) {
         if (!strcmp(path, "/ketellog/start")) { ketellog_start(60); return send_redirect(fd, "/logs", NULL); }
         if (!strcmp(path, "/ketellog/stop"))  { ketellog_stop();    return send_redirect(fd, "/logs", NULL); }
         if (!strcmp(path, "/homey"))          return handle_homey_post(fd, req, body);
+        if (!strcmp(path, "/solar"))          return handle_solar_post(fd, req, body);
+        if (!strcmp(path, "/api/v1/solar/source")) return handle_solar_source_post(fd, body);
         /* POST /api/v1/marketplace/apps/<id>/state */
         if (!strncmp(path, "/api/v1/marketplace/apps/", 25)) {
             const char * tail = path + 25;
