@@ -267,7 +267,7 @@ static void poll_water(void) {
  * sign depends on how it is wired (production is usually negative), so the
  * Solar tile gets the magnitude. */
 /* One meter: 1 = read, *w = |active_power_w|. */
-static int read_kwh_meter(const char * host, float * w) {
+static int read_kwh_meter(const char * host, float * w, double * total_wh) {
     static char body[2048];
     if (http_get(host, "/api/v1/data", body, sizeof(body)) != 0) return 0;
     const char * j = strstr(body, "\r\n\r\n");
@@ -275,6 +275,10 @@ static int read_kwh_meter(const char * host, float * w) {
     if (!strstr(j, "active_power_w")) return 0;
     double v = parse_num(j, "active_power_w", 0);
     *w = (float)(v < 0 ? -v : v);
+    double imp = strstr(j, "total_power_import_kwh") ? parse_num(j, "total_power_import_kwh", -1) : -1;
+    double exp = strstr(j, "total_power_export_kwh") ? parse_num(j, "total_power_export_kwh", -1) : -1;
+    double t = imp > exp ? imp : exp;
+    *total_wh = t >= 0 ? t * 1000.0 : -1;
     return 1;
 }
 
@@ -285,8 +289,11 @@ static void poll_kwh(void) {
     if (!h1[0] && !h2[0]) { hw_state.connected_kwh = 0; hw_state.polled_kwh = 0; return; }
     hw_state.polled_kwh = 1;
     float w1 = 0, w2 = 0;
-    int ok1 = h1[0] && read_kwh_meter(h1, &w1);
-    int ok2 = h2[0] && read_kwh_meter(h2, &w2);
+    double t1 = -1, t2 = -1;
+    int ok1 = h1[0] && read_kwh_meter(h1, &w1, &t1);
+    int ok2 = h2[0] && read_kwh_meter(h2, &w2, &t2);
+    hw_state.kwh1_total_wh = ok1 ? t1 : -1;
+    hw_state.kwh2_total_wh = ok2 ? t2 : -1;
     hw_state.kwh1_power_w  = ok1 ? w1 : 0;
     hw_state.kwh2_power_w  = ok2 ? w2 : 0;
     if (!ok1 && !ok2) { hw_state.connected_kwh = 0; return; }

@@ -2795,14 +2795,21 @@ static int handle_solar_source_post(int fd, const char * body) {
 
 static time_t g_solar_saved_at;
 
+/* Every source that counts now (they add up, see energy_solar_w()). */
 static const char * solar_source_name(char * buf, size_t n) {
     solar_app_state_t a;
     solar_app_get(&a);
-    if (solar_app_active()) snprintf(buf, n, "Omvormer-app (%s)", a.brand);
-    else if (settings.hw_kwh_host[0] || settings.hw_kwh2_host[0]) snprintf(buf, n, "HomeWizard kWh-meter");
-    else if (settings.enable_ha && ha_state.have_solar) snprintf(buf, n, "Home Assistant");
-    else if (meteradapter_have_solar()) snprintf(buf, n, "Zonnesensor op de meteradapter");
-    else snprintf(buf, n, "geen");
+    size_t o = 0;
+    buf[0] = 0;
+#define SRC_ADD(...) do { if (o < n) { if (o) o += (size_t)snprintf(buf + o, n - o, " + "); \
+                          if (o < n) o += (size_t)snprintf(buf + o, n - o, __VA_ARGS__); } } while (0)
+    if (solar_app_active()) SRC_ADD("Omvormer-app (%s)", a.brand);
+    if ((settings.hw_kwh_host[0] || settings.hw_kwh2_host[0]) && hw_state.connected_kwh)
+        SRC_ADD("HomeWizard kWh-meter%s", settings.hw_kwh_host[0] && settings.hw_kwh2_host[0] ? "s" : "");
+    if (settings.enable_ha && ha_state.have_solar) SRC_ADD("Home Assistant");
+    if (meteradapter_have_solar()) SRC_ADD("Zonnesensor op de meteradapter");
+#undef SRC_ADD
+    if (!buf[0]) snprintf(buf, n, "geen");
     return buf;
 }
 

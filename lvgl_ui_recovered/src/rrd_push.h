@@ -28,4 +28,13 @@ void rrd_meter_loggers_sync(void);
 int  rrd_logger_uuid(const char * name, char * out, size_t outsz);
 int  rrd_meter_loggers_start(void);   /* background: after 90 s, then every 10 min */
 
+/* Device a logger samples: "" (none), "placeholder" or a device uuid.
+ * 0 = logger found, -1 = no such logger, -2 = config not readable. */
+int  rrd_logger_device(const char * name, char * dev, size_t devsz);
+/* Point logger `name` at device `dev` (uuid characters or "placeholder"),
+ * keeping its uuid and history (SetObjectConfig, verified 2026-11-18). */
+int  rrd_logger_set_device(const char * name, const char * dev);
+/* Newest non-NaN sample of `rra` between from and to (unix s). 0 = found. */
+int  rrd_last_value(const char * name, const char * rra, long from, long to, double * out);
+
 #endif

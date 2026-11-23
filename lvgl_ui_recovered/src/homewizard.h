@@ -41,6 +41,12 @@ typedef struct {
     volatile float  kwh_power_w;      /* total production, always >= 0 */
     volatile float  kwh1_power_w;     /* per meter (0 when not answering) */
     volatile float  kwh2_power_w;
+    /* Lifetime production counter per meter in Wh (the larger of its import
+     * and export totals: which one counts the panels depends on how the meter
+     * is wired; the other only sees the inverter's standby), -1 = unknown.
+     * Read by solar_rrd.c for the Zon statistics. */
+    volatile double kwh1_total_wh;
+    volatile double kwh2_total_wh;
 } hw_state_t;
 
 extern hw_state_t hw_state;

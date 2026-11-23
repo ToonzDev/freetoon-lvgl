@@ -354,20 +354,24 @@ const char * energy_offline_label(void) {
     }
 }
 
-/* Solar: an inverter read by a marketplace app (solar_app.c) wins while it
- * is active - the user installed and set it up for exactly this; then a
- * HomeWizard kWh meter on the inverter when its IP is set; then the HA
- * production sensor; then a solar meter (S0 pulse sensor) on the Toon's own
- * meter adapter. One source at a time, so panels are never counted twice. */
+/* Solar: the SUM of every source that reports (decision 2026-11-23: all
+ * reported production adds up, as several systems each have their own
+ * meter): an inverter read by a marketplace app (solar_app.c), the
+ * HomeWizard kWh meters (both summed already), the HA production sensor and
+ * a solar meter (S0 pulse sensor) on the Toon's own meter adapter. The Zon
+ * statistics use the same sum (solar_rrd.c). Two sources measuring the same
+ * panels count twice: the user sets up one of them. */
 int   energy_have_solar(void) {
-    if (solar_app_active()) return 1;
-    if (settings.hw_kwh_host[0] || settings.hw_kwh2_host[0]) return hw_state.connected_kwh;
-    if (settings.enable_ha && ha_state.have_solar) return 1;
-    return meteradapter_have_solar();
+    return solar_app_active() ||
+           ((settings.hw_kwh_host[0] || settings.hw_kwh2_host[0]) && hw_state.connected_kwh) ||
+           (settings.enable_ha && ha_state.have_solar) ||
+           meteradapter_have_solar();
 }
 float energy_solar_w(void) {
-    if (solar_app_active()) return solar_app_power_w();
-    if (settings.hw_kwh_host[0] || settings.hw_kwh2_host[0]) return hw_state.kwh_power_w;
-    if (settings.enable_ha && ha_state.have_solar) return ha_state.solar_w;
-    return meteradapter_have_solar() ? meter_state.solar_w : 0.0f;
+    float w = 0.0f;
+    if (solar_app_active()) w += solar_app_power_w();
+    if ((settings.hw_kwh_host[0] || settings.hw_kwh2_host[0]) && hw_state.connected_kwh) w += hw_state.kwh_power_w;
+    if (settings.enable_ha && ha_state.have_solar && ha_state.solar_w > 0) w += ha_state.solar_w;
+    if (meteradapter_have_solar() && meter_state.solar_w > 0) w += meter_state.solar_w;
+    return w;
 }

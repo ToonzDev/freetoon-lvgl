@@ -178,6 +178,9 @@ int main(int argc, char** argv) {
         extern int rrd_meter_loggers_start(void);
         if (rrd_meter_loggers_start() != 0)
             fprintf(stderr, "[main] rrd_meter_loggers_start failed\n");
+        extern int solar_rrd_start(void);   /* Zon statistics from all solar sources (#60) */
+        if (solar_rrd_start() != 0)
+            fprintf(stderr, "[main] solar_rrd_start failed\n");
         if (otgw_start() != 0)
             fprintf(stderr, "[main] otgw_start failed\n");
     }

@@ -235,6 +235,72 @@ static int dev_ok(const char * d) {
     return 1;
 }
 
+/* ---- generic logger helpers (solar_rrd.c) ---- */
+static pthread_mutex_t g_blk_mtx = PTHREAD_MUTEX_INITIALIZER;
+
+int rrd_logger_device(const char * name, char * dev, size_t devsz) {
+    char * cfg = NULL;
+    for (size_t i = 0; !cfg && i < sizeof rrd_cfg_paths / sizeof rrd_cfg_paths[0]; i++)
+        cfg = read_file(rrd_cfg_paths[i]);
+    if (!cfg) return -2;
+    static char blk[4096];
+    pthread_mutex_lock(&g_blk_mtx);
+    int rc = -1;
+    if (logger_block(cfg, name, blk, sizeof blk) == 0) {
+        if (block_device(blk, dev, devsz) != 0 && devsz) dev[0] = 0;
+        rc = 0;
+    }
+    pthread_mutex_unlock(&g_blk_mtx);
+    free(cfg);
+    return rc;
+}
+
+static int dev_ok(const char * d);
+int rrd_logger_set_device(const char * name, const char * dev) {
+    if (!dev_ok(dev)) return -1;
+    char * cfg = NULL;
+    for (size_t i = 0; !cfg && i < sizeof rrd_cfg_paths / sizeof rrd_cfg_paths[0]; i++)
+        cfg = read_file(rrd_cfg_paths[i]);
+    if (!cfg) return -1;
+    static char blk[4096];
+    pthread_mutex_lock(&g_blk_mtx);
+    int rc = logger_block(cfg, name, blk, sizeof blk) == 0 ? send_with_device(blk, dev) : -1;
+    pthread_mutex_unlock(&g_blk_mtx);
+    free(cfg);
+    return rc;
+}
+
+#include "http.h"
+int rrd_last_value(const char * name, const char * rra, long from, long to, double * out) {
+    static char body[24 * 1024];
+    static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
+    char url[256];
+    snprintf(url, sizeof url,
+             "http://127.0.0.1:10080/hcb_rrd?action=getRrdData&loggerName=%s&rra=%s&from=%ld&to=%ld&nullForNaN=1",
+             name, rra, from, to);
+    pthread_mutex_lock(&mtx);
+    int rc = -1;
+    if (http_fetch_to(url, body, sizeof body, 8) == 0 && body[0] == '{') {
+        /* {"<ts>":<value>,"<ts>":null,...} */
+        long best_ts = -1;
+        for (const char * p = body; (p = strchr(p, '"')) != NULL; ) {
+            char * e;
+            long ts = strtol(p + 1, &e, 10);
+            if (e == p + 1 || *e != '"') { p++; continue; }
+            const char * v = e + 1;
+            while (*v == ':' || *v == ' ') v++;
+            if (*v != 'n' && *v != 'N') {
+                char * ve;
+                double d = strtod(v, &ve);
+                if (ve != v && ts > best_ts) { best_ts = ts; *out = d; rc = 0; }
+            }
+            p = v;
+        }
+    }
+    pthread_mutex_unlock(&mtx);
+    return rc;
+}
+
 static void meter_loggers_sync_locked(void);
 void rrd_meter_loggers_sync(void) {
     /* the sync thread and the history repair (rrd_repair.c) both call this */
