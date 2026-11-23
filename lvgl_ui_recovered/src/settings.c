@@ -343,6 +343,18 @@ void settings_load(void) {
             snprintf(settings.tile_light1, sizeof settings.tile_light1, "%s", v);
         else if (strcmp(k, "tile_light2")     == 0)
             snprintf(settings.tile_light2, sizeof settings.tile_light2, "%s", v);
+        else if (strcmp(k, "tile_light3")     == 0)
+            snprintf(settings.tile_light3, sizeof settings.tile_light3, "%s", v);
+        else if (strcmp(k, "tile_light4")     == 0)
+            snprintf(settings.tile_light4, sizeof settings.tile_light4, "%s", v);
+        else if (strcmp(k, "tile_light5")     == 0)
+            snprintf(settings.tile_light5, sizeof settings.tile_light5, "%s", v);
+        else if (strcmp(k, "tile_light6")     == 0)
+            snprintf(settings.tile_light6, sizeof settings.tile_light6, "%s", v);
+        else if (strcmp(k, "tile_light7")     == 0)
+            snprintf(settings.tile_light7, sizeof settings.tile_light7, "%s", v);
+        else if (strcmp(k, "tile_light8")     == 0)
+            snprintf(settings.tile_light8, sizeof settings.tile_light8, "%s", v);
         else if (strcmp(k, "hue_enabled")     == 0) { settings.hue_enabled = iv; seen_hue = 1; }
         else if (strcmp(k, "hue_host")        == 0) snprintf(settings.hue_host, sizeof settings.hue_host, "%s", v);
         else if (strcmp(k, "hue_user")        == 0) snprintf(settings.hue_user, sizeof settings.hue_user, "%s", v);
@@ -869,7 +881,9 @@ static void sanitize_all_strings(void) {
         settings.ot_bridge_mode, settings.otgw_host, settings.otgw_user,
         settings.otgw_pass, settings.mqtt_host, settings.mqtt_user,
         settings.mqtt_pass, settings.domoticz_host, settings.homey_host,
-        settings.tile_light1, settings.tile_light2, settings.master_host,
+        settings.tile_light1, settings.tile_light2, settings.tile_light3,
+        settings.tile_light4, settings.tile_light5, settings.tile_light6,
+        settings.tile_light7, settings.tile_light8, settings.master_host,
         settings.master_web_user, settings.master_web_pass,
         settings.toonwater_host,
         settings.tile_rotate_members, settings.calendar_ha_entity,
@@ -1067,6 +1081,12 @@ static void settings_write_file(void) {
     fprintf(f, "homey_host=%s\n",      settings.homey_host);
     fprintf(f, "tile_light1=%s\n",     settings.tile_light1);
     fprintf(f, "tile_light2=%s\n",     settings.tile_light2);
+    fprintf(f, "tile_light3=%s\n",     settings.tile_light3);
+    fprintf(f, "tile_light4=%s\n",     settings.tile_light4);
+    fprintf(f, "tile_light5=%s\n",     settings.tile_light5);
+    fprintf(f, "tile_light6=%s\n",     settings.tile_light6);
+    fprintf(f, "tile_light7=%s\n",     settings.tile_light7);
+    fprintf(f, "tile_light8=%s\n",     settings.tile_light8);
     fprintf(f, "hue_enabled=%d\n",     settings.hue_enabled);
     fprintf(f, "hue_host=%s\n",        settings.hue_host);
     fprintf(f, "hue_user=%s\n",        settings.hue_user);

@@ -1285,6 +1285,12 @@ int main(int argc, char ** argv) {
         for (int w = 0; w < 50 && !homey_state.ndev; w++) usleep(100000);
         for (int w = 0; w < 20 && !homey_state.nflow; w++) usleep(100000);
     }
+    /* Home Assistant the same way: enable_ha + ha_host in the cfg and
+     * HA_SIM_TOKEN, against a local mock (devices from /mnt/data/ha_devices.conf). */
+    if (settings.enable_ha && settings.ha_host[0] && getenv("HA_SIM_TOKEN")) {
+        if (ha_start() != 0) fprintf(stderr, "[sim] ha_start failed\n");
+        usleep(1500000);
+    }
     lv_obj_t * scr = fn();
     lv_scr_load(scr);
     pump(150);

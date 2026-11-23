@@ -490,14 +490,39 @@ static void apply_device(ha_device_t * D, const char * body) {
         else if (!strcmp(st, "off"))  { D->available = 1; D->on = 0; }
         else                          { D->available = 0; D->on = 0; }
         int v;
-        if (extract_int(body, "brightness", &v)) D->brightness = v;
+        if (extract_int(body, "brightness", &v)) { D->brightness = v; if (D->type == HADEV_LIGHT) D->dimmable = 1; }
+        /* "supported_color_modes":["onoff"] is the only mode without a
+         * brightness; any other mode (brightness, color_temp, hs, ...) dims. */
+        const char * m = D->type == HADEV_LIGHT ? strstr(body, "\"supported_color_modes\"") : NULL;
+        if (m) {                         /* the array must follow the key (null = unknown) */
+            m += strlen("\"supported_color_modes\"");
+            while (*m == ' ' || *m == ':') m++;
+            if (*m != '[') m = NULL;
+        }
+        if (m) {
+            const char * e = strchr(m, ']');
+            if (e) {
+                int other = 0;
+                for (const char * q = m; q < e; q++) {
+                    if (*q != '"') continue;
+                    const char * w = q + 1;
+                    const char * we = memchr(w, '"', (size_t)(e - w));
+                    if (!we) break;
+                    if (!(we - w == 5 && !strncmp(w, "onoff", 5))) other = 1;
+                    q = we;
+                }
+                D->dimmable = other;
+            }
+        }
     }
 }
 
 /* Refresh every stateful device — one /api/states call each. Scripts/scenes
  * are stateless and skipped. */
 static void poll_devices(void) {
-    char body[768];
+    /* A colour light's state is ~1.5 KB (effect lists, colour attributes);
+     * supported_color_modes must fit for the dimmable flag. */
+    char body[2560];
     for (int i = 0; ; i++) {
         /* Snapshot this slot's entity under the lock, fetch without it (it
          * is a network call), then re-find the entity: the device manager may
@@ -1491,7 +1516,7 @@ void ha_curtain_close_async(void) { fire_cover_action("close_cover"); }
 void ha_curtain_stop_async(void)  { fire_cover_action("stop_cover");  }
 
 /* --- brightness setter --------------------------------------------------- */
-struct brightness_arg { char entity_id[48]; int pct; };
+struct brightness_arg { char entity_id[64]; int pct; };
 static void * brightness_action_thread(void * arg) {
     struct brightness_arg * a = (struct brightness_arg *)arg;
     if (a->pct <= 0)

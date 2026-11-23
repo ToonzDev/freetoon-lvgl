@@ -410,6 +410,14 @@ typedef struct {
      * tile_lights.h. */
     char tile_light1[72];
     char tile_light2[72];
+    /* Places 3..8 of the Verlichting tile (shown when the tile is big
+     * enough): same refs, "" = empty, never "auto". */
+    char tile_light3[72];
+    char tile_light4[72];
+    char tile_light5[72];
+    char tile_light6[72];
+    char tile_light7[72];
+    char tile_light8[72];
 } settings_t;
 
 #define FORECAST_AUTO   0

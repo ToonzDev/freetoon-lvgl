@@ -45,5 +45,8 @@ int  domoticz_probe(void);
 
 /* Fire-and-forget control (async; HTTP runs on a detached thread). */
 void domoticz_switch_async(int idx, const char * cmd);   /* "On"/"Off"/"Toggle"/"Open"/"Close"/"Stop" */
+/* Dimmer level 0..100 ("Set Level"; Domoticz switches the light on with it).
+ * Updates domoticz_state at once so the UI does not jump back until the next poll. */
+void domoticz_set_level_async(int idx, int pct);
 
 #endif

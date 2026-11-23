@@ -30,6 +30,18 @@ static inline void ui_label_set_text(lv_obj_t * obj, const char * txt)
     lv_label_set_text(obj, txt);
 }
 
+/* For LV_LABEL_LONG_DOT labels: LVGL writes the "..." into the label's own
+ * text when it is cut, so lv_label_get_text() no longer equals what was set
+ * and ui_label_set_text() would set (and redraw) a long name on every tick.
+ * `cache` (owned by the caller, one per label) remembers the text set last. */
+static inline void ui_label_set_text_cached(lv_obj_t * obj, const char * txt, char * cache, size_t n)
+{
+    if (!txt) return;
+    if (cache && n && strncmp(cache, txt, n) == 0 && strlen(txt) < n) return;
+    lv_label_set_text(obj, txt);
+    if (cache && n) snprintf(cache, n, "%s", txt);
+}
+
 static inline void ui_label_set_text_fmt(lv_obj_t * obj, const char * fmt, ...)
     __attribute__((format(printf, 2, 3)));
 static inline void ui_label_set_text_fmt(lv_obj_t * obj, const char * fmt, ...)

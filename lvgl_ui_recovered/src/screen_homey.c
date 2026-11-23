@@ -134,15 +134,15 @@ static void on_close(lv_event_t * e) { cover(e, "down"); }
 
 /* The home button puts a device on the Verlichting tile (tile_lights.h):
  * a free button, or else the second one (the first moves up). */
-static char g_tile_ref[2][TL_REF_LEN + 4];
+static char g_tile_ref[TL_SLOTS][TL_REF_LEN + 4];
 static void tile_refs(void) {
-    for (int k = 0; k < 2; k++) {
+    for (int k = 0; k < TL_SLOTS; k++) {
         tl_src_t s = tl_resolve(k);
         tl_ref(&s, g_tile_ref[k], sizeof g_tile_ref[k]);
     }
 }
 static int is_pinned(const char * id) {
-    for (int k = 0; k < 2; k++)
+    for (int k = 0; k < TL_SLOTS; k++)
         if (!strncmp(g_tile_ref[k], "hy:", 3) && !strcmp(g_tile_ref[k] + 3, id)) return 1;
     return 0;
 }

@@ -111,16 +111,20 @@ static lv_obj_t * tile_img_drop;
  * visible whenever any tap is open (HomeWizard reports flow > 0.05). */
 static lv_obj_t * tile_img_water = NULL;
 static lv_obj_t * tile_lbl_water = NULL;
-/* Domoticz switch buttons on LT_LIGHTS tile */
+/* Verlichting tile (LT_LIGHTS): one row per filled place (tile_lights.h),
+ * as many places as the tile's size allows (tl_set_capacity). */
+typedef struct {
+    lv_obj_t * btn, * name, * sw, * st, * slider;
+    int        slot;        /* place shown in this row, -1 = unused */
+    uint32_t   hold_ms;     /* lv_tick of the last slider move (0 = never): don't overwrite it for a while */
+    char       name_txt[80]; /* name set last (LONG_DOT: see ui_label_set_text_cached) */
+} tl_row_t;
 static lv_obj_t * tile_lights_lbl_default = NULL;
-static lv_obj_t * tile_lights_btn1 = NULL;
-static lv_obj_t * tile_lights_lbl1_name = NULL;
-static lv_obj_t * tile_lights_sw1 = NULL;
-static lv_obj_t * tile_lights_lbl1_st = NULL;
-static lv_obj_t * tile_lights_btn2 = NULL;
-static lv_obj_t * tile_lights_lbl2_name = NULL;
-static lv_obj_t * tile_lights_sw2 = NULL;
-static lv_obj_t * tile_lights_lbl2_st = NULL;
+static tl_row_t   tl_rows[TL_SLOTS];
+static int        tl_rows_fit = 2;      /* rows that fit under the title */
+static int        tl_max_cols = 1;      /* 2 when the tile is wide enough for two columns */
+static int        tl_cw = 0, tl_ch = 0; /* the tile's content size */
+static unsigned   tl_geo_sig = 0;       /* geometry last applied (see update_tile_lights) */
 static char       g_current_rot_id[48] = "";
 
 /* Smart plug tile (LT_SMARTPLUG) */
@@ -1880,38 +1884,184 @@ static int rotate_member_at(int n, char * out, size_t sz) {
 }
 
 
-/* The two buttons on the Verlichting tile: what they control is resolved on
- * every use from settings.tile_light1/2 (tile_lights.c), chosen with a long
- * press on the tile (screen_tile_lights.c). */
-static void tile_light_toggle(int n) { tl_toggle(n); }
-static void on_tile_light_btn1(lv_event_t * e) { (void)e; tile_light_toggle(0); }
-static void on_tile_light_btn2(lv_event_t * e) { (void)e; tile_light_toggle(1); }
-/* Long press on the tile or one of its buttons: the chooser. wait_release
- * drops the release, so no CLICKED (no toggle, no hub) follows. */
-static void on_lights_tile_longpress(lv_event_t * e) {
-    (void)e;
-    lv_indev_t * in = lv_indev_get_act();
-    if (in) lv_indev_wait_release(in);
-    ui_push_owned(screen_tile_lights_create());
+/* The Verlichting tile's rows: what they control is resolved on every use
+ * from settings.tile_light1..8 (tile_lights.c), chosen with a long press on
+ * the tile (screen_tile_lights.c). A dimmable light gets a slider when the
+ * row is wide enough (not on the Toon 1: its resistive panel drags badly);
+ * else a long press on its row opens a dim popup. */
+static void update_tile_lights(void);
+static void tl_open_chooser(void) { ui_push_owned(screen_tile_lights_create()); }
+
+static void on_tl_row_click(lv_event_t * e) {
+    int i = (int)(intptr_t)lv_event_get_user_data(e);
+    if (i < 0 || i >= TL_SLOTS || tl_rows[i].slot < 0) return;
+    tl_toggle(tl_rows[i].slot);
+    update_tile_lights();
 }
 
-static void update_tile_light_btn(lv_obj_t * btn, lv_obj_t * lbl_name, lv_obj_t * sw_btn, lv_obj_t * lbl_st, tl_src_t s) {
-    if (!btn) return;
-    if (s.kind == TL_NONE) {
-        ui_obj_add_flag(btn, LV_OBJ_FLAG_HIDDEN);
-        return;
+/* ---- dim popup (narrow rows, Toon 1) ---- */
+static lv_obj_t * tl_pop = NULL, * tl_pop_slider = NULL, * tl_pop_val = NULL, * tl_pop_sw = NULL;
+static int        tl_pop_slot = -1;
+static uint32_t   tl_pop_hold_ms = 0;
+static void tl_pop_close(void) {
+    if (tl_pop) lv_obj_del(tl_pop);
+    tl_pop = tl_pop_slider = tl_pop_val = tl_pop_sw = NULL;
+    tl_pop_slot = -1;
+}
+static void tl_pop_close_async(void * u) { (void)u; tl_pop_close(); }
+static void on_tl_pop_bg(lv_event_t * e) {
+    if (lv_event_get_target(e) == lv_event_get_current_target(e)) lv_async_call(tl_pop_close_async, NULL);
+}
+static void on_tl_pop_close(lv_event_t * e) { (void)e; lv_async_call(tl_pop_close_async, NULL); }
+static void tl_pop_refresh(void) {
+    if (!tl_pop || tl_pop_slot < 0) return;
+    tl_src_t s = tl_resolve(tl_pop_slot);
+    char nm[80];
+    int on = 0, known = tl_status(&s, nm, sizeof nm, &on);
+    if (tl_pop_sw) {
+        lv_obj_t * l = lv_obj_get_child(tl_pop_sw, 0);
+        if (l) ui_label_set_text(l, !known ? "--" : on ? tr("AAN", "ON") : tr("UIT", "OFF"));
+        ui_obj_set_style_bg_color(tl_pop_sw, lv_color_hex((known && on) ? 0x2e6e3a : 0x283848), 0);
     }
-    ui_obj_clear_flag(btn, LV_OBJ_FLAG_HIDDEN);
-    /* name + state from the source; known = 0 while the device isn't there */
-    char name[80];
+    int lv = tl_level(&s);
+    if (tl_pop_slider && lv >= 0 && !lv_obj_has_state(tl_pop_slider, LV_STATE_PRESSED)
+        && (!tl_pop_hold_ms || lv_tick_elaps(tl_pop_hold_ms) > 4000)) {
+        int v = lv < 1 ? 1 : lv;
+        if (lv_slider_get_value(tl_pop_slider) != v) lv_slider_set_value(tl_pop_slider, v, LV_ANIM_OFF);
+    }
+    if (tl_pop_val && tl_pop_slider) ui_label_set_text_fmt(tl_pop_val, "%d%%", (int)lv_slider_get_value(tl_pop_slider));
+}
+static void on_tl_pop_slider(lv_event_t * e) {
+    tl_pop_hold_ms = lv_tick_get() | 1;
+    if (tl_pop_val) ui_label_set_text_fmt(tl_pop_val, "%d%%", (int)lv_slider_get_value(tl_pop_slider));
+    if (lv_event_get_code(e) == LV_EVENT_RELEASED && tl_pop_slot >= 0) {
+        tl_set_level(tl_pop_slot, (int)lv_slider_get_value(tl_pop_slider));
+        update_tile_lights();
+    }
+}
+static void on_tl_pop_toggle(lv_event_t * e) {
+    (void)e;
+    if (tl_pop_slot < 0) return;
+    tl_toggle(tl_pop_slot);
+    update_tile_lights();
+    tl_pop_refresh();
+}
+static void on_tl_pop_choose(lv_event_t * e) {
+    (void)e;
+    lv_async_call(tl_pop_close_async, NULL);
+    tl_open_chooser();
+}
+static lv_obj_t * tl_pop_btn(lv_obj_t * parent, const char * txt, int w, int h, uint32_t col, lv_event_cb_t cb) {
+    lv_obj_t * b = lv_btn_create(parent);
+    lv_obj_set_size(b, w, h);
+    lv_obj_set_style_radius(b, 10, 0);
+    lv_obj_set_style_bg_color(b, lv_color_hex(col), 0);
+    lv_obj_set_style_shadow_width(b, 0, 0);
+    lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * l = lv_label_create(b);
+    lv_obj_set_style_text_font(l, SF(20), 0);
+    lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
+    lv_label_set_text(l, txt);
+    lv_obj_center(l);
+    return b;
+}
+static void tl_pop_open(int slot) {
+    tl_pop_close();
+    tl_src_t s = tl_resolve(slot);
+    if (tl_level(&s) < 0) return;
+    int t1 = DISP_VER < 600;
+    char nm[80];
     int on = 0;
-    int known = tl_status(&s, name, sizeof name, &on);
-    if (lbl_name) ui_label_set_text(lbl_name, name);
-    if (lbl_st) ui_label_set_text(lbl_st, !known ? "--" : on ? tr("AAN", "ON") : tr("UIT", "OFF"));
-    ui_obj_set_style_bg_color(btn, lv_color_hex(settings.home_light_mode ? 0xedf2f7 : 0x1e2838), 0);
-    if (sw_btn) ui_obj_set_style_bg_color(sw_btn, lv_color_hex((known && on) ? 0x2e6e3a : (settings.home_light_mode ? 0xd0d8e2 : 0x283848)), 0);
-    if (lbl_name) ui_obj_set_style_text_color(lbl_name, lv_color_hex(COL_TEXT_HI), 0);
-    if (lbl_st) ui_obj_set_style_text_color(lbl_st, lv_color_hex((known && on) ? 0xffffff : (settings.home_light_mode ? 0x485868 : 0x88aabb)), 0);
+    tl_status(&s, nm, sizeof nm, &on);
+    tl_pop_slot = slot;
+    tl_pop_hold_ms = 0;
+    tl_pop = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(tl_pop, DISP_HOR, DISP_VER);
+    lv_obj_set_pos(tl_pop, 0, 0);
+    lv_obj_set_style_bg_color(tl_pop, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(tl_pop, LV_OPA_50, 0);
+    lv_obj_set_style_border_width(tl_pop, 0, 0);
+    lv_obj_set_style_radius(tl_pop, 0, 0);
+    lv_obj_clear_flag(tl_pop, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(tl_pop, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(tl_pop, on_tl_pop_bg, LV_EVENT_CLICKED, NULL);
+
+    int cw = t1 ? 600 : SX(640), ch = t1 ? 260 : SY(280);
+    lv_obj_t * card = lv_obj_create(tl_pop);
+    lv_obj_set_size(card, cw, ch);
+    lv_obj_center(card);
+    lv_obj_set_style_bg_color(card, lv_color_hex(COL_TILE_BG), 0);
+    lv_obj_set_style_border_color(card, lv_color_hex(0xddaa44), 0);
+    lv_obj_set_style_border_width(card, 2, 0);
+    lv_obj_set_style_radius(card, 16, 0);
+    lv_obj_set_style_pad_all(card, t1 ? 14 : SX(18), 0);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t * title = lv_label_create(card);
+    lv_obj_set_style_text_font(title, SF(24), 0);
+    lv_obj_set_style_text_color(title, lv_color_hex(COL_TEXT_HI), 0);
+    lv_label_set_long_mode(title, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(title, cw - (t1 ? 140 : SX(150)));
+    lv_label_set_text(title, nm);
+    lv_obj_align(title, LV_ALIGN_TOP_LEFT, 0, 4);
+
+    tl_pop_val = lv_label_create(card);
+    lv_obj_set_style_text_font(tl_pop_val, SF(24), 0);
+    lv_obj_set_style_text_color(tl_pop_val, lv_color_hex(0xddaa44), 0);
+    lv_label_set_text(tl_pop_val, "");
+    lv_obj_align(tl_pop_val, LV_ALIGN_TOP_RIGHT, 0, 4);
+
+    tl_pop_slider = lv_slider_create(card);
+    lv_obj_set_size(tl_pop_slider, cw - (t1 ? 80 : SX(90)), t1 ? 22 : SY(24));
+    lv_obj_align(tl_pop_slider, LV_ALIGN_CENTER, 0, t1 ? -6 : SY(-6));
+    lv_slider_set_range(tl_pop_slider, 1, 100);
+    lv_obj_set_style_bg_color(tl_pop_slider, lv_color_hex(0x283848), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(tl_pop_slider, lv_color_hex(0xddaa44), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(tl_pop_slider, lv_color_hex(0xffffff), LV_PART_KNOB);
+    lv_obj_set_style_pad_all(tl_pop_slider, t1 ? 8 : SY(9), LV_PART_KNOB);
+    lv_obj_set_ext_click_area(tl_pop_slider, t1 ? 18 : SY(20));
+    lv_obj_add_event_cb(tl_pop_slider, on_tl_pop_slider, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(tl_pop_slider, on_tl_pop_slider, LV_EVENT_RELEASED, NULL);
+    int lv = tl_level(&s);
+    lv_slider_set_value(tl_pop_slider, lv < 1 ? 1 : lv, LV_ANIM_OFF);
+
+    int gap = t1 ? 10 : SX(12);
+    int bh = t1 ? 50 : SY(54), bw = (cw - 2 * (t1 ? 14 : SX(18)) - 2 * gap) / 3;
+    tl_pop_sw = tl_pop_btn(card, "", bw, bh, 0x283848, on_tl_pop_toggle);
+    lv_obj_align(tl_pop_sw, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    lv_obj_t * ch_b = tl_pop_btn(card, tr("Lampen kiezen", "Choose lights"), bw, bh, THEME_BTN_BG, on_tl_pop_choose);
+    lv_obj_align(ch_b, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_t * cl_b = tl_pop_btn(card, tr("Sluiten", "Close"), bw, bh, THEME_BTN_BG, on_tl_pop_close);
+    lv_obj_align(cl_b, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    tl_pop_refresh();
+}
+
+/* Long press on the tile: the chooser. On a row of a dimmable light without
+ * a slider: the dim popup. wait_release drops the release, so no CLICKED (no
+ * toggle, no hub) follows. */
+static void on_lights_tile_longpress(lv_event_t * e) {
+    lv_indev_t * in = lv_indev_get_act();
+    if (in) lv_indev_wait_release(in);
+    intptr_t i = (intptr_t)lv_event_get_user_data(e);
+    if (i >= 1 && i <= TL_SLOTS) {
+        const tl_row_t * r = &tl_rows[i - 1];
+        if (r->slot >= 0 && (!r->slider || lv_obj_has_flag(r->slider, LV_OBJ_FLAG_HIDDEN))) {
+            tl_src_t s = tl_resolve(r->slot);
+            if (tl_level(&s) >= 0) { tl_pop_open(r->slot); return; }
+        }
+    }
+    tl_open_chooser();
+}
+
+static void on_tl_slider(lv_event_t * e) {
+    int i = (int)(intptr_t)lv_event_get_user_data(e);
+    if (i < 0 || i >= TL_SLOTS) return;
+    tl_row_t * r = &tl_rows[i];
+    r->hold_ms = lv_tick_get() | 1;
+    if (lv_event_get_code(e) == LV_EVENT_RELEASED && r->slot >= 0) {
+        tl_set_level(r->slot, (int)lv_slider_get_value(r->slider));
+        update_tile_lights();
+    }
 }
 
 static void update_tile_smartplug(void);
@@ -1989,50 +2139,93 @@ static void update_tile_climate(void) {
 }
 
 static void update_tile_lights(void) {
-    if (!tile_lights_lbl_default && !tile_lights_btn1) return;
-    tl_src_t idx1 = tl_resolve(0);
-    tl_src_t idx2 = tl_resolve(1);
-    int has1 = (idx1.kind != 0);
-    int has2 = (idx2.kind != 0);
+    if (!tile_lights_lbl_default || !tl_rows[0].btn) return;
+    int t1 = DISP_VER < 600;
+    int cap = tl_rows_fit * tl_max_cols;
+    if (cap > TL_SLOTS) cap = TL_SLOTS;
 
-    if (!has1 && !has2) {
-        if (tile_lights_lbl_default) ui_obj_clear_flag(tile_lights_lbl_default, LV_OBJ_FLAG_HIDDEN);
-        if (tile_lights_btn1) ui_obj_add_flag(tile_lights_btn1, LV_OBJ_FLAG_HIDDEN);
-        if (tile_lights_btn2) ui_obj_add_flag(tile_lights_btn2, LV_OBJ_FLAG_HIDDEN);
+    /* The filled places the tile can show, in order; empty ones leave no gap. */
+    tl_src_t src[TL_SLOTS];
+    int slot[TL_SLOTS], lvl[TL_SLOTS], n = 0;
+    for (int k = 0; k < cap; k++) {
+        tl_src_t s = tl_resolve(k);
+        if (s.kind == TL_NONE) continue;
+        src[n] = s; slot[n] = k; lvl[n] = tl_level(&s); n++;
+    }
+    for (int i = n; i < TL_SLOTS; i++) {
+        tl_rows[i].slot = -1;
+        ui_obj_add_flag(tl_rows[i].btn, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (!n) {
+        ui_obj_clear_flag(tile_lights_lbl_default, LV_OBJ_FLAG_HIDDEN);
+        tl_geo_sig = 0;
+        tl_pop_refresh();
         return;
     }
+    ui_obj_add_flag(tile_lights_lbl_default, LV_OBJ_FLAG_HIDDEN);
 
-    if (tile_lights_lbl_default) ui_obj_add_flag(tile_lights_lbl_default, LV_OBJ_FLAG_HIDDEN);
+    /* Two columns only when one column can't hold them all. */
+    int cols = (n > tl_rows_fit && tl_max_cols > 1) ? 2 : 1;
+    int per = (n + cols - 1) / cols;
+    int gap = t1 ? 6 : SX(8);
+    int colw = (tl_cw - (cols - 1) * gap) / cols;
+    int rh = t1 ? 32 : SY(38), pitch = t1 ? 36 : SY(44), y0 = t1 ? 40 : SY(40);
+    int sw_w = SX(56);
+    /* A slider takes 30% of the row; only when the name keeps ~120 px. */
+    int slider_room = !t1 && colw - sw_w - colw * 30 / 100 - SX(30) >= SX(120);
 
-    if (has1 && has2) {
-        lv_coord_t btn_h = (DISP_VER < 600) ? 32 : SY(38);
-        lv_coord_t y1 = (DISP_VER < 600) ? 40 : SY(40);
-        lv_coord_t y2 = (DISP_VER < 600) ? 76 : SY(84);
-        if (tile_lights_btn1) {
-            lv_obj_set_size(tile_lights_btn1, LV_PCT(92), btn_h);
-            ui_obj_align(tile_lights_btn1, LV_ALIGN_TOP_MID, 0, y1);
-            update_tile_light_btn(tile_lights_btn1, tile_lights_lbl1_name, tile_lights_sw1, tile_lights_lbl1_st, idx1);
+    /* Geometry only when it changes: set_size/set_pos every second would
+     * re-layout the tile for nothing. */
+    unsigned sig = 2166136261u ^ (unsigned)(n * 16 + cols);
+    for (int i = 0; i < n; i++) sig = (sig ^ (unsigned)(slot[i] * 2 + (slider_room && lvl[i] >= 0))) * 16777619u;
+    sig ^= (unsigned)tl_cw * 7919u;
+    if (sig != tl_geo_sig) {
+        tl_geo_sig = sig;
+        for (int i = 0; i < n; i++) {
+            tl_row_t * r = &tl_rows[i];
+            int has_slider = slider_room && lvl[i] >= 0;
+            int w = n == 1 ? tl_cw : colw;
+            if (n == 1) {
+                lv_obj_set_size(r->btn, w, t1 ? 38 : SY(46));
+                lv_obj_align(r->btn, LV_ALIGN_CENTER, 0, SY(12));
+            } else {
+                lv_obj_set_size(r->btn, w, rh);
+                lv_obj_align(r->btn, LV_ALIGN_TOP_LEFT, (i / per) * (colw + gap), y0 + (i % per) * pitch);
+            }
+            int slw = has_slider ? w * 30 / 100 : 0;
+            lv_obj_set_width(r->name, w - sw_w - slw - (has_slider ? SX(30) : SX(16)));
+            if (has_slider) {
+                lv_obj_set_size(r->slider, slw, SY(10));
+                lv_obj_align(r->slider, LV_ALIGN_RIGHT_MID, -(sw_w + SX(14)), 0);
+                lv_obj_clear_flag(r->slider, LV_OBJ_FLAG_HIDDEN);
+            } else lv_obj_add_flag(r->slider, LV_OBJ_FLAG_HIDDEN);
         }
-        if (tile_lights_btn2) {
-            lv_obj_set_size(tile_lights_btn2, LV_PCT(92), btn_h);
-            ui_obj_align(tile_lights_btn2, LV_ALIGN_TOP_MID, 0, y2);
-            update_tile_light_btn(tile_lights_btn2, tile_lights_lbl2_name, tile_lights_sw2, tile_lights_lbl2_st, idx2);
-        }
-    } else if (has1) {
-        if (tile_lights_btn1) {
-            lv_obj_set_size(tile_lights_btn1, LV_PCT(92), (DISP_VER < 600) ? 38 : SY(46));
-            ui_obj_align(tile_lights_btn1, LV_ALIGN_CENTER, 0, SY(12));
-            update_tile_light_btn(tile_lights_btn1, tile_lights_lbl1_name, tile_lights_sw1, tile_lights_lbl1_st, idx1);
-        }
-        if (tile_lights_btn2) ui_obj_add_flag(tile_lights_btn2, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        if (tile_lights_btn2) {
-            lv_obj_set_size(tile_lights_btn2, LV_PCT(92), (DISP_VER < 600) ? 38 : SY(46));
-            ui_obj_align(tile_lights_btn2, LV_ALIGN_CENTER, 0, SY(12));
-            update_tile_light_btn(tile_lights_btn2, tile_lights_lbl2_name, tile_lights_sw2, tile_lights_lbl2_st, idx2);
-        }
-        if (tile_lights_btn1) ui_obj_add_flag(tile_lights_btn1, LV_OBJ_FLAG_HIDDEN);
     }
+
+    for (int i = 0; i < n; i++) {
+        tl_row_t * r = &tl_rows[i];
+        r->slot = slot[i];
+        ui_obj_clear_flag(r->btn, LV_OBJ_FLAG_HIDDEN);
+        char name[80];
+        int on = 0;
+        int known = tl_status(&src[i], name, sizeof name, &on);
+        int has_slider = !lv_obj_has_flag(r->slider, LV_OBJ_FLAG_HIDDEN);
+        ui_label_set_text_cached(r->name, name, r->name_txt, sizeof r->name_txt);
+        if (!known)                                ui_label_set_text(r->st, "--");
+        else if (on && lvl[i] >= 0 && !has_slider) ui_label_set_text_fmt(r->st, "%d%%", lvl[i] < 1 ? 1 : lvl[i]);
+        else                                       ui_label_set_text(r->st, on ? tr("AAN", "ON") : tr("UIT", "OFF"));
+        ui_obj_set_style_bg_color(r->sw, lv_color_hex((known && on) ? 0x2e6e3a : (settings.home_light_mode ? 0xd0d8e2 : 0x283848)), 0);
+        ui_obj_set_style_text_color(r->st, lv_color_hex((known && on) ? 0xffffff : (settings.home_light_mode ? 0x485868 : 0x88aabb)), 0);
+        if (has_slider) {
+            ui_obj_set_style_bg_color(r->slider, lv_color_hex((known && on) ? 0xddaa44 : 0x667080), LV_PART_INDICATOR);
+            /* the user's drag wins until the source has had time to report it */
+            if (!lv_obj_has_state(r->slider, LV_STATE_PRESSED) && (!r->hold_ms || lv_tick_elaps(r->hold_ms) > 4000)) {
+                int v = lvl[i] < 1 ? 1 : lvl[i];
+                if (lv_slider_get_value(r->slider) != v) lv_slider_set_value(r->slider, v, LV_ANIM_OFF);
+            }
+        }
+    }
+    tl_pop_refresh();
 }
 
 static void refresh_cb(lv_timer_t * t) {
@@ -4715,80 +4908,80 @@ lv_obj_t * screen_home_create(void) {
         ui_label_set_text(tile_lights_lbl_default, tr("Lampen", "Lights"));
         ui_obj_align(tile_lights_lbl_default, LV_ALIGN_CENTER, 0, 6);
 
-        lv_coord_t btn_h = (DISP_VER < 600) ? 32 : SY(38);
-        lv_coord_t y1 = (DISP_VER < 600) ? 40 : SY(40);
-        lv_coord_t y2 = (DISP_VER < 600) ? 76 : SY(84);
-        tile_lights_btn1 = lv_btn_create(lt.tile);
-        lv_obj_set_size(tile_lights_btn1, LV_PCT(92), btn_h);
-        ui_obj_align(tile_lights_btn1, LV_ALIGN_TOP_MID, 0, y1);
-        lv_obj_set_style_radius(tile_lights_btn1, 8, 0);
-        ui_obj_set_style_bg_color(tile_lights_btn1, lv_color_hex(settings.home_light_mode ? 0xedf2f7 : 0x1e2838), 0);
-        ui_obj_set_style_border_width(tile_lights_btn1, 0, 0);
-        lv_obj_set_style_pad_hor(tile_lights_btn1, 6, 0);
-        lv_obj_set_style_pad_ver(tile_lights_btn1, 0, 0);
-        lv_obj_add_event_cb(tile_lights_btn1, on_tile_light_btn1, LV_EVENT_CLICKED, NULL);
-        lv_obj_add_event_cb(tile_lights_btn1, on_lights_tile_longpress, LV_EVENT_LONG_PRESSED, NULL);
+        /* How many rows / columns fit (the same geometry make_tile used). */
+        {
+            int t1 = DISP_VER < 600;
+            int tw = 200, th = 150, visible = 0;
+            const layout_tile_t * Ll = layout_find(LT_LIGHTS);
+            if (Ll) {
+                int tx, ty;
+                layout_cell_px(Ll->col, Ll->row, Ll->w, Ll->h, &tx, &ty, &tw, &th);
+                tw -= 8; th -= 8;
+                visible = Ll->visible;
+            }
+            tl_cw = tw - 20; tl_ch = th - 20;              /* pad_all 10 */
+            int rh = t1 ? 32 : SY(38), pitch = t1 ? 36 : SY(44), y0 = t1 ? 40 : SY(40);
+            tl_rows_fit = (tl_ch - y0 - rh) / pitch + 1;
+            if (tl_rows_fit < 1) tl_rows_fit = 1;
+            tl_max_cols = tl_cw >= 2 * (t1 ? 130 : SX(140)) + (t1 ? 6 : SX(8)) ? 2 : 1;
+            int cap = tl_rows_fit * tl_max_cols;
+            tl_set_capacity(visible ? (cap > TL_SLOTS ? TL_SLOTS : cap) : 2);
+            tl_geo_sig = 0;
+        }
+        for (int i = 0; i < TL_SLOTS; i++) {
+            tl_row_t * r = &tl_rows[i];
+            memset(r, 0, sizeof *r);
+            r->slot = -1;
+            r->btn = lv_btn_create(lt.tile);
+            lv_obj_set_size(r->btn, LV_PCT(92), (DISP_VER < 600) ? 32 : SY(38));
+            lv_obj_set_style_radius(r->btn, 8, 0);
+            ui_obj_set_style_bg_color(r->btn, lv_color_hex(settings.home_light_mode ? 0xedf2f7 : 0x1e2838), 0);
+            ui_obj_set_style_border_width(r->btn, 0, 0);
+            lv_obj_set_style_shadow_width(r->btn, 0, 0);
+            lv_obj_set_style_pad_hor(r->btn, 6, 0);
+            lv_obj_set_style_pad_ver(r->btn, 0, 0);
+            ui_obj_clear_flag(r->btn, LV_OBJ_FLAG_SCROLLABLE);
+            lv_obj_add_event_cb(r->btn, on_tl_row_click, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+            lv_obj_add_event_cb(r->btn, on_lights_tile_longpress, LV_EVENT_LONG_PRESSED, (void *)(intptr_t)(i + 1));
 
-        tile_lights_lbl1_name = lv_label_create(tile_lights_btn1);
-        ui_obj_set_style_text_font(tile_lights_lbl1_name, SF(16), 0);
-        ui_obj_set_style_text_color(tile_lights_lbl1_name, lv_color_hex(COL_TEXT_HI), 0);
-        lv_label_set_long_mode(tile_lights_lbl1_name, LV_LABEL_LONG_DOT);
-        lv_obj_set_width(tile_lights_lbl1_name, LV_PCT(60));
-        ui_obj_align(tile_lights_lbl1_name, LV_ALIGN_LEFT_MID, SX(2), 0);
-        ui_label_set_text(tile_lights_lbl1_name, "");
+            r->name = lv_label_create(r->btn);
+            ui_obj_set_style_text_font(r->name, SF(16), 0);
+            ui_obj_set_style_text_color(r->name, lv_color_hex(COL_TEXT_HI), 0);
+            lv_label_set_long_mode(r->name, LV_LABEL_LONG_DOT);
+            lv_obj_set_width(r->name, LV_PCT(60));
+            ui_obj_align(r->name, LV_ALIGN_LEFT_MID, SX(2), 0);
+            ui_label_set_text(r->name, "");
 
-        tile_lights_sw1 = lv_obj_create(tile_lights_btn1);
-        lv_obj_set_size(tile_lights_sw1, SX(56), SY(28));
-        ui_obj_align(tile_lights_sw1, LV_ALIGN_RIGHT_MID, SX(-2), 0);
-        lv_obj_set_style_radius(tile_lights_sw1, 6, 0);
-        ui_obj_set_style_border_width(tile_lights_sw1, 0, 0);
-        ui_obj_set_style_bg_color(tile_lights_sw1, lv_color_hex(settings.home_light_mode ? 0xd0d8e2 : 0x283848), 0);
-        lv_obj_set_style_pad_all(tile_lights_sw1, 0, 0);
-        ui_obj_clear_flag(tile_lights_sw1, LV_OBJ_FLAG_SCROLLABLE);
-        ui_obj_add_flag(tile_lights_sw1, LV_OBJ_FLAG_EVENT_BUBBLE);
+            r->slider = lv_slider_create(r->btn);
+            lv_slider_set_range(r->slider, 1, 100);
+            lv_obj_set_size(r->slider, SX(80), SY(10));
+            lv_obj_set_style_bg_color(r->slider, lv_color_hex(settings.home_light_mode ? 0xd0d8e2 : 0x283848), LV_PART_MAIN);
+            lv_obj_set_style_bg_color(r->slider, lv_color_hex(0xddaa44), LV_PART_INDICATOR);
+            lv_obj_set_style_bg_color(r->slider, lv_color_hex(0xffffff), LV_PART_KNOB);
+            lv_obj_set_style_pad_all(r->slider, SY(5), LV_PART_KNOB);
+            lv_obj_set_ext_click_area(r->slider, SY(12));
+            lv_obj_add_event_cb(r->slider, on_tl_slider, LV_EVENT_VALUE_CHANGED, (void *)(intptr_t)i);
+            lv_obj_add_event_cb(r->slider, on_tl_slider, LV_EVENT_RELEASED, (void *)(intptr_t)i);
+            ui_obj_add_flag(r->slider, LV_OBJ_FLAG_HIDDEN);
 
-        tile_lights_lbl1_st = lv_label_create(tile_lights_sw1);
-        ui_obj_set_style_text_font(tile_lights_lbl1_st, SF(15), 0);
-        ui_obj_set_style_text_color(tile_lights_lbl1_st, lv_color_hex(settings.home_light_mode ? 0x485868 : 0x88aabb), 0);
-        lv_obj_center(tile_lights_lbl1_st);
-        ui_label_set_text(tile_lights_lbl1_st, "");
-        ui_obj_add_flag(tile_lights_btn1, LV_OBJ_FLAG_HIDDEN);
+            r->sw = lv_obj_create(r->btn);
+            lv_obj_set_size(r->sw, SX(56), SY(28));
+            ui_obj_align(r->sw, LV_ALIGN_RIGHT_MID, SX(-2), 0);
+            lv_obj_set_style_radius(r->sw, 6, 0);
+            ui_obj_set_style_border_width(r->sw, 0, 0);
+            ui_obj_set_style_bg_color(r->sw, lv_color_hex(settings.home_light_mode ? 0xd0d8e2 : 0x283848), 0);
+            lv_obj_set_style_pad_all(r->sw, 0, 0);
+            ui_obj_clear_flag(r->sw, LV_OBJ_FLAG_SCROLLABLE);
+            ui_obj_clear_flag(r->sw, LV_OBJ_FLAG_CLICKABLE);
+            ui_obj_add_flag(r->sw, LV_OBJ_FLAG_EVENT_BUBBLE);
 
-        tile_lights_btn2 = lv_btn_create(lt.tile);
-        lv_obj_set_size(tile_lights_btn2, LV_PCT(92), btn_h);
-        ui_obj_align(tile_lights_btn2, LV_ALIGN_TOP_MID, 0, y2);
-        lv_obj_set_style_radius(tile_lights_btn2, 8, 0);
-        ui_obj_set_style_bg_color(tile_lights_btn2, lv_color_hex(settings.home_light_mode ? 0xedf2f7 : 0x1e2838), 0);
-        ui_obj_set_style_border_width(tile_lights_btn2, 0, 0);
-        lv_obj_set_style_pad_hor(tile_lights_btn2, 6, 0);
-        lv_obj_set_style_pad_ver(tile_lights_btn2, 0, 0);
-        lv_obj_add_event_cb(tile_lights_btn2, on_tile_light_btn2, LV_EVENT_CLICKED, NULL);
-        lv_obj_add_event_cb(tile_lights_btn2, on_lights_tile_longpress, LV_EVENT_LONG_PRESSED, NULL);
-
-        tile_lights_lbl2_name = lv_label_create(tile_lights_btn2);
-        ui_obj_set_style_text_font(tile_lights_lbl2_name, SF(16), 0);
-        ui_obj_set_style_text_color(tile_lights_lbl2_name, lv_color_hex(COL_TEXT_HI), 0);
-        lv_label_set_long_mode(tile_lights_lbl2_name, LV_LABEL_LONG_DOT);
-        lv_obj_set_width(tile_lights_lbl2_name, LV_PCT(60));
-        ui_obj_align(tile_lights_lbl2_name, LV_ALIGN_LEFT_MID, SX(2), 0);
-        ui_label_set_text(tile_lights_lbl2_name, "");
-
-        tile_lights_sw2 = lv_obj_create(tile_lights_btn2);
-        lv_obj_set_size(tile_lights_sw2, SX(56), SY(28));
-        ui_obj_align(tile_lights_sw2, LV_ALIGN_RIGHT_MID, SX(-2), 0);
-        lv_obj_set_style_radius(tile_lights_sw2, 6, 0);
-        ui_obj_set_style_border_width(tile_lights_sw2, 0, 0);
-        ui_obj_set_style_bg_color(tile_lights_sw2, lv_color_hex(settings.home_light_mode ? 0xd0d8e2 : 0x283848), 0);
-        lv_obj_set_style_pad_all(tile_lights_sw2, 0, 0);
-        ui_obj_clear_flag(tile_lights_sw2, LV_OBJ_FLAG_SCROLLABLE);
-        ui_obj_add_flag(tile_lights_sw2, LV_OBJ_FLAG_EVENT_BUBBLE);
-
-        tile_lights_lbl2_st = lv_label_create(tile_lights_sw2);
-        ui_obj_set_style_text_font(tile_lights_lbl2_st, SF(15), 0);
-        ui_obj_set_style_text_color(tile_lights_lbl2_st, lv_color_hex(settings.home_light_mode ? 0x485868 : 0x88aabb), 0);
-        lv_obj_center(tile_lights_lbl2_st);
-        ui_label_set_text(tile_lights_lbl2_st, "");
-        ui_obj_add_flag(tile_lights_btn2, LV_OBJ_FLAG_HIDDEN);
+            r->st = lv_label_create(r->sw);
+            ui_obj_set_style_text_font(r->st, SF(15), 0);
+            ui_obj_set_style_text_color(r->st, lv_color_hex(settings.home_light_mode ? 0x485868 : 0x88aabb), 0);
+            lv_obj_center(r->st);
+            ui_label_set_text(r->st, "");
+            ui_obj_add_flag(r->btn, LV_OBJ_FLAG_HIDDEN);
+        }
 
         /* Sonos tile in custom layout */
         tile_t sonos_t;
@@ -5571,14 +5764,11 @@ void screen_home_destroy(void) {
         tile_img_water = NULL;
         tile_lbl_water = NULL;
         tile_lights_lbl_default = NULL;
-        tile_lights_btn1 = NULL;
-        tile_lights_lbl1_name = NULL;
-        tile_lights_sw1 = NULL;
-        tile_lights_lbl1_st = NULL;
-        tile_lights_btn2 = NULL;
-        tile_lights_lbl2_name = NULL;
-        tile_lights_sw2 = NULL;
-        tile_lights_lbl2_st = NULL;
+        memset(tl_rows, 0, sizeof tl_rows);
+        for (int i = 0; i < TL_SLOTS; i++) tl_rows[i].slot = -1;
+        /* the dim popup is a child of this screen: deleted with it */
+        tl_pop = tl_pop_slider = tl_pop_val = tl_pop_sw = NULL;
+        tl_pop_slot = -1;
         tile_smartplug = NULL;
         lbl_lt_sp_name = NULL;
         btn_lt_sp_toggle = NULL;

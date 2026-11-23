@@ -573,3 +573,14 @@ static void fire(int idx, const char * cmd, int level) {
 }
 
 void domoticz_switch_async(int idx, const char * cmd) { fire(idx, cmd, 0); }
+
+void domoticz_set_level_async(int idx, int pct) {
+    if (pct < 0) pct = 0;
+    if (pct > 100) pct = 100;
+    for (int i = 0; i < domoticz_state.count && i < DOMOTICZ_MAX_DEV; i++)
+        if (domoticz_state.dev[i].idx == idx) {
+            domoticz_state.dev[i].level = pct;
+            domoticz_state.dev[i].on = pct > 0;
+        }
+    fire(idx, NULL, pct);
+}

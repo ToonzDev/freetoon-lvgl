@@ -121,6 +121,14 @@ static int serve_static(int fd, const char * path) {
     return send_status(fd, 404, "Not Found", "Not Found");
 }
 
+/* Is "<prefix><id>" on one of the Verlichting tile's places? */
+static int on_tile(char refs[TL_SLOTS][TL_REF_LEN + 4], const char * prefix, const char * id) {
+    size_t pl = strlen(prefix);
+    for (int k = 0; k < TL_SLOTS; k++)
+        if (!strncmp(refs[k], prefix, pl) && !strcmp(refs[k] + pl, id)) return 1;
+    return 0;
+}
+
 /* Pure-function snapshot of the live state into JSON. Reads volatile shared
  * structs once; safe to call from any thread (the writers update atomically
  * field-by-field — readers tolerate a briefly inconsistent frame). */
@@ -291,8 +299,8 @@ static int render_state_json(char * body, size_t sz) {
      * Lampen tile (shown + switchable there; POST /api/ha/toggle). */
     /* What the Verlichting tile shows (tile_lights.h): those are "pin" below,
      * so the remote page lists them first. */
-    char tile_ref[2][TL_REF_LEN + 4];
-    for (int k = 0; k < 2; k++) { tl_src_t s = tl_resolve(k); tl_ref(&s, tile_ref[k], sizeof tile_ref[k]); }
+    char tile_ref[TL_SLOTS][TL_REF_LEN + 4];
+    for (int k = 0; k < TL_SLOTS; k++) { tl_src_t s = tl_resolve(k); tl_ref(&s, tile_ref[k], sizeof tile_ref[k]); }
     if (p < end) p += snprintf(p, end-p, "\"ha_devs\":[");
     if (settings.enable_ha) {
         int first = 1;
@@ -307,8 +315,7 @@ static int render_state_json(char * body, size_t sz) {
             if (p < end) p += snprintf(p, end-p,
                 "{\"id\":\"%s\",\"name\":\"%s\",\"on\":%d,\"av\":%d,\"pin\":%d}",
                 eid, name, D->on, D->available,
-                D->pin_home || (!strncmp(tile_ref[0], "ha:", 3) && !strcmp(tile_ref[0] + 3, D->entity_id))
-                            || (!strncmp(tile_ref[1], "ha:", 3) && !strcmp(tile_ref[1] + 3, D->entity_id)));
+                D->pin_home || on_tile(tile_ref, "ha:", D->entity_id));
         }
     }
     if (p < end) p += snprintf(p, end-p, "],");
@@ -324,8 +331,7 @@ static int render_state_json(char * body, size_t sz) {
             for (int i = 0; i < homey_state.ndev && count < 40; i++) {
                 const hy_dev_t * D = &homey_state.dev[i];
                 if (!homey_switchable(D)) continue;
-                int pin = (!strncmp(tile_ref[0], "hy:", 3) && !strcmp(tile_ref[0] + 3, D->id))
-                       || (!strncmp(tile_ref[1], "hy:", 3) && !strcmp(tile_ref[1] + 3, D->id));
+                int pin = on_tile(tile_ref, "hy:", D->id);
                 if (pin != (pass == 0)) continue;
                 const hy_cap_t * c = hy_dev_cap(D, "onoff");
                 char name[HY_NAME_LEN];

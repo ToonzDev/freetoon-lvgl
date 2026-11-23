@@ -125,8 +125,11 @@ static void rebuild(void) {
             char ref[TL_REF_LEN + 4];
             snprintf(ref, sizeof ref, "ha:%s", D->entity_id);
             int slot = tl_slot_of(ref);
-            if (slot == 0)      pin_txt = "T1 " LV_SYMBOL_OK;
-            else if (slot == 1) pin_txt = "T2 " LV_SYMBOL_OK;
+            static char tbuf[16];
+            if (slot >= 0) {
+                snprintf(tbuf, sizeof tbuf, "T%d " LV_SYMBOL_OK, slot + 1);
+                pin_txt = tbuf;
+            }
         }
         lv_obj_t * pinb = small_btn(c, pin_txt,
                                     D->pin_home ? COL_PIN_ON : COL_PIN_OFF,

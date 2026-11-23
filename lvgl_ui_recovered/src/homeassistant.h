@@ -104,6 +104,7 @@ typedef struct {
     volatile int position;       /* 0..100 (cover) */
     char         state[16];      /* raw HA state ("open"/"closing"/…) (cover) */
     char         area[32];       /* HA area (area_name()), "" if none — fetched by the HA thread */
+    volatile int dimmable;       /* light: supported_color_modes has more than "onoff", or a brightness was seen */
 } ha_device_t;
 
 #define HA_DEVICE_MAX 32

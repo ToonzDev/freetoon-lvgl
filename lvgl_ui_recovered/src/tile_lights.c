@@ -1,15 +1,27 @@
-/* The two switches on the Verlichting home tile: see tile_lights.h. */
+/* The places on the Verlichting home tile: see tile_lights.h. */
 #include "tile_lights.h"
 #include "settings.h"
 #include "domoticz.h"
 #include "homeassistant.h"
 #include "homey.h"
+#include "hue.h"
 #include "screen_zwave.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
-static char * slot_str(int slot) { return slot ? settings.tile_light2 : settings.tile_light1; }
+static char * slot_str(int slot) {
+    static char * const s[TL_SLOTS] = {
+        settings.tile_light1, settings.tile_light2, settings.tile_light3, settings.tile_light4,
+        settings.tile_light5, settings.tile_light6, settings.tile_light7, settings.tile_light8,
+    };
+    return s[slot < 0 ? 0 : slot >= TL_SLOTS ? TL_SLOTS - 1 : slot];
+}
+#define SLOT_SZ (sizeof settings.tile_light1)
+
+static int g_capacity = 2;
+void tl_set_capacity(int n) { g_capacity = n < 1 ? 1 : n > TL_SLOTS ? TL_SLOTS : n; }
+int  tl_capacity(void)      { return g_capacity; }
 
 /* n-th Z-Wave switch from the list already loaded. zwave_get_switch() would
  * fetch the list over HTTP when it is empty; the home screen's own poll
@@ -32,6 +44,18 @@ static int zw_index(const char * uuid) {
     zwave_dev_t d;
     for (int i = 0; zw_get(i, &d); i++)
         if (!strcmp(d.uuid, uuid)) return i;
+    return -1;
+}
+
+static int hue_light_index(const char * id) {
+    for (int i = 0; i < hue_state.count && i < HUE_MAX_LIGHTS; i++)
+        if (!strcmp(hue_state.lights[i].id, id)) return i;
+    return -1;
+}
+
+static int hue_group_index(const char * id) {
+    for (int i = 0; i < hue_state.group_count && i < HUE_MAX_GROUPS; i++)
+        if (!strcmp(hue_state.groups[i].id, id)) return i;
     return -1;
 }
 
@@ -61,12 +85,12 @@ static tl_src_t auto_src(int slot) {
         snprintf(c[k].id, sizeof c[k].id, "%s", zd.uuid);
         k++;
     }
-    tl_src_t none = { TL_NONE, -1, -1, -1, "" };
+    tl_src_t none = { TL_NONE, -1, -1, -1, -1, "" };
     return slot < k ? c[slot] : none;
 }
 
 static tl_src_t parse_ref(const char * r) {
-    tl_src_t s = { TL_NONE, -1, -1, -1, "" };
+    tl_src_t s = { TL_NONE, -1, -1, -1, -1, "" };
     if (!r || strlen(r) < 4 || r[2] != ':') return s;
     const char * v = r + 3;
     if (!strncmp(r, "dz", 2)) {
@@ -79,29 +103,34 @@ static tl_src_t parse_ref(const char * r) {
     if (!strncmp(r, "ha", 2))      { s.kind = TL_HA; s.ha_i = ha_index(v); }
     else if (!strncmp(r, "hy", 2)) { s.kind = TL_HY; }
     else if (!strncmp(r, "zw", 2)) { s.kind = TL_ZW; s.zw_i = zw_index(v); }
+    else if (!strncmp(r, "hu", 2)) { s.kind = TL_HUE; s.hue_i = hue_light_index(v); }
+    else if (!strncmp(r, "hg", 2)) { s.kind = TL_HUEG; s.hue_i = hue_group_index(v); }
     else s.id[0] = 0;
     return s;
 }
 
 tl_src_t tl_resolve(int slot) {
-    const char * r = slot_str(slot ? 1 : 0);
-    if (!strcmp(r, "auto")) return auto_src(slot ? 1 : 0);
+    if (slot < 0 || slot >= TL_SLOTS) return parse_ref("");
+    const char * r = slot_str(slot);
+    if (slot < 2 && !strcmp(r, "auto")) return auto_src(slot);
     return parse_ref(r);
 }
 
 void tl_ref(const tl_src_t * s, char * out, size_t n) {
     switch (s->kind) {
-    case TL_DZ: snprintf(out, n, "dz:%d", s->dz_idx); break;
-    case TL_HA: snprintf(out, n, "ha:%s", s->id); break;
-    case TL_HY: snprintf(out, n, "hy:%s", s->id); break;
-    case TL_ZW: snprintf(out, n, "zw:%s", s->id); break;
-    default:    if (n) out[0] = 0;
+    case TL_DZ:   snprintf(out, n, "dz:%d", s->dz_idx); break;
+    case TL_HA:   snprintf(out, n, "ha:%s", s->id); break;
+    case TL_HY:   snprintf(out, n, "hy:%s", s->id); break;
+    case TL_ZW:   snprintf(out, n, "zw:%s", s->id); break;
+    case TL_HUE:  snprintf(out, n, "hu:%s", s->id); break;
+    case TL_HUEG: snprintf(out, n, "hg:%s", s->id); break;
+    default:      if (n) out[0] = 0;
     }
 }
 
 int tl_slot_of(const char * ref) {
     if (!ref || !ref[0]) return -1;
-    for (int k = 0; k < 2; k++) {
+    for (int k = 0; k < TL_SLOTS; k++) {
         tl_src_t s = tl_resolve(k);
         char r[TL_REF_LEN];
         tl_ref(&s, r, sizeof r);
@@ -110,8 +139,8 @@ int tl_slot_of(const char * ref) {
     return -1;
 }
 
-/* Replace "auto" by what the slots show now, so changing one slot does not
- * change what the other shows. */
+/* Replace "auto" by what slots 1 and 2 show now, so changing one slot does
+ * not change what the other shows. */
 static void freeze(void) {
     tl_src_t s[2] = { tl_resolve(0), tl_resolve(1) };
     for (int k = 0; k < 2; k++) {
@@ -119,16 +148,18 @@ static void freeze(void) {
         if (strcmp(d, "auto")) continue;
         char r[TL_REF_LEN];
         tl_ref(&s[k], r, sizeof r);
-        snprintf(d, sizeof settings.tile_light1, "%s", r);
+        snprintf(d, SLOT_SZ, "%s", r);
     }
 }
 
 void tl_set(int slot, const char * ref) {
-    slot = slot ? 1 : 0;
+    if (slot < 0 || slot >= TL_SLOTS) return;
     if (!ref) ref = "";
     freeze();
-    if (ref[0] && !strcmp(slot_str(!slot), ref)) slot_str(!slot)[0] = 0;
-    snprintf(slot_str(slot), sizeof settings.tile_light1, "%s", ref);
+    if (ref[0])
+        for (int k = 0; k < TL_SLOTS; k++)
+            if (k != slot && !strcmp(slot_str(k), ref)) slot_str(k)[0] = 0;
+    snprintf(slot_str(slot), SLOT_SZ, "%s", ref);
     settings_save();
 }
 
@@ -141,13 +172,15 @@ int tl_pin(const char * ref, int on, int drop_oldest) {
         return -1;
     }
     if (cur >= 0) { settings_save(); return cur; }
-    for (int k = 0; k < 2; k++)
+    int cap = tl_capacity();
+    for (int k = 0; k < cap; k++)
         if (!slot_str(k)[0]) { tl_set(k, ref); return k; }
     if (!drop_oldest) { settings_save(); return -1; }
-    snprintf(settings.tile_light1, sizeof settings.tile_light1, "%s", settings.tile_light2);
-    snprintf(settings.tile_light2, sizeof settings.tile_light2, "%s", ref);
+    for (int k = 0; k + 1 < cap; k++)
+        snprintf(slot_str(k), SLOT_SZ, "%s", slot_str(k + 1));
+    snprintf(slot_str(cap - 1), SLOT_SZ, "%s", ref);
     settings_save();
-    return 1;
+    return cap - 1;
 }
 
 static const domoticz_dev_t * dz_dev(int idx) {
@@ -187,9 +220,53 @@ int tl_status(const tl_src_t * s, char * name, size_t n, int * on) {
             break;
         }
         homey_unlock();
+    } else if (s->kind == TL_HUE) {
+        if (s->hue_i >= 0 && s->hue_i < hue_state.count) {
+            const hue_light_t * L = &hue_state.lights[s->hue_i];
+            known = hue_state.connected && L->reachable; o = L->on;
+            snprintf(name, n, "%s", L->name);
+        } else snprintf(name, n, "Hue");
+    } else if (s->kind == TL_HUEG) {
+        if (s->hue_i >= 0 && s->hue_i < hue_state.group_count) {
+            const hue_group_t * g = &hue_state.groups[s->hue_i];
+            known = hue_state.connected; o = g->any_on;
+            snprintf(name, n, "%s", g->name);
+        } else snprintf(name, n, "Hue");
     }
     if (on) *on = o;
     return known;
+}
+
+int tl_level(const tl_src_t * s) {
+    int lv = -1;
+    if (s->kind == TL_DZ) {
+        const domoticz_dev_t * d = dz_dev(s->dz_idx);
+        if (d && d->kind == DZ_DIMMER) lv = d->level < 0 ? 0 : d->level;
+    } else if (s->kind == TL_HA) {
+        if (s->ha_i >= 0 && s->ha_i < ha_device_count) {
+            const ha_device_t * d = &ha_devices[s->ha_i];
+            if (d->type == HADEV_LIGHT && d->dimmable)
+                lv = d->brightness < 0 ? 0 : (d->brightness * 100 + 127) / 255;
+        }
+    } else if (s->kind == TL_HY) {
+        homey_lock();
+        for (int i = 0; i < homey_state.ndev; i++) {
+            const hy_dev_t * d = &homey_state.dev[i];
+            if (strcmp(d->id, s->id)) continue;
+            const hy_cap_t * c = hy_dev_cap(d, "dim");
+            if (c && c->setable) lv = (int)(c->num * 100 + 0.5);
+            break;
+        }
+        homey_unlock();
+    } else if (s->kind == TL_HUE) {
+        if (s->hue_i >= 0 && s->hue_i < hue_state.count && hue_state.lights[s->hue_i].is_dimmable)
+            lv = hue_state.lights[s->hue_i].bri_pct;
+    } else if (s->kind == TL_HUEG) {
+        if (s->hue_i >= 0 && s->hue_i < hue_state.group_count)
+            lv = hue_state.groups[s->hue_i].bri_pct;
+    }
+    if (lv > 100) lv = 100;
+    return lv;
 }
 
 void tl_toggle(int slot) {
@@ -201,5 +278,26 @@ void tl_toggle(int slot) {
         char nm[8];
         int on = 0;
         if (tl_status(&s, nm, sizeof nm, &on)) homey_onoff(s.id, !on);
-    }
+    } else if (s.kind == TL_HUE && s.hue_i >= 0) hue_light_toggle_async(s.id);
+    else if (s.kind == TL_HUEG && s.hue_i >= 0) hue_group_set_on_async(s.id, !hue_state.groups[s.hue_i].any_on);
+}
+
+void tl_set_level(int slot, int pct) {
+    if (pct < 1) pct = 1;
+    if (pct > 100) pct = 100;
+    tl_src_t s = tl_resolve(slot);
+    if (tl_level(&s) < 0) return;
+    if (s.kind == TL_DZ) domoticz_set_level_async(s.dz_idx, pct);
+    else if (s.kind == TL_HA && s.ha_i >= 0) {
+        ha_device_t * d = &ha_devices[s.ha_i];
+        d->brightness = (pct * 255 + 50) / 100;      /* the tile shows it until the next poll */
+        d->on = 1;
+        ha_light_set_brightness_async(d->entity_id, pct);
+    } else if (s.kind == TL_HY) {
+        char nm[8];
+        int on = 0;
+        if (tl_status(&s, nm, sizeof nm, &on) && !on) homey_onoff(s.id, 1);
+        homey_dim(s.id, pct / 100.0);
+    } else if (s.kind == TL_HUE) hue_light_set_bri_async(s.id, pct);
+    else if (s.kind == TL_HUEG) hue_group_set_bri_async(s.id, pct);
 }
