@@ -1189,19 +1189,30 @@ lv_obj_t * screen_dim_grid_create(void) {
     lv_obj_align_to(dim_img_drop, dim_img_faucet, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
     ui_obj_add_flag(dim_img_drop, LV_OBJ_FLAG_HIDDEN);
 
-    dim_img_water = lv_img_create(bx_t);
+    /* Live water flow (HomeWizard watermeter): drop + "12.4 L/m" as one
+     * centred row under the setpoint line. It used to sit at a fixed spot
+     * near the top of the block, where it ran through the big temperature
+     * (user report). The row re-centres itself when the text changes. */
+    lv_obj_t * wrow = lv_obj_create(bx_t);
+    lv_obj_remove_style_all(wrow);
+    lv_obj_set_size(wrow, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(wrow, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(wrow, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(wrow, 6, 0);
+    ui_obj_clear_flag(wrow, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    ui_obj_align(wrow, LV_ALIGN_CENTER, 0, (DISP_VER < 600 ? 28 : 34) + SY(30));
+
+    dim_img_water = lv_img_create(wrow);
     ui_img_set_src(dim_img_water, &icon_drop);
     lv_img_set_zoom(dim_img_water, 256);
     ui_obj_set_style_img_recolor(dim_img_water, lv_color_hex(0x66bbff), 0);
     ui_obj_set_style_img_recolor_opa(dim_img_water, 255, 0);
-    ui_obj_align(dim_img_water, LV_ALIGN_TOP_MID, -150, 18);
     ui_obj_add_flag(dim_img_water, LV_OBJ_FLAG_HIDDEN);
 
-    dim_lbl_water = lv_label_create(bx_t);
+    dim_lbl_water = lv_label_create(wrow);
     ui_obj_set_style_text_color(dim_lbl_water, lv_color_hex(0x66bbff), 0);
     ui_obj_set_style_text_font(dim_lbl_water, &lv_font_montserrat_22, 0);
     ui_label_set_text(dim_lbl_water, "");
-    ui_obj_align(dim_lbl_water, LV_ALIGN_TOP_MID, -110, 18);
     ui_obj_add_flag(dim_lbl_water, LV_OBJ_FLAG_HIDDEN);
 
     /* ---- VENT: fan icon centred, mode/% below ---- */

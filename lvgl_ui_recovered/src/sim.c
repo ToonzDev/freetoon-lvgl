@@ -514,6 +514,8 @@ static void mock_state(void) {
     strcpy(weather_state.current_desc, "Zonnig");
     strcpy(weather_state.current_icon, "a");
     if (getenv("SIM_WX_ICON")) snprintf(weather_state.current_icon, sizeof weather_state.current_icon, "%s", getenv("SIM_WX_ICON"));   /* e.g. "aa" = clear night (moon) */
+    /* SIM_WATER_LPM=<l/min>: a HomeWizard watermeter that is pouring (dim water indicator). */
+    if (getenv("SIM_WATER_LPM")) { hw_state.connected_water = 1; hw_state.water_lpm = (float)atof(getenv("SIM_WATER_LPM")); }
     static const char * hlbl[] = { "Nu", "16:00", "19:00", "22:00", "01:00", "04:00" };
     static const char * hic[]  = { "a",  "a",     "a",     "aa",    "aa",    "aa"   };
     static const float  htmp[] = { 22.6f,26,24,19,16,15 };

@@ -894,7 +894,9 @@ lv_obj_t * screen_dim_create(void) {
     ui_obj_set_style_text_color(dim_lbl_water, lv_color_hex(0x66bbff), 0);
     ui_obj_set_style_text_font(dim_lbl_water, &lv_font_montserrat_22, 0);
     ui_label_set_text(dim_lbl_water, "");
-    ui_obj_align(dim_lbl_water, LV_ALIGN_CENTER, SX(175), SY(80));
+    /* Left edge right of the drop: centred on a fixed point, a wide value
+     * ("12.4 L/m") ran over the drop. */
+    lv_obj_align_to(dim_lbl_water, dim_img_water, LV_ALIGN_OUT_RIGHT_MID, 6, 0);
     ui_obj_add_flag(dim_lbl_water, LV_OBJ_FLAG_HIDDEN);
 
     /* Vent — small fan icon top-RIGHT (mirrors the waste icon on top-LEFT)
