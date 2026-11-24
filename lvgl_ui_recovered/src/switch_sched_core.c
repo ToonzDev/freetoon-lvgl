@@ -224,7 +224,13 @@ int ss_import_qml(ss_set_t * s, const char * json, long now) {
         mj_str(it, "action", action, sizeof action);
         mj_num(it, "active", &act);
         int hhmm = (int)st;
-        if (!uuid[0] || !strcmp(uuid, "-") || hhmm < 0 || hhmm > 2359 || hhmm % 100 > 59) continue;
+        /* Only Z-Wave uuids: the app also kept other devices by name (e.g.
+         * "domoticzLamp TV"), which are no Z-Wave plug and never match. */
+        int uuid_like = strlen(uuid) >= 8;              /* also drops the app's "-" (no plug) */
+        for (const char * p = uuid; *p && uuid_like; p++)
+            if (!((*p >= '0' && *p <= '9') || (*p >= 'a' && *p <= 'f') || (*p >= 'A' && *p <= 'F') || *p == '-'))
+                uuid_like = 0;
+        if (!uuid_like || hhmm < 0 || hhmm > 2359 || hhmm % 100 > 59) continue;
         ss_rule_t * r = &s->r[s->n];
         memset(r, 0, sizeof *r);
         r->active = act != 0;

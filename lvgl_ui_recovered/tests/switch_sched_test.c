@@ -157,6 +157,7 @@ int main(void) {
         "{\"pluguuid\":\"aaaa-1111\",\"starttime\":730,\"action\":\"Aan\",\"active\":1,"
         "\"mo\":1,\"tu\":1,\"we\":1,\"th\":1,\"fr\":1,\"sa\":0,\"su\":0},"
         "{\"pluguuid\":\"-\",\"starttime\":900,\"action\":\"Aan\",\"active\":0,\"mo\":1},"
+        "{\"pluguuid\":\"domoticzLamp TV\",\"starttime\":1646,\"action\":\"Aan\",\"active\":1,\"mo\":1},"
         "{\"pluguuid\":\"bbbb-2222\",\"starttime\":2215,\"action\":\"Uit\",\"active\":0,"
         "\"mo\":0,\"tu\":0,\"we\":0,\"th\":0,\"fr\":0,\"sa\":1,\"su\":1}]}";
     memset(&s, 0, sizeof s);
