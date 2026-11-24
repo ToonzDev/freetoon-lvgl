@@ -572,6 +572,9 @@ static void ha_service_async(const char * domain, const char * service, const ch
 void ha_device_toggle_async(int type, const char * entity_id) {
     ha_service_async(type == HADEV_SWITCH ? "switch" : "light", "toggle", entity_id);
 }
+void ha_device_set_on_async(int type, const char * entity_id, int on) {
+    ha_service_async(type == HADEV_SWITCH ? "switch" : "light", on ? "turn_on" : "turn_off", entity_id);
+}
 void ha_device_cover_async(const char * entity_id, const char * cmd) {
     const char * svc = !strcmp(cmd, "open")  ? "open_cover"
                      : !strcmp(cmd, "close") ? "close_cover"

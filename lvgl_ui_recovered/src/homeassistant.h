@@ -134,6 +134,7 @@ extern volatile int ha_device_area_gen;
 
 /* Device control (async, fire-and-forget). `type` selects the HA domain. */
 void ha_device_toggle_async(int type, const char * entity_id);      /* light/switch */
+void ha_device_set_on_async(int type, const char * entity_id, int on); /* light/switch: turn_on / turn_off */
 void ha_device_cover_async(const char * entity_id, const char * cmd); /* "open"/"stop"/"close" */
 void ha_device_run_async(int type, const char * entity_id);          /* script/scene */
 

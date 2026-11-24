@@ -603,6 +603,16 @@ void hue_light_toggle_async(const char * id) {
     queue_hue_act(id, 0, new_state);
 }
 
+void hue_light_set_on_async(const char * id, int on) {
+    if (!id) return;
+    on = on ? 1 : 0;
+    pthread_mutex_lock(&g_hue_lock);
+    for (int i = 0; i < hue_state.count; i++)
+        if (strcmp(hue_state.lights[i].id, id) == 0) { hue_state.lights[i].on = on; break; }
+    pthread_mutex_unlock(&g_hue_lock);
+    queue_hue_act(id, 0, on);
+}
+
 void hue_light_set_bri_async(const char * id, int pct) {
     if (!id) return;
     if (pct < 0) pct = 0; if (pct > 100) pct = 100;

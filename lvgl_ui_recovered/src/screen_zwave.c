@@ -1213,6 +1213,21 @@ int zwave_toggle_switch(int idx) {
     return 0;
 }
 
+/* Switch the Z-Wave switch with this uuid on or off (schedules: by uuid, not
+ * by list position, which changes when plugs are added). 1 = found. */
+int zwave_set_switch_uuid(const char * uuid, int on) {
+    if (!uuid || !uuid[0]) return 0;
+    if (g_dev_count == 0) zwave_poll();
+    for (int i = 0; i < g_dev_count; i++) {
+        if (!g_dev[i].is_switch || strcmp(g_dev[i].uuid, uuid)) continue;
+        g_dev[i].state = on ? 1 : 0;
+        g_switch_settle_until = time(NULL) + 5;
+        boxtalk_zwave_basic_set(g_dev[i].uuid, g_dev[i].node_id, on ? 1 : 0);
+        return 1;
+    }
+    return 0;
+}
+
 void zwave_set_devices_from_remote(int n, const zwave_dev_t * src) {
     if (n < 0) n = 0;
     if (n > MAX_ZW_DEV) n = MAX_ZW_DEV;

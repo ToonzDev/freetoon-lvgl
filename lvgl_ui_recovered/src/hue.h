@@ -58,6 +58,7 @@ int  hue_pair(const char * host, char * out_user, size_t out_sz, char * err_msg,
 
 /* Asynchronous actions */
 void hue_light_toggle_async(const char * id);
+void hue_light_set_on_async(const char * id, int on);
 void hue_light_set_bri_async(const char * id, int pct);
 void hue_all_off_async(void);
 void hue_all_on_async(void);

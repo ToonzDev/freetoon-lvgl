@@ -271,6 +271,10 @@ int main(int argc, char** argv) {
     /* Animation overlay engine (balloons, snow, confetti, fireworks) */
     anim_overlay_init();
 
+    /* Schakelschema: switch plugs / lights at set times (LVGL timer, master only). */
+    extern void sched_init(void);
+    sched_init();
+
     fprintf(stderr, "[main] entering LVGL loop\n");
     uint32_t last_idle_check = 0;
     struct timespec ts;

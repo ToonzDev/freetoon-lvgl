@@ -26,6 +26,7 @@ int zwave_dev_at(int i, zwave_dev_t * out);
 int  zwave_switch_count_cached(void);   /* no poll; 0 until the list is loaded */
 int  zwave_get_switch(int idx, zwave_dev_t * out);
 int  zwave_toggle_switch(int idx);
+int  zwave_set_switch_uuid(const char * uuid, int on);   /* 1 = found */
 void zwave_poll(void);
 int  zwave_is_switch_device(const char * type, const char * name, const char * cc, int node_id);
 int  zwave_get_custom_name(const char * uuid, int node_id, char * out, size_t outsz);

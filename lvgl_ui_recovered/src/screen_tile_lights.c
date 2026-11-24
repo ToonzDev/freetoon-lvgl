@@ -66,6 +66,7 @@ static unsigned long sig(void) {
     h = h * 33u + (unsigned long)(settings.enable_homey ? homey_state.ndev : -1);
     h = h * 33u + (unsigned long)(hue_on() ? hue_state.count * 64 + hue_state.group_count : -1);
     h = h * 33u + (unsigned long)zwave_switch_count_cached();
+    for (int i = 0; i < HW_SOCKET_MAX; i++) h = h * 33u + (unsigned long)(settings.hw_socket_host[i][0] != 0);
     return h;
 }
 
@@ -211,72 +212,25 @@ static void add_row(const char * ref, const char * name, int available, int dimm
     nrows++;
 }
 
+/* One device from tl_enumerate(): a header when the group changes. */
+static char g_last_group[48];
+static void enum_row(void * ctx, const char * group, const char * ref,
+                     const char * name, int available, int dimmable) {
+    (void)ctx;
+    if (strcmp(group, g_last_group)) {
+        add_header(group);
+        snprintf(g_last_group, sizeof g_last_group, "%s", group);
+    }
+    add_row(ref, name, available, dimmable);
+}
+
 static void rebuild(void) {
     if (!list) return;
     lv_obj_clean(list);
     nrows = 0;
     built_sig = sig();
-    char ref[TL_REF_LEN + 4];
-
-    if (dz_on()) {
-        int any = 0;
-        for (int i = 0; i < domoticz_state.count && i < DOMOTICZ_MAX_DEV; i++) {
-            const domoticz_dev_t * d = &domoticz_state.dev[i];
-            if (d->kind == DZ_BLIND) continue;
-            if (!any++) add_header("Domoticz");
-            snprintf(ref, sizeof ref, "dz:%d", d->idx);
-            add_row(ref, d->name, 1, d->kind == DZ_DIMMER);
-        }
-    }
-    if (settings.enable_ha) {
-        int any = 0;
-        for (int i = 0; i < ha_device_count && i < HA_DEVICE_MAX; i++) {
-            const ha_device_t * d = &ha_devices[i];
-            if (d->type != HADEV_LIGHT && d->type != HADEV_SWITCH) continue;
-            if (!any++) add_header("Home Assistant");
-            snprintf(ref, sizeof ref, "ha:%s", d->entity_id);
-            add_row(ref, d->name, d->available, d->type == HADEV_LIGHT && d->dimmable);
-        }
-    }
-    if (settings.enable_homey) {
-        int any = 0;
-        homey_lock();
-        for (int i = 0; i < homey_state.ndev; i++) {
-            const hy_dev_t * d = &homey_state.dev[i];
-            if (!homey_switchable(d)) continue;
-            if (!any++) add_header("Homey");
-            snprintf(ref, sizeof ref, "hy:%s", d->id);
-            const hy_cap_t * dc = hy_dev_cap(d, "dim");
-            add_row(ref, d->name, d->available, dc && dc->setable);
-        }
-        homey_unlock();
-    }
-    if (hue_on()) {
-        if (hue_state.group_count > 0) {
-            add_header(tr("Hue - kamers en zones", "Hue - rooms and zones"));
-            for (int i = 0; i < hue_state.group_count && i < HUE_MAX_GROUPS; i++) {
-                const hue_group_t * g = &hue_state.groups[i];
-                snprintf(ref, sizeof ref, "hg:%s", g->id);
-                add_row(ref, g->name, 1, 1);
-            }
-        }
-        if (hue_state.count > 0) {
-            add_header(tr("Hue - lampen", "Hue - lamps"));
-            for (int i = 0; i < hue_state.count && i < HUE_MAX_LIGHTS; i++) {
-                const hue_light_t * L = &hue_state.lights[i];
-                snprintf(ref, sizeof ref, "hu:%s", L->id);
-                add_row(ref, L->name, L->reachable, L->is_dimmable);
-            }
-        }
-    }
-    if (zwave_switch_count_cached() > 0) {
-        zwave_dev_t d;
-        for (int i = 0; zwave_get_switch(i, &d); i++) {
-            if (!i) add_header("Z-Wave");
-            snprintf(ref, sizeof ref, "zw:%s", d.uuid);
-            add_row(ref, d.name[0] ? d.name : d.type, 1, 0);
-        }
-    }
+    g_last_group[0] = 0;
+    tl_enumerate(enum_row, NULL);
 
     if (empty_hint) {
         if (nrows) lv_obj_add_flag(empty_hint, LV_OBJ_FLAG_HIDDEN);

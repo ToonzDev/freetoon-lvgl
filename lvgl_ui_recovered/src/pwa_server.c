@@ -66,6 +66,7 @@
 #include "app_settings.h"
 #include "energy.h"
 #include "tile_lights.h"
+#include "switch_schedule.h"
 
 #define PWA_PORT  10081
 #define PWA_ROOT  "/mnt/data/pwa"
@@ -2616,7 +2617,8 @@ static int handle_logs_index_get(int fd) {
 
     pos += snprintf(body + pos, sizeof(body) - pos,
         "<p style=\"margin-top:20px\">Koppelingen: <a href=\"/homey\" style=\"color:#38bdf8\">Homey (adres en API-sleutel)</a>"
-        " &middot; <a href=\"/solar\" style=\"color:#38bdf8\">Zonnepanelen (omvormer)</a></p>"
+        " &middot; <a href=\"/solar\" style=\"color:#38bdf8\">Zonnepanelen (omvormer)</a>"
+        " &middot; <a href=\"/schema\" style=\"color:#38bdf8\">Schakelschema</a></p>"
         "<p style=\"margin-top:20px;text-align:center\"><a href=\"/\" class=\"btn btn-sec\">&larr; Terug naar Toon</a></p>"
         "</div></body></html>");
 
@@ -2899,6 +2901,185 @@ static int handle_solar_post(int fd, const char * req, const char * body) {
     return send_redirect(fd, "/solar?saved", NULL);
 }
 
+/* --------------------------------------------------------------- /schema
+ * Schakelschema (switch_schedule.c): the rules that switch plugs and lights
+ * on or off at set times, also editable on the Toon (Apparaten ->
+ * Schakelschema). Behind the web login like /homey; POSTs only from this
+ * page (same origin). */
+struct sched_opts { char * buf; size_t cap; int pos; const char * sel; char group[48]; int open; };
+static void sched_opt(void * ctx, const char * group, const char * ref,
+                      const char * name, int available, int dimmable) {
+    (void)dimmable;
+    struct sched_opts * o = ctx;
+    if (o->pos < 0 || (size_t)o->pos + 1024 > o->cap) return;   /* page full: stop adding */
+    char g[96], r[160], n[200];
+    if (strcmp(group, o->group)) {
+        html_attr_esc(g, sizeof g, group);
+        o->pos += snprintf(o->buf + o->pos, o->cap - o->pos, "%s<optgroup label=\"%s\">",
+                           o->open ? "</optgroup>" : "", g);
+        snprintf(o->group, sizeof o->group, "%s", group);
+        o->open = 1;
+    }
+    html_attr_esc(r, sizeof r, ref);
+    html_attr_esc(n, sizeof n, name);
+    o->pos += snprintf(o->buf + o->pos, o->cap - o->pos, "<option value=\"%s\"%s>%s%s</option>",
+                       r, (o->sel && !strcmp(o->sel, ref)) ? " selected" : "", n, available ? "" : " (offline)");
+}
+
+static int handle_schema_get(int fd, const char * query, const char * msg) {
+    size_t cap = 96 * 1024;
+    char * body = malloc(cap);
+    if (!body) return send_status(fd, 500, "Internal Server Error", "oom");
+    int edit = -2;                                   /* -2 none, -1 new, >= 0 rule */
+    if (query && !strncmp(query, "edit=", 5)) edit = atoi(query + 5);
+    else if (query && !strcmp(query, "new")) edit = -1;
+    ss_rule_t er;
+    if (edit >= 0 && !sched_get(edit, &er)) edit = -2;
+    if (edit == -1) {
+        memset(&er, 0, sizeof er);
+        er.active = 1; er.on = 1; er.mode = SS_CLOCK; er.hhmm = 700; er.days = SS_ALL_DAYS;
+    }
+
+    int pos = snprintf(body, cap,
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+        "<title>FreeToon - Schakelschema</title><style>"
+        "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0f1a2a;color:#e2e8f0;margin:0;padding:24px;line-height:1.5}"
+        ".card{max-width:680px;margin:0 auto;background:#1e293b;border-radius:12px;padding:24px}"
+        "h1{margin-top:0;font-size:22px;color:#38bdf8}h2{font-size:17px;color:#38bdf8;margin:24px 0 4px}p{color:#94a3b8;font-size:14px}"
+        "label{display:block;margin:12px 0 4px;font-size:14px}.days label,.cb label{display:inline-block;margin:4px 12px 0 0}"
+        "select,input[type=time],input[type=number]{box-sizing:border-box;padding:8px;border-radius:6px;border:1px solid #334155;background:#0f172a;color:#f8fafc;font-size:15px}"
+        "select{width:100%%}"
+        ".btn{background:#2563eb;color:#fff;border:0;padding:8px 16px;border-radius:6px;font-size:14px;cursor:pointer;margin-top:16px;text-decoration:none;display:inline-block}"
+        ".btn-sec{background:#334155;color:#e2e8f0}.btn-del{background:#b94a48}.sm{padding:4px 10px;margin:0 0 0 6px;font-size:13px}"
+        ".rule{display:flex;align-items:center;justify-content:space-between;background:#0f172a;border-radius:8px;padding:8px 12px;margin-top:8px}"
+        ".rule .t{color:#94a3b8;font-size:13px}.off{opacity:.55}.msg{color:#fbbf24}.st{background:#0f172a;border-radius:8px;padding:10px 14px;margin-top:8px}"
+        "form.inl{display:inline}</style></head><body><div class=\"card\"><h1>Schakelschema</h1>"
+        "<p>Zet stekkers en lampen op vaste tijden, of bij zonsopkomst of zonsondergang, aan of uit. "
+        "Ook in te stellen op de Toon: Apparaten &rarr; Schakelschema.</p>");
+    if (msg) {
+        char m[300];
+        html_attr_esc(m, sizeof m, msg);
+        pos += snprintf(body + pos, cap - pos, "<p class=\"msg\">%s</p>", m);
+    }
+    char nx[200], nxe[400];
+    if (settings.client_mode)
+        snprintf(nx, sizeof nx, "Deze Toon is een client: het schema draait op de hoofd-Toon.");
+    else if (sched_next_text(nx, sizeof nx) < 0) snprintf(nx, sizeof nx, "geen actieve regels");
+    html_attr_esc(nxe, sizeof nxe, nx);
+    pos += snprintf(body + pos, cap - pos, "<div class=\"st\"><b>Volgende:</b> %s</div>", nxe);
+
+    int n = sched_count();
+    for (int i = 0; i < n && pos < (int)cap - 2048; i++) {
+        ss_rule_t r;
+        if (!sched_get(i, &r)) continue;
+        char name[80], txt[120], ne[200], te[260];
+        sched_device_name(r.ref, name, sizeof name);
+        sched_rule_text(&r, txt, sizeof txt);
+        html_attr_esc(ne, sizeof ne, name);
+        html_attr_esc(te, sizeof te, txt);
+        pos += snprintf(body + pos, cap - pos,
+            "<div class=\"rule%s\"><div><b>%s</b><br><span class=\"t\">%s%s</span></div><div>"
+            "<a class=\"btn btn-sec sm\" href=\"/schema?edit=%d\">Bewerken</a>"
+            "<form class=\"inl\" method=\"post\" action=\"/schema\"><input type=\"hidden\" name=\"act\" value=\"toggle\">"
+            "<input type=\"hidden\" name=\"i\" value=\"%d\"><button class=\"btn btn-sec sm\">%s</button></form>"
+            "<form class=\"inl\" method=\"post\" action=\"/schema\" onsubmit=\"return confirm('Regel verwijderen?')\">"
+            "<input type=\"hidden\" name=\"act\" value=\"delete\"><input type=\"hidden\" name=\"i\" value=\"%d\">"
+            "<button class=\"btn btn-del sm\">Verwijderen</button></form></div></div>",
+            r.active ? "" : " off", ne, te, r.active ? "" : " (uit)", i, i, r.active ? "Uitzetten" : "Aanzetten", i);
+    }
+    if (!n) pos += snprintf(body + pos, cap - pos, "<p>Nog geen regels.</p>");
+    if (edit == -2)
+        pos += snprintf(body + pos, cap - pos, "<a class=\"btn\" href=\"/schema?new\">+ Nieuwe regel</a>");
+
+    if (edit >= -1) {
+        pos += snprintf(body + pos, cap - pos,
+            "<h2>%s</h2><form method=\"post\" action=\"/schema\">"
+            "<input type=\"hidden\" name=\"act\" value=\"save\"><input type=\"hidden\" name=\"i\" value=\"%d\">"
+            "<label>Apparaat</label><select name=\"ref\"><option value=\"\">(kies een apparaat)</option>",
+            edit < 0 ? "Nieuwe regel" : "Regel bewerken", edit);
+        struct sched_opts o = { body, cap, pos, er.ref, "", 0 };
+        tl_enumerate(sched_opt, &o);
+        pos = o.pos;
+        if (o.open) pos += snprintf(body + pos, cap - pos, "</optgroup>");
+        static const char * const dn[7] = { "ma", "di", "wo", "do", "vr", "za", "zo" };
+        pos += snprintf(body + pos, cap - pos,
+            "</select>"
+            "<label>Actie</label><select name=\"on\"><option value=\"1\"%s>Aan</option><option value=\"0\"%s>Uit</option></select>"
+            "<label>Moment</label><select name=\"mode\"><option value=\"0\"%s>Vaste tijd</option>"
+            "<option value=\"1\"%s>Zonsopkomst</option><option value=\"2\"%s>Zonsondergang</option></select>"
+            "<label>Tijd (bij vaste tijd)</label><input type=\"time\" name=\"time\" value=\"%02d:%02d\">"
+            "<label>Verschuiving in minuten (bij zon, -180..180)</label><input type=\"number\" name=\"offset\" min=\"-180\" max=\"180\" step=\"5\" value=\"%d\">"
+            "<label>Dagen</label><div class=\"days\">",
+            er.on ? " selected" : "", er.on ? "" : " selected",
+            er.mode == SS_CLOCK ? " selected" : "", er.mode == SS_SUNRISE ? " selected" : "",
+            er.mode == SS_SUNSET ? " selected" : "", er.hhmm / 100, er.hhmm % 100, er.offset);
+        for (int d = 0; d < 7; d++)
+            pos += snprintf(body + pos, cap - pos, "<label><input type=\"checkbox\" name=\"d%d\" value=\"1\"%s> %s</label>",
+                            d, (er.days >> d) & 1 ? " checked" : "", dn[d]);
+        pos += snprintf(body + pos, cap - pos,
+            "</div><div class=\"cb\"><label><input type=\"checkbox\" name=\"active\" value=\"1\"%s> Actief</label></div>"
+            "<button class=\"btn\">Opslaan</button> <a class=\"btn btn-sec\" href=\"/schema\">Annuleren</a></form>",
+            er.active ? " checked" : "");
+    }
+    pos += snprintf(body + pos, cap - pos,
+        "<p style=\"margin-top:24px;text-align:center\"><a href=\"/\" class=\"btn btn-sec\">&larr; Terug naar Toon</a></p>"
+        "</div></body></html>");
+    if (pos < 0 || pos >= (int)cap) { free(body); return send_status(fd, 500, "Internal Server Error", "page too large"); }
+    char hdr[200];
+    int hn = snprintf(hdr, sizeof hdr,
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: %d\r\n"
+        "Cache-Control: no-store\r\nX-Frame-Options: DENY\r\nConnection: close\r\n\r\n", pos);
+    int rc = sock_send_all(fd, hdr, hn) < 0 ? -1 : sock_send_all(fd, body, pos);
+    free(body);
+    return rc;
+}
+
+static int handle_schema_post(int fd, const char * req, const char * body) {
+    if (!homey_same_origin(req))
+        return send_status(fd, 403, "Forbidden", "cross-site request refused");
+    char act[16] = "", v[96];
+    form_get(body, "act", act, sizeof act);
+    int i = form_get(body, "i", v, sizeof v) ? atoi(v) : -1;
+    if (!strcmp(act, "delete")) {
+        if (sched_delete(i) != 0) return handle_schema_get(fd, NULL, "Regel niet gevonden.");
+        fprintf(stderr, "[pwa] schema: rule %d deleted via web\n", i);
+        return send_redirect(fd, "/schema", NULL);
+    }
+    if (!strcmp(act, "toggle")) {
+        ss_rule_t r;
+        if (!sched_get(i, &r)) return handle_schema_get(fd, NULL, "Regel niet gevonden.");
+        r.active = !r.active;
+        sched_put(i, &r);
+        return send_redirect(fd, "/schema", NULL);
+    }
+    if (strcmp(act, "save")) return send_status(fd, 400, "Bad Request", "unknown action");
+    ss_rule_t r;
+    memset(&r, 0, sizeof r);
+    form_get(body, "ref", r.ref, sizeof r.ref);
+    r.on = form_get(body, "on", v, sizeof v) && atoi(v) ? 1 : 0;
+    r.mode = form_get(body, "mode", v, sizeof v) ? atoi(v) : SS_CLOCK;
+    int hh = 0, mm = 0;
+    if (form_get(body, "time", v, sizeof v)) sscanf(v, "%d:%d", &hh, &mm);
+    r.hhmm = hh * 100 + mm;
+    r.offset = form_get(body, "offset", v, sizeof v) ? atoi(v) : 0;
+    for (int d = 0; d < 7; d++) {
+        char k[4];
+        snprintf(k, sizeof k, "d%d", d);
+        if (form_get(body, k, v, sizeof v)) r.days |= 1 << d;
+    }
+    r.active = form_get(body, "active", v, sizeof v) ? 1 : 0;
+    char q[24];
+    snprintf(q, sizeof q, i >= 0 ? "edit=%d" : "new", i);
+    if (!r.ref[0]) return handle_schema_get(fd, q, "Kies een apparaat.");
+    if (!r.days) return handle_schema_get(fd, q, "Kies minstens een dag.");
+    if (hh < 0 || hh > 23 || mm < 0 || mm > 59 || r.mode < SS_CLOCK || r.mode > SS_SUNSET ||
+        r.offset < -180 || r.offset > 180 || sched_put(i >= 0 ? i : -1, &r) != 0)
+        return handle_schema_get(fd, q, "Ongeldige regel, niet opgeslagen.");
+    fprintf(stderr, "[pwa] schema: rule %s via web (%s)\n", i >= 0 ? "changed" : "added", r.ref);
+    return send_redirect(fd, "/schema", NULL);
+}
+
 static int dispatch(int fd, char * req) {
     char method[8] = "", path[256] = "";
     if (sscanf(req, "%7s %255s", method, path) != 2) {
@@ -2964,6 +3145,8 @@ static int dispatch(int fd, char * req) {
         if (!strcmp(path, "/homey"))       return handle_homey_get(fd, NULL);
         if (!strcmp(path, "/homey?saved")) return handle_homey_get(fd, "Opgeslagen.");
         if (!strcmp(path, "/solar"))       return handle_solar_get(fd, NULL);
+        if (!strcmp(path, "/schema"))      return handle_schema_get(fd, NULL, NULL);
+        if (!strncmp(path, "/schema?", 8)) return handle_schema_get(fd, path + 8, NULL);
         if (!strcmp(path, "/solar?saved")) return handle_solar_get(fd, "Opgeslagen. De app leest de omvormer binnen enkele seconden opnieuw uit.");
         if (!strcmp(path, "/") || !strcmp(path, "/index.html") || !strncmp(path, "/?", 2))
             return handle_remote_page(fd);
@@ -2998,6 +3181,7 @@ static int dispatch(int fd, char * req) {
         if (!strcmp(path, "/ketellog/stop"))  { ketellog_stop();    return send_redirect(fd, "/logs", NULL); }
         if (!strcmp(path, "/homey"))          return handle_homey_post(fd, req, body);
         if (!strcmp(path, "/solar"))          return handle_solar_post(fd, req, body);
+        if (!strcmp(path, "/schema"))         return handle_schema_post(fd, req, body);
         if (!strcmp(path, "/api/v1/solar/source")) return handle_solar_source_post(fd, body);
         /* POST /api/v1/marketplace/apps/<id>/state */
         if (!strncmp(path, "/api/v1/marketplace/apps/", 25)) {

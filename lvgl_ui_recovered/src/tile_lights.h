@@ -9,6 +9,7 @@
  *   "zw:<uuid>"       Z-Wave plug/switch
  *   "hu:<light id>"   Philips Hue lamp
  *   "hg:<group id>"   Philips Hue room or zone
+ *   "hs:<host>"       HomeWizard Energy Socket (by its IP / host)
  *   ""                empty
  *   "auto"            slots 1 and 2 only, not chosen yet: the pre-chooser
  *                     rule (Domoticz T1/T2, then HA devices flagged Home,
@@ -26,14 +27,15 @@
 #define TL_REF_LEN 72
 #define TL_SLOTS   8
 
-enum { TL_NONE = 0, TL_DZ, TL_HA, TL_ZW, TL_HY, TL_HUE, TL_HUEG };
+enum { TL_NONE = 0, TL_DZ, TL_HA, TL_ZW, TL_HY, TL_HUE, TL_HUEG, TL_HWS };
 
 typedef struct {
     int  kind;              /* TL_* */
     int  dz_idx;            /* TL_DZ */
     int  ha_i;              /* TL_HA: index in ha_devices, -1 if not loaded (yet) */
     int  zw_i;              /* TL_ZW: n-th Z-Wave switch, -1 if not found */
-    int  hue_i;             /* TL_HUE / TL_HUEG: index in hue_state lights / groups, -1 if not found */
+    int  hue_i;             /* TL_HUE / TL_HUEG: index in hue_state lights / groups, -1 if not found;
+                               TL_HWS: socket slot (settings.hw_socket_host[]) */
     char id[TL_REF_LEN - 4]; /* HA entity id / Homey id / Z-Wave uuid / Hue id */
 } tl_src_t;
 
@@ -65,5 +67,18 @@ int  tl_level(const tl_src_t * s);
 void tl_toggle(int slot);
 /* Dim the light in a slot to pct (1..100; switches it on). */
 void tl_set_level(int slot, int pct);
+
+/* Any ref, not only the tile's places (schedules, web page). */
+tl_src_t tl_parse(const char * ref);
+/* Switch the device behind ref on or off (not a toggle). 1 = sent. */
+int  tl_set_on_ref(const char * ref, int on);
+
+/* Every switchable device FreeToon knows, grouped by source: cb is called
+ * once per device with the group's header ("Domoticz", "Hue - lampen", ...),
+ * its ref, display name, whether it answers and whether it dims. UI thread
+ * (reads the sources the way their screens do). */
+typedef void (*tl_enum_cb)(void * ctx, const char * group, const char * ref,
+                           const char * name, int available, int dimmable);
+void tl_enumerate(tl_enum_cb cb, void * ctx);
 
 #endif

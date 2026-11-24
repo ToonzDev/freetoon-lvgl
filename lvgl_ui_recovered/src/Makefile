@@ -143,7 +143,7 @@ APP_SRC       := $(ENTRY) $(GLIBC_SRC) boxtalk.c ui_stack.c screen_home.c screen
                  screen_heater_advanced.c \
                  screen_vent_remote.c screen_vent_advanced.c \
                  screen_lights.c screen_devices.c screen_marketplace.c screen_zwave.c screen_wifi.c \
-                 screen_adapters.c ketellog.c homey.c homey_parse.c screen_homey.c tile_lights.c screen_tile_lights.c minijson.c solar_app.c solar_acc.c solar_rrd.c app_settings.c screen_meteradapters.c ma_admin.c plugs.c screen_domoticz.c screen_hue.c screen_calendar.c screen_layout_editor.c screen_efanlamp.c \
+                 screen_adapters.c ketellog.c homey.c homey_parse.c screen_homey.c tile_lights.c screen_tile_lights.c switch_sched_core.c switch_schedule.c screen_switch_schedule.c minijson.c solar_app.c solar_acc.c solar_rrd.c app_settings.c screen_meteradapters.c ma_admin.c plugs.c screen_domoticz.c screen_hue.c screen_calendar.c screen_layout_editor.c screen_efanlamp.c \
                  screen_dim_layout_editor.c screen_dim_grid.c \
                  screen_crypto_picker.c screen_crypto.c screen_ha_picker.c screen_ha_devices.c \
                  screen_chart_24h.c screen_waste.c plugin_loader.c \
@@ -332,3 +332,11 @@ test-solar:
 	gcc -O1 -g -Wall -Wextra -fsanitize=address,undefined -fno-omit-frame-pointer \
 	    -o ../build-test/solar_acc_test ../tests/solar_acc_test.c solar_acc.c -lm
 	../build-test/solar_acc_test
+
+# Host-side unit test for the schakelschema core. Synthetic data.
+.PHONY: test-schedule
+test-schedule:
+	@mkdir -p ../build-test
+	gcc -O1 -g -Wall -Wextra -fsanitize=address,undefined -fno-omit-frame-pointer \
+	    -o ../build-test/switch_sched_test ../tests/switch_sched_test.c switch_sched_core.c minijson.c -lm
+	../build-test/switch_sched_test

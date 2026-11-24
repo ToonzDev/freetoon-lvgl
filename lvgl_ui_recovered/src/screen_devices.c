@@ -268,6 +268,7 @@ static void on_cover_close(lv_event_t * e) { cover_cmd(e, "close", "Close", "dow
 static void back_async(void * unused) { (void)unused; ui_pop(); }
 static void on_back(lv_event_t * e) { (void)e; lv_async_call(back_async, NULL); }
 
+#define CHIP_SCHEDULE 1000   /* not a source: the Schakelschema screen */
 static void on_chip(lv_event_t * e) {
     switch ((int)(intptr_t)lv_event_get_user_data(e)) {
     case SRC_HUE:  ui_push_owned(screen_hue_create());      break;
@@ -276,6 +277,7 @@ static void on_chip(lv_event_t * e) {
     case SRC_HY:   ui_push_owned(screen_homey_create());    break;
     case SRC_ZW:   ui_push(screen_zwave_create());          break;
     case SRC_EFAN: ui_push_owned(screen_efanlamp_create()); break;
+    case CHIP_SCHEDULE: ui_push_owned(screen_switch_schedule_create()); break;
     default: break;
     }
 }
@@ -461,6 +463,20 @@ static void build_chips(void) {
         lv_label_set_text_fmt(l, LV_SYMBOL_SETTINGS "  %s", src_group(order[k]));
         lv_obj_center(l);
     }
+    /* Schakelschema: plugs and lights on / off at set times */
+    lv_obj_t * b = lv_btn_create(row);
+    lv_obj_set_height(b, SY(40));
+    lv_obj_set_width(b, LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_hor(b, 14, 0);
+    lv_obj_set_style_bg_color(b, lv_color_hex(0x7a5c1e), 0);
+    lv_obj_set_style_radius(b, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_shadow_width(b, 0, 0);
+    lv_obj_add_event_cb(b, on_chip, LV_EVENT_CLICKED, (void *)(intptr_t)CHIP_SCHEDULE);
+    lv_obj_t * l = lv_label_create(b);
+    lv_obj_set_style_text_color(l, lv_color_hex(COL_TEXT_HI), 0);
+    lv_obj_set_style_text_font(l, SF(16), 0);
+    lv_label_set_text_fmt(l, LV_SYMBOL_LIST "  %s", tr("Schakelschema", "Switch schedule"));
+    lv_obj_center(l);
 }
 
 static void refresh_rows(void);

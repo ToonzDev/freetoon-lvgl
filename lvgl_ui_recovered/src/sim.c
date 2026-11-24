@@ -663,6 +663,7 @@ static const struct { const char * name; create_fn fn; } SCREENS[] = {
     { "devices",     screen_devices_create },
     { "homey",       screen_homey_create },
     { "tilelights",  screen_tile_lights_create },
+    { "schedule_sw", screen_switch_schedule_create },
     { "marketplace", screen_marketplace_create },
     { "zwave",       screen_zwave_create },
     { "wifi",        screen_wifi_create },
@@ -833,6 +834,7 @@ int main(int argc, char ** argv) {
 
     settings_load();   /* defaults when /mnt/data/toonui.cfg is absent */
     mock_state();
+    { extern void sched_init(void); sched_init(); }
     layout_load_named(settings.active_layout);  /* home-tile layout: active preset */
     dim_layout_load();  /* dim block layout (seeds defaults if no file) */
     /* Sim-only: exercise a custom layout. $TOONUI_SIM_CUSTOM_LAYOUT turns it on

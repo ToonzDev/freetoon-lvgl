@@ -6,6 +6,8 @@
 #include "homey.h"
 #include "hue.h"
 #include "screen_zwave.h"
+#include "homewizard.h"
+#include "i18n.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -50,6 +52,13 @@ static int zw_index(const char * uuid) {
 static int hue_light_index(const char * id) {
     for (int i = 0; i < hue_state.count && i < HUE_MAX_LIGHTS; i++)
         if (!strcmp(hue_state.lights[i].id, id)) return i;
+    return -1;
+}
+
+/* HomeWizard Energy Socket slot with this host, -1 if none. */
+static int hws_index(const char * host) {
+    for (int i = 0; i < HW_SOCKET_MAX; i++)
+        if (settings.hw_socket_host[i][0] && !strcmp(settings.hw_socket_host[i], host)) return i;
     return -1;
 }
 
@@ -105,6 +114,7 @@ static tl_src_t parse_ref(const char * r) {
     else if (!strncmp(r, "zw", 2)) { s.kind = TL_ZW; s.zw_i = zw_index(v); }
     else if (!strncmp(r, "hu", 2)) { s.kind = TL_HUE; s.hue_i = hue_light_index(v); }
     else if (!strncmp(r, "hg", 2)) { s.kind = TL_HUEG; s.hue_i = hue_group_index(v); }
+    else if (!strncmp(r, "hs", 2)) { s.kind = TL_HWS; s.hue_i = hws_index(v); }
     else s.id[0] = 0;
     return s;
 }
@@ -124,6 +134,7 @@ void tl_ref(const tl_src_t * s, char * out, size_t n) {
     case TL_ZW:   snprintf(out, n, "zw:%s", s->id); break;
     case TL_HUE:  snprintf(out, n, "hu:%s", s->id); break;
     case TL_HUEG: snprintf(out, n, "hg:%s", s->id); break;
+    case TL_HWS:  snprintf(out, n, "hs:%s", s->id); break;
     default:      if (n) out[0] = 0;
     }
 }
@@ -232,6 +243,11 @@ int tl_status(const tl_src_t * s, char * name, size_t n, int * on) {
             known = hue_state.connected; o = g->any_on;
             snprintf(name, n, "%s", g->name);
         } else snprintf(name, n, "Hue");
+    } else if (s->kind == TL_HWS) {
+        if (s->hue_i >= 0 && homewizard_socket_present(s->hue_i)) {
+            known = hw_sockets[s->hue_i].connected; o = hw_sockets[s->hue_i].on;
+            snprintf(name, n, "%s", homewizard_socket_name(s->hue_i));
+        } else snprintf(name, n, "%s", s->id);
     }
     if (on) *on = o;
     return known;
@@ -280,6 +296,7 @@ void tl_toggle(int slot) {
         if (tl_status(&s, nm, sizeof nm, &on)) homey_onoff(s.id, !on);
     } else if (s.kind == TL_HUE && s.hue_i >= 0) hue_light_toggle_async(s.id);
     else if (s.kind == TL_HUEG && s.hue_i >= 0) hue_group_set_on_async(s.id, !hue_state.groups[s.hue_i].any_on);
+    else if (s.kind == TL_HWS && s.hue_i >= 0) homewizard_socket_set_async(s.hue_i, !hw_sockets[s.hue_i].on);
 }
 
 void tl_set_level(int slot, int pct) {
@@ -300,4 +317,79 @@ void tl_set_level(int slot, int pct) {
         homey_dim(s.id, pct / 100.0);
     } else if (s.kind == TL_HUE) hue_light_set_bri_async(s.id, pct);
     else if (s.kind == TL_HUEG) hue_group_set_bri_async(s.id, pct);
+}
+
+tl_src_t tl_parse(const char * ref) { return parse_ref(ref); }
+
+int tl_set_on_ref(const char * ref, int on) {
+    tl_src_t s = parse_ref(ref);
+    on = on ? 1 : 0;
+    switch (s.kind) {
+    case TL_DZ:   domoticz_switch_async(s.dz_idx, on ? "On" : "Off"); return 1;
+    case TL_HA:
+        if (s.ha_i < 0) return 0;
+        ha_device_set_on_async(ha_devices[s.ha_i].type, ha_devices[s.ha_i].entity_id, on);
+        return 1;
+    case TL_HY:   return homey_onoff(s.id, on) == 0;
+    case TL_ZW:   return zwave_set_switch_uuid(s.id, on);
+    case TL_HUE:  if (s.hue_i < 0) return 0; hue_light_set_on_async(s.id, on); return 1;
+    case TL_HUEG: if (s.hue_i < 0) return 0; hue_group_set_on_async(s.id, on); return 1;
+    case TL_HWS:  if (s.hue_i < 0) return 0; homewizard_socket_set_async(s.hue_i, on); return 1;
+    default:      return 0;
+    }
+}
+
+void tl_enumerate(tl_enum_cb cb, void * ctx) {
+    char ref[TL_REF_LEN + 4];
+    if (dz_active()) {
+        for (int i = 0; i < domoticz_state.count && i < DOMOTICZ_MAX_DEV; i++) {
+            const domoticz_dev_t * d = &domoticz_state.dev[i];
+            if (d->kind == DZ_BLIND) continue;
+            snprintf(ref, sizeof ref, "dz:%d", d->idx);
+            cb(ctx, "Domoticz", ref, d->name, 1, d->kind == DZ_DIMMER);
+        }
+    }
+    if (settings.enable_ha) {
+        for (int i = 0; i < ha_device_count && i < HA_DEVICE_MAX; i++) {
+            const ha_device_t * d = &ha_devices[i];
+            if (d->type != HADEV_LIGHT && d->type != HADEV_SWITCH) continue;
+            snprintf(ref, sizeof ref, "ha:%s", d->entity_id);
+            cb(ctx, "Home Assistant", ref, d->name, d->available, d->type == HADEV_LIGHT && d->dimmable);
+        }
+    }
+    if (settings.enable_homey) {
+        homey_lock();
+        for (int i = 0; i < homey_state.ndev; i++) {
+            const hy_dev_t * d = &homey_state.dev[i];
+            if (!homey_switchable(d)) continue;
+            snprintf(ref, sizeof ref, "hy:%s", d->id);
+            const hy_cap_t * dc = hy_dev_cap(d, "dim");
+            cb(ctx, "Homey", ref, d->name, d->available, dc && dc->setable);
+        }
+        homey_unlock();
+    }
+    if (settings.hue_enabled && hue_state.connected) {
+        for (int i = 0; i < hue_state.group_count && i < HUE_MAX_GROUPS; i++) {
+            const hue_group_t * g = &hue_state.groups[i];
+            snprintf(ref, sizeof ref, "hg:%s", g->id);
+            cb(ctx, tr("Hue - kamers en zones", "Hue - rooms and zones"), ref, g->name, 1, 1);
+        }
+        for (int i = 0; i < hue_state.count && i < HUE_MAX_LIGHTS; i++) {
+            const hue_light_t * L = &hue_state.lights[i];
+            snprintf(ref, sizeof ref, "hu:%s", L->id);
+            cb(ctx, tr("Hue - lampen", "Hue - lamps"), ref, L->name, L->reachable, L->is_dimmable);
+        }
+    }
+    for (int i = 0; i < HW_SOCKET_MAX; i++) {
+        if (!settings.hw_socket_host[i][0]) continue;
+        snprintf(ref, sizeof ref, "hs:%s", settings.hw_socket_host[i]);
+        cb(ctx, "HomeWizard Energy Socket", ref, homewizard_socket_name(i), hw_sockets[i].connected, 0);
+    }
+    if (zwave_switch_count_cached() > 0) {
+        zwave_dev_t d;
+        for (int i = 0; zwave_get_switch(i, &d); i++) {
+            snprintf(ref, sizeof ref, "zw:%s", d.uuid);
+            cb(ctx, "Z-Wave", ref, d.name[0] ? d.name : d.type, 1, 0);
+        }
+    }
 }
