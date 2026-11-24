@@ -130,6 +130,10 @@ static void on_dim_thin_font_change(lv_event_t * e) {
     settings.dim_thin_font = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
     settings_save();
 }
+static void on_dim_fc_min_change(lv_event_t * e) {
+    settings.dim_fc_min = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    settings_save();
+}
 static void on_forecast_mode_change(lv_event_t * e) {
     int daily = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
     settings.forecast_mode = daily ? FORECAST_DAILY : FORECAST_HOURLY;
@@ -1033,6 +1037,12 @@ static void open_display_modal(lv_event_t * e) {
     r = panel_row(p, y, tr("Dunne letters op dimscherm (klok en temperatuur)",
                            "Thin font on dim screen (clock and temperature)"), NULL);
     row_switch(r, settings.dim_thin_font, on_dim_thin_font_change);
+    y += 82;
+
+    /* Forecast on the dim screen: also the night (minimum) temperature. */
+    r = panel_row(p, y, tr("Ook nachttemperatuur in voorspelling op dimscherm",
+                           "Also night temperature in dim screen forecast"), NULL);
+    row_switch(r, settings.dim_fc_min, on_dim_fc_min_change);
     y += 82;
 
     /* Klok Studio (#55): clock faces for the home tile and the dim screen */

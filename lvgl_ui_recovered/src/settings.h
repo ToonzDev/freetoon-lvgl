@@ -418,6 +418,7 @@ typedef struct {
     char tile_light6[72];
     char tile_light7[72];
     char tile_light8[72];
+    int  dim_fc_min;          /* 1 = dim forecast shows day and night temperature ("14°/6°") */
 } settings_t;
 
 #define FORECAST_AUTO   0

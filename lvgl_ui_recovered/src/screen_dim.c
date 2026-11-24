@@ -678,6 +678,10 @@ void dim_fc_build(lv_obj_t * parent, int x, int y, int col_w, int h,
     const lv_font_t * fd = SF(24), * ft = SF(28);
     const int icon_w = 40;                              /* icon_wx_* are 40 px */
     int gap = SX(10), text_w = SX(70);
+    if (settings.dim_fc_min) {                          /* "14°/6°": the room the column has */
+        int room = col_w - icon_w - gap - SX(6);
+        text_w = room > SX(140) ? SX(140) : room < SX(70) ? SX(70) : room;
+    }
     int gx = x + (col_w - (icon_w + gap + text_w)) / 2;
     if (gx < x) gx = x;
     int lh_d = lv_font_get_line_height(fd), lh_t = lv_font_get_line_height(ft);
@@ -706,6 +710,7 @@ void dim_fc_build(lv_obj_t * parent, int x, int y, int col_w, int h,
     ui_obj_set_style_text_font(*temp, ft, 0);
     lv_obj_set_width(*temp, text_w);
     lv_label_set_long_mode(*temp, LV_LABEL_LONG_CLIP);
+    lv_label_set_recolor(*temp, true);                  /* night temperature in grey */
     ui_label_set_text(*temp, "");
     lv_obj_set_pos(*temp, gx + icon_w + gap, ty + lh_d);
     ui_obj_add_flag(*temp, LV_OBJ_FLAG_HIDDEN);
@@ -727,7 +732,20 @@ void dim_fc_paint(lv_obj_t * icon, lv_obj_t * day, lv_obj_t * temp, int i) {
     char wd[8];                                         /* "Zo 15-11" -> "Zo" */
     snprintf(wd, sizeof wd, "%.*s", (int)strcspn(d->day, " "), d->day);
     ui_label_set_text(day, wd);
-    ui_label_set_text_fmt(temp, "%.0f°", d->max_temp);
+    /* Day (max) temperature, and with Instellingen -> Scherm "Ook
+     * nachttemperatuur" the night (min) one after it in grey, when it fits
+     * the column; a narrow column keeps the day temperature only. */
+    int both = 0;
+    if (settings.dim_fc_min) {
+        char plain[24];
+        snprintf(plain, sizeof plain, "%.0f°/%.0f°", d->max_temp, d->min_temp);
+        lv_point_t sz;
+        lv_txt_get_size(&sz, plain, lv_obj_get_style_text_font(temp, LV_PART_MAIN), 0, 0,
+                        LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+        both = sz.x <= lv_obj_get_style_width(temp, LV_PART_MAIN);
+    }
+    if (both) ui_label_set_text_fmt(temp, "%.0f°#8a94a3 /%.0f°#", d->max_temp, d->min_temp);
+    else      ui_label_set_text_fmt(temp, "%.0f°", d->max_temp);
     ui_obj_clear_flag(icon, LV_OBJ_FLAG_HIDDEN);
     ui_obj_clear_flag(day,  LV_OBJ_FLAG_HIDDEN);
     ui_obj_clear_flag(temp, LV_OBJ_FLAG_HIDDEN);

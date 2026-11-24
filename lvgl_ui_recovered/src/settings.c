@@ -254,6 +254,7 @@ void settings_load(void) {
         else if (strcmp(k, "dim_bars_vertical") == 0) settings.dim_bars_vertical = iv;
         else if (strcmp(k, "dim_elec_max_kwh")  == 0) settings.dim_elec_max_kwh  = (iv < 5 ? 5 : (iv > 100 ? 100 : iv));
         else if (strcmp(k, "dim_thin_font")     == 0) settings.dim_thin_font     = iv ? 1 : 0;
+        else if (strcmp(k, "dim_fc_min")        == 0) settings.dim_fc_min        = iv ? 1 : 0;
         else if (strcmp(k, "dyn_tariff")        == 0) settings.dyn_elec = settings.dyn_gas = iv ? 1 : 0; /* legacy: both */
         else if (strcmp(k, "dyn_elec")          == 0) settings.dyn_elec          = iv ? 1 : 0;
         else if (strcmp(k, "dyn_gas")           == 0) settings.dyn_gas           = iv ? 1 : 0;
@@ -1038,6 +1039,7 @@ static void settings_write_file(void) {
     fprintf(f, "dim_bars_swap=%d\n",     settings.dim_bars_swap);
     fprintf(f, "dim_bars_vertical=%d\n", settings.dim_bars_vertical);
     fprintf(f, "dim_thin_font=%d\n",     settings.dim_thin_font);
+    fprintf(f, "dim_fc_min=%d\n",        settings.dim_fc_min);
     fprintf(f, "dim_elec_max_kwh=%d\n",  settings.dim_elec_max_kwh);
     fprintf(f, "dim_waste_lead_days=%d\n", settings.dim_waste_lead_days);
     fprintf(f, "dim_waste_hour=%d\n",      settings.dim_waste_hour);
