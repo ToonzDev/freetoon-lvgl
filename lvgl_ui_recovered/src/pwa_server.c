@@ -2800,7 +2800,8 @@ static int handle_boiler_remote_post(int fd, const char * body) {
     char ip[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &peer.sin_addr, ip, sizeof ip);
     struct in_addr m;
-    if (!priv || (settings.master_host[0] && inet_pton(AF_INET, settings.master_host, &m) == 1 &&
+    /* a client Toon: only its master (master_host is kept when client mode is off) */
+    if (!priv || (settings.client_mode && settings.master_host[0] && inet_pton(AF_INET, settings.master_host, &m) == 1 &&
                   m.s_addr != peer.sin_addr.s_addr && (a >> 24) != 127))
         return send_status(fd, 403, "Forbidden", "{\"err\":\"not from this LAN / master\"}");
     if (boiler_remote_heartbeat(ip, body) != 0)
