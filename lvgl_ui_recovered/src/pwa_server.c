@@ -67,6 +67,7 @@
 #include "energy.h"
 #include "tile_lights.h"
 #include "switch_schedule.h"
+#include "boiler_remote.h"
 
 #define PWA_PORT  10081
 #define PWA_ROOT  "/mnt/data/pwa"
@@ -2025,6 +2026,9 @@ static int path_is_public(const char * path) {
     if (!strncmp(path, "/api/v1/marketplace/", 20)) return 1;
     /* inverter app daemon on the Toon itself; the handler refuses other peers */
     if (!strcmp(path, "/api/v1/solar/source")) return 1;
+    /* heartbeat of the Toon that drives this Toon's boiler; the handler
+     * only takes private addresses (and only the master when one is set) */
+    if (!strcmp(path, "/api/v1/boiler/remote")) return 1;
     return 0;
 }
 
@@ -2783,6 +2787,27 @@ static int handle_homey_post(int fd, const char * req, const char * body) {
  * the "settings" block in its manifest (app_settings.c). Same cross-site
  * rule as /homey, and a changed address needs its secrets typed again. */
 
+/* POST /api/v1/boiler/remote: heartbeat of the Toon that drives this Toon's
+ * boiler (boiler_remote.h). Private IPv4 peers only; when this Toon is a
+ * client of a master given by IP, only that master. */
+static int handle_boiler_remote_post(int fd, const char * body) {
+    struct sockaddr_in peer;
+    socklen_t pl = sizeof peer;
+    if (getpeername(fd, (struct sockaddr *)&peer, &pl) != 0 || peer.sin_family != AF_INET)
+        return send_status(fd, 403, "Forbidden", "{\"err\":\"ipv4 only\"}");
+    uint32_t a = ntohl(peer.sin_addr.s_addr);
+    int priv = (a >> 24) == 10 || (a >> 20) == 0xac1 || (a >> 16) == 0xc0a8 || (a >> 24) == 127;
+    char ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &peer.sin_addr, ip, sizeof ip);
+    struct in_addr m;
+    if (!priv || (settings.master_host[0] && inet_pton(AF_INET, settings.master_host, &m) == 1 &&
+                  m.s_addr != peer.sin_addr.s_addr && (a >> 24) != 127))
+        return send_status(fd, 403, "Forbidden", "{\"err\":\"not from this LAN / master\"}");
+    if (boiler_remote_heartbeat(ip, body) != 0)
+        return send_status(fd, 400, "Bad Request", "{\"err\":\"need {\\\"on\\\":0|1}\"}");
+    return send_json_response(fd, 200, "{\"ok\":true}");
+}
+
 /* POST /api/v1/solar/source: only from the Toon itself (the app's daemon). */
 static int handle_solar_source_post(int fd, const char * body) {
     struct sockaddr_in peer;
@@ -3185,6 +3210,7 @@ static int dispatch(int fd, char * req) {
         if (!strcmp(path, "/homey"))          return handle_homey_post(fd, req, body);
         if (!strcmp(path, "/solar"))          return handle_solar_post(fd, req, body);
         if (!strcmp(path, "/schema"))         return handle_schema_post(fd, req, body);
+        if (!strcmp(path, "/api/v1/boiler/remote")) return handle_boiler_remote_post(fd, body);
         if (!strcmp(path, "/api/v1/solar/source")) return handle_solar_source_post(fd, body);
         /* POST /api/v1/marketplace/apps/<id>/state */
         if (!strncmp(path, "/api/v1/marketplace/apps/", 25)) {

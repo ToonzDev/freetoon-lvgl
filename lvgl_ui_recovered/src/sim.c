@@ -835,6 +835,9 @@ int main(int argc, char ** argv) {
     settings_load();   /* defaults when /mnt/data/toonui.cfg is absent */
     mock_state();
     { extern void sched_init(void); sched_init(); }
+    if (getenv("SIM_BOILER_REMOTE") && strcmp(argc > 1 ? argv[1] : "", "webserve")) {
+        extern int boiler_remote_start(void); boiler_remote_start();
+    }
     layout_load_named(settings.active_layout);  /* home-tile layout: active preset */
     dim_layout_load();  /* dim block layout (seeds defaults if no file) */
     /* Sim-only: exercise a custom layout. $TOONUI_SIM_CUSTOM_LAYOUT turns it on
@@ -972,6 +975,7 @@ int main(int argc, char ** argv) {
         signal(SIGPIPE, SIG_IGN);
         if (pwa_start() != 0) return 1;
         if (settings.enable_homey && settings.homey_host[0]) homey_start();   /* as main.c */
+        if (getenv("SIM_BOILER_REMOTE")) { extern int boiler_remote_start(void); boiler_remote_start(); }
         int secs = (argc > 2) ? atoi(argv[2]) : 600;
         for (int s = 0; s < secs; s++) sleep(1);
         return 0;

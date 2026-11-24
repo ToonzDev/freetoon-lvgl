@@ -90,6 +90,8 @@ settings_t settings = {
     .homey_host          = "",
     .tile_light1         = "auto",
     .tile_light2         = "auto",
+    .boiler_remote_on    = 3000,
+    .boiler_remote_off   = 600,
     .hue_enabled         = 0,
     .hue_host            = "",
     .hue_user            = "",
@@ -255,6 +257,10 @@ void settings_load(void) {
         else if (strcmp(k, "dim_elec_max_kwh")  == 0) settings.dim_elec_max_kwh  = (iv < 5 ? 5 : (iv > 100 ? 100 : iv));
         else if (strcmp(k, "dim_thin_font")     == 0) settings.dim_thin_font     = iv ? 1 : 0;
         else if (strcmp(k, "dim_fc_min")        == 0) settings.dim_fc_min        = iv ? 1 : 0;
+        else if (strcmp(k, "boiler_remote_host") == 0)
+            snprintf(settings.boiler_remote_host, sizeof settings.boiler_remote_host, "%s", v);
+        else if (strcmp(k, "boiler_remote_on")  == 0) { if (iv >= 600 && iv <= 3000) settings.boiler_remote_on = iv; }
+        else if (strcmp(k, "boiler_remote_off") == 0) { if (iv >= 600 && iv <= 3000) settings.boiler_remote_off = iv; }
         else if (strcmp(k, "dyn_tariff")        == 0) settings.dyn_elec = settings.dyn_gas = iv ? 1 : 0; /* legacy: both */
         else if (strcmp(k, "dyn_elec")          == 0) settings.dyn_elec          = iv ? 1 : 0;
         else if (strcmp(k, "dyn_gas")           == 0) settings.dyn_gas           = iv ? 1 : 0;
@@ -884,7 +890,7 @@ static void sanitize_all_strings(void) {
         settings.mqtt_pass, settings.domoticz_host, settings.homey_host,
         settings.tile_light1, settings.tile_light2, settings.tile_light3,
         settings.tile_light4, settings.tile_light5, settings.tile_light6,
-        settings.tile_light7, settings.tile_light8, settings.master_host,
+        settings.tile_light7, settings.tile_light8, settings.master_host, settings.boiler_remote_host,
         settings.master_web_user, settings.master_web_pass,
         settings.toonwater_host,
         settings.tile_rotate_members, settings.calendar_ha_entity,
@@ -1040,6 +1046,9 @@ static void settings_write_file(void) {
     fprintf(f, "dim_bars_vertical=%d\n", settings.dim_bars_vertical);
     fprintf(f, "dim_thin_font=%d\n",     settings.dim_thin_font);
     fprintf(f, "dim_fc_min=%d\n",        settings.dim_fc_min);
+    fprintf(f, "boiler_remote_host=%s\n", settings.boiler_remote_host);
+    fprintf(f, "boiler_remote_on=%d\n",  settings.boiler_remote_on);
+    fprintf(f, "boiler_remote_off=%d\n", settings.boiler_remote_off);
     fprintf(f, "dim_elec_max_kwh=%d\n",  settings.dim_elec_max_kwh);
     fprintf(f, "dim_waste_lead_days=%d\n", settings.dim_waste_lead_days);
     fprintf(f, "dim_waste_hour=%d\n",      settings.dim_waste_hour);

@@ -16,6 +16,8 @@
  */
 #include "screens.h"
 #include "shell_util.h"
+#include "boiler_remote.h"
+#include "ui_lazy.h"
 #include "display.h"
 #include "settings.h"
 #include "theme.h"
@@ -2786,6 +2788,146 @@ static void open_telegram_modal(lv_event_t * e) {
 lv_obj_t * screen_settings_open_telegram(void) {
     open_telegram_modal(NULL);
     return cur_modal;
+}
+
+/* Boiler on another Toon (boiler_remote.h): this Toon decides when to heat,
+ * the Toon wired to the boiler is set to the "on" / "off" setpoint. */
+static lv_obj_t * ta_br_host, * ta_br_on, * ta_br_off, * lbl_br_status, * lbl_br_msg;
+static void br_tick(void) {
+    if (!lbl_br_status) return;
+    boiler_remote_status_t st;
+    boiler_remote_status(&st);
+    char b[420];
+    int o = 0;
+    if (st.configured) {
+        o += snprintf(b + o, sizeof b - o, "%s %s\n", tr("Eigen warmtevraag:", "Own heat demand:"),
+                      st.demand < 0 ? "?" : st.demand ? tr("ja", "yes") : tr("nee", "no"));
+        if (st.last_sent)
+            o += snprintf(b + o, sizeof b - o, "%s %.1f°C (%lds %s)%s\n", tr("Ketel-Toon gezet op", "Boiler Toon set to"),
+                          st.sent_setpoint / 100.0, (long)(time(NULL) - st.last_sent), tr("geleden", "ago"),
+                          st.reachable ? "" : tr(" - niet bereikbaar", " - not reachable"));
+        if (st.reachable && st.remote_temp > -90)
+            o += snprintf(b + o, sizeof b - o, "%s %.1f°C, %s %s\n", tr("Ketel-Toon: kamer", "Boiler Toon: room"),
+                          st.remote_temp, tr("brander", "burner"),
+                          st.remote_burner == 1 || st.remote_burner == 3 ? tr("aan", "on") : tr("uit", "off"));
+        if (st.reachable)
+            o += snprintf(b + o, sizeof b - o, "%s\n", st.remote_freetoon
+                          ? tr("Vangnet actief (FreeToon op de ketel-Toon).", "Safety net on (FreeToon on the boiler Toon).")
+                          : tr("Geen vangnet: op de ketel-Toon draait geen FreeToon.", "No safety net: the boiler Toon does not run FreeToon."));
+        if (st.error[0]) o += snprintf(b + o, sizeof b - o, "%s\n", st.error);
+    }
+    if (st.hb_last)
+        o += snprintf(b + o, sizeof b - o, "%s %s (%lds %s)%s",
+                      tr("Deze Toon wordt aangestuurd door", "This Toon is driven by"), st.hb_from,
+                      (long)(time(NULL) - st.hb_last), tr("geleden", "ago"),
+                      st.hb_tripped ? tr(" - stil: veilig setpoint gezet", " - silent: safe setpoint set") : "");
+    if (!o) snprintf(b, sizeof b, "%s", tr("Uit.", "Off."));
+    ui_label_set_text(lbl_br_status, b);
+}
+static int br_parse_c(lv_obj_t * ta, int dflt) {
+    const char * t = lv_textarea_get_text(ta);
+    if (!t || !t[0]) return dflt;
+    char buf[16];
+    snprintf(buf, sizeof buf, "%s", t);
+    for (char * p = buf; *p; p++) if (*p == ',') *p = '.';
+    double v = atof(buf);
+    int c = (int)(v * 100 + (v >= 0 ? 0.5 : -0.5));
+    return (c >= 600 && c <= 3000) ? c : -1;
+}
+static void on_br_save(lv_event_t * e) {
+    (void)e;
+    const char * h = lv_textarea_get_text(ta_br_host);
+    char host[64];
+    snprintf(host, sizeof host, "%s", h ? h : "");
+    if (host[0] && !boiler_remote_host_ok(host)) {
+        lv_label_set_text(lbl_br_msg, tr("Ongeldig adres.", "Invalid address."));
+        return;
+    }
+    int on = br_parse_c(ta_br_on, 3000), off = br_parse_c(ta_br_off, 600);
+    if (on < 0 || off < 0 || off >= on) {
+        lv_label_set_text(lbl_br_msg, tr("Setpoints tussen 6 en 30°C, aan hoger dan uit.",
+                                         "Setpoints between 6 and 30°C, on above off."));
+        return;
+    }
+    snprintf(settings.boiler_remote_host, sizeof settings.boiler_remote_host, "%s", host);
+    settings.boiler_remote_on = on;
+    settings.boiler_remote_off = off;
+    settings_save();
+    lv_label_set_text(lbl_br_msg, host[0] ? tr("Opgeslagen. De ketel-Toon wordt binnen enkele seconden aangestuurd.",
+                                               "Saved. The boiler Toon is driven within seconds.")
+                                          : tr("Opgeslagen: uit.", "Saved: off."));
+}
+static lv_obj_t * br_ta(lv_obj_t * p, const char * label, const char * val, int y, int w) {
+    lv_obj_t * l = lv_label_create(p);
+    lv_obj_set_style_text_color(l, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(l, SF(22), 0);
+    lv_label_set_text(l, label);
+    lv_obj_align(l, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_t * ta = lv_textarea_create(p); ta_make_numeric(ta);
+    lv_obj_set_size(ta, w, SY(44));
+    lv_obj_align(ta, LV_ALIGN_TOP_LEFT, SX(290), y - 4);
+    lv_textarea_set_one_line(ta, true);
+    lv_textarea_set_text(ta, val);
+    return ta;
+}
+static void open_boiler_remote_modal(lv_event_t * e) {
+    (void)e;
+    lv_obj_t * p = modal_open(tr("Ketel via andere Toon", "Boiler via another Toon"), 540);
+    lv_obj_add_flag(p, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(p, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(p, LV_SCROLLBAR_MODE_AUTO);
+    int y = 70;
+    lv_obj_t * hint = lv_label_create(p);
+    lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_style_text_font(hint, SF(16), 0);
+    lv_obj_set_width(hint, SX(790));
+    lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(hint, tr("Hangt de ketel aan een andere Toon (bijvoorbeeld in een koude ruimte)? Deze Toon bepaalt dan "
+                               "wanneer er gestookt wordt; de ketel-Toon wordt op het aan- of uit-setpoint gezet, met zijn "
+                               "programma uit (zoals Thermostat+ in 'Local'). Draait er FreeToon op de ketel-Toon, dan valt "
+                               "die na 15 minuten zonder bericht van deze Toon terug op het uit-setpoint. Leeg = uit.",
+                               "Is the boiler wired to another Toon (e.g. in a cold room)? This Toon decides when to heat; "
+                               "the boiler Toon is set to the on or off setpoint, its programme off (like Thermostat+ "
+                               "'Local'). With FreeToon on the boiler Toon, it falls back to the off setpoint after 15 "
+                               "minutes without word from this Toon. Empty = off."));
+    lv_obj_align(hint, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_update_layout(hint);
+    y += lv_obj_get_height(hint) + 24;
+    char on[16], off[16];
+    snprintf(on, sizeof on, "%.1f", settings.boiler_remote_on / 100.0);
+    snprintf(off, sizeof off, "%.1f", settings.boiler_remote_off / 100.0);
+    ta_br_host = br_ta(p, tr("IP van de ketel-Toon:", "Boiler Toon IP:"), settings.boiler_remote_host, y, SX(300)); y += 62;
+    ta_br_on   = br_ta(p, tr("Aan-setpoint (°C):", "On setpoint (°C):"), on, y, SX(140)); y += 62;
+    ta_br_off  = br_ta(p, tr("Uit-setpoint (°C):", "Off setpoint (°C):"), off, y, SX(140)); y += 66;
+
+    lv_obj_t * btn = lv_btn_create(p);
+    lv_obj_set_size(btn, (DISP_VER < 600 ? 160 : SX(180)), SY(50));
+    lv_obj_align(btn, LV_ALIGN_TOP_LEFT, SX(4), y);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(0x3a6090), 0);
+    lv_obj_add_event_cb(btn, on_br_save, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * bl = lv_label_create(btn);
+    lv_label_set_text(bl, tr("Opslaan", "Save"));
+    lv_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
+    lv_obj_center(bl);
+    lbl_br_msg = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl_br_msg, lv_color_hex(0xfbbf24), 0);
+    lv_obj_set_style_text_font(lbl_br_msg, SF(16), 0);
+    lv_obj_set_width(lbl_br_msg, SX(560));
+    lv_label_set_long_mode(lbl_br_msg, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(lbl_br_msg, "");
+    lv_obj_align(lbl_br_msg, LV_ALIGN_TOP_LEFT, SX(210), y + 4);
+    y += 70;
+
+    lbl_br_status = lv_label_create(p);
+    lv_obj_set_style_text_color(lbl_br_status, lv_color_hex(THEME_TEXT_HI), 0);
+    lv_obj_set_style_text_font(lbl_br_status, SF(18), 0);
+    lv_obj_set_width(lbl_br_status, SX(790));
+    lv_label_set_long_mode(lbl_br_status, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(lbl_br_status, "");
+    lv_obj_align(lbl_br_status, LV_ALIGN_TOP_LEFT, SX(4), y);
+    br_tick();
+    modal_tick_fn = br_tick;
+    modal_timer = lv_timer_create(modal_timer_cb, 1000, NULL);
 }
 
 /* Client mode: this Toon mirrors a master Toon over its PWA API. */
@@ -6325,6 +6467,8 @@ lv_obj_t * screen_settings_create(void) {
               tr("tegelindeling bewerken", "tile layout editor"), open_layout_editor); n++;
     make_tile(GX(n), GY(n), NULL, LV_SYMBOL_PLUS, tr("Integraties", "Integrations"),
               tr("P1 / water / vent / HA", "P1 / water / vent / HA"), open_integrations_modal); n++;
+    make_tile(GX(n), GY(n), &icon_flame, NULL, tr("Ketel via Toon", "Boiler via Toon"),
+              tr("ketel aan andere Toon", "boiler on another Toon"), open_boiler_remote_modal); n++;
     {
         static char mp_sub[48];
         int mp_upd = app_updates_get(NULL, 0);

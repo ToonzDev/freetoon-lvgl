@@ -419,6 +419,12 @@ typedef struct {
     char tile_light7[72];
     char tile_light8[72];
     int  dim_fc_min;          /* 1 = dim forecast shows day and night temperature ("14°/6°") */
+    /* Boiler on another Toon (boiler_remote.c): this Toon decides when to
+     * heat, the Toon at host (wired to the boiler) is set to boiler_remote_on
+     * or _off (centi-degrees, 3000 / 600 like Thermostat+'s Local mode). */
+    char boiler_remote_host[64];
+    int  boiler_remote_on;
+    int  boiler_remote_off;
 } settings_t;
 
 #define FORECAST_AUTO   0

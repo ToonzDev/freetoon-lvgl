@@ -242,6 +242,9 @@ int main(int argc, char** argv) {
     airhist_start();   /* record eCO2/TVOC history (RRD doesn't) for Stats graphs */
     extern void templogger_start(void);
     templogger_start(); /* continuous 24h temperature logger */
+    /* Boiler on another Toon: drive it (sender) / safety net (boiler side). */
+    extern int boiler_remote_start(void);
+    boiler_remote_start();
     if (headless) {
         /* No display: the daemons + pwa_server own their own threads, so just
          * stay alive and let init NOT respawn us. We deliberately skip the
