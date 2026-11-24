@@ -97,6 +97,35 @@ int main(void) {
     s.r[0].active = 0; s.r[0].last = 0;
     CHECK(ss_due(&s, at(2026, 11, 24, 7, 1), LAT, LON, 3 * 3600, act, 8, &changed) == 0, "inactive");
 
+    /* Random (holidays): within +-SS_RANDOM_MIN, fixed for a day, varies
+     * over days, and the on and off rule of one lamp move independently. */
+    ss_rule_t rn = rule("hu:1", 1, SS_SUNSET, 0, 0, SS_ALL_DAYS);
+    rn.random = 1;
+    ss_rule_t base = rn; base.random = 0;
+    int in_range = 1, varies = 0, prev = 999;
+    for (int d = 1; d <= 28; d++) {
+        long a = ss_occurrence(&rn, 2026, 2, d, LAT, LON), b = ss_occurrence(&base, 2026, 2, d, LAT, LON);
+        long sh = (a - b) / 60;
+        if (sh < -SS_RANDOM_MIN || sh > SS_RANDOM_MIN || (a - b) % 60) in_range = 0;
+        if (prev != 999 && sh != prev) varies = 1;
+        prev = (int)sh;
+        if (ss_occurrence(&rn, 2026, 2, d, LAT, LON) != a) in_range = 0;   /* stable */
+    }
+    CHECK(in_range, "random shift within +-%d min, whole minutes, stable", SS_RANDOM_MIN);
+    CHECK(varies, "random shift differs over days");
+    ss_rule_t rnoff = rn; rnoff.on = 0;
+    int differ = 0;
+    for (int d = 1; d <= 10; d++)
+        if (ss_random_shift(&rn, 2026, 3, d) != ss_random_shift(&rnoff, 2026, 3, d)) differ = 1;
+    CHECK(differ, "on and off rule move independently");
+    CHECK(ss_random_shift(&base, 2026, 3, 1) == 0, "no shift without random");
+    rn.last = at(2026, 2, 10, 0, 0);
+    memset(&s, 0, sizeof s);
+    s.r[s.n++] = rn;
+    long occ = ss_occurrence(&rn, 2026, 2, 10, LAT, LON);
+    CHECK(ss_due(&s, occ - 30, LAT, LON, 3 * 3600, act, 8, &changed) == 0, "random: not before its moment");
+    CHECK(ss_due(&s, occ + 10, LAT, LON, 3 * 3600, act, 8, &changed) == 1, "random: fires at its moment");
+
     /* Texts. */
     char b[64];
     ss_days_text(SS_ALL_DAYS, b, sizeof b); CHECK(!strcmp(b, "elke dag"), "%s", b);
@@ -105,12 +134,13 @@ int main(void) {
     ss_days_text(0x15, b, sizeof b);        CHECK(!strcmp(b, "ma, wo, vr"), "%s", b);
     ss_time_text(&r7, b, sizeof b);         CHECK(!strcmp(b, "07:00"), "%s", b);
     ss_time_text(&ss, b, sizeof b);         CHECK(!strcmp(b, "zonsondergang -15 min"), "%s", b);
+    ss_time_text(&rn, b, sizeof b);         CHECK(!strcmp(b, "zonsondergang (willekeurig +/-20 min)"), "%s", b);
 
     /* Save / load round trip; malformed lines skipped. */
     memset(&s, 0, sizeof s);
     s.r[s.n++] = rule("zw:p1", 1, SS_CLOCK, 2359, 0, 0x41);
     s.r[s.n++] = rule("ha:switch.pomp", 0, SS_SUNRISE, 0, 30, SS_ALL_DAYS);
-    s.r[1].last = 1795500000; s.r[1].active = 0;
+    s.r[1].last = 1795500000; s.r[1].active = 0; s.r[1].random = 1;
     const char * path = "../build-test/switch_sched_test.cfg";
     CHECK(ss_save(&s, path) == 0, "save");
     FILE * f = fopen(path, "a");

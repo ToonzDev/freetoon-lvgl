@@ -109,7 +109,7 @@ int sched_put(int i, const ss_rule_t * r) {
     if (!c.ref[0] || c.mode < SS_CLOCK || c.mode > SS_SUNSET || c.hhmm < 0 || c.hhmm > 2359 ||
         c.hhmm % 100 > 59 || c.offset < -180 || c.offset > 180) return -1;
     for (char * p = c.ref; *p; p++) if (*p == '\n' || *p == '\r' || *p == ' ') return -1;
-    c.days &= SS_ALL_DAYS; c.on = c.on ? 1 : 0; c.active = c.active ? 1 : 0;
+    c.days &= SS_ALL_DAYS; c.on = c.on ? 1 : 0; c.active = c.active ? 1 : 0; c.random = c.random ? 1 : 0;
     c.last = (long)time(NULL);                /* only moments from now on */
     pthread_mutex_lock(&g_mtx);
     int rc = 0;

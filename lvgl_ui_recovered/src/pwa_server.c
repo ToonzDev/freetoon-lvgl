@@ -3018,9 +3018,11 @@ static int handle_schema_get(int fd, const char * query, const char * msg) {
             pos += snprintf(body + pos, cap - pos, "<label><input type=\"checkbox\" name=\"d%d\" value=\"1\"%s> %s</label>",
                             d, (er.days >> d) & 1 ? " checked" : "", dn[d]);
         pos += snprintf(body + pos, cap - pos,
-            "</div><div class=\"cb\"><label><input type=\"checkbox\" name=\"active\" value=\"1\"%s> Actief</label></div>"
+            "</div><div class=\"cb\"><label><input type=\"checkbox\" name=\"random\" value=\"1\"%s> "
+            "Willekeurig &plusmn;20 min (elke dag anders, voor vakanties)</label></div>"
+            "<div class=\"cb\"><label><input type=\"checkbox\" name=\"active\" value=\"1\"%s> Actief</label></div>"
             "<button class=\"btn\">Opslaan</button> <a class=\"btn btn-sec\" href=\"/schema\">Annuleren</a></form>",
-            er.active ? " checked" : "");
+            er.random ? " checked" : "", er.active ? " checked" : "");
     }
     pos += snprintf(body + pos, cap - pos,
         "<p style=\"margin-top:24px;text-align:center\"><a href=\"/\" class=\"btn btn-sec\">&larr; Terug naar Toon</a></p>"
@@ -3069,6 +3071,7 @@ static int handle_schema_post(int fd, const char * req, const char * body) {
         if (form_get(body, k, v, sizeof v)) r.days |= 1 << d;
     }
     r.active = form_get(body, "active", v, sizeof v) ? 1 : 0;
+    r.random = form_get(body, "random", v, sizeof v) ? 1 : 0;
     char q[24];
     snprintf(q, sizeof q, i >= 0 ? "edit=%d" : "new", i);
     if (!r.ref[0]) return handle_schema_get(fd, q, "Kies een apparaat.");

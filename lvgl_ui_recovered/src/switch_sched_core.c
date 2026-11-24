@@ -64,7 +64,22 @@ static int date_in_days(const ss_rule_t * r, int wday) {
     return (r->days >> bit) & 1;
 }
 
+int ss_random_shift(const ss_rule_t * r, int y, int m, int d) {
+    if (!r->random) return 0;
+    /* FNV-1a over the rule's identity and the date: the same rule moves the
+     * same way all day, another rule (or the off rule of the same lamp) and
+     * another day differently. */
+    unsigned h = 2166136261u;
+    char key[SS_REF_LEN + 48];
+    snprintf(key, sizeof key, "%s|%d|%d|%d|%d|%04d-%02d-%02d", r->ref, r->on, r->mode, r->hhmm,
+             r->offset, y, m, d);
+    for (const char * p = key; *p; p++) { h ^= (unsigned char)*p; h *= 16777619u; }
+    h ^= h >> 15; h *= 0x2c1b3c6du; h ^= h >> 12;
+    return (int)(h % (2 * SS_RANDOM_MIN + 1)) - SS_RANDOM_MIN;
+}
+
 long ss_occurrence(const ss_rule_t * r, int y, int m, int d, double lat, double lon) {
+    long shift = (long)ss_random_shift(r, y, m, d) * 60;
     struct tm t;
     memset(&t, 0, sizeof t);
     t.tm_year = y - 1900; t.tm_mon = m - 1; t.tm_mday = d; t.tm_hour = 12; t.tm_isdst = -1;
@@ -73,11 +88,11 @@ long ss_occurrence(const ss_rule_t * r, int y, int m, int d, double lat, double 
     if (r->mode == SS_CLOCK) {
         t.tm_year = y - 1900; t.tm_mon = m - 1; t.tm_mday = d;
         t.tm_hour = r->hhmm / 100; t.tm_min = r->hhmm % 100; t.tm_sec = 0; t.tm_isdst = -1;
-        return (long)mktime(&t);
+        return (long)mktime(&t) + shift;
     }
     long rise, set;
     if (ss_sun(y, m, d, lat, lon, &rise, &set) != 0) return -1;
-    return (r->mode == SS_SUNRISE ? rise : set) + (long)r->offset * 60;
+    return (r->mode == SS_SUNRISE ? rise : set) + (long)r->offset * 60 + shift;
 }
 
 long ss_last_occurrence(const ss_rule_t * r, long now, double lat, double lon) {
@@ -134,10 +149,11 @@ int ss_due(ss_set_t * s, long now, double lat, double lon, long catchup,
 }
 
 void ss_time_text(const ss_rule_t * r, char * out, size_t n) {
-    if (r->mode == SS_CLOCK) { snprintf(out, n, "%02d:%02d", r->hhmm / 100 % 24, r->hhmm % 100 % 60); return; }
+    const char * rnd = r->random ? " (willekeurig +/-20 min)" : "";   /* UI fonts: ASCII only */
+    if (r->mode == SS_CLOCK) { snprintf(out, n, "%02d:%02d%s", r->hhmm / 100 % 24, r->hhmm % 100 % 60, rnd); return; }
     const char * what = r->mode == SS_SUNRISE ? "zonsopkomst" : "zonsondergang";
-    if (r->offset) snprintf(out, n, "%s %+d min", what, r->offset);
-    else snprintf(out, n, "%s", what);
+    if (r->offset) snprintf(out, n, "%s %+d min%s", what, r->offset, rnd);
+    else snprintf(out, n, "%s%s", what, rnd);
 }
 
 void ss_days_text(int days, char * out, size_t n) {
@@ -161,8 +177,8 @@ int ss_save(const ss_set_t * s, const char * path) {
     fprintf(f, "# FreeToon schakelschema: r <active> <on> <mode> <hhmm> <offset> <days> <last> <ref>\n");
     for (int i = 0; i < s->n; i++) {
         const ss_rule_t * r = &s->r[i];
-        fprintf(f, "r %d %d %d %d %d %d %ld %s\n", r->active, r->on, r->mode, r->hhmm,
-                r->offset, r->days, r->last, r->ref);
+        fprintf(f, "%c %d %d %d %d %d %d %ld %s\n", r->random ? 'R' : 'r', r->active, r->on, r->mode,
+                r->hhmm, r->offset, r->days, r->last, r->ref);
     }
     if (fclose(f) != 0) { remove(tmp); return -1; }
     return rename(tmp, path) == 0 ? 0 : -1;
@@ -178,8 +194,11 @@ int ss_load(ss_set_t * s, const char * path) {
         ss_rule_t r;
         memset(&r, 0, sizeof r);
         int off = 0;
-        if (sscanf(line, "r %d %d %d %d %d %d %ld %n", &r.active, &r.on, &r.mode, &r.hhmm,
-                   &r.offset, &r.days, &r.last, &off) != 7 || off <= 0 || !line[off]) continue;
+        if (line[0] != 'r' && line[0] != 'R') continue;
+        r.random = line[0] == 'R';
+        if (sscanf(line + 1, " %d %d %d %d %d %d %ld %n", &r.active, &r.on, &r.mode, &r.hhmm,
+                   &r.offset, &r.days, &r.last, &off) != 7 || off <= 0 || !line[1 + off]) continue;
+        off += 1;
         if (r.mode < SS_CLOCK || r.mode > SS_SUNSET || r.hhmm < 0 || r.hhmm > 2359 ||
             r.hhmm % 100 > 59 || r.offset < -180 || r.offset > 180) continue;
         snprintf(r.ref, sizeof r.ref, "%s", line + off);

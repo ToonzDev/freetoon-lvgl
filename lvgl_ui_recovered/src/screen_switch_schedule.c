@@ -25,7 +25,7 @@ static lv_timer_t * refresh_timer;
 
 /* editor */
 static lv_obj_t * ed, * ed_dev_lbl, * ed_msg, * ed_on_btn[2], * ed_mode_btn[3];
-static lv_obj_t * ed_time_row, * ed_off_row, * ed_hh, * ed_mm, * ed_off, * ed_day[7];
+static lv_obj_t * ed_time_row, * ed_off_row, * ed_hh, * ed_mm, * ed_off, * ed_day[7], * ed_rnd;
 static ss_rule_t  g_ed;
 static int        g_ed_idx = -1;
 /* device picker */
@@ -174,12 +174,14 @@ static void ed_refresh(void) {
     if (g_ed.offset) lv_label_set_text_fmt(ed_off, "%+d min", g_ed.offset);
     else lv_label_set_text(ed_off, tr("precies", "exactly"));
     for (int i = 0; i < 7; i++) select_btn(ed_day[i], (g_ed.days >> i) & 1);
+    select_btn(ed_rnd, g_ed.random);
 }
 
 static void on_ed_dev(lv_event_t * e) { (void)e; picker_open(); }
 static void on_ed_on(lv_event_t * e) { g_ed.on = (int)(intptr_t)lv_event_get_user_data(e); ed_refresh(); }
 static void on_ed_mode(lv_event_t * e) { g_ed.mode = (int)(intptr_t)lv_event_get_user_data(e); ed_refresh(); }
 static void on_ed_day(lv_event_t * e) { g_ed.days ^= 1 << (int)(intptr_t)lv_event_get_user_data(e); ed_refresh(); }
+static void on_ed_rnd(lv_event_t * e) { (void)e; g_ed.random = !g_ed.random; ed_refresh(); }
 static void on_ed_step(lv_event_t * e) {
     int k = (int)(intptr_t)lv_event_get_user_data(e);
     int h = g_ed.hhmm / 100, m = g_ed.hhmm % 100;
@@ -302,6 +304,14 @@ static void ed_open(int idx) {
         ed_day[i] = mk_btn(ed, dn[i], dw, bh, THEME_BTN_BG, on_ed_day, i);
         lv_obj_set_pos(ed_day[i], cx + i * (dw + 6), y);
     }
+    y += row;
+
+    /* Holidays: a different moment each day, up to 20 min earlier or later. */
+    l = mk_label(ed, tr("Vakantie", "Holiday"), 20, THEME_TEXT_DIM);
+    lv_obj_set_pos(l, lx, y + bh / 2 - 12);
+    ed_rnd = mk_btn(ed, tr("Willekeurig +/-20 min", "Random +/-20 min"), T1 ? 260 : SX(300), bh,
+                    THEME_BTN_BG, on_ed_rnd, 0);
+    lv_obj_set_pos(ed_rnd, cx, y);
 
     /* bottom: message, Verwijderen | Annuleren, Opslaan */
     int fw = T1 ? 160 : SX(190), fy = DISP_VER - bh - (T1 ? 12 : SY(16));

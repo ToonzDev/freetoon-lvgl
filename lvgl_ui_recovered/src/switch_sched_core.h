@@ -28,6 +28,10 @@ enum { SS_CLOCK = 0, SS_SUNRISE = 1, SS_SUNSET = 2 };
 
 /* days: bit 0 = Monday ... bit 6 = Sunday */
 #define SS_ALL_DAYS 0x7f
+/* "Willekeurig": a rule with random set moves up to this many minutes
+ * earlier or later, differently each day but fixed for a given day (derived
+ * from the rule and the date), so "next" and catching up stay consistent. */
+#define SS_RANDOM_MIN 20
 
 typedef struct {
     int  active;
@@ -36,6 +40,7 @@ typedef struct {
     int  hhmm;            /* SS_CLOCK: 0..2359 */
     int  offset;          /* sun modes: minutes, -180..180 */
     int  days;            /* SS_ALL_DAYS mask */
+    int  random;          /* 1 = each day up to SS_RANDOM_MIN earlier or later (holidays) */
     long last;            /* handled up to this time (unix s) */
     char ref[SS_REF_LEN];
 } ss_rule_t;
@@ -72,8 +77,14 @@ void ss_time_text(const ss_rule_t * r, char * out, size_t n);
 /* "elke dag", "ma-vr", "za, zo", "ma, wo, vr" */
 void ss_days_text(int days, char * out, size_t n);
 
+/* Minutes a random rule moves on a local date (-SS_RANDOM_MIN..+), 0 when
+ * the rule is not random. */
+int  ss_random_shift(const ss_rule_t * r, int y, int m, int d);
+
 /* Text file, one rule per line: "r <active> <on> <mode> <hhmm> <offset>
- * <days> <last> <ref>". Written atomically. 0 = ok. */
+ * <days> <last> <ref>"; a random rule is written as "R ..." with the same
+ * fields (an older build skips those lines rather than running them
+ * without the randomness). Written atomically. 0 = ok. */
 int  ss_save(const ss_set_t * s, const char * path);
 int  ss_load(ss_set_t * s, const char * path);
 /* Rules of the ToonStore app "Slimme stekkers" (plugSchedule, its
