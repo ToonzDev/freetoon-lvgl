@@ -665,6 +665,16 @@ static void build_rows(void) {
         lv_label_set_long_mode(desc, LV_LABEL_LONG_WRAP);
         lv_label_set_text(desc, ent->description);
         lv_obj_align(desc, LV_ALIGN_TOP_LEFT, SX(4), SY(30));
+        /* A long description wraps to a third line (e.g. the inverters app's
+         * set-up page) that the fixed 90 px row cut off: grow the row to fit. */
+        {
+            lv_point_t ts;
+            const lv_font_t * f = lv_obj_get_style_text_font(desc, 0);
+            lv_txt_get_size(&ts, ent->description, f, lv_obj_get_style_text_letter_space(desc, 0),
+                            lv_obj_get_style_text_line_space(desc, 0), SX(560), LV_TEXT_FLAG_NONE);
+            lv_coord_t need = SY(30) + ts.y + 2 * 10 + SY(4);   /* text top + text + pad_all + margin */
+            if (need > SY(90)) lv_obj_set_height(ent->row, need);
+        }
 
         /* Status badge (e.g. "✓ Geïnstalleerd") */
         ent->badge_lbl = lv_label_create(ent->row);
