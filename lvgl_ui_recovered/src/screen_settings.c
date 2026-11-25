@@ -4444,6 +4444,7 @@ static lv_obj_t * ta_calendar_ha_entity = NULL;
 static lv_obj_t * ta_ha_power_entity    = NULL;
 static lv_obj_t * ta_ha_gas_entity      = NULL;
 static lv_obj_t * ta_ha_solar_entity    = NULL;
+static lv_obj_t * ta_ha_solar_total     = NULL;
 
 /* Browse-button context — heap-allocated, freed when the button is deleted. */
 struct ha_browse_ctx {
@@ -4543,6 +4544,7 @@ static void on_ha_entities_save(lv_event_t * e) {
     SAVE_TA(ta_ha_power_entity,    settings.ha_power_entity);
     SAVE_TA(ta_ha_gas_entity,      settings.ha_gas_entity);
     SAVE_TA(ta_ha_solar_entity,    settings.ha_solar_entity);
+    SAVE_TA(ta_ha_solar_total,     settings.ha_solar_total_entity);
     if (ta_doorbell_seconds) {
         const char * v = lv_textarea_get_text(ta_doorbell_seconds);
         int iv = v ? atoi(v) : 30;
@@ -4672,6 +4674,9 @@ static void open_ha_entities_modal(lv_event_t * e) {
     y = ha_field_row(p, y, tr("Zonnepanelen (W):", "Solar production (W):"),
                      settings.ha_solar_entity, "sensor.solar_power", tw,
                      &ta_ha_solar_entity, "sensor");
+    y = ha_field_row(p, y, tr("Zon totaal (kWh):", "Solar total (kWh):"),
+                     settings.ha_solar_total_entity, "sensor.solar_energy_total", tw,
+                     &ta_ha_solar_total, "sensor");
 
     /* ── Doorbell ── */
     lsec = lv_label_create(p);

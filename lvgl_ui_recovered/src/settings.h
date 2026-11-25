@@ -425,6 +425,11 @@ typedef struct {
     char boiler_remote_host[64];
     int  boiler_remote_on;
     int  boiler_remote_off;
+    /* HA lifetime solar production sensor (kWh / Wh / MWh). When set, the
+     * Zon statistics count its increase instead of integrating the watts of
+     * ha_solar_entity (no energy lost over gaps); the W sensor stays for the
+     * live tiles. */
+    char ha_solar_total_entity[64];
 } settings_t;
 
 #define FORECAST_AUTO   0

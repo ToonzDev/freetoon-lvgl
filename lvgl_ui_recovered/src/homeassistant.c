@@ -850,6 +850,35 @@ static int apply_ha_number(const char * json, volatile float * out, volatile int
     return 0;
 }
 
+/* A lifetime energy sensor, in Wh. HA reports kWh mostly, some integrations
+ * Wh or MWh; a sensor without a known energy unit is refused (a W sensor
+ * picked by mistake would otherwise count as a counter). */
+static int apply_ha_energy(const char * json, volatile double * out_wh, volatile int * have) {
+    char st[32], unit[16] = "";
+    if (!extract_str(json, "state", st, sizeof st)) return -1;
+    if (!strcmp(st, "unknown") || !strcmp(st, "unavailable") || !st[0]) return -1;
+    char * end = NULL;
+    double v = strtod(st, &end);
+    if (end == st || v < 0) return -1;
+    extract_str(json, "unit_of_measurement", unit, sizeof unit);
+    double mul;
+    if (!strcmp(unit, "kWh")) mul = 1000.0;
+    else if (!strcmp(unit, "Wh")) mul = 1.0;
+    else if (!strcmp(unit, "MWh")) mul = 1e6;
+    else {
+        static int warned;
+        if (!warned++) fprintf(stderr, "[ha] %s: unit '%s' is not kWh / Wh / MWh, ignored\n",
+                               settings.ha_solar_total_entity, unit);
+        return -1;
+    }
+    if (!*have)
+        fprintf(stderr, "[ha] solar total %s: %.3f %s = %.0f Wh\n",
+                settings.ha_solar_total_entity, v, unit, v * mul);
+    *out_wh = v * mul;
+    *have = 1;
+    return 0;
+}
+
 static int poll_ha_number(const char * entity_id, volatile float * out, volatile int * have) {
     char body[1024];
     if (!entity_id[0]) { *have = 0; return -1; }
@@ -865,6 +894,13 @@ static void poll_energy(void) {
         poll_ha_number(settings.ha_gas_entity,   &ha_state.energy_gas_m3,  &ha_state.have_gas);
     }
     poll_ha_number(settings.ha_solar_entity, &ha_state.solar_w, &ha_state.have_solar);
+    if (settings.ha_solar_total_entity[0]) {
+        char body[2048];
+        if (ha_get_state(settings.ha_solar_total_entity, body, sizeof body) == 0)
+            apply_ha_energy(body, &ha_state.solar_total_wh, &ha_state.have_solar_total);
+    } else {
+        ha_state.have_solar_total = 0;
+    }
 }
 
 static void poll_life360(void) {
@@ -1302,6 +1338,8 @@ static void dispatch_event(const char * msg) {
      * seed_all() read at connect, since the WS path never re-polls. */
     else if (settings.ha_solar_entity[0] && !strcmp(ent, settings.ha_solar_entity))
         apply_ha_number(ns, &ha_state.solar_w, &ha_state.have_solar);
+    else if (settings.ha_solar_total_entity[0] && !strcmp(ent, settings.ha_solar_total_entity))
+        apply_ha_energy(ns, &ha_state.solar_total_wh, &ha_state.have_solar_total);
     else if (settings.energy_source == 3 && settings.ha_power_entity[0] &&
              !strcmp(ent, settings.ha_power_entity))
         apply_ha_number(ns, &ha_state.energy_power_w, &ha_state.have_power);

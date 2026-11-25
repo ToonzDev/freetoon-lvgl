@@ -52,6 +52,10 @@ typedef struct {
     volatile int   have_power;
     volatile int   have_gas;
     volatile int   have_solar;
+    /* settings.ha_solar_total_entity: lifetime production in Wh (unit taken
+     * from unit_of_measurement: kWh / Wh / MWh). */
+    volatile double solar_total_wh;
+    volatile int    have_solar_total;
 } ha_state_t;
 
 /* Where poll_doorbell() writes the fetched JPEG (LVGL stdio drive 'S'). */

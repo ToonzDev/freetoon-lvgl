@@ -170,6 +170,7 @@ settings_t settings = {
     .ha_power_entity     = "",
     .ha_gas_entity       = "",
     .ha_solar_entity     = "",
+    .ha_solar_total_entity = "",
     .rate_elec_kwh       = 0.30f,
     .rate_gas_m3         = 1.35f,
     .stats_show_euro     = 0,
@@ -492,6 +493,8 @@ void settings_load(void) {
         else if (strcmp(k, "ha_power_entity") == 0) snprintf(settings.ha_power_entity, sizeof settings.ha_power_entity, "%s", v);
         else if (strcmp(k, "ha_gas_entity")   == 0) snprintf(settings.ha_gas_entity, sizeof settings.ha_gas_entity, "%s", v);
         else if (strcmp(k, "ha_solar_entity") == 0) snprintf(settings.ha_solar_entity, sizeof settings.ha_solar_entity, "%s", v);
+        else if (strcmp(k, "ha_solar_total_entity") == 0)
+            snprintf(settings.ha_solar_total_entity, sizeof settings.ha_solar_total_entity, "%s", v);
         else if (strcmp(k, "boot_picker_enabled") == 0) settings.boot_picker_enabled = iv;
         else if (strcmp(k, "hide_offline_tiles")  == 0) settings.hide_offline_tiles = iv;
         else if (strcmp(k, "update_check_enabled") == 0) settings.update_check_enabled = iv;
@@ -1206,6 +1209,7 @@ static void settings_write_file(void) {
     if (settings.ha_power_entity[0]) fprintf(f, "ha_power_entity=%s\n", settings.ha_power_entity);
     if (settings.ha_gas_entity[0])   fprintf(f, "ha_gas_entity=%s\n", settings.ha_gas_entity);
     if (settings.ha_solar_entity[0]) fprintf(f, "ha_solar_entity=%s\n", settings.ha_solar_entity);
+    if (settings.ha_solar_total_entity[0]) fprintf(f, "ha_solar_total_entity=%s\n", settings.ha_solar_total_entity);
     fprintf(f, "boot_picker_enabled=%d\n", settings.boot_picker_enabled);
     fprintf(f, "hide_offline_tiles=%d\n",  settings.hide_offline_tiles);
     fprintf(f, "update_check_enabled=%d\n", settings.update_check_enabled);

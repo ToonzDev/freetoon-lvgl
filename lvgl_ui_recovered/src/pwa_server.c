@@ -2834,7 +2834,8 @@ static const char * solar_source_name(char * buf, size_t n) {
     if (solar_app_active()) SRC_ADD("Omvormer-app (%s)", a.brand);
     if ((settings.hw_kwh_host[0] || settings.hw_kwh2_host[0]) && hw_state.connected_kwh)
         SRC_ADD("HomeWizard kWh-meter%s", settings.hw_kwh_host[0] && settings.hw_kwh2_host[0] ? "s" : "");
-    if (settings.enable_ha && ha_state.have_solar) SRC_ADD("Home Assistant");
+    if (settings.enable_ha && (ha_state.have_solar || ha_state.have_solar_total))
+        SRC_ADD("Home Assistant%s", ha_state.have_solar_total ? " (totaal)" : "");
     if (meteradapter_have_solar()) SRC_ADD("Zonnesensor op de meteradapter");
 #undef SRC_ADD
     if (!buf[0]) snprintf(buf, n, "geen");

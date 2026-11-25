@@ -122,7 +122,7 @@ static void loggers_give_back(void) {
 /* FreeToon's own sources (configured, not only answering right now). */
 static int have_own_source(void) {
     return settings.hw_kwh_host[0] || settings.hw_kwh2_host[0] || solar_app_active() ||
-           (settings.enable_ha && settings.ha_solar_entity[0]);
+           (settings.enable_ha && (settings.ha_solar_entity[0] || settings.ha_solar_total_entity[0]));
 }
 
 /* Feed every source's reading; returns the summed power now (W). */
@@ -150,11 +150,19 @@ static double feed_sources(long now) {
         }
         w += solar_app_power_w();
     }
-    if (settings.enable_ha && settings.ha_solar_entity[0] && ha_state.have_solar) {
+    /* HA: the lifetime total counts when set (the W sensor then only gives
+     * the live power, else the same panels would count twice). */
+    if (settings.enable_ha && settings.ha_solar_total_entity[0]) {
+        if (ha_state.have_solar_total && ha_state.solar_total_wh > 0) {
+            snprintf(id, sizeof id, "ha:total:%s", settings.ha_solar_total_entity);
+            sacc_feed(&g_acc, id, SACC_LIFETIME, ha_state.solar_total_wh, now);
+        }
+    } else if (settings.enable_ha && settings.ha_solar_entity[0] && ha_state.have_solar) {
         snprintf(id, sizeof id, "ha:%s", settings.ha_solar_entity);
         sacc_feed(&g_acc, id, SACC_POWER, ha_state.solar_w, now);
-        w += ha_state.solar_w > 0 ? ha_state.solar_w : 0;
     }
+    if (settings.enable_ha && settings.ha_solar_entity[0] && ha_state.have_solar)
+        w += ha_state.solar_w > 0 ? ha_state.solar_w : 0;
     if (meteradapter_have_solar()) {
         sacc_feed(&g_acc, "meteradapter", SACC_POWER, meter_state.solar_w, now);
         w += meter_state.solar_w > 0 ? meter_state.solar_w : 0;
