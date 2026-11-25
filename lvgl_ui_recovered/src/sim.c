@@ -14,6 +14,7 @@
 #include "lvgl/lvgl.h"
 #include "display.h"
 #include "screens.h"
+#include "tile_flows.h"
 #include "buienradar_rain.h"
 #include "settings.h"
 #include "homeassistant.h"
@@ -663,6 +664,7 @@ static const struct { const char * name; create_fn fn; } SCREENS[] = {
     { "devices",     screen_devices_create },
     { "homey",       screen_homey_create },
     { "tilelights",  screen_tile_lights_create },
+    { "tileflows",   screen_tile_flows_create },
     { "schedule_sw", screen_switch_schedule_create },
     { "marketplace", screen_marketplace_create },
     { "zwave",       screen_zwave_create },

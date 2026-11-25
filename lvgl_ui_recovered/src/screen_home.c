@@ -31,6 +31,7 @@
 #include "tile_slots.h"
 #include "layout.h"
 #include "clock_studio.h"
+#include "tile_flows.h"
 #include "energy_prices.h"
 #include "update_check.h"
 #include "pin_modal.h"
@@ -137,7 +138,8 @@ static lv_obj_t * lbl_lt_sp_power = NULL;
 /* Binnenklimaat tile (LT_CLIMATE, #56): the Toon 2's own humidity + CO2/TVOC
  * sensor (toon_state.humidity / eco2 / tvoc). */
 static lv_obj_t * tile_climate = NULL;
-static lv_obj_t * tile_clockstudio = NULL;   /* Klok Studio (LT_CLOCKSTUDIO, #55) */
+static lv_obj_t * tile_clockstudio = NULL;
+static lv_obj_t * tile_hflows = NULL;        /* Homey flows (LT_HOMEY_FLOWS, tile_flows.c) */   /* Klok Studio (LT_CLOCKSTUDIO, #55) */
 static void on_clockstudio_click(lv_event_t * e) { (void)e; cs_open_fullscreen(); }
 static lv_obj_t * lbl_cl_hum = NULL;       /* big "45%" */
 static lv_obj_t * lbl_cl_quality = NULL;   /* air-quality word, coloured */
@@ -2241,6 +2243,7 @@ static void refresh_cb(lv_timer_t * t) {
     update_tile_lights();
     update_tile_smartplug();
     update_tile_climate();
+    tf_tile_update();
     update_rain_tile_ui();
 
     /* Only manage page-0 tile visibility while page 0 is showing — otherwise
@@ -3612,6 +3615,13 @@ static void home_show_page(int n) {
         if (Lk && Lk->page == 0) {
             if (n == 0 && Lk->visible) ui_obj_clear_flag(tile_clockstudio, LV_OBJ_FLAG_HIDDEN);
             else ui_obj_add_flag(tile_clockstudio, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    if (tile_hflows) {
+        const layout_tile_t * Lf = settings.custom_layout_enabled ? layout_find(LT_HOMEY_FLOWS) : NULL;
+        if (Lf && Lf->page == 0) {
+            if (n == 0 && Lf->visible) ui_obj_clear_flag(tile_hflows, LV_OBJ_FLAG_HIDDEN);
+            else ui_obj_add_flag(tile_hflows, LV_OBJ_FLAG_HIDDEN);
         }
     }
     home_set_dot(n);
@@ -5077,6 +5087,14 @@ lv_obj_t * screen_home_create(void) {
         ui_label_set_text(lbl_cl_air, "CO2 --  TVOC --");
         update_tile_climate();
 
+        /* Homey flows tile: a button per chosen flow; long press = chooser */
+        if (layout_find(LT_HOMEY_FLOWS)) {
+            tile_t hf_t;
+            make_tile(scr_root, 0, 0, 200, 150, LT_HOMEY_FLOWS, tr("Homey flows", "Homey flows"), 0xc062d8, NULL, &hf_t);
+            tile_hflows = hf_t.tile;
+            tf_tile_build(tile_hflows, hf_t.title);
+        }
+
         /* Klok Studio tile (#55): the face object is the tile; tap = full screen */
         const layout_tile_t * Lks = layout_find(LT_CLOCKSTUDIO);
         if (Lks) {
@@ -5776,6 +5794,7 @@ void screen_home_destroy(void) {
         lbl_lt_sp_power = NULL;
         tile_climate = NULL;
         tile_clockstudio = NULL;
+        tile_hflows = NULL;
         lbl_cl_hum = NULL;
         lbl_cl_quality = NULL;
         lbl_cl_air = NULL;

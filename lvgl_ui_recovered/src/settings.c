@@ -171,6 +171,7 @@ settings_t settings = {
     .ha_gas_entity       = "",
     .ha_solar_entity     = "",
     .ha_solar_total_entity = "",
+    .tile_flows          = "auto",
     .rate_elec_kwh       = 0.30f,
     .rate_gas_m3         = 1.35f,
     .stats_show_euro     = 0,
@@ -493,6 +494,14 @@ void settings_load(void) {
         else if (strcmp(k, "ha_power_entity") == 0) snprintf(settings.ha_power_entity, sizeof settings.ha_power_entity, "%s", v);
         else if (strcmp(k, "ha_gas_entity")   == 0) snprintf(settings.ha_gas_entity, sizeof settings.ha_gas_entity, "%s", v);
         else if (strcmp(k, "ha_solar_entity") == 0) snprintf(settings.ha_solar_entity, sizeof settings.ha_solar_entity, "%s", v);
+        else if (strcmp(k, "tile_flows") == 0) {
+            /* flow ids are [A-Za-z0-9-]; anything else (a hand-edited cfg) resets to auto */
+            int ok = v[0] != 0;
+            for (const char * q = v; *q && ok; q++)
+                ok = (*q >= '0' && *q <= '9') || (*q >= 'a' && *q <= 'z') || (*q >= 'A' && *q <= 'Z') ||
+                     *q == '-' || *q == ',' || *q == '_';
+            snprintf(settings.tile_flows, sizeof settings.tile_flows, "%s", ok ? v : "auto");
+        }
         else if (strcmp(k, "ha_solar_total_entity") == 0)
             snprintf(settings.ha_solar_total_entity, sizeof settings.ha_solar_total_entity, "%s", v);
         else if (strcmp(k, "boot_picker_enabled") == 0) settings.boot_picker_enabled = iv;
@@ -894,6 +903,7 @@ static void sanitize_all_strings(void) {
         settings.tile_light1, settings.tile_light2, settings.tile_light3,
         settings.tile_light4, settings.tile_light5, settings.tile_light6,
         settings.tile_light7, settings.tile_light8, settings.master_host, settings.boiler_remote_host,
+        settings.tile_flows,
         settings.master_web_user, settings.master_web_pass,
         settings.toonwater_host,
         settings.tile_rotate_members, settings.calendar_ha_entity,
@@ -1210,6 +1220,7 @@ static void settings_write_file(void) {
     if (settings.ha_gas_entity[0])   fprintf(f, "ha_gas_entity=%s\n", settings.ha_gas_entity);
     if (settings.ha_solar_entity[0]) fprintf(f, "ha_solar_entity=%s\n", settings.ha_solar_entity);
     if (settings.ha_solar_total_entity[0]) fprintf(f, "ha_solar_total_entity=%s\n", settings.ha_solar_total_entity);
+    fprintf(f, "tile_flows=%s\n", settings.tile_flows);
     fprintf(f, "boot_picker_enabled=%d\n", settings.boot_picker_enabled);
     fprintf(f, "hide_offline_tiles=%d\n",  settings.hide_offline_tiles);
     fprintf(f, "update_check_enabled=%d\n", settings.update_check_enabled);

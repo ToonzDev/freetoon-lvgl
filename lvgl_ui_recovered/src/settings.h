@@ -430,6 +430,9 @@ typedef struct {
      * ha_solar_entity (no energy lost over gaps); the W sensor stays for the
      * live tiles. */
     char ha_solar_total_entity[64];
+    /* Homey flows tile (tile_flows.h): "auto" or one flow id per place,
+     * comma-separated (8 places x 39 chars + commas). */
+    char tile_flows[336];
 } settings_t;
 
 #define FORECAST_AUTO   0
