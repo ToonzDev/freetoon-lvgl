@@ -647,6 +647,16 @@ static void mock_state(void) {
 }
 
 typedef lv_obj_t * (*create_fn)(void);
+/* "plugin": a marketplace UI plugin (.so) from SIM_PLUGIN, built for the
+ * host (e.g. make sim in an integration); its screen_create(). */
+#include <dlfcn.h>
+static lv_obj_t * sim_plugin_create(void) {
+    const char * so = getenv("SIM_PLUGIN");
+    void * h = so ? dlopen(so, RTLD_NOW | RTLD_GLOBAL) : NULL;
+    lv_obj_t * (*f)(void) = h ? (lv_obj_t * (*)(void))dlsym(h, "screen_create") : NULL;
+    if (!f) { fprintf(stderr, "[sim] plugin: %s\n", h ?"no screen_create" : (so ? dlerror() : "set SIM_PLUGIN")); return lv_obj_create(NULL); }
+    return f();
+}
 static const struct { const char * name; create_fn fn; } SCREENS[] = {
     { "home",        screen_home_create },
     { "home_stock",  screen_home_stock_create },
@@ -665,6 +675,7 @@ static const struct { const char * name; create_fn fn; } SCREENS[] = {
     { "homey",       screen_homey_create },
     { "tilelights",  screen_tile_lights_create },
     { "tileflows",   screen_tile_flows_create },
+    { "plugin",      sim_plugin_create },
     { "schedule_sw", screen_switch_schedule_create },
     { "marketplace", screen_marketplace_create },
     { "zwave",       screen_zwave_create },
