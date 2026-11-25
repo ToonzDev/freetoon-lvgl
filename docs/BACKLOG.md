@@ -824,9 +824,9 @@
 - **Sim**: screen modes now call tile_slots_init() (apps from /mnt/data/integrations); SIM_INTEG_VALUE="<id>|<value>|<subtitle>" stands in for an app's tile post.
 
 ### 75. Hourly forecast: wind arrow too close to the wind direction text
-- **Status**: Open (2026-11-25, user report).
+- **Status**: Fixed (2026-11-25), sim-checked on the forecast cards (Toon 1 + 2); the per-day hourly table has no hourly data in the sim, check on .16. The same overlap was in the forecast screen's hour cards (label at 20 / 26 px, arrow 32 px): both now start the text after the arrow's width plus a gap.
 - **What**: on the hourly forecast of a day (screen_weather_hourly.c) the rotated wind arrow sits at `col_wind_x` and the "ZW 4 Bft" label at `col_wind_x + SX(28)` (line ~237): the arrow (rotated around its centre, so wider than its 24 px when diagonal) touches the text. Give the label more room (e.g. arrow width + SX(10), measured from the image) on Toon 1 and Toon 2.
 
 ### 76. Dim forecast strip: night temperature drops out per day when the strip is narrow
-- **Status**: Open (2026-11-25, user report with photo; visible on .16).
+- **Status**: Fixed (2026-11-25): dim_fc_paint_strip() decides for the whole strip (big font, else smaller font, else day temperature only on all days), using the column's real room (the label width has a floor). Sim-checked with the photo's temperatures at 9 / 7 / 5 columns, grid + classic dim, Toon 1 + 2. SIM_FC_WINTER=1 gives those temperatures.
 - **What**: with Instellingen > Scherm "Ook nachttemperatuur" each day of the 5-day strip shows "max°/min°" only if that text fits its column (dim_fc_paint in screen_dim.c, `both = sz.x <= width`); otherwise just "max°". In a narrow strip some days show the night temperature and others not (photo: "2°/-1°  1°/-3°  0°  2°  5°/-1°"), which looks like missing data. Make it one decision for the whole strip: if any day doesn't fit, first step the temperature font down for all days, and only if it still doesn't fit drop the night temperature on all days.

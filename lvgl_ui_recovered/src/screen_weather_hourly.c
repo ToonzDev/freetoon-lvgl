@@ -234,7 +234,9 @@ static void render_active_day(void) {
         } else {
             lv_label_set_text_fmt(lbl_wind, "%d Bft", slot->wind_bft);
         }
-        lv_obj_align(lbl_wind, LV_ALIGN_LEFT_MID, col_wind_x + SX(28), 0);
+        /* after the arrow (32 px, rotated around its centre) plus a gap; was
+         * SX(28), inside the arrow even when it points straight up */
+        lv_obj_align(lbl_wind, LV_ALIGN_LEFT_MID, col_wind_x + (int)icon_wind_arrow.header.w + SX(12), 0);
     }
 
     if (s_active_day == 0 && cur_hour > 1) {

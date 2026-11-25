@@ -49,6 +49,10 @@ void dim_set_outside_temp(lv_obj_t * lbl, float t, lv_coord_t max_w);
 void dim_fc_build(lv_obj_t * parent, int x, int y, int col_w, int h,
                   lv_obj_t ** icon, lv_obj_t ** day, lv_obj_t ** temp);
 void dim_fc_paint(lv_obj_t * icon, lv_obj_t * day, lv_obj_t * temp, int i);
+/* Paint the whole strip (columns 0..n-1). With "Ook nachttemperatuur" one
+ * choice for all days: "max°/min°" in the normal font when every day fits,
+ * else in a smaller font, else the day temperature only (#76). */
+void dim_fc_paint_strip(lv_obj_t ** icon, lv_obj_t ** day, lv_obj_t ** temp, int n);
 lv_obj_t * screen_black_create(void);      /* pure black standby screen when Slapen or Weg */
 lv_obj_t * screen_settings_create(void);
 lv_obj_t * screen_schedule_create(void);

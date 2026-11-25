@@ -617,7 +617,13 @@ lv_obj_t * screen_forecast_create(void) {
         lv_obj_set_style_text_color(fc_wind_lbl[i], lv_color_hex(THEME_TEXT_DIM), 0);
         lv_obj_set_style_text_font(fc_wind_lbl[i], (DISP_VER < 600) ? SF(14) : SF(16), 0);
         lv_label_set_text(fc_wind_lbl[i], "");
-        lv_obj_align(fc_wind_lbl[i], LV_ALIGN_BOTTOM_LEFT, (DISP_VER < 600) ? 20 : 26, -1);
+        /* right of the 32 px arrow, centred on it (was 20 / 26 px from the
+         * left edge: inside the arrow) */
+        {
+            int aw = (int)icon_wind_arrow.header.w, ah = (int)icon_wind_arrow.header.h;
+            int lh = lv_font_get_line_height(lv_obj_get_style_text_font(fc_wind_lbl[i], LV_PART_MAIN));
+            lv_obj_align(fc_wind_lbl[i], LV_ALIGN_BOTTOM_LEFT, aw + ((DISP_VER < 600) ? 4 : 8), -(ah - lh) / 2);
+        }
 
         /* Day and temperature stacked vertically to avoid horizontal overlap */
         fc_day_lbl[i] = lv_label_create(col);

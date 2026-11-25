@@ -520,8 +520,7 @@ static void refresh_cb(lv_timer_t * t) {
     }
 
     /* Forecast strip: 5 days, weekday + max temperature + lighter icon (#49). */
-    for (int i = 0; i < WEATHER_FORECAST_DAYS; i++)
-        dim_fc_paint(dim_fc_icon[i], dim_fc_day[i], dim_fc_temp[i], i);
+    dim_fc_paint_strip(dim_fc_icon, dim_fc_day, dim_fc_temp, WEATHER_FORECAST_DAYS);
     if (lbl_outside_temp) {
         if (settings.show_dim_weather && weather_state.connected) {
             dim_set_outside_temp(lbl_outside_temp, weather_display_temp(), SX(330));
@@ -714,9 +713,53 @@ void dim_fc_build(lv_obj_t * parent, int x, int y, int col_w, int h,
     ui_label_set_text(*temp, "");
     lv_obj_set_pos(*temp, gx + icon_w + gap, ty + lh_d);
     ui_obj_add_flag(*temp, LV_OBJ_FLAG_HIDDEN);
+    /* the room the column really has (text_w has a floor): for the strip's fit check */
+    lv_obj_set_user_data(*temp, (void *)(intptr_t)(col_w - icon_w - gap));
 }
 
+/* both: -1 = decide for this column alone (dim_fc_paint), 0 = day temperature
+ * only, 1 = "max°/min°". */
+static void fc_paint_one(lv_obj_t * icon, lv_obj_t * day, lv_obj_t * temp, int i, int both_in);
+
 void dim_fc_paint(lv_obj_t * icon, lv_obj_t * day, lv_obj_t * temp, int i) {
+    fc_paint_one(icon, day, temp, i, -1);
+}
+
+/* Width of "max°/min°" of day i in font f. */
+static int fc_both_w(int i, const lv_font_t * f) {
+    const weather_day_t * d = &weather_state.days[i];
+    char plain[24];
+    snprintf(plain, sizeof plain, "%.0f°/%.0f°", d->max_temp, d->min_temp);
+    lv_point_t sz;
+    lv_txt_get_size(&sz, plain, f, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    return sz.x;
+}
+
+void dim_fc_paint_strip(lv_obj_t ** icon, lv_obj_t ** day, lv_obj_t ** temp, int n) {
+    const lv_font_t * big = SF(28), * small = SF(22);
+    const lv_font_t * f = big;
+    int both = 0;
+    if (settings.dim_fc_min && settings.show_dim_weather) {
+        int fit_big = 1, fit_small = 1, any = 0;
+        for (int i = 0; i < n && i < weather_state.day_count; i++) {
+            if (!temp[i]) continue;
+            int w = lv_obj_get_style_width(temp[i], LV_PART_MAIN);
+            int room = (int)(intptr_t)lv_obj_get_user_data(temp[i]);
+            if (room > 0 && room < w) w = room;
+            if (fc_both_w(i, big) > w)   fit_big = 0;
+            if (fc_both_w(i, small) > w) fit_small = 0;
+            any = 1;
+        }
+        if (any && fit_big)        { both = 1; f = big; }
+        else if (any && fit_small) { both = 1; f = small; }
+    }
+    for (int i = 0; i < n; i++) {
+        if (temp[i]) ui_obj_set_style_text_font(temp[i], f, 0);
+        fc_paint_one(icon[i], day[i], temp[i], i, both);
+    }
+}
+
+static void fc_paint_one(lv_obj_t * icon, lv_obj_t * day, lv_obj_t * temp, int i, int both_in) {
     if (!icon || !day || !temp) return;
     if (!settings.show_dim_weather || i >= weather_state.day_count) {
         ui_obj_add_flag(icon, LV_OBJ_FLAG_HIDDEN);
@@ -735,8 +778,8 @@ void dim_fc_paint(lv_obj_t * icon, lv_obj_t * day, lv_obj_t * temp, int i) {
     /* Day (max) temperature, and with Instellingen -> Scherm "Ook
      * nachttemperatuur" the night (min) one after it in grey, when it fits
      * the column; a narrow column keeps the day temperature only. */
-    int both = 0;
-    if (settings.dim_fc_min) {
+    int both = both_in > 0;
+    if (both_in < 0 && settings.dim_fc_min) {
         char plain[24];
         snprintf(plain, sizeof plain, "%.0f°/%.0f°", d->max_temp, d->min_temp);
         lv_point_t sz;

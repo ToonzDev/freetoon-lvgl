@@ -714,8 +714,7 @@ static void refresh_cb(lv_timer_t * t) {
     }
 
     /* Forecast strip: 5 days, weekday + max temperature + lighter icon (#49). */
-    for (int i = 0; i < WEATHER_FORECAST_DAYS; i++)
-        dim_fc_paint(dim_fc_icon[i], dim_fc_day[i], dim_fc_temp[i], i);
+    dim_fc_paint_strip(dim_fc_icon, dim_fc_day, dim_fc_temp, WEATHER_FORECAST_DAYS);
     if (lbl_outside_temp) {
         if (settings.show_dim_weather && weather_state.connected) {
             dim_set_outside_temp(lbl_outside_temp, weather_display_temp(), g_wx_box_w);

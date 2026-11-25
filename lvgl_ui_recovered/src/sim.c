@@ -537,6 +537,11 @@ static void mock_state(void) {
         snprintf(weather_state.days[i].icon, 8, "%s", dic[i]);
         weather_state.days[i].min_temp = 12 + i;
         weather_state.days[i].max_temp = 22 + i;
+        if (getenv("SIM_FC_WINTER")) {          /* the #76 photo: 2/-1, 1/-3, 0/-5, 2/-3, 5/-1 */
+            static const int mx[5] = { 2, 1, 0, 2, 5 }, mn[5] = { -1, -3, -5, -3, -1 };
+            weather_state.days[i].max_temp = mx[i % 5];
+            weather_state.days[i].min_temp = mn[i % 5];
+        }
         weather_state.days[i].wind_bft = 3;
         snprintf(weather_state.days[i].wind_dir, 6, "ZW");
     }
