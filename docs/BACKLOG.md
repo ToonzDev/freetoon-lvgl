@@ -822,3 +822,11 @@
 - **Home**: the "Integratie" tile type (LT_SLOT) is now allowed on page 1 of a custom layout, up to 4 (TILE_SLOT_HOME_0..3, settings.tile_slot_home[4], keys tile_slot_home_N); the k-th in layout order uses slot HOME_0 + k. Rendering shared with the page-2 slots (render_assignable_slot); tap opens the app, an unbound tile or a long press opens the chooser.
 - **Dim**: new dim block DB_INTEG "Integratie" (default hidden) showing the app's title / value / subtitle; the app is TILE_SLOT_DIM (settings.tile_slot_dim), chosen in the dim layout editor: long press on the block -> "App kiezen" (apps only).
 - **Sim**: screen modes now call tile_slots_init() (apps from /mnt/data/integrations); SIM_INTEG_VALUE="<id>|<value>|<subtitle>" stands in for an app's tile post.
+
+### 75. Hourly forecast: wind arrow too close to the wind direction text
+- **Status**: Open (2026-11-25, user report).
+- **What**: on the hourly forecast of a day (screen_weather_hourly.c) the rotated wind arrow sits at `col_wind_x` and the "ZW 4 Bft" label at `col_wind_x + SX(28)` (line ~237): the arrow (rotated around its centre, so wider than its 24 px when diagonal) touches the text. Give the label more room (e.g. arrow width + SX(10), measured from the image) on Toon 1 and Toon 2.
+
+### 76. Dim forecast strip: night temperature drops out per day when the strip is narrow
+- **Status**: Open (2026-11-25, user report with photo; visible on .16).
+- **What**: with Instellingen > Scherm "Ook nachttemperatuur" each day of the 5-day strip shows "max°/min°" only if that text fits its column (dim_fc_paint in screen_dim.c, `both = sz.x <= width`); otherwise just "max°". In a narrow strip some days show the night temperature and others not (photo: "2°/-1°  1°/-3°  0°  2°  5°/-1°"), which looks like missing data. Make it one decision for the whole strip: if any day doesn't fit, first step the temperature font down for all days, and only if it still doesn't fit drop the night temperature on all days.
