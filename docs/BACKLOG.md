@@ -796,18 +796,22 @@
 - **Contents**: Verlichting tile up to 8 lights with sliders and Hue (#67); Schakelschema with sun times and "Willekeurig +/-20 min", on the Toon and on :10081/schema, one-time import of the "Slimme stekkers" app (#68); HomeWizard Energy Sockets as a light source; Zon statistics from every solar source, summed, and live solar power summed (#60); classic home: programme border also with the programme off; dim forecast: optional night temperature (Instellingen -> Scherm); Marketplace rows fit long descriptions; LONG_DOT labels no longer redrawn every second.
 
 ### 70. Ketel via andere Toon (Thermostat+ "Local" style)
-- **Status**: Implemented (2026-11-24), not yet tested on Toons.
+- **Status**: Ships in 1.0.20 (#73). Tested on .16 (sender) -> .24 (boiler side) 2026-11-24: on 30.0, off 6.0, safety net 6.0 after 900 s; heartbeat peer check only in client mode (15ccc8e).
 - **Why**: a user has the master Toon in the living room but the boiler is wired to a second Toon in a cold room. Under Eneco, Thermostat+ "Local" let the living-room Toon decide and the boiler Toon execute.
 - **How** (boiler_remote.c): Instellingen -> "Ketel via Toon" on the living-room Toon: IP of the boiler Toon, on / off setpoint (default 30 / 6 °C). Every 10 s the own happ_thermstat burnerInfo (1 or 3 = heat demand) is read; on a change, and every 60 s, the boiler Toon's happ gets setSetpoint (on or off value) and its programme is switched off (changeSchemeState 0). Works with stock Eneco or FreeToon on the boiler Toon. Own happ silent 5 min: off setpoint sent.
 - **Safety net**: when FreeToon runs on the boiler Toon, the sender also POSTs a heartbeat to its /api/v1/boiler/remote (private / loopback peers only; with a master_host set, only that peer). After 15 min without one, the boiler Toon sets its own happ to the off setpoint, once. Without FreeToon there the boiler stays on the last setpoint if the living-room Toon dies (the modal says so).
 - **Tested**: e2e in the sim with two FreeToon instances and two mock happs (demand on / off / on, sender killed: boiler Toon fell back to 6.0 after the silence window); modal renders Toon 1 + 2 incl. live status. inet_ntop verified on .24 and .16 (ld.so --verify), baselines refreshed.
 
 ### 71. Home Assistant: lifetime solar total sensor for the Zon statistics
-- **Status**: Implemented (2026-11-25), sim only, no device builds yet.
+- **Status**: Ships in 1.0.20 (#73); sim-tested only.
 - **What**: Instellingen -> Home Assistant -> "Zon totaal (kWh)" (settings.ha_solar_total_entity, appended at the end of settings_t; ha_state.solar_total_wh / have_solar_total appended to ha_state_t). Unit from unit_of_measurement: kWh / Wh / MWh, anything else refused with one log line; unknown / unavailable ignored. When set, solar_rrd counts its increase (SACC_LIFETIME, id "ha:total:<entity>") instead of integrating the W sensor, so gaps (restarts, HA sending no update for a steady value) lose no energy; the W sensor stays for the live tiles only (never counted twice). /solar page source shows "Home Assistant (totaal)".
 - **Tested**: sim against a synthetic HA mock: kWh and MWh converted, W refused, unavailable ignored; modal renders Toon 1 + 2. The accumulator path itself is covered by tests/solar_acc_test.c; not tested on a Toon with a real HA.
 
 ### 72. Homey flows tile
-- **Status**: Implemented (2026-11-25), sim + Toon 2 build; not tested on a Toon with a real Homey.
+- **Status**: Ships in 1.0.20 (#73); sim-tested against the Homey mock only.
 - **What**: new home tile type LT_HOMEY_FLOWS ("Homey flows", min 2x1, Toon 1 + 2, layout editor palette). One button per chosen flow (homey_start_flow: flows with the "This flow is started" card); green check / red cross for 1.5 s after a tap. As many buttons as fit (min ~130 px wide, max 8); a one-row tile hides the title. Long press on the tile opens the chooser (tile_flows.c, sim screen "tileflows"): 8 places as chips, tap a flow to put it on the selected place, again to remove. settings.tile_flows (appended to settings_t): "auto" = the first flows Homey lists, else comma-separated flow ids.
 - **Tested**: sim vs tests/homey_mock.py: 6x3 / 4x2 / 2x1 on Toon 1 + 2, tap triggered "Movie Evening" on the mock (POST .../trigger -> 204), long press opened the chooser. Toon 2 binary built, abi-check OK.
+
+### 73. Release 1.0.20: Ketel via andere Toon, Homey flows tile, HA solar total
+- **Status**: Prepared (2026-11-25) in release_v1.0.20/ (built from the "chore(release): 1.0.20" commit, BUILD_VERSION=1.0.20, helpers and libttysniff.so copied from 1.0.19 as their sources are unchanged, index.* from web/build.sh). To publish: push, tag 1.0.20 on the release commit, publish non-prerelease with all files.
+- **Contents**: Ketel via andere Toon (#70, Thermostat+ "Local" style, with safety net when the boiler Toon runs FreeToon); Homey flows home tile (#72); Home Assistant lifetime solar total sensor for the Zon statistics (#71).
