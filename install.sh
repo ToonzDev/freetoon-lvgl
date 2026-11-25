@@ -593,6 +593,9 @@ CFG
     # killall first: pkill does not exist on Toon 1
     remote "killall p1bridge 2>/dev/null || pkill -x p1bridge 2>/dev/null; true"
     remote "$RELEASE_UART"
+    # Marketplace apps installed before #79: their inittab rows in the new
+    # form, so their logs get a date and time (rewire leaves new rows alone).
+    remote "for d in /mnt/data/integrations/*/; do [ -f \"\${d}manifest.json\" ] && sh /mnt/data/integrations-install.sh rewire \"\$(basename \"\$d\")\" >/dev/null 2>&1; done; true" || true
     if [ "$IS_LOCAL" = 1 ]; then
         if [ -f /mnt/data/toonui.cfg ] && grep -q '^vnc_enabled=1' /mnt/data/toonui.cfg 2>/dev/null; then
             upsert_row "$VNCS_ROW"

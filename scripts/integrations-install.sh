@@ -9,6 +9,8 @@
 #   integrations-install.sh install <integration-id>
 #   integrations-install.sh remove <integration-id>
 #   integrations-install.sh uninstall <integration-id>
+#   integrations-install.sh rewire <integration-id>   (installed app: new-style inittab row)
+#   integrations-install.sh run <integration-id>      (what the inittab row runs)
 
 set -eu
 
@@ -19,6 +21,27 @@ LOG=/var/volatile/tmp/integration_install.log
 log()  { echo "$(date '+%F %T') $*" | tee -a "$LOG"; }
 die()  { log "ERROR: $*"; exit 1; }
 
+# run <integration-id>: the inittab row of every app runs this, so each line
+# of the app's log gets a date and time in front (BACKLOG #79). Lines that
+# already start with one (some apps stamp their own) are kept as they are.
+# The row stays short on purpose: sysvinit refuses a process field over 127
+# characters ("process field too long"), so binary and log are looked up here.
+if [ "${1:-}" = "run" ]; then
+    RID="${2:-}"
+    case "$RID" in ""|*[!a-zA-Z0-9_-]*) echo "run: bad id '$RID'" >&2; sleep 30; exit 1 ;; esac
+    RBIN=$(sed -n 's/.*"binary":[ ]*"\([^"]*\)".*/\1/p' "$INTEGRATIONS_DIR/$RID/manifest.json" 2>/dev/null | head -n 1)
+    BINP="$INTEGRATIONS_DIR/$RID/$RBIN"
+    LOGP="/var/volatile/tmp/integration-$RID.log"
+    [ -n "$RBIN" ] && [ -x "$BINP" ] || { sleep 30; exit 1; }   # missing: don't let init respawn it in a tight loop
+    "$BINP" 2>&1 | while IFS= read -r l; do
+        case "$l" in
+            20[0-9][0-9]-*|\[20[0-9][0-9]-*) printf '%s\n' "$l" ;;
+            *) printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$l" ;;
+        esac
+    done >> "$LOGP"
+    exit 0
+fi
+
 ACTION="install"
 if [ "${1:-}" = "remove" ] || [ "${1:-}" = "uninstall" ]; then
     ACTION="remove"
@@ -26,11 +49,14 @@ if [ "${1:-}" = "remove" ] || [ "${1:-}" = "uninstall" ]; then
 elif [ "${1:-}" = "install" ]; then
     ACTION="install"
     ID="${2:-}"
+elif [ "${1:-}" = "rewire" ]; then
+    ACTION="rewire"
+    ID="${2:-}"
 else
     ID="${1:-}"
 fi
 
-[ -n "$ID" ] || die "usage: $0 [install|remove|uninstall] <integration-id>"
+[ -n "$ID" ] || die "usage: $0 [install|remove|uninstall|rewire] <integration-id>"
 
 # Inittab row ids for this integration:
 #   ROW_ID    current: 'i' + 3 hex chars of md5(id) - never collides with stock daemons
@@ -45,6 +71,7 @@ ROW_ID="i${HEX3}"
 V105_ID="i$(echo "$ID" | tr -dc 'a-zA-Z0-9' | cut -c1-3)"
 LEGACY_ID=$(echo "$ID" | tr -dc 'a-zA-Z0-9' | cut -c1-4)
 OWN_DIR="$INTEGRATIONS_DIR/$ID/"
+RUN_PAT="integrations-install.sh run $ID"   # the row / runner since #79
 
 # Kill every process whose command line contains $1 (pkill -f replacement:
 # pkill does not exist on Toon 1). Skips this script's own process.
@@ -64,12 +91,13 @@ drop_own_rows() {
             [ -n "$_rid" ] || continue
             grep -q "^${_rid}:" /etc/inittab 2>/dev/null || continue
             /mnt/data/inittab_edit.sh drop_safe "$_rid" "$OWN_DIR" || return 1
+            /mnt/data/inittab_edit.sh drop_safe "$_rid" "$RUN_PAT" || return 1
         done
     else
         cp -p /etc/inittab /etc/inittab.bak 2>/dev/null || true
-        awk -v id1="$ROW_ID" -v id2="$V105_ID" -v id3="$LEGACY_ID" -v own="$OWN_DIR" '
+        awk -v id1="$ROW_ID" -v id2="$V105_ID" -v id3="$LEGACY_ID" -v own="$OWN_DIR" -v run="$RUN_PAT" '
             (index($0, id1 ":") == 1 || index($0, id2 ":") == 1 || (id3 != "" && index($0, id3 ":") == 1)) \
-                && index($0, own) > 0 { next }
+                && (index($0, own) > 0 || index($0, run) > 0) { next }
             { print $0 }
         ' /etc/inittab > /etc/inittab.new 2>/dev/null || true
         if [ -s /etc/inittab.new ] && [ "$(wc -l < /etc/inittab.new 2>/dev/null || echo 0)" -ge 15 ]; then
@@ -88,6 +116,7 @@ drop_own_rows() {
 if [ "$ACTION" = "remove" ]; then
     log "uninstalling integration '$ID'..."
     drop_own_rows || die "could not remove inittab rows for '$ID' - integration files left in place"
+    kill_cmdline "$RUN_PAT"
     kill_cmdline "$OWN_DIR"
     kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true
     rm -rf "$INTEGRATIONS_DIR/$ID"
@@ -97,8 +126,20 @@ if [ "$ACTION" = "remove" ]; then
 fi
 
 # =====================================================================
+# REWIRE ACTION (FreeToon update): an installed app's row in the new form
+# =====================================================================
+if [ "$ACTION" = "rewire" ]; then
+    [ -f "$INTEGRATIONS_DIR/$ID/manifest.json" ] || exit 0
+    if grep -q "^${ROW_ID}:2345:respawn:/bin/sh /mnt/data/integrations-install.sh run ${ID}\$" /etc/inittab 2>/dev/null; then
+        exit 0                                   # already the new form: leave it running
+    fi
+    log "rewiring '$ID' (date/time in its log)"
+fi
+
+# =====================================================================
 # INSTALL ACTION
 # =====================================================================
+if [ "$ACTION" = "install" ]; then
 log "fetching catalog..."
 CATALOG=$(curl -fsSL --max-time 20 "$CATALOG_URL" 2>/dev/null || true)
 
@@ -163,6 +204,8 @@ else
     die "integration '$ID' not in catalog and no local bundled profile found"
 fi
 
+fi   # install: download
+
 [ -f "$INTEGRATIONS_DIR/$ID/manifest.json" ] || die "no manifest.json in package"
 chmod +x "$INTEGRATIONS_DIR/$ID"/* 2>/dev/null || true
 # Older packages were tarred from a Windows checkout as 0777 uid 1000, and
@@ -176,7 +219,7 @@ BIN=$(sed -n 's/.*"binary":[ ]*"\([^"]*\)".*/\1/p' "$INTEGRATIONS_DIR/$ID/manife
 [ -x "$INTEGRATIONS_DIR/$ID/$BIN" ] || die "binary '$BIN' missing or not executable"
 
 LOG_PATH="/var/volatile/tmp/integration-$ID.log"
-ROW="$ROW_ID:2345:respawn:$INTEGRATIONS_DIR/$ID/$BIN >> $LOG_PATH 2>&1"
+ROW="$ROW_ID:2345:respawn:/bin/sh /mnt/data/integrations-install.sh run $ID"
 
 log "wiring inittab row '$ROW_ID' -> $BIN"
 # Drop this integration's own rows (current + 1.0.5-style + legacy ids) first.
@@ -201,6 +244,7 @@ else
 fi
 
 # Stop the running instance so init respawns the freshly installed binary.
+kill_cmdline "$RUN_PAT"
 kill_cmdline "$INTEGRATIONS_DIR/$ID/$BIN"
 kill -HUP 1 2>/dev/null || telinit q 2>/dev/null || true
 log "installed - integration logs at $LOG_PATH"

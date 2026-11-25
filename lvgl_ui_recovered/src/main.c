@@ -2,6 +2,7 @@
  * Toon LVGL UI — boot entry. Initializes LVGL, display, input,
  * starts the BoxTalk client, then hands off to the screen stack.
  */
+#include "logstamp.h"
 #include "lvgl/lvgl.h"
 #include "fbdev.h"   /* vendored copy: cutout + page-flip extras (not the submodule's) */
 #include "lv_drivers/indev/evdev.h"
@@ -107,6 +108,7 @@ static void on_sigpipe(int sig) { (void)sig; }
 int main(int argc, char** argv) {
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
+    logstamp_start();      /* "YYYY-MM-DD HH:MM:SS " in front of every log line */
 
     /* Boot-picker mode: ui_launcher.sh runs us with --bootpick at boot.
      * We render only the picker screen and exit with rc 0 (freetoon)
