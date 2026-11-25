@@ -815,3 +815,10 @@
 ### 73. Release 1.0.20: Ketel via andere Toon, Homey flows tile, HA solar total
 - **Status**: Prepared (2026-11-25) in release_v1.0.20/ (built from the "chore(release): 1.0.20" commit, BUILD_VERSION=1.0.20, helpers and libttysniff.so copied from 1.0.19 as their sources are unchanged, index.* from web/build.sh). To publish: push, tag 1.0.20 on the release commit, publish non-prerelease with all files.
 - **Contents**: Ketel via andere Toon (#70, Thermostat+ "Local" style, with safety net when the boiler Toon runs FreeToon); Homey flows home tile (#72); Home Assistant lifetime solar total sensor for the Zon statistics (#71).
+
+### 74. Marketplace apps on the home page and the dim screen
+- **Status**: Implemented (2026-11-25), sim + Toon 2 build; not tested on a Toon.
+- **Why**: a marketplace app (e.g. Verkeer) could only take the place of one of the four fixed tiles (Energie / Familie / Ventilatie / Water, long press) or go on page 2; the layout editor's "Vervang type" never listed apps, and the dim screen had no app block.
+- **Home**: the "Integratie" tile type (LT_SLOT) is now allowed on page 1 of a custom layout, up to 4 (TILE_SLOT_HOME_0..3, settings.tile_slot_home[4], keys tile_slot_home_N); the k-th in layout order uses slot HOME_0 + k. Rendering shared with the page-2 slots (render_assignable_slot); tap opens the app, an unbound tile or a long press opens the chooser.
+- **Dim**: new dim block DB_INTEG "Integratie" (default hidden) showing the app's title / value / subtitle; the app is TILE_SLOT_DIM (settings.tile_slot_dim), chosen in the dim layout editor: long press on the block -> "App kiezen" (apps only).
+- **Sim**: screen modes now call tile_slots_init() (apps from /mnt/data/integrations); SIM_INTEG_VALUE="<id>|<value>|<subtitle>" stands in for an app's tile post.

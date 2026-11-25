@@ -85,6 +85,7 @@ typedef enum {
     DB_CLOCKSTUDIO,  /* Klok Studio clock face (clock_studio.c, #55) */
     DB_CLIMATE,      /* Binnenklimaat: humidity + air quality (Toon 2 sensor, #56) */
     DB_BOILER,       /* Ketel: flow + return temperature + CH pressure */
+    DB_INTEG,        /* Integratie: a marketplace app's tile value (tile_slots TILE_SLOT_DIM) */
     DB_COUNT
 } dim_block_id_t;
 

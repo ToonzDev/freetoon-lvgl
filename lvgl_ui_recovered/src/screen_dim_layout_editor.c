@@ -22,6 +22,7 @@
 #include "settings.h"
 #include "theme.h"
 #include "i18n.h"
+#include "tile_slots.h"
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
@@ -58,7 +59,7 @@ static const uint32_t DB_COL[DB_COUNT] = {
     [DB_WASTE]=0x88dd66,  [DB_FAMILY]=0xff8866,  [DB_VENT]=0x6666aa,
     [DB_ENERGY]=0xaa77ff, [DB_GAS]=0xffaa33,     [DB_CLOCK]=0x2b7bbb,
     [DB_DATE]=0x486b88,   [DB_AGENDA]=0x4477cc,  [DB_RAINFALL]=0x3a77aa,
-    [DB_SOLAR]=0xeeaa22,  [DB_EDAY]=0x8855dd, [DB_CLOCKSTUDIO]=0x5577cc, [DB_CLIMATE]=0x4fb3a9, [DB_BOILER]=0xcc6644,
+    [DB_SOLAR]=0xeeaa22,  [DB_EDAY]=0x8855dd, [DB_CLOCKSTUDIO]=0x5577cc, [DB_CLIMATE]=0x4fb3a9, [DB_BOILER]=0xcc6644, [DB_INTEG]=0x778899,
 };
 
 static void place_rect(int i);
@@ -362,6 +363,12 @@ static void on_confirm_replace(lv_event_t * e) {
     }
 }
 
+static void on_confirm_app(lv_event_t * e) {
+    (void)e;
+    confirm_close();
+    screen_settings_open_tile_slot_single_modal(TILE_SLOT_DIM);
+}
+
 static void show_block_confirm(int i) {
     if (confirm_modal || i < 0 || i >= DB_COUNT || !edit_dim[i].visible) return;
     confirm_idx = i;
@@ -401,6 +408,16 @@ static void show_block_confirm(int i) {
     lv_obj_set_style_bg_color(rep, lv_color_hex(0x2a5070), 0);
     lv_obj_add_event_cb(rep, on_confirm_replace, LV_EVENT_CLICKED, NULL);
     lv_obj_t * repl = lv_label_create(rep); lv_label_set_text(repl, tr("Vervang type", "Change type")); lv_obj_center(repl);
+
+    if (i == DB_INTEG) {               /* which app the block shows */
+        lv_obj_align(t, LV_ALIGN_TOP_LEFT, SX(10), SY(16));
+        lv_obj_t * ap = lv_btn_create(card);
+        lv_obj_set_size(ap, SX(170), SY(50));
+        lv_obj_align(ap, LV_ALIGN_TOP_RIGHT, SX(-10), SY(6));
+        lv_obj_set_style_bg_color(ap, lv_color_hex(0x2a7050), 0);
+        lv_obj_add_event_cb(ap, on_confirm_app, LV_EVENT_CLICKED, NULL);
+        lv_obj_t * apl = lv_label_create(ap); lv_label_set_text(apl, tr("App kiezen", "Choose app")); lv_obj_center(apl);
+    }
 
     lv_obj_t * del = lv_btn_create(card);
     lv_obj_set_size(del, SX(130), SY(50));

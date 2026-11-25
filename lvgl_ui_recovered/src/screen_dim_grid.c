@@ -22,6 +22,7 @@
 #include "clock_studio.h"    /* Klok Studio dim block (#55) */
 #include "icons.h"
 #include "buienradar_rain.h"
+#include "tile_slots.h"      /* Integratie block: an app's tile value */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -410,6 +411,35 @@ static void dim_boiler_update(void) {
     ui_obj_set_style_text_color(dim_bo_pres, lv_color_hex(pc), 0);
 }
 
+/* Integratie block (DB_INTEG): the tile value of the app bound to
+ * TILE_SLOT_DIM (chosen in the dim layout editor), title / value / subtitle. */
+static lv_obj_t * dim_in_title = NULL, * dim_in_val = NULL, * dim_in_sub = NULL;
+static void dim_integ_update(void) {
+    if (!dim_in_val) return;
+    const integration_meta_t * m = tile_slots_meta_for(TILE_SLOT_DIM);
+    if (!m) {
+        ui_label_set_text(dim_in_title, tr("Integratie", "Integration"));
+        ui_label_set_text(dim_in_val, "--");
+        ui_label_set_text(dim_in_sub, tr("kies een app in de dim-indeling", "choose an app in the dim layout"));
+        return;
+    }
+    ui_label_set_text(dim_in_title, tile_slots_integration_title(m));
+    ui_label_set_text(dim_in_val, m->latest_value[0] ? (const char *)m->latest_value : "--");
+    ui_label_set_text(dim_in_sub, (const char *)m->latest_subtitle);
+}
+
+static lv_obj_t * dim_integ_label(lv_obj_t * bx, int w, const lv_font_t * f, uint32_t col, lv_align_t al, int y) {
+    lv_obj_t * l = lv_label_create(bx);
+    ui_obj_set_style_text_color(l, lv_color_hex(col), 0);
+    ui_obj_set_style_text_font(l, f, 0);
+    lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(l, LV_LABEL_LONG_DOT);
+    lv_obj_set_size(l, w, lv_font_get_line_height(f));
+    ui_label_set_text(l, "");
+    lv_obj_align(l, al, 0, y);
+    return l;
+}
+
 /* One "caption  value" row of the Ketel block; returns the value label. */
 static lv_obj_t * dim_boiler_row(lv_obj_t * col, int w, const char * caption, const lv_font_t * vf) {
     lv_obj_t * row = lv_obj_create(col);
@@ -434,6 +464,7 @@ static void refresh_cb(lv_timer_t * t) {
     if (lv_scr_act() != scr_root) return;
     dim_climate_update();
     dim_boiler_update();
+    dim_integ_update();
 
     time_t now = time(NULL);
     struct tm tm;
@@ -1357,6 +1388,18 @@ lv_obj_t * screen_dim_grid_create(void) {
         dim_bo_ret  = dim_boiler_row(col, rw, tr("Retour", "Return"),    vf);
         dim_bo_pres = dim_boiler_row(col, rw, tr("Druk", "Pressure"),    vf);
         dim_boiler_update();
+    }
+
+    /* ---- Integratie (DB_INTEG): an app's tile value. Both Toons. ---- */
+    dim_in_title = dim_in_val = dim_in_sub = NULL;
+    if (g_dim_blocks[DB_INTEG].visible) {
+        int iw = 0, ih = 0;
+        lv_obj_t * bx = dim_box(DB_INTEG, &iw, &ih);
+        int big = ih >= SY(150);
+        dim_in_title = dim_integ_label(bx, iw - 8, SF(15), 0xc4dcee, LV_ALIGN_TOP_MID, 2);
+        dim_in_val   = dim_integ_label(bx, iw - 8, big ? SF(28) : SF(22), 0xffffff, LV_ALIGN_CENTER, 0);
+        dim_in_sub   = dim_integ_label(bx, iw - 8, SF(15), 0xc4dcee, LV_ALIGN_BOTTOM_MID, -2);
+        dim_integ_update();
     }
 
     /* ---- AGENDA: next calendar event(s) — 2-column, height-adaptive, all white text ---- */

@@ -4748,7 +4748,9 @@ static lv_obj_t * dd_tile_slot[TILE_SLOT_COUNT];
  * integration + 1 for separator. */
 static void build_slot_options(int slot, char * out, size_t cap) {
     size_t n = 0;
-    if (slot < 4) {
+    if (slot == TILE_SLOT_DIM) {
+        n = snprintf(out, cap, "%s", tr("Geen", "None"));
+    } else if (slot < 4) {
         const char * def_label;
         if (slot == 0) def_label = tr("Ingebouwd (Energie)", "Built-in (Energy)");
         else if (slot == 1) def_label = tr("Ingebouwd (Familie)", "Built-in (Family)");
@@ -4778,6 +4780,10 @@ static void build_slot_options(int slot, char * out, size_t cap) {
 /* Resolve dropdown index → binding id for the given slot. */
 static const char * slot_dropdown_to_id(int slot, int idx) {
     if (idx <= 0) return "";
+    if (slot == TILE_SLOT_DIM) {
+        const integration_meta_t * m = tile_slots_integration_at(idx - 1);
+        return m ? m->id : "";
+    }
     if (slot < 4) {
         if (idx == 1) return "local:agenda";
         if (idx == 2) return "local:waste";
@@ -4798,6 +4804,12 @@ static const char * slot_dropdown_to_id(int slot, int idx) {
 
 static int slot_dropdown_from_id(int slot, const char * id) {
     if (!id || !id[0]) return 0;
+    if (slot == TILE_SLOT_DIM) {
+        int total = tile_slots_integration_count();
+        for (int i = 0; i < total; i++)
+            if (!strcmp(tile_slots_integration_at(i)->id, id)) return i + 1;
+        return 0;
+    }
     if (slot < 4) {
         if (strcmp(id, "local:agenda") == 0) return 1;
         if (strcmp(id, "local:waste") == 0) return 2;

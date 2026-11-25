@@ -39,7 +39,13 @@
 #define TILE_SLOT_P1_2    6
 #define TILE_SLOT_P1_3    7
 #define TILE_SLOT_P1_N    12                          /* assignable page-2 slots */
-#define TILE_SLOT_COUNT   (TILE_SLOT_P1_0 + TILE_SLOT_P1_N)   /* = 16 */
+#define TILE_SLOT_P1_END  (TILE_SLOT_P1_0 + TILE_SLOT_P1_N)   /* = 16 */
+/* "Integratie" tiles on the home page of a custom layout (LT_SLOT on page 0),
+ * bound by their order in the layout, and the dim screen's Integratie block. */
+#define TILE_SLOT_HOME_0  16
+#define TILE_SLOT_HOME_N  4
+#define TILE_SLOT_DIM     20
+#define TILE_SLOT_COUNT   21
 
 #define INTEG_NAME_MAX        48
 #define INTEG_ID_MAX          48

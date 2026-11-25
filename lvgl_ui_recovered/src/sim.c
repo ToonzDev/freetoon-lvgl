@@ -1310,6 +1310,25 @@ int main(int argc, char ** argv) {
         if (ha_start() != 0) fprintf(stderr, "[sim] ha_start failed\n");
         usleep(1500000);
     }
+    /* Marketplace apps as on the Toon (/mnt/data/integrations/<id>/manifest.json);
+     * SIM_INTEG_VALUE="<id>|<value>|<subtitle>" stands in for the app's tile post. */
+    {
+        extern int tile_slots_init(void);
+        extern void tile_slots_set_value(const char *, const char *, const char *, const char *);
+        tile_slots_init();
+        const char * iv = getenv("SIM_INTEG_VALUE");
+        if (iv) {
+            char b[256], * v, * sub;
+            snprintf(b, sizeof b, "%s", iv);
+            v = strchr(b, '|');
+            if (v) {
+                *v++ = 0;
+                sub = strchr(v, '|');
+                if (sub) *sub++ = 0;
+                tile_slots_set_value(b, v, sub ? sub : "", NULL);
+            }
+        }
+    }
     lv_obj_t * scr = fn();
     lv_scr_load(scr);
     pump(150);

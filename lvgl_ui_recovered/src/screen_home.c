@@ -298,6 +298,11 @@ static lv_obj_t * p1_title[TILE_SLOT_P1_N] = {0};
 static lv_obj_t * p1_main[TILE_SLOT_P1_N]  = {0};
 static lv_obj_t * p1_sub[TILE_SLOT_P1_N]   = {0};
 static int        g_p1_count = 4;   /* active page-2 slots (4 fixed, or N from a custom layout) */
+/* Integratie tiles on the home page of a custom layout (LT_SLOT on page 0):
+ * the k-th in layout order shows slot TILE_SLOT_HOME_0 + k. */
+static lv_obj_t * hs_tile[TILE_SLOT_HOME_N], * hs_title[TILE_SLOT_HOME_N];
+static lv_obj_t * hs_main[TILE_SLOT_HOME_N], * hs_sub[TILE_SLOT_HOME_N];
+static int        g_hs_count;
 
 /* RSS news ticker (above the forecast). Tap → headline list; tapping a headline
  * shows its article summary (from the RSS body) in the reading pane. */
@@ -2230,6 +2235,81 @@ static void update_tile_lights(void) {
     tl_pop_refresh();
 }
 
+/* An assignable slot (page 2, or an Integratie tile on the home page):
+ * the bound local content or integration, or a "tap to assign" placeholder. */
+static void render_assignable_slot(int slot, lv_obj_t * t, lv_obj_t * mn, lv_obj_t * sb) {
+    const char * b = tile_slots_binding(slot);
+    if (b && !strcmp(b, "local:agenda")) {
+        if (t) ui_label_set_text(t, tr("Agenda", "Calendar"));
+        if (calendar_state.count > 0) {
+            calendar_event_t * ev = &calendar_state.ev[0];
+            if (mn) ui_label_set_text(mn, ev->summary);
+            if (sb)  ui_label_set_text_fmt(sb, "%s %s", ev->date + 5, ev->time[0] ? ev->time : "");
+        } else {
+            if (mn) ui_label_set_text(mn, tr("Geen afspraken", "No events"));
+            if (sb)  ui_label_set_text(sb, "");
+        }
+        return;
+    }
+    if (b && !strcmp(b, "local:waste")) {
+        if (t) ui_label_set_text(t, tr("Afval", "Waste"));
+        waste_pickup_t p1 = {0}, p2 = {0};
+        int n = waste_state.connected ? waste_next_2_pickups(&p1, &p2) : 0;
+        if (n >= 1) {
+            int mo = atoi(p1.date + 5), d = atoi(p1.date + 8);
+            if (mn) ui_label_set_text_fmt(mn, "%d-%d %s", d, mo, p1.labels);
+            if (sb) {
+                if (n >= 2) {
+                    int mo2 = atoi(p2.date + 5), d2 = atoi(p2.date + 8);
+                    ui_label_set_text_fmt(sb, "%d-%d %s", d2, mo2, p2.labels);
+                } else {
+                    ui_label_set_text(sb, "");
+                }
+            }
+        } else {
+            if (mn) ui_label_set_text(mn, waste_state.connected ? tr("geen", "none") : "...");
+            if (sb)  ui_label_set_text(sb, "");
+        }
+        return;
+    }
+    if (b && (!strcmp(b, "local:templogger") || !strcmp(b, "temperaturelogger"))) {
+        if (t) ui_label_set_text(t, tr("Temperatuur", "Temperature"));
+        float r = 0, sp = 0, out = 0;
+        templogger_get_latest(&r, &sp, &out);
+        if (mn) {
+            if (r > 0.0f) ui_label_set_text_fmt(mn, "%.1f °C", r);
+            else ui_label_set_text(mn, "--.- °C");
+        }
+        if (sb) {
+            if (out > -50.0f && sp > 0.0f)
+                ui_label_set_text_fmt(sb, tr("buiten %.1f° | doel %.1f°", "out %.1f° | set %.1f°"), out, sp);
+            else if (out > -50.0f)
+                ui_label_set_text_fmt(sb, tr("buiten %.1f°", "out %.1f°"), out);
+            else
+                ui_label_set_text(sb, "");
+        }
+        return;
+    }
+    if (b && strncmp(b, "local:", 6) == 0) {
+        render_local_into(b, t, mn, sb);
+        return;
+    }
+    const integration_meta_t * m = tile_slots_meta_for(slot);
+    if (m) {
+        if (t) ui_label_set_text(t, tile_slots_integration_title(m));
+        render_tile_slot(slot, mn, sb);
+    } else {
+        if (t) ui_label_set_text(t, "");
+        if (mn) {
+            ui_obj_set_style_text_font(mn, SF(14), 0);
+            ui_obj_set_style_text_color(mn, lv_color_hex(COL_TEXT_DIM), 0);
+            ui_label_set_text(mn, tr(LV_SYMBOL_PLUS "  Tik om te koppelen", LV_SYMBOL_PLUS "  Tap to assign"));
+            ui_obj_align(mn, LV_ALIGN_CENTER, 0, 0);
+        }
+        if (sb)   ui_label_set_text(sb, "");
+    }
+}
+
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
     if (!scr_root || lv_scr_act() != scr_root) return;
@@ -2335,77 +2415,12 @@ static void refresh_cb(lv_timer_t * t) {
             }
             continue;
         }
-        const char * b = tile_slots_binding(TILE_SLOT_P1_0 + i);
-        if (b && !strcmp(b, "local:agenda")) {
-            if (p1_title[i]) ui_label_set_text(p1_title[i], tr("Agenda", "Calendar"));
-            if (calendar_state.count > 0) {
-                calendar_event_t * ev = &calendar_state.ev[0];
-                if (p1_main[i]) ui_label_set_text(p1_main[i], ev->summary);
-                if (p1_sub[i])  ui_label_set_text_fmt(p1_sub[i], "%s %s", ev->date + 5, ev->time[0] ? ev->time : "");
-            } else {
-                if (p1_main[i]) ui_label_set_text(p1_main[i], tr("Geen afspraken", "No events"));
-                if (p1_sub[i])  ui_label_set_text(p1_sub[i], "");
-            }
-            continue;
-        }
-        if (b && !strcmp(b, "local:waste")) {
-            if (p1_title[i]) ui_label_set_text(p1_title[i], tr("Afval", "Waste"));
-            waste_pickup_t p1 = {0}, p2 = {0};
-            int n = waste_state.connected ? waste_next_2_pickups(&p1, &p2) : 0;
-            if (n >= 1) {
-                int mo = atoi(p1.date + 5), d = atoi(p1.date + 8);
-                if (p1_main[i]) ui_label_set_text_fmt(p1_main[i], "%d-%d %s", d, mo, p1.labels);
-                if (p1_sub[i]) {
-                    if (n >= 2) {
-                        int mo2 = atoi(p2.date + 5), d2 = atoi(p2.date + 8);
-                        ui_label_set_text_fmt(p1_sub[i], "%d-%d %s", d2, mo2, p2.labels);
-                    } else {
-                        ui_label_set_text(p1_sub[i], "");
-                    }
-                }
-            } else {
-                if (p1_main[i]) ui_label_set_text(p1_main[i], waste_state.connected ? tr("geen", "none") : "...");
-                if (p1_sub[i])  ui_label_set_text(p1_sub[i], "");
-            }
-            continue;
-        }
-        if (b && (!strcmp(b, "local:templogger") || !strcmp(b, "temperaturelogger"))) {
-            if (p1_title[i]) ui_label_set_text(p1_title[i], tr("Temperatuur", "Temperature"));
-            float r = 0, sp = 0, out = 0;
-            templogger_get_latest(&r, &sp, &out);
-            if (p1_main[i]) {
-                if (r > 0.0f) ui_label_set_text_fmt(p1_main[i], "%.1f °C", r);
-                else ui_label_set_text(p1_main[i], "--.- °C");
-            }
-            if (p1_sub[i]) {
-                if (out > -50.0f && sp > 0.0f)
-                    ui_label_set_text_fmt(p1_sub[i], tr("buiten %.1f° | doel %.1f°", "out %.1f° | set %.1f°"), out, sp);
-                else if (out > -50.0f)
-                    ui_label_set_text_fmt(p1_sub[i], tr("buiten %.1f°", "out %.1f°"), out);
-                else
-                    ui_label_set_text(p1_sub[i], "");
-            }
-            continue;
-        }
-        if (b && strncmp(b, "local:", 6) == 0) {
-            render_local_into(b, p1_title[i], p1_main[i], p1_sub[i]);
-            continue;
-        }
-        const integration_meta_t * m = tile_slots_meta_for(TILE_SLOT_P1_0 + i);
-        if (m) {
-            if (p1_title[i]) ui_label_set_text(p1_title[i], tile_slots_integration_title(m));
-            render_tile_slot(TILE_SLOT_P1_0 + i, p1_main[i], p1_sub[i]);
-        } else {
-            if (p1_title[i]) ui_label_set_text(p1_title[i], "");
-            if (p1_main[i]) {
-                ui_obj_set_style_text_font(p1_main[i], SF(14), 0);
-                ui_obj_set_style_text_color(p1_main[i], lv_color_hex(COL_TEXT_DIM), 0);
-                ui_label_set_text(p1_main[i], tr(LV_SYMBOL_PLUS "  Tik om te koppelen", LV_SYMBOL_PLUS "  Tap to assign"));
-                ui_obj_align(p1_main[i], LV_ALIGN_CENTER, 0, 0);
-            }
-            if (p1_sub[i])   ui_label_set_text(p1_sub[i], "");
-        }
+        render_assignable_slot(TILE_SLOT_P1_0 + i, p1_title[i], p1_main[i], p1_sub[i]);
     }
+
+    /* Integratie tiles on the home page (custom layout) */
+    for (int i = 0; i < g_hs_count; i++)
+        render_assignable_slot(TILE_SLOT_HOME_0 + i, hs_title[i], hs_main[i], hs_sub[i]);
 
     /* News ticker text — rebuild only when the lead headline changes (every
      * ~15 min) so the scroll animation isn't reset each second. */
@@ -3617,6 +3632,11 @@ static void home_show_page(int n) {
             else ui_obj_add_flag(tile_clockstudio, LV_OBJ_FLAG_HIDDEN);
         }
     }
+    for (int k = 0; k < g_hs_count; k++)
+        if (hs_tile[k]) {
+            if (n == 0) ui_obj_clear_flag(hs_tile[k], LV_OBJ_FLAG_HIDDEN);
+            else ui_obj_add_flag(hs_tile[k], LV_OBJ_FLAG_HIDDEN);
+        }
     if (tile_hflows) {
         const layout_tile_t * Lf = settings.custom_layout_enabled ? layout_find(LT_HOMEY_FLOWS) : NULL;
         if (Lf && Lf->page == 0) {
@@ -3651,6 +3671,16 @@ static void on_page1_slot(lv_event_t * e) {
     }
 }
 
+/* Integratie tile on the home page: open the bound app, else choose one. */
+static void on_home_slot(lv_event_t * e) {
+    lv_obj_t * tapped = lv_event_get_current_target(e);
+    for (int k = 0; k < g_hs_count; k++)
+        if (tapped == hs_tile[k]) {
+            if (check_slot_integration_open(TILE_SLOT_HOME_0 + k)) return;
+            screen_settings_open_tile_slot_single_modal(TILE_SLOT_HOME_0 + k);
+            return;
+        }
+}
 static void on_page1_slot_longpress(lv_event_t * e) {
     int slot = (int)(intptr_t)lv_event_get_user_data(e);
     screen_settings_open_tile_slot_single_modal(slot);
@@ -5087,6 +5117,39 @@ lv_obj_t * screen_home_create(void) {
         ui_label_set_text(lbl_cl_air, "CO2 --  TVOC --");
         update_tile_climate();
 
+        /* Integratie tiles on the home page, built like the page-2 slots. */
+        g_hs_count = 0;
+        for (int li = 0; li < g_layout.count && g_hs_count < TILE_SLOT_HOME_N; li++) {
+            const layout_tile_t * L = &g_layout.tiles[li];
+            if (L->type != LT_SLOT || L->page != 0 || !L->visible) continue;
+            int hx, hy, hw, hh;
+            layout_cell_px(L->col, L->row, L->w, L->h, &hx, &hy, &hw, &hh);
+            int k = g_hs_count++;
+            tile_t s;
+            make_tile(scr_root, hx + 4, hy + 4, hw - 8, hh - 8, LT_NONE, "", 0x778899, on_home_slot, &s);
+            hs_tile[k] = s.tile;
+            hs_title[k] = s.title;
+            int horiz = hh - 8 < 110;
+            hs_main[k] = lv_label_create(s.tile);
+            ui_obj_set_style_text_color(hs_main[k], lv_color_hex(COL_TEXT_DIM), 0);
+            ui_obj_set_style_text_font(hs_main[k], SF(14), 0);
+            ui_label_set_text(hs_main[k], tr(LV_SYMBOL_PLUS "  Tik om te koppelen", LV_SYMBOL_PLUS "  Tap to assign"));
+            if (horiz) {
+                ui_obj_align(hs_title[k], LV_ALIGN_LEFT_MID, 0, 0);
+                ui_obj_align(hs_main[k],  LV_ALIGN_RIGHT_MID, -4, 0);
+            } else {
+                ui_obj_align(hs_main[k], LV_ALIGN_CENTER, 0, 0);
+            }
+            hs_sub[k] = lv_label_create(s.tile);
+            ui_obj_set_style_text_color(hs_sub[k], lv_color_hex(COL_TEXT_DIM), 0);
+            ui_obj_set_style_text_font(hs_sub[k], SF(18), 0);
+            ui_label_set_text(hs_sub[k], "");
+            if (horiz) ui_obj_add_flag(hs_sub[k], LV_OBJ_FLAG_HIDDEN);
+            else ui_obj_align(hs_sub[k], LV_ALIGN_BOTTOM_MID, 0, -4);
+            lv_obj_add_event_cb(s.tile, on_page1_slot_longpress, LV_EVENT_LONG_PRESSED,
+                                (void *)(intptr_t)(TILE_SLOT_HOME_0 + k));
+        }
+
         /* Homey flows tile: a button per chosen flow; long press = chooser */
         if (layout_find(LT_HOMEY_FLOWS)) {
             tile_t hf_t;
@@ -5795,6 +5858,8 @@ void screen_home_destroy(void) {
         tile_climate = NULL;
         tile_clockstudio = NULL;
         tile_hflows = NULL;
+        for (int k = 0; k < TILE_SLOT_HOME_N; k++) hs_tile[k] = hs_title[k] = hs_main[k] = hs_sub[k] = NULL;
+        g_hs_count = 0;
         lbl_cl_hum = NULL;
         lbl_cl_quality = NULL;
         lbl_cl_air = NULL;

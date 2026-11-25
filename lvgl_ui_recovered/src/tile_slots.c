@@ -31,10 +31,15 @@ const char * tile_slot_label(int slot) {
     if (slot == 5) return tr("Pagina 2 - Rechtsboven", "Page 2 - Top right");
     if (slot == 6) return tr("Pagina 2 - Linksonder", "Page 2 - Bottom left");
     if (slot == 7) return tr("Pagina 2 - Rechtsonder", "Page 2 - Bottom right");
-    if (slot >= TILE_SLOT_P1_0 && slot < TILE_SLOT_COUNT) {
+    if (slot >= TILE_SLOT_P1_0 && slot < TILE_SLOT_P1_END) {
         snprintf(buf, sizeof buf, "%s %d", tr("Pagina 2 - Slot", "Page 2 - Slot"), slot - TILE_SLOT_P1_0 + 1);
         return buf;
     }
+    if (slot >= TILE_SLOT_HOME_0 && slot < TILE_SLOT_HOME_0 + TILE_SLOT_HOME_N) {
+        snprintf(buf, sizeof buf, "%s %d", tr("Startscherm - Integratie", "Home - Integration"), slot - TILE_SLOT_HOME_0 + 1);
+        return buf;
+    }
+    if (slot == TILE_SLOT_DIM) return tr("Dimscherm - Integratie", "Dim screen - Integration");
     return "?";
 }
 
@@ -265,8 +270,11 @@ static char * slot_field(int slot) {
         case TILE_SLOT_VENT:   return settings.tile_slot_vent;
         case TILE_SLOT_WATER:  return settings.tile_slot_water;
         default:
-            if (slot >= TILE_SLOT_P1_0 && slot < TILE_SLOT_COUNT)
+            if (slot >= TILE_SLOT_P1_0 && slot < TILE_SLOT_P1_END)
                 return settings.tile_slot_page1[slot - TILE_SLOT_P1_0];
+            if (slot >= TILE_SLOT_HOME_0 && slot < TILE_SLOT_HOME_0 + TILE_SLOT_HOME_N)
+                return settings.tile_slot_home[slot - TILE_SLOT_HOME_0];
+            if (slot == TILE_SLOT_DIM) return settings.tile_slot_dim;
             return NULL;
     }
 }

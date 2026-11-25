@@ -433,6 +433,10 @@ typedef struct {
     /* Homey flows tile (tile_flows.h): "auto" or one flow id per place,
      * comma-separated (8 places x 39 chars + commas). */
     char tile_flows[336];
+    /* Integratie tiles on the home page and the dim Integratie block
+     * (tile_slots.h TILE_SLOT_HOME_0.. / TILE_SLOT_DIM): integration ids. */
+    char tile_slot_home[4][48];
+    char tile_slot_dim[48];
 } settings_t;
 
 #define FORECAST_AUTO   0

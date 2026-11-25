@@ -243,7 +243,7 @@ void layout_cell_px(int col, int row, int w, int h,
  * shows integration slots and the rain tile (built on home_page1) only. Each
  * other type is one object on page 1, placed from layout_find(). */
 int layout_type_fits_page(int type, int page) {
-    if (page == 0) return type != LT_SLOT;
+    if (page == 0) return 1;            /* LT_SLOT too: home Integratie tiles (TILE_SLOT_HOME_*) */
     if (page == 1) return type == LT_SLOT || type == LT_RAINFALL;
     return 0;
 }
@@ -495,6 +495,7 @@ static const dim_block_t DIM_DEFAULTS[DB_COUNT] = {
     [DB_CLOCKSTUDIO] = { 0, 0, 3, 3, 0 },  /* Klok Studio (default hidden) */
     [DB_CLIMATE]  = { 0, 4, 3, 2, 0 },   /* Binnenklimaat (default hidden) */
     [DB_BOILER]   = { 0, 4, 3, 2, 0 },   /* Ketel: flow/return/pressure (default hidden) */
+    [DB_INTEG]    = { 0, 4, 3, 2, 0 },   /* Integratie: an app's value (default hidden) */
 };
 
 void dim_layout_reset_default(void) {
@@ -559,6 +560,7 @@ const char * dim_block_name(int id) {
         case DB_CLOCKSTUDIO: return "Klok Studio";
         case DB_CLIMATE:  return "Binnenklimaat";
         case DB_BOILER:   return "Ketel";
+        case DB_INTEG:    return "Integratie";
     }
     return "?";
 }

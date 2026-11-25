@@ -77,7 +77,7 @@ static lv_obj_t * name_ta;                   /* its text area */
 static const int PALETTE[] = {
     LT_CLOCK, LT_THERMOSTAT, LT_FORECAST, LT_RAINFALL, LT_NEWS_TICKER, LT_NEWS_SUMMARY, LT_CALENDAR,
     LT_ENERGY, LT_WATER, LT_VENT, LT_FAMILY, LT_WASTE, LT_LIGHTS, LT_SONOS, LT_SMARTPLUG,
-    LT_CLOCKSTUDIO, LT_HOMEY_FLOWS,
+    LT_CLOCKSTUDIO, LT_HOMEY_FLOWS, LT_SLOT,
 #ifndef TOON1
     LT_CLIMATE,     /* Toon 1 has no humidity / air-quality sensor */
 #endif
@@ -396,9 +396,12 @@ static void populate_types(void) {
     int cur_h = (replace_idx >= 0) ? edit.tiles[replace_idx].h : pick_h;
     const int * pal = edit_page == 1 ? PALETTE_P2 : PALETTE;
     int npal = edit_page == 1 ? N_PALETTE_P2 : N_PALETTE;
-    int slots_p2 = 0;
+    int slots_p2 = 0, slots_home = 0;
     for (int k = 0; k < edit.count; k++)
-        if (edit.tiles[k].type == LT_SLOT && edit.tiles[k].page == 1 && edit.tiles[k].visible) slots_p2++;
+        if (edit.tiles[k].type == LT_SLOT && edit.tiles[k].visible) {
+            if (edit.tiles[k].page == 1) slots_p2++;
+            else if (edit.tiles[k].page == 0 && k != replace_idx) slots_home++;
+        }
     for (int p = 0; p < npal; p++) {
         int type = pal[p];
         int visible_any = 0;       /* every type but the slot is ONE object on the home screen */
@@ -410,7 +413,8 @@ static void populate_types(void) {
             else if (edit.tiles[k].page == edit_page) hidden_on_page = 1;
         }
         if (visible_any && type != LT_SLOT) continue;
-        if (type == LT_SLOT && slots_p2 >= TILE_SLOT_P1_N) continue;   /* page 2 has 12 slots */
+        if (type == LT_SLOT && edit_page == 1 && slots_p2 >= TILE_SLOT_P1_N) continue;   /* page 2 has 12 slots */
+        if (type == LT_SLOT && edit_page == 0 && slots_home >= TILE_SLOT_HOME_N) continue; /* home: 4 */
 
         int mw, mh; layout_type_min(type, &mw, &mh);
         if (cur_w < mw || cur_h < mh) continue;   /* too small for this content */

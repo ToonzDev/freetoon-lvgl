@@ -385,6 +385,12 @@ void settings_load(void) {
         else if (strcmp(k, "rate_elec_kwh")   == 0) settings.rate_elec_kwh = strtof(v, NULL);
         else if (strcmp(k, "rate_gas_m3")     == 0) settings.rate_gas_m3   = strtof(v, NULL);
         else if (strcmp(k, "stats_show_euro") == 0) settings.stats_show_euro = iv;
+        else if (strncmp(k, "tile_slot_home_", 15) == 0) {
+            int n = atoi(k + 15);                  /* tile_slot_home_0 .. _3 */
+            if (n >= 0 && n < 4) snprintf(settings.tile_slot_home[n], 48, "%s", v);
+        }
+        else if (strcmp(k, "tile_slot_dim") == 0)
+            snprintf(settings.tile_slot_dim, sizeof settings.tile_slot_dim, "%s", v);
         else if (strncmp(k, "tile_slot_p1_", 13) == 0) {
             int n = atoi(k + 13);                  /* tile_slot_p1_0 .. _11 */
             if (n >= 0 && n < 12) snprintf(settings.tile_slot_page1[n], 48, "%s", v);
@@ -904,6 +910,8 @@ static void sanitize_all_strings(void) {
         settings.tile_light4, settings.tile_light5, settings.tile_light6,
         settings.tile_light7, settings.tile_light8, settings.master_host, settings.boiler_remote_host,
         settings.tile_flows,
+        settings.tile_slot_home[0], settings.tile_slot_home[1], settings.tile_slot_home[2],
+        settings.tile_slot_home[3], settings.tile_slot_dim,
         settings.master_web_user, settings.master_web_pass,
         settings.toonwater_host,
         settings.tile_rotate_members, settings.calendar_ha_entity,
@@ -1135,6 +1143,9 @@ static void settings_write_file(void) {
     fprintf(f, "dyn_gas_surcharge=%.4f\n",  settings.dyn_gas_surcharge);
     for (int i = 0; i < 12; i++)
         fprintf(f, "tile_slot_p1_%d=%s\n", i, settings.tile_slot_page1[i]);
+    for (int i = 0; i < 4; i++)
+        fprintf(f, "tile_slot_home_%d=%s\n", i, settings.tile_slot_home[i]);
+    fprintf(f, "tile_slot_dim=%s\n", settings.tile_slot_dim);
     fprintf(f, "tile_rotate_enabled=%d\n", settings.tile_rotate_enabled);
     fprintf(f, "tile_rotate_seconds=%d\n", settings.tile_rotate_seconds);
     fprintf(f, "tile_rotate_members=%s\n", settings.tile_rotate_members);
