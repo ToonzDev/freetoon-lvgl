@@ -12,4 +12,10 @@
 
 int healthcheck_start(void);
 
+/* 1 when the internet check (TCP to 1.1.1.1:53) has failed HC_FAILS_DOWN
+ * times in a row, i.e. a real outage rather than one lost probe. 0 while it
+ * works or before the first round. Used by inbox.c to decide whether the
+ * stock hcb_netcon "not connected" message is worth showing. */
+int healthcheck_internet_down(void);
+
 #endif

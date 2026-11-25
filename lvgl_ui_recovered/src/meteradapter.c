@@ -11,6 +11,7 @@
 #include "canonical_state.h"
 #include "http.h"
 #include "ma_admin.h"
+#include "i18n.h"
 #include <pthread.h>
 #include <unistd.h>
 #include <time.h>
@@ -70,7 +71,7 @@ void meteradapter_on_flow(float watts) {
 
             meter_state.nilm_direction = (delta > 0.0f) ? +1 : -1;
             snprintf(meter_state.nilm_device, sizeof meter_state.nilm_device,
-                     "%s %s", dev, delta > 0.0f ? "ON" : "OFF");
+                     "%s %s", dev, delta > 0.0f ? tr("AAN", "ON") : tr("UIT", "OFF"));
             meter_state.nilm_event_ts = now;
             last_nilm_ts = now;
         }

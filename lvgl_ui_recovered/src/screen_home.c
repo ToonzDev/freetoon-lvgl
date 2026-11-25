@@ -334,6 +334,8 @@ static lv_obj_t * lbl_humid_val;       /* removed widget — kept as NULL for ol
 static lv_obj_t * lbl_energy_w;
 static lv_obj_t * lbl_energy_gas;
 static lv_obj_t * lbl_energy_today;
+static int        g_energy_w_y;      /* the watts' y offset from the tile centre */
+static int        g_energy_w_h;      /* line height of the watts' font, px */
 static lv_obj_t * lbl_nilm_event = NULL;
 static lv_obj_t * lbl_boiler_state;
 static lv_obj_t * lbl_boiler_pressure;
@@ -1676,7 +1678,8 @@ static int render_tile_slot(int slot, lv_obj_t * lbl_main, lv_obj_t * lbl_sub) {
         } else if (slot == TILE_SLOT_ENERGY) {
             if (lbl_energy_today) ui_obj_clear_flag(lbl_energy_today, LV_OBJ_FLAG_HIDDEN);
             if (lbl_energy_gas) ui_obj_clear_flag(lbl_energy_gas, LV_OBJ_FLAG_HIDDEN);
-            if (lbl_energy_w) ui_obj_align(lbl_energy_w, LV_ALIGN_CENTER, 0, 6);
+            if (lbl_energy_w) ui_obj_align(lbl_energy_w, LV_ALIGN_CENTER, 0, g_energy_w_y);
+            if (lbl_energy_gas) ui_obj_align(lbl_energy_gas, LV_ALIGN_BOTTOM_LEFT, 0, -4);
         }
         return 0;
     }
@@ -2913,15 +2916,20 @@ static void refresh_cb(lv_timer_t * t) {
             double mk, q1, q3;
             if (ep_dynamic(EP_ELEC) && ep_market_at(EP_ELEC, (long)time(NULL), &mk)) {
                 double p = ep_allin(EP_ELEC, mk);
-                char pb[48];
+                char pb[64];
                 long cs; double ca;
                 if (tile_energy && lv_obj_get_width(tile_energy) >= SX(300) &&
                     ep_cheapest(2, &cs, &ca) && cs / 3600 != (long)time(NULL) / 3600) {
                     time_t ct = (time_t)cs; struct tm ctm; localtime_r(&ct, &ctm);
-                    snprintf(pb, sizeof pb, tr("€ %.2f | laag %02du", "€ %.2f | low %02dh"), p, ctm.tm_hour);
+                    snprintf(pb, sizeof pb, tr("€ %.2f per kWh | laagst %02du", "€ %.2f per kWh | lowest %02dh"), p, ctm.tm_hour);
                 } else {
-                    snprintf(pb, sizeof pb, "€ %.2f", p);
+                    snprintf(pb, sizeof pb, tr("€ %.2f per kWh", "€ %.2f per kWh"), p);
                 }
+                /* the watts up by half the price line, the price under them */
+                int ph = lv_font_get_line_height(SF(14));
+                int wy = g_energy_w_y - ph / 2 - 2;
+                if (lbl_energy_w) ui_obj_align(lbl_energy_w, LV_ALIGN_CENTER, 0, wy);
+                ui_obj_align(lbl_energy_today, LV_ALIGN_CENTER, 0, wy + g_energy_w_h / 2 + ph / 2 + 2);
                 if (settings.language != LANG_EN) { char * d = strchr(pb, '.'); if (d) *d = ','; }
                 uint32_t c = COL_TEXT_DIM;
                 if (ep_today_quartiles(&q1, &q3)) {
@@ -2932,6 +2940,7 @@ static void refresh_cb(lv_timer_t * t) {
                 ui_label_set_text(lbl_energy_today, pb);
             } else {
                 ui_label_set_text(lbl_energy_today, "");
+                if (lbl_energy_w) ui_obj_align(lbl_energy_w, LV_ALIGN_CENTER, 0, g_energy_w_y);
             }
         }
         /* Gas used today, under the watts. Was removed (CR10) when it showed
@@ -2940,10 +2949,7 @@ static void refresh_cb(lv_timer_t * t) {
             float g = energy_gas_today_m3();
             if (g >= 0) {
                 char gb[40];
-                if (ep_dynamic(EP_ELEC))   /* shorter: the price shares the bottom line */
-                    snprintf(gb, sizeof gb, tr("Gas %.2f m3", "Gas %.2f m3"), g);
-                else
-                    snprintf(gb, sizeof gb, tr("Gas vandaag %.2f m3", "Gas today %.2f m3"), g);
+                snprintf(gb, sizeof gb, tr("Gas vandaag %.2f m3", "Gas today %.2f m3"), g);
                 if (settings.language != LANG_EN) { char * d = strchr(gb, '.'); if (d) *d = ','; }
                 ui_label_set_text(lbl_energy_gas, gb);
                 ui_obj_clear_flag(lbl_energy_gas, LV_OBJ_FLAG_HIDDEN);
@@ -2954,7 +2960,7 @@ static void refresh_cb(lv_timer_t * t) {
     }
     /* NILM transient device label — visible for 10 s after a step-change event */
     if (lbl_nilm_event) {
-        if (meter_state.nilm_event_ts &&
+        if (settings.energy_nilm_label && meter_state.nilm_event_ts &&
             time(NULL) - (time_t)meter_state.nilm_event_ts < 10) {
             ui_label_set_text(lbl_nilm_event, meter_state.nilm_device);
             ui_obj_clear_flag(lbl_nilm_event, LV_OBJ_FLAG_HIDDEN);
@@ -4720,7 +4726,9 @@ lv_obj_t * screen_home_create(void) {
     ui_obj_set_style_text_color(lbl_energy_w, lv_color_hex(COL_TEXT_HI), 0);
     ui_obj_set_style_text_font(lbl_energy_w, font_ew, 0);
     ui_label_set_text(lbl_energy_w, "-- W");
-    ui_obj_align(lbl_energy_w, LV_ALIGN_CENTER, 0, (eh >= 170 ? 0 : 6));
+    g_energy_w_y = (eh >= 170 ? 0 : 6);
+    g_energy_w_h = lv_font_get_line_height(font_ew);
+    ui_obj_align(lbl_energy_w, LV_ALIGN_CENTER, 0, g_energy_w_y);
 
     lbl_energy_gas = lv_label_create(energy_t.tile);
     ui_obj_set_style_text_color(lbl_energy_gas, lv_color_hex(COL_TEXT_DIM), 0);
@@ -4733,16 +4741,21 @@ lv_obj_t * screen_home_create(void) {
     ui_obj_set_style_text_color(lbl_energy_today, lv_color_hex(COL_TEXT_DIM), 0);
     ui_obj_set_style_text_font(lbl_energy_today, SF(14), 0);
     ui_label_set_text(lbl_energy_today, "");
-    /* bottom right: the dynamic price (#44); top right sits under the
-     * floating status buttons when the tile is in the top-right corner */
-    ui_obj_align(lbl_energy_today, LV_ALIGN_BOTTOM_RIGHT, 0, -6);
+    /* the dynamic price (#44), "€ 0,23 per kWh", right under the watts
+     * (placed at refresh: the watts move up a little to make room). It used
+     * to sit bottom right as a bare "€ 0,23", next to "Gas 1,23 m3", and read
+     * like money spent today. Top right sits under the floating status
+     * buttons when the tile is in the top-right corner. */
+    ui_obj_align(lbl_energy_today, LV_ALIGN_CENTER, 0, g_energy_w_y + g_energy_w_h / 2 + 4);
 
     /* NILM transient event — device name shown briefly above the watt number. */
     lbl_nilm_event = lv_label_create(energy_t.tile);
     ui_obj_set_style_text_color(lbl_nilm_event, lv_color_hex(0xffffff), 0);
     ui_obj_set_style_text_font(lbl_nilm_event, SF(11), 0);
     ui_label_set_text(lbl_nilm_event, "");
-    ui_obj_align(lbl_nilm_event, LV_ALIGN_CENTER, 0, -22);
+    /* next to the title, clear of the watts + price (top right can sit under
+     * the floating status buttons) */
+    ui_obj_align(lbl_nilm_event, LV_ALIGN_TOP_MID, 24, 2);
     ui_obj_add_flag(lbl_nilm_event, LV_OBJ_FLAG_HIDDEN);
 
     /* Vent tile — spinning fan in centre, manual +/- on the sides, live

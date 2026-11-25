@@ -5,9 +5,14 @@
  */
 #include "inbox.h"
 #include "boxtalk.h"
+#include "healthcheck.h"
+#include "settings.h"
+#include <ctype.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
 
 inbox_msg_t     inbox_msgs[INBOX_MAX];
 volatile int    inbox_count = 0;
@@ -58,6 +63,80 @@ static int xml_text(const char * begin, const char * end,
     return 1;
 }
 
+/* ---- held messages ---------------------------------------------------------
+ * The stock network service hcb_netcon posts "<display> is niet verbonden met
+ * internet / de router, bekijk hier de oplossingen" as soon as a few of its
+ * own pings fail, and deletes it again when they work. Short hiccups thus put
+ * a message in the Inbox that is gone (or wrong) by the time you look. So
+ * those wait in g_all[] and only reach inbox_msgs[] once they have been there
+ * INBOX_NETCON_HOLD_S and FreeToon's own internet check fails as well. */
+static inbox_msg_t     g_all[INBOX_MAX];
+static long            g_all_seen[INBOX_MAX];   /* when we first saw that uuid */
+static int             g_all_n = 0;
+static int             g_all_valid = 0;
+static int             g_held_logged = -1;
+static pthread_mutex_t g_mtx = PTHREAD_MUTEX_INITIALIZER;
+
+/* Case-insensitive substring (ASCII). */
+static int has_ci(const char * hay, const char * needle) {
+    size_t nl = strlen(needle);
+    for (; *hay; hay++) {
+        size_t i = 0;
+        while (i < nl && hay[i] && tolower((unsigned char)hay[i]) == tolower((unsigned char)needle[i])) i++;
+        if (i == nl) return 1;
+    }
+    return 0;
+}
+
+/* hcb_netcon's "no connection to the internet / router" notice, in any of the
+ * languages the firmware ships (nl, en, de, fr, es). */
+static int is_netcon_msg(const inbox_msg_t * m) {
+    static const char * const pat[] = {
+        "niet verbonden met internet", "niet verbonden met de router",
+        "not connected to the internet", "not connected to the router",
+        "nicht mit dem internet verbunden", "nicht mit dem router verbunden",
+        "pas connect", "no est\xc3\xa1 conectado",
+    };
+    if (has_ci(m->type, "netcon") || has_ci(m->sub_type, "netcon")) return 1;
+    for (size_t i = 0; i < sizeof pat / sizeof pat[0]; i++)
+        if (has_ci(m->text, pat[i])) return 1;
+    return 0;
+}
+
+/* Build inbox_msgs[] from g_all[]. Caller holds g_mtx. */
+static void apply_locked(void) {
+    long now = (long)time(NULL);
+    int down = healthcheck_internet_down();
+    int n = 0, unread = 0, held = 0;
+    for (int i = 0; i < g_all_n && n < INBOX_MAX; i++) {
+        if (is_netcon_msg(&g_all[i]) &&
+            !(down && now - g_all_seen[i] >= INBOX_NETCON_HOLD_S)) {
+            held++;
+            continue;
+        }
+        inbox_msgs[n] = g_all[i];
+        inbox_msgs[n].read = is_in_read_list(inbox_msgs[n].uuid);
+        if (!inbox_msgs[n].read) unread++;
+        n++;
+    }
+    inbox_count = n;
+    inbox_unread = unread;
+    if (held != g_held_logged) {
+        if (held || g_held_logged > 0)
+            fprintf(stderr, "[inbox] %d network message(s) of the stock software held back "
+                    "(shown after %d min if FreeToon also sees no internet; internet %s)\n",
+                    held, INBOX_NETCON_HOLD_S / 60, down ? "down" : "ok");
+        g_held_logged = held;
+    }
+}
+
+void inbox_reapply(void) {
+    if (settings.client_mode) return;    /* the master's list comes via client_link */
+    pthread_mutex_lock(&g_mtx);
+    if (g_all_valid) apply_locked();
+    pthread_mutex_unlock(&g_mtx);
+}
+
 void inbox_parse_dataset(const char * xml) {
     /* Locate <notifications>...</notifications> block. */
     const char * ns = strstr(xml, "<notifications>");
@@ -66,17 +145,18 @@ void inbox_parse_dataset(const char * xml) {
     const char * ne = strstr(ns, "</notifications>");
     if (!ne) return;
 
-    inbox_count = 0;
-    int unread = 0;
+    static inbox_msg_t parsed[INBOX_MAX];
+    int count = 0;
     const char * p = ns;
-    while (p < ne && inbox_count < INBOX_MAX) {
+    while (p < ne && count < INBOX_MAX) {
         const char * start = strstr(p, "<notification>");
         if (!start || start >= ne) break;
         start += strlen("<notification>");
         const char * stop = strstr(start, "</notification>");
         if (!stop || stop > ne) break;
 
-        inbox_msg_t * m = &inbox_msgs[inbox_count];
+        inbox_msg_t * m = &parsed[count];
+        memset(m, 0, sizeof *m);
         xml_text(start, stop, "uuid",       m->uuid,     sizeof(m->uuid));
         xml_text(start, stop, "type",       m->type,     sizeof(m->type));
         xml_text(start, stop, "subType",    m->sub_type, sizeof(m->sub_type));
@@ -130,12 +210,24 @@ void inbox_parse_dataset(const char * xml) {
         char date_buf[24] = {0};
         if (xml_text(start, stop, "creationDate", date_buf, sizeof(date_buf)))
             m->creation_date = atol(date_buf);
-        m->read = is_in_read_list(m->uuid);
-        if (!m->read) unread++;
-        inbox_count++;
+        count++;
         p = stop + strlen("</notification>");
     }
-    inbox_unread = unread;
+
+    pthread_mutex_lock(&g_mtx);
+    long now = (long)time(NULL);
+    static long seen[INBOX_MAX];
+    for (int i = 0; i < count; i++) {
+        seen[i] = now;
+        for (int j = 0; j < g_all_n; j++)
+            if (parsed[i].uuid[0] && !strcmp(parsed[i].uuid, g_all[j].uuid)) { seen[i] = g_all_seen[j]; break; }
+    }
+    memcpy(g_all, parsed, sizeof(inbox_msg_t) * (size_t)count);
+    memcpy(g_all_seen, seen, sizeof(long) * (size_t)count);
+    g_all_n = count;
+    g_all_valid = 1;
+    apply_locked();
+    pthread_mutex_unlock(&g_mtx);
     fprintf(stderr, "[inbox] parsed %d messages, %d unread\n",
             inbox_count, inbox_unread);
 }
@@ -187,6 +279,16 @@ void inbox_delete(const char * uuid) {
 
     /* Local removal — happ_usermsg will send a follow-up UpdateDataSet
        but we drop immediately so the UI feels responsive. */
+    pthread_mutex_lock(&g_mtx);
+    for (int j = 0; j < g_all_n; j++) {
+        if (strcmp(g_all[j].uuid, uuid) == 0) {
+            memmove(&g_all[j], &g_all[j + 1], (size_t)(g_all_n - j - 1) * sizeof(inbox_msg_t));
+            memmove(&g_all_seen[j], &g_all_seen[j + 1], (size_t)(g_all_n - j - 1) * sizeof(long));
+            g_all_n--;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&g_mtx);
     memmove(&inbox_msgs[idx], &inbox_msgs[idx + 1],
             (inbox_count - idx - 1) * sizeof(inbox_msg_t));
     inbox_count--;

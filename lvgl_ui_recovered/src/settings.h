@@ -437,6 +437,9 @@ typedef struct {
      * (tile_slots.h TILE_SLOT_HOME_0.. / TILE_SLOT_DIM): integration ids. */
     char tile_slot_home[4][48];
     char tile_slot_dim[48];
+    /* Energie tile: show the NILM step label ("~120 W ON") for 10 s after a
+     * jump in power. Off by default: unlabelled it reads as a mystery value. */
+    int  energy_nilm_label;
 } settings_t;
 
 #define FORECAST_AUTO   0

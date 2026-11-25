@@ -137,6 +137,10 @@ static void on_dim_fc_min_change(lv_event_t * e) {
     settings.dim_fc_min = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
     settings_save();
 }
+static void on_energy_nilm_change(lv_event_t * e) {
+    settings.energy_nilm_label = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    settings_save();
+}
 static void on_forecast_mode_change(lv_event_t * e) {
     int daily = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
     settings.forecast_mode = daily ? FORECAST_DAILY : FORECAST_HOURLY;
@@ -1046,6 +1050,12 @@ static void open_display_modal(lv_event_t * e) {
     r = panel_row(p, y, tr("Ook nachttemperatuur in voorspelling op dimscherm",
                            "Also night temperature in dim screen forecast"), NULL);
     row_switch(r, settings.dim_fc_min, on_dim_fc_min_change);
+    y += 82;
+
+    /* Energie tile: the NILM step label ("~120 W AAN") after a power jump. */
+    r = panel_row(p, y, tr("Energie-tegel: sprong in verbruik tonen (~120 W AAN)",
+                           "Energy tile: show power jumps (~120 W ON)"), NULL);
+    row_switch(r, settings.energy_nilm_label, on_energy_nilm_change);
     y += 82;
 
     /* Klok Studio (#55): clock faces for the home tile and the dim screen */

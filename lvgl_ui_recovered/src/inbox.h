@@ -32,4 +32,11 @@ void inbox_delete(const char * uuid);   /* removes locally + sends DeleteNotific
 
 void inbox_persist(void);
 
+/* Re-evaluate held messages (the stock hcb_netcon "not connected to the
+ * internet / router" notices): shown only when they have been there for
+ * INBOX_NETCON_HOLD_S and FreeToon's own internet check also fails.
+ * Called by the healthcheck thread every round. */
+#define INBOX_NETCON_HOLD_S 600
+void inbox_reapply(void);
+
 #endif

@@ -35,6 +35,7 @@ static lv_chart_series_t * cs;
 static lv_obj_t * lbl_metric_name;
 static lv_obj_t * lbl_unit;
 static lv_obj_t * lbl_value;
+static lv_obj_t * lbl_legend = NULL;   /* left column under the rates: source / export */
 static lv_obj_t * tab_metric_btns[6];
 #define N_PERIOD 6
 static lv_obj_t * tab_period_btns[N_PERIOD];
@@ -187,6 +188,7 @@ static void on_scr_delete(lv_event_t * e) {
     s_tooltip_lbl = NULL;
     s_tooltip_last_id = -1;
     btn_plug_next = NULL;
+    lbl_legend = NULL;
     for (int i = 0; i < N_METRIC; i++) tab_metric_btns[i] = NULL;
     scr_root = NULL;
 }
@@ -374,6 +376,17 @@ static char   g_bar_label[64][8];
 static int    g_bar_count = 0;
 static int    g_y_scale = 1;
 
+/* Teruglevering (Elektriciteit tab): the P1 return-delivery counters
+ * (elec_quantity_nt/lt_produ, "Nu" = elec_produ_flow), one value per import
+ * bar, drawn below the zero line in EXPORT_COLOR. Not in the euro view. */
+#define EXPORT_COLOR 0x3ccf7a
+static stats_series_t series3, series4;
+static int    g_exp_loaded = 0;      /* series3 (+4) hold this view's export data */
+static double g_exp_val[64];
+static int    g_exp_have = 0;        /* some export in this view: chart goes below 0 */
+static lv_coord_t g_y_min_s = 0, g_y_max_s = 1;   /* chart range, scaled units */
+/* lbl_legend: declared at the top */
+
 /* Manual X-axis labels under the chart. Up to 12 evenly-spaced bar labels. */
 #define XLBL_COUNT 24
 static lv_obj_t * g_xlbl[XLBL_COUNT] = {0};
@@ -411,7 +424,7 @@ static void show_tooltip(int b, int bar_screen_x, int bar_screen_y) {
 
     const metric_t * m = &metrics[selected_metric];
     int show_euro = settings.stats_show_euro && metric_has_euro();
-    char buf[64];
+    char buf[112];
     double val = g_bar_val[b];
 
     if (show_euro) {
@@ -460,6 +473,14 @@ static void show_tooltip(int b, int bar_screen_x, int bar_screen_y) {
         lv_obj_set_style_text_color(s_tooltip_lbl, lv_color_hex(0xffffff), 0);
         lv_obj_set_style_text_font(s_tooltip_lbl, SF(15), 0);
         lv_obj_center(s_tooltip_lbl);
+    }
+
+    if (g_exp_have && !show_euro && g_exp_val[b] > 0) {
+        size_t l = strlen(buf);
+        if (selected_period == PERIOD_NOW)
+            snprintf(buf + l, sizeof buf - l, tr("\nterug %.0f W", "\nexport %.0f W"), g_exp_val[b]);
+        else
+            snprintf(buf + l, sizeof buf - l, tr("\nterug %.2f kWh", "\nexport %.2f kWh"), g_exp_val[b]);
     }
 
     lv_obj_set_style_border_color(s_tooltip_box, lv_color_hex(m->color), 0);
@@ -1007,9 +1028,46 @@ static void diff_in_place(stats_series_t * s, int n, double cap) {
     }
 }
 
+/* Screen y of a value (scaled units) in the chart, as lv_chart computes it
+ * for its bars (draw_series_bar). */
+static lv_coord_t chart_value_y(lv_coord_t v) {
+    lv_coord_t h = (lv_coord_t)(((int32_t)lv_obj_get_content_height(chart) * lv_chart_get_zoom_y(chart)) >> 8);
+    lv_coord_t y_ofs = lv_obj_get_style_pad_top(chart, LV_PART_MAIN) - lv_obj_get_scroll_top(chart)
+                     + lv_obj_get_style_border_width(chart, LV_PART_MAIN);
+    int32_t span = (int32_t)g_y_max_s - g_y_min_s;
+    if (span <= 0) span = 1;
+    int32_t yt = ((int32_t)v - g_y_min_s) * h / span;
+    return (lv_coord_t)(h - yt + chart->coords.y1 + y_ofs);
+}
+
 static void chart_draw_event_cb(lv_event_t * e) {
     lv_obj_draw_part_dsc_t * dsc = lv_event_get_draw_part_dsc(e);
     if (!dsc) return;
+    /* With teruglevering the range goes below 0: lv_chart draws bars up from
+     * the chart's bottom edge, so start them at the zero line instead, and
+     * draw the export of the same bar below it. */
+    if (dsc->part == LV_PART_ITEMS && dsc->type == LV_CHART_DRAW_PART_BAR && dsc->draw_area && g_y_min_s < 0) {
+        lv_coord_t zy = chart_value_y(0);
+        if (lv_event_get_code(e) == LV_EVENT_DRAW_PART_BEGIN) {
+            dsc->draw_area->y2 = zy;
+            if (dsc->draw_area->y1 > zy) dsc->draw_area->y1 = zy;
+        } else if (g_exp_have && dsc->id < (uint32_t)g_bar_count && g_exp_val[dsc->id] > 0) {
+            lv_coord_t ev = (lv_coord_t)(g_exp_val[dsc->id] * g_y_scale + 0.5);
+            lv_area_t a = *dsc->draw_area;
+            a.y1 = zy + 1;
+            a.y2 = chart_value_y((lv_coord_t)-ev);
+            if (a.y2 > a.y1) {
+                lv_draw_rect_dsc_t rd;
+                lv_draw_rect_dsc_init(&rd);
+                rd.bg_color = lv_color_hex(EXPORT_COLOR);
+                rd.bg_opa = LV_OPA_COVER;
+                rd.radius = 3;
+                lv_draw_rect(dsc->draw_ctx, &rd, &a);
+            }
+        }
+        return;
+    }
+    if (lv_event_get_code(e) != LV_EVENT_DRAW_PART_BEGIN) return;
     if (dsc->part == LV_PART_TICKS && dsc->type == LV_CHART_DRAW_PART_TICK_LABEL && dsc->id == LV_CHART_AXIS_PRIMARY_Y) {
         if (dsc->text) {
             int show_euro = settings.stats_show_euro && metric_has_euro();
@@ -1184,6 +1242,99 @@ static void apply_dynamic_prices(int n) {
     g_dyn_applied = 1;
 }
 
+/* Bars from per-sample values: years / months grouped by calendar,
+ * shorter periods spread over `want` bars. Usage (is_cum) is summed, levels
+ * are averaged. Returns the number of bars. */
+static int bucket_series(const stats_series_t * sr, int n, int is_cum, double * val, char (*olab)[8], int maxb) {
+    int cnt = 0;
+    if (selected_period == PERIOD_YEARS) {
+        /* Group consecutive monthly samples by calendar year -> exactly 1 bar per year */
+        char cur_yy[3] = "";
+        int bar_cnt[64] = {0};
+        for (int i = 0; i < n && cnt < maxb; i++) {
+            if (isnan(sr->samples[i])) continue;
+            const char * yy = sr->year2[i];
+            if (!yy[0]) continue;
+            if (strncmp(yy, cur_yy, 2) != 0) {
+                cur_yy[0] = yy[0]; cur_yy[1] = yy[1]; cur_yy[2] = 0;
+                val[cnt] = 0;
+                bar_cnt[cnt] = 0;
+                snprintf(olab[cnt], 8, "20%s", yy);
+                cnt++;
+            }
+            val[cnt - 1] += sr->samples[i];
+            bar_cnt[cnt - 1]++;
+        }
+        if (!is_cum) {
+            for (int k = 0; k < cnt; k++) {
+                if (bar_cnt[k] > 0) val[k] /= bar_cnt[k];
+            }
+        }
+    } else if (selected_period == PERIOD_MONTHS) {
+        /* Group consecutive daily samples by calendar month+year */
+        int cur_mm = -1; char cur_yy[3] = "";
+        int bar_cnt[64] = {0};
+        for (int i = 0; i < n && cnt < maxb; i++) {
+            if (isnan(sr->samples[i])) continue;
+            const char * lab = sr->labels[i];
+            int mm = (lab[3]-'0')*10 + (lab[4]-'0');
+            const char * yy = sr->year2[i];
+            if (mm != cur_mm || strncmp(yy, cur_yy, 2) != 0) {
+                cur_mm = mm;
+                cur_yy[0] = yy[0]; cur_yy[1] = yy[1]; cur_yy[2] = 0;
+                val[cnt] = 0;
+                bar_cnt[cnt] = 0;
+                if (mm >= 1 && mm <= 12)
+                    snprintf(olab[cnt], 8, "%s", i18n_month_short(mm - 1));
+                else
+                    snprintf(olab[cnt], 8, "?");
+                cnt++;
+            }
+            val[cnt-1] += sr->samples[i];
+            bar_cnt[cnt-1]++;
+        }
+        if (!is_cum) {
+            for (int k = 0; k < cnt; k++) {
+                if (bar_cnt[k] > 0) val[k] /= bar_cnt[k];
+            }
+        }
+    } else {
+        int want;
+        switch (selected_period) {
+            case PERIOD_NOW:   want = 12; break;
+            case PERIOD_HOURS: want = 24; break;
+            case PERIOD_DAYS:  want = 31; break;
+            case PERIOD_WEEKS: want = 12; break;
+            default:           want = 12; break;
+        }
+
+        static double comp[STATS_MAX_SAMPLES];
+        static int    compi[STATS_MAX_SAMPLES];
+        int cn = 0;
+        for (int i = 0; i < n; i++)
+            if (!isnan(sr->samples[i])) { comp[cn] = sr->samples[i]; compi[cn] = i; cn++; }
+        int bars = (want < cn) ? want : cn;
+        if (bars > maxb) bars = maxb;
+        for (int b = 0; b < bars; b++) {
+            int s = b * cn / bars, e = (b + 1) * cn / bars;
+            if (e <= s) e = s + 1;
+            if (e > cn) e = cn;
+            double acc = 0; int kn = 0;
+            for (int k = s; k < e; k++) { acc += comp[k]; kn++; }
+            val[b] = is_cum ? acc : (kn ? acc / kn : 0);
+            const char * lab = sr->labels[compi[s]];
+            if (selected_period == PERIOD_NOW || selected_period == PERIOD_HOURS)
+                snprintf(olab[b], 8, "%.5s", lab + 6); /* HH:MM */
+            else
+                snprintf(olab[b], 8, "%.5s", lab);     /* DD-MM */
+            cnt++;
+        }
+    }
+    return cnt;
+}
+
+static void update_legend(void);
+
 static void render_chart(void) {
     const metric_t * m = &metrics[selected_metric];
     int n = series.n > STATS_MAX_SAMPLES ? STATS_MAX_SAMPLES : series.n;
@@ -1239,93 +1390,57 @@ static void render_chart(void) {
                 }
             }
         }
-    } else if (selected_period == PERIOD_YEARS) {
-        /* Group consecutive monthly samples by calendar year -> exactly 1 bar per year */
-        char cur_yy[3] = "";
-        int bar_cnt[64] = {0};
-        for (int i = 0; i < n && g_bar_count < 64; i++) {
-            if (isnan(series.samples[i])) continue;
-            const char * yy = series.year2[i];
-            if (!yy[0]) continue;
-            if (strncmp(yy, cur_yy, 2) != 0) {
-                cur_yy[0] = yy[0]; cur_yy[1] = yy[1]; cur_yy[2] = 0;
-                g_bar_val[g_bar_count] = 0;
-                bar_cnt[g_bar_count] = 0;
-                snprintf(g_bar_label[g_bar_count], sizeof g_bar_label[0], "20%s", yy);
-                g_bar_count++;
-            }
-            g_bar_val[g_bar_count - 1] += series.samples[i];
-            bar_cnt[g_bar_count - 1]++;
-        }
-        if (!is_cum) {
-            for (int k = 0; k < g_bar_count; k++) {
-                if (bar_cnt[k] > 0) g_bar_val[k] /= bar_cnt[k];
-            }
-        }
-    } else if (selected_period == PERIOD_MONTHS) {
-        /* Group consecutive daily samples by calendar month+year */
-        int cur_mm = -1; char cur_yy[3] = "";
-        int bar_cnt[64] = {0};
-        for (int i = 0; i < n && g_bar_count < 64; i++) {
-            if (isnan(series.samples[i])) continue;
-            const char * lab = series.labels[i];
-            int mm = (lab[3]-'0')*10 + (lab[4]-'0');
-            const char * yy = series.year2[i];
-            if (mm != cur_mm || strncmp(yy, cur_yy, 2) != 0) {
-                cur_mm = mm;
-                cur_yy[0] = yy[0]; cur_yy[1] = yy[1]; cur_yy[2] = 0;
-                g_bar_val[g_bar_count] = 0;
-                bar_cnt[g_bar_count] = 0;
-                if (mm >= 1 && mm <= 12)
-                    snprintf(g_bar_label[g_bar_count], sizeof g_bar_label[0], "%s", i18n_month_short(mm - 1));
-                else
-                    snprintf(g_bar_label[g_bar_count], sizeof g_bar_label[0], "?");
-                g_bar_count++;
-            }
-            g_bar_val[g_bar_count-1] += series.samples[i];
-            bar_cnt[g_bar_count-1]++;
-        }
-        if (!is_cum) {
-            for (int k = 0; k < g_bar_count; k++) {
-                if (bar_cnt[k] > 0) g_bar_val[k] /= bar_cnt[k];
-            }
-        }
     } else {
-        int want;
-        switch (selected_period) {
-            case PERIOD_NOW:   want = 12; break;
-            case PERIOD_HOURS: want = 24; break;
-            case PERIOD_DAYS:  want = 31; break;
-            case PERIOD_WEEKS: want = 12; break;
-            default:           want = 12; break;
-        }
-
-        static double comp[STATS_MAX_SAMPLES];
-        static int    compi[STATS_MAX_SAMPLES];
-        int cn = 0;
-        for (int i = 0; i < n; i++)
-            if (!isnan(series.samples[i])) { comp[cn] = series.samples[i]; compi[cn] = i; cn++; }
-        int bars = (want < cn) ? want : cn;
-        if (bars > 64) bars = 64;
-        for (int b = 0; b < bars; b++) {
-            int s = b * cn / bars, e = (b + 1) * cn / bars;
-            if (e <= s) e = s + 1;
-            if (e > cn) e = cn;
-            double acc = 0; int cnt = 0;
-            for (int k = s; k < e; k++) { acc += comp[k]; cnt++; }
-            g_bar_val[b] = is_cum ? acc : (cnt ? acc / cnt : 0);
-            const char * lab = series.labels[compi[s]];
-            if (selected_period == PERIOD_NOW || selected_period == PERIOD_HOURS)
-                snprintf(g_bar_label[b], sizeof g_bar_label[0], "%.5s", lab + 6); /* HH:MM */
-            else
-                snprintf(g_bar_label[b], sizeof g_bar_label[0], "%.5s", lab);     /* DD-MM */
-            g_bar_count++;
-        }
+        g_bar_count = bucket_series(&series, n, is_cum, g_bar_val, g_bar_label, 64);
     }
 
     /* Cumulative bars are summed deltas in Wh/L — convert to kWh/m3 */
     if (is_cum)
         for (int i = 0; i < g_bar_count; i++) g_bar_val[i] /= 1000.0;
+
+    /* Teruglevering: the same steps on the export series, matched to the
+     * import bars by label. */
+    g_exp_have = 0;
+    if (g_exp_loaded && selected_metric == 0 && !is_plug() && !settings.stats_show_euro) {
+        int n3 = series3.n > STATS_MAX_SAMPLES ? STATS_MAX_SAMPLES : series3.n;
+        if (is_cum) {
+            double cap;
+            switch (selected_period) {
+                case PERIOD_HOURS:  cap = 30000.0; break;
+                case PERIOD_DAYS:   cap = 200000.0; break;
+                case PERIOD_WEEKS:  cap = 1000000.0; break;
+                case PERIOD_MONTHS: cap = 4000000.0; break;
+                case PERIOD_YEARS:  cap = 50000000.0; break;
+                default:            cap = 200000.0; break;
+            }
+            diff_in_place(&series3, n3, cap);
+            if (series4.n >= n3) {
+                diff_in_place(&series4, n3, cap);
+                for (int i = 0; i < n3; i++) {
+                    if (isnan(series3.samples[i]) && !isnan(series4.samples[i]))
+                        series3.samples[i] = series4.samples[i];
+                    else if (!isnan(series3.samples[i]) && !isnan(series4.samples[i]))
+                        series3.samples[i] += series4.samples[i];
+                }
+            }
+        }
+        static double ev[64];
+        static char   el[64][8];
+        int ec = bucket_series(&series3, n3, is_cum, ev, el, 64);
+        /* both lists run oldest first; labels can repeat (a 12-month
+         * view starts and ends in the same month), so match in order */
+        int k0 = 0;
+        for (int b = 0; b < g_bar_count; b++) {
+            g_exp_val[b] = 0;
+            for (int k = k0; k < ec; k++)
+                if (!strcmp(el[k], g_bar_label[b])) {
+                    double v = is_cum ? ev[k] / 1000.0 : ev[k];
+                    if (v > 0) { g_exp_val[b] = v; g_exp_have = 1; }
+                    k0 = k + 1;
+                    break;
+                }
+        }
+    }
 
     /* Gas flow in PERIOD_NOW: convert L/h to m3/h when from gas_flow */
     if (selected_period == PERIOD_NOW && selected_metric == 2 && !g_gas_now_hourly_fallback)
@@ -1370,8 +1485,23 @@ static void render_chart(void) {
     /* Y range from 0 baseline up to clean quantized nice-step top */
     double hi = 0;
     for (int i = 0; i < g_bar_count; i++) if (g_bar_val[i] > hi) hi = g_bar_val[i];
-    double top;
-    if (strcmp(m->label, "CV bar") == 0) {
+    double top, bottom = 0;
+    double lo = 0;
+    if (g_exp_have)
+        for (int i = 0; i < g_bar_count; i++) if (g_exp_val[i] > lo) lo = g_exp_val[i];
+    if (lo > 0) {
+        /* 4 intervals in all (the Y axis has 5 ticks): b of them below zero,
+         * the split that gives the smallest step */
+        double best = 0; int bb = 1;
+        for (int b = 1; b <= 3; b++) {
+            double need = hi * 4.0 / (4 - b);
+            if (lo * 4.0 / b > need) need = lo * 4.0 / b;
+            double st = calculate_nice_top(need) / 4.0;
+            if (b == 1 || st < best) { best = st; bb = b; }
+        }
+        top = best * (4 - bb);
+        bottom = best * bb;
+    } else if (strcmp(m->label, "CV bar") == 0) {
         if (hi <= 1.7) top = 2.0;       /* Standard 2.0 bar scale (ticks: 0, 0.5, 1, 1.5, 2) */
         else if (hi <= 2.2) top = 2.5;
         else if (hi <= 2.6) top = 3.0;
@@ -1380,10 +1510,10 @@ static void render_chart(void) {
         top = calculate_nice_top(hi);
     }
 
-    double step = top / 4.0;
+    double step = (top + bottom) / 4.0;
     /* Determine scale factor so that each of the 4 tick values is an exact integer in chart coords.
      * When top <= 200.0, use scale 100 so bars retain 2 decimal places and don't round to integer coordinates! */
-    if (top <= 200.0) {
+    if (top + bottom <= 200.0) {
         g_y_scale = 100;
     } else if (fabs(step - floor(step + 0.0001)) < 0.001) {
         g_y_scale = 1;
@@ -1397,7 +1527,10 @@ static void render_chart(void) {
     lv_chart_set_point_count(chart, pc);
     lv_coord_t top_scaled = (lv_coord_t)(top * g_y_scale + 0.5);
     if (top_scaled < 1) top_scaled = 1;
-    lv_chart_set_range(chart, LV_CHART_AXIS_PRIMARY_Y, 0, top_scaled);
+    lv_coord_t bottom_scaled = (lv_coord_t)(bottom * g_y_scale + 0.5);
+    g_y_min_s = (lv_coord_t)-bottom_scaled;
+    g_y_max_s = top_scaled;
+    lv_chart_set_range(chart, LV_CHART_AXIS_PRIMARY_Y, g_y_min_s, top_scaled);
     for (int i = 0; i < pc; i++) {
         if (i < g_bar_count) {
             cs->y_points[i] = (lv_coord_t)(g_bar_val[i] * g_y_scale + 0.5);
@@ -1569,6 +1702,65 @@ static void price_timer_cb(lv_timer_t * t) {
     else update_rate_labels();
 }
 
+/* Teruglevering for the Elektriciteit tab: the same window and archives as
+ * load_for_period used for the import counters. */
+static void load_export(void) {
+    g_exp_loaded = 0;
+    series3.n = series4.n = 0;
+    if (selected_metric != 0 || is_plug() || settings.stats_show_euro) return;
+    long from = g_current_start_t, to = g_current_end_t;
+    int rc = -1;
+    switch (selected_period) {
+        case PERIOD_NOW:
+            rc = stats_fetch_range("elec_produ_flow", "5min", from, to, 12, &series3);
+            break;
+        case PERIOD_HOURS:
+            rc = stats_fetch_range("elec_quantity_nt_produ", "5yrhours", from - 3600, to, 26, &series3);
+            if (stats_fetch_range("elec_quantity_lt_produ", "5yrhours", from - 3600, to, 26, &series4) != 0) series4.n = 0;
+            break;
+        case PERIOD_DAYS:
+        case PERIOD_WEEKS:
+        case PERIOD_MONTHS: {
+            int n = selected_period == PERIOD_DAYS ? 34 : selected_period == PERIOD_WEEKS ? 88 : 370;
+            rc = stats_fetch_range("elec_quantity_nt_produ", "10yrdays", from - 86400, to, n, &series3);
+            if (stats_fetch_range("elec_quantity_lt_produ", "10yrdays", from - 86400, to, n, &series4) != 0) series4.n = 0;
+            break;
+        }
+        case PERIOD_YEARS:
+            rc = stats_fetch_range("elec_quantity_nt_produ", "10yrdays", 0, 0, 120, &series3);
+            if (stats_fetch_range("elec_quantity_lt_produ", "10yrdays", 0, 0, 120, &series4) != 0) series4.n = 0;
+            break;
+    }
+    g_exp_loaded = (rc == 0 && series3.n > 0);
+}
+
+/* Left column under the rates: where the Zon numbers come from, or the
+ * teruglevering in this view (Elektriciteit). */
+static void update_legend(void) {
+    if (!lbl_legend) return;
+    char b[128] = "";
+    uint32_t col = THEME_TEXT_DIM;
+    if (selected_metric == 1) {
+        snprintf(b, sizeof b, "%s", g_solar_produ
+            ? tr("Bron: teruglevering P1 (geen zonnemeter of omvormer)", "Source: P1 export (no solar meter or inverter)")
+            : tr("Bron: opwek (zonnemeter of omvormer)", "Source: production (solar meter or inverter)"));
+    } else if (selected_metric == 0 && g_exp_have) {
+        double t = 0;
+        for (int i = 0; i < g_bar_count; i++) t += g_exp_val[i];
+        if (selected_period == PERIOD_NOW) {
+            double last = 0;
+            for (int i = g_bar_count - 1; i >= 0; i--) if (g_exp_val[i] > 0) { last = g_exp_val[i]; break; }
+            snprintf(b, sizeof b, tr("Teruglevering nu: %.0f W", "Export now: %.0f W"), last);
+        } else {
+            snprintf(b, sizeof b, tr("Teruglevering: %.1f kWh", "Export: %.1f kWh"), t);
+        }
+        if (settings.language != LANG_EN) { char * d = strchr(b, '.'); if (d) *d = ','; }
+        col = EXPORT_COLOR;
+    }
+    lv_obj_set_style_text_color(lbl_legend, lv_color_hex(col), 0);
+    lv_label_set_text(lbl_legend, b);
+}
+
 static void reload_and_render(void) {
     hide_tooltip();
     lv_chart_set_series_color(chart, cs, lv_color_hex(metrics[selected_metric].color));
@@ -1592,7 +1784,9 @@ static void reload_and_render(void) {
         if (btn_plug_next) lv_obj_add_flag(btn_plug_next, LV_OBJ_FLAG_HIDDEN);
     }
     load_for_period();
+    load_export();
     render_chart();
+    update_legend();
 
     if (btn_mode_uom && btn_mode_euro) {
         if (settings.stats_show_euro) {
@@ -2098,6 +2292,15 @@ lv_obj_t * screen_stats_create(void) {
     cs = lv_chart_add_series(chart, lv_color_hex(metrics[0].color),
                              LV_CHART_AXIS_PRIMARY_Y);
     lv_obj_add_event_cb(chart, chart_draw_event_cb, LV_EVENT_DRAW_PART_BEGIN, NULL);
+    lv_obj_add_event_cb(chart, chart_draw_event_cb, LV_EVENT_DRAW_PART_END, NULL);
+
+    lbl_legend = lv_label_create(scr_root);
+    lv_obj_set_style_text_font(lbl_legend, SF(14), 0);
+    lv_obj_set_style_text_color(lbl_legend, lv_color_hex(THEME_TEXT_DIM), 0);
+    lv_label_set_long_mode(lbl_legend, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(lbl_legend, SX(215));
+    lv_obj_set_pos(lbl_legend, SX(30), SY(516));
+    lv_label_set_text(lbl_legend, "");
     lv_obj_add_flag(chart, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(chart, on_chart_click, LV_EVENT_CLICKED, NULL);
 

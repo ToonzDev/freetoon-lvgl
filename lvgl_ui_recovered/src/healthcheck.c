@@ -17,6 +17,7 @@
 #include "notify.h"
 #include "http.h"
 #include "settings.h"
+#include "inbox.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,6 +31,10 @@
 #include <sys/stat.h>
 
 #define HC_POLL_S 60
+/* A service counts as down only after this many failed probes in a row
+ * (~3 minutes): one lost request or a short Wi-Fi hiccup is not an outage
+ * and should not put a message in the Inbox. */
+#define HC_FAILS_DOWN 3
 
 typedef int (*probe_fn)(void);
 
@@ -40,6 +45,8 @@ typedef struct {
     /* Runtime state, mutated by the worker thread only. */
     int          seen_up;   /* don't notify until first healthy poll      */
     int          last_ok;   /* most recent probe result                   */
+    int          fails;     /* failed probes in a row                     */
+    int          notified;  /* a "down" message is in the Inbox           */
 } check_t;
 
 /* ---- low-level TCP open / HTTP-OK helpers ---- */
@@ -137,15 +144,15 @@ static int probe_opnsense(void) {
 static int probe_internet(void)   { return tcp_open("1.1.1.1", 53); }
 
 static check_t g_checks[] = {
-    { "ha_offline",         "Home Assistant niet bereikbaar",         probe_ha,          0, 1 },
-    { "otgw_offline",       "OpenTherm Gateway niet bereikbaar",      probe_otgw,        0, 1 },
-    { "buienradar_offline", "Buienradar (weer) niet bereikbaar",      probe_buienradar,  0, 1 },
-    { "mqtt_offline",       "MQTT broker niet bereikbaar",            probe_mqtt,        0, 1 },
-    { "p1_elec_offline",    "P1 elektriciteitsmeter niet bereikbaar", probe_p1_elec,     0, 1 },
-    { "p1_water_offline",   "P1 watermeter niet bereikbaar",          probe_p1_water,    0, 1 },
-    { "itho_offline",       "Itho ventilatie niet bereikbaar",        probe_itho,        0, 1 },
-    { "opnsense_offline",   "Router (OPNsense) niet bereikbaar",      probe_opnsense,    0, 1 },
-    { "internet_offline",   "Geen internet (DNS niet bereikbaar)",    probe_internet,    0, 1 },
+    { "ha_offline",         "Home Assistant niet bereikbaar",         probe_ha, 0, 1, 0, 0 },
+    { "otgw_offline",       "OpenTherm Gateway niet bereikbaar",      probe_otgw, 0, 1, 0, 0 },
+    { "buienradar_offline", "Buienradar (weer) niet bereikbaar",      probe_buienradar, 0, 1, 0, 0 },
+    { "mqtt_offline",       "MQTT broker niet bereikbaar",            probe_mqtt, 0, 1, 0, 0 },
+    { "p1_elec_offline",    "P1 elektriciteitsmeter niet bereikbaar", probe_p1_elec, 0, 1, 0, 0 },
+    { "p1_water_offline",   "P1 watermeter niet bereikbaar",          probe_p1_water, 0, 1, 0, 0 },
+    { "itho_offline",       "Itho ventilatie niet bereikbaar",        probe_itho, 0, 1, 0, 0 },
+    { "opnsense_offline",   "Router (OPNsense) niet bereikbaar",      probe_opnsense, 0, 1, 0, 0 },
+    { "internet_offline",   "Geen internet (DNS niet bereikbaar)",    probe_internet, 0, 1, 0, 0 },
 };
 #define N_CHECKS (sizeof(g_checks) / sizeof(g_checks[0]))
 
@@ -191,20 +198,36 @@ static void * hc_thread(void * arg) {
             int ok = (c->probe() == 0);
             if (ok) {
                 if (!c->seen_up) c->seen_up = 1;        /* first ever pass */
-                if (!c->last_ok) notify_clear("system", c->subType);
+                if (c->notified) notify_clear("system", c->subType);
+                c->notified = 0;
+                c->fails = 0;
                 c->last_ok = 1;
             } else {
                 /* Only signal a failure once we've seen the service work
                  * at least once — avoids "X offline" toasts at every boot
-                 * if a host is permanently absent in this install. */
-                if (c->seen_up && c->last_ok)
+                 * if a host is permanently absent in this install — and
+                 * only after HC_FAILS_DOWN failures in a row. */
+                if (c->fails < 1000) c->fails++;
+                if (c->seen_up && !c->notified && c->fails >= HC_FAILS_DOWN) {
                     notify_show("system", c->subType, c->down_text);
+                    c->notified = 1;
+                }
                 c->last_ok = 0;
             }
         }
+        /* Network messages of the stock software wait in the Inbox until
+         * the outage has lasted a while and the check above agrees. */
+        inbox_reapply();
         sleep(HC_POLL_S);
     }
     return NULL;
+}
+
+int healthcheck_internet_down(void) {
+    for (size_t i = 0; i < N_CHECKS; i++)
+        if (g_checks[i].probe == probe_internet)
+            return g_checks[i].fails >= HC_FAILS_DOWN;
+    return 0;
 }
 
 int healthcheck_start(void) {
