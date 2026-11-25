@@ -89,6 +89,9 @@ const char * homewizard_socket_name(int i);
  * yet. Safe to call repeatedly (Settings calls it after a change, so a newly
  * enabled meter works without a UI restart). */
 void homewizard_ensure_started(void);
+/* The water meter is on: the HomeWizard water switch, or a ToonWater
+ * (oepi-loepi) sensor address filled in (that row has no switch of its own). */
+int  water_enabled(void);
 
 /* Thread safety primitives */
 void homewizard_lock(void);

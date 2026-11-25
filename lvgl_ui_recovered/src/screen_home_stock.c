@@ -559,7 +559,7 @@ static void refresh_slot(slot_t * s) {
             break;
         }
         if (!strcmp(k, "local:water")) {
-            if ((settings.enable_p1_water || settings.client_mode) && hw_state.connected_water) {
+            if ((water_enabled() || settings.client_mode) && hw_state.connected_water) {
                 snprintf(b, sizeof b, "%.1f L/min", hw_state.water_lpm);
                 comma(b);
                 lv_label_set_text(s->val, b);

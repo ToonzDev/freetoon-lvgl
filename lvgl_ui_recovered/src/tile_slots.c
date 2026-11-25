@@ -241,7 +241,7 @@ const char * tile_slots_local_label(int i) {
 int tile_slots_local_enabled(int i) {
     switch (i) {
         case 0: return 1;                                 /* energy — core (meteradapter/P1) */
-        case 1: return settings.enable_p1_water || (settings.client_mode && hw_state.connected_water);
+        case 1: return water_enabled() || (settings.client_mode && hw_state.connected_water);
         case 2: return settings.enable_vent     || (settings.client_mode && vent_state.connected);
         case 3: return (settings.enable_ha || (settings.client_mode && ha_state.connected)) &&
                        (settings.life360_a_entity[0] || settings.life360_b_entity[0] || settings.life360_c_entity[0] || ha_state.loc_a[0]);

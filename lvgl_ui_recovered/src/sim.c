@@ -1125,7 +1125,7 @@ int main(int argc, char ** argv) {
         extern int homewizard_start(void);
         if (argc > 2 && argv[2][0]) {
             snprintf(settings.toonwater_host, sizeof settings.toonwater_host, "%s", argv[2]);
-            settings.enable_p1_water = 1;
+            /* no enable_p1_water: a ToonWater address alone switches the meter on */
         }
         memset((void *)&hw_state, 0, sizeof hw_state);
         homewizard_start();

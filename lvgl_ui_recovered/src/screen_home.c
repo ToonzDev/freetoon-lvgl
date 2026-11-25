@@ -1004,7 +1004,7 @@ static void on_rain_toggle_24h(lv_event_t * e) {
 static void apply_offline_tile_visibility(void) {
     int hide = settings.hide_offline_tiles;
     int energy_live = energy_connected();
-    int water_live  = (settings.enable_p1_water || settings.client_mode) && hw_state.connected_water;
+    int water_live  = (water_enabled() || settings.client_mode) && hw_state.connected_water;
     int vent_live   = (settings.enable_vent     || settings.client_mode) && vent_state.connected && (vent_state.itho_online != 0);
     int family_live = settings.enable_ha || (settings.client_mode && (ha_state.connected || ha_state.loc_a[0]));
     struct { lv_obj_t * tile; int live; int ltype; } v[] = {
@@ -1810,7 +1810,7 @@ static void render_local_into(const char * id, lv_obj_t * title,
         if (main)  ui_label_set_text_fmt(main, "%.0f W", energy_power_w());
     } else if (!strcmp(id, "local:water")) {
         if (title) ui_label_set_text(title, tr("Water", "Water"));
-        if ((settings.enable_p1_water || settings.client_mode) && hw_state.connected_water) {
+        if ((water_enabled() || settings.client_mode) && hw_state.connected_water) {
             if (main) ui_label_set_text_fmt(main, "%.1f L/min", hw_state.water_lpm);
             if (sub)  ui_label_set_text_fmt(sub, "%.2f m3", hw_state.water_total_m3);
         } else {
@@ -3180,7 +3180,7 @@ static void refresh_cb(lv_timer_t * t) {
 
     /* Water tile: only show values when water meter is connected (CR10) */
     if (!slot_active[TILE_SLOT_WATER]) {
-        if ((!settings.enable_p1_water && !settings.client_mode) || !hw_state.connected_water) {
+        if ((!water_enabled() && !settings.client_mode) || !hw_state.connected_water) {
             if (lbl_inbox_main) ui_label_set_text(lbl_inbox_main, "--");
             if (lbl_inbox_sub)  ui_label_set_text(lbl_inbox_sub, "");
         } else {
@@ -3431,7 +3431,7 @@ static void refresh_cb(lv_timer_t * t) {
 
     /* Water tile: only show values when water meter is connected (CR10) */
     if (!slot_active[TILE_SLOT_WATER]) {
-        if ((!settings.enable_p1_water && !settings.client_mode) || !hw_state.connected_water) {
+        if ((!water_enabled() && !settings.client_mode) || !hw_state.connected_water) {
             if (lbl_inbox_main) ui_label_set_text(lbl_inbox_main, "--");
             if (lbl_inbox_sub)  ui_label_set_text(lbl_inbox_sub, "");
         } else {
@@ -3517,7 +3517,7 @@ static void refresh_cb(lv_timer_t * t) {
 
     /* Water tile: only show values when water meter is connected (CR10) */
     if (!slot_active[TILE_SLOT_WATER]) {
-        if ((!settings.enable_p1_water && !settings.client_mode) || !hw_state.connected_water) {
+        if ((!water_enabled() && !settings.client_mode) || !hw_state.connected_water) {
             if (lbl_inbox_main) ui_label_set_text(lbl_inbox_main, "--");
             if (lbl_inbox_sub)  ui_label_set_text(lbl_inbox_sub, "");
         } else {

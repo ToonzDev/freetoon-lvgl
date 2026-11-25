@@ -435,18 +435,42 @@ static double parse_num_q(const char * json, const char * key, double dflt) {
 /* oepi-loepi's ToonWater sensor: GET http://<host>/water.html →
  *   {"waterflow":"0","waterquantity":"1294748","today":"48",...,"leakdetect":"0"}
  * waterflow in L/min, waterquantity = meter reading in litres. */
+int water_enabled(void) {
+    return settings.enable_p1_water || settings.toonwater_host[0];
+}
+
+/* Log a ToonWater problem once per kind (not every poll). */
+static void toonwater_log(int kind, const char * url, const char * why) {
+    static int last = 0;                        /* 0 = reading: a first success is not news */
+    if (kind == last) return;
+    last = kind;
+    if (kind) fprintf(stderr, "[hw] ToonWater %s: %s\n", url, why);
+    else      fprintf(stderr, "[hw] ToonWater %s: reading again\n", url);
+}
+
 static void poll_toonwater(void) {
-    if (!settings.enable_p1_water) { water_disconnected(); return; }
     hw_state.polled_water = 1;
     char url[96];
     snprintf(url, sizeof url, "http://%s/water.html", settings.toonwater_host);
     static char body[1024];
-    if (http_fetch_to(url, body, sizeof body, 4) != 0 || !strstr(body, "\"waterquantity\"")) {
+    if (http_fetch_to(url, body, sizeof body, 4) != 0) {
+        toonwater_log(1, url, "no answer (address? sensor on the network?)");
+        water_disconnected();
+        return;
+    }
+    if (!strstr(body, "\"waterquantity\"")) {
+        char head[60];
+        snprintf(head, sizeof head, "%s", body);
+        for (char * c = head; *c; c++) if (*c == '\n' || *c == '\r') *c = ' ';
+        char why[120];
+        snprintf(why, sizeof why, "answer without \"waterquantity\": %s", head);
+        toonwater_log(2, url, why);
         water_disconnected();
         return;
     }
     double litres = parse_num_q(body, "waterquantity", -1);
-    if (litres < 0) { water_disconnected(); return; }
+    if (litres < 0) { toonwater_log(3, url, "waterquantity is not a number"); water_disconnected(); return; }
+    toonwater_log(0, url, "");
     water_update((float)(litres / 1000.0), (float)parse_num_q(body, "waterflow", 0),
                  TOONWATER_POLL_INTERVAL_S);
 }
@@ -705,7 +729,7 @@ static void toonwater_adopt_config(void) {
 }
 
 static int hw_anything_configured(void) {
-    return settings.enable_p1_elec || settings.enable_p1_water ||
+    return settings.enable_p1_elec || water_enabled() ||
            settings.hw_kwh_host[0] || settings.hw_kwh2_host[0] || homewizard_socket_count() > 0;
 }
 

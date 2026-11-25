@@ -50,6 +50,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <ctype.h>
 #include <unistd.h>
 #include <pthread.h>
@@ -4234,9 +4235,14 @@ static void on_int_toonwater_host(lv_event_t * e) {
     const char * v = lv_textarea_get_text(lv_event_get_target(e));
     if (!v) return;
     char h[sizeof settings.toonwater_host]; size_t o = 0;
-    for (; *v && o + 1 < sizeof h; v++)
+    while (*v == ' ') v++;
+    if (!strncasecmp(v, "http://", 7)) v += 7;          /* "http://192.168.1.50/water.html" */
+    else if (!strncasecmp(v, "https://", 8)) v += 8;
+    for (; *v && *v != '/' && o + 1 < sizeof h; v++)
         if (isalnum((unsigned char)*v) || *v == '.' || *v == '-' || *v == ':') h[o++] = *v;
     h[o] = 0;
+    if (c == LV_EVENT_DEFOCUSED && strcmp(h, lv_textarea_get_text(lv_event_get_target(e))) != 0)
+        lv_textarea_set_text(lv_event_get_target(e), h);  /* show what is kept */
     if (strcmp(h, settings.toonwater_host) == 0) return;
     snprintf(settings.toonwater_host, sizeof settings.toonwater_host, "%s", h);
     if (h[0]) settings.enable_p1_water = 1;
