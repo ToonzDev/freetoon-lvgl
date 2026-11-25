@@ -435,10 +435,10 @@ static void mock_state(void) {
     }
     toon_state.connected     = 1;
     toon_state.msg_count     = 1;
-    toon_state.boiler_type   = 1;   /* OpenTherm */
+    toon_state.boiler_type   = getenv("SIM_OT") ? 0 : 1;   /* 1 = on/off; SIM_OT=1: OpenTherm (0) */
     toon_state.water_pressure= 1.8f;/* 1.8 bar */
     toon_state.indoor_temp   = 20.0f;
-    toon_state.setpoint      = 19.5f;
+    toon_state.setpoint      = getenv("SIM_OT") ? 21.0f : 19.5f;   /* SIM_OT: heat demand */
     toon_state.ch_setpoint   = 55.0f;
     toon_state.humidity      = 53.0f;
     toon_state.eco2          = 650;   /* ppm — Binnenklimaat tile */
@@ -464,6 +464,7 @@ static void mock_state(void) {
     toon_state.modulation_level = 0.0f;
     toon_state.burner_on     = 0;
     toon_state.dhw_on        = 0;
+    if (getenv("SIM_OT")) { toon_state.burner_on = 1; toon_state.modulation_level = 45.0f; }   /* OT boiler firing */
     toon_state.program_state = 1;   /* scheme mode = PROG_BASE (weekly schedule) */
     toon_state.active_state  = 1;   /* live comfort preset = Home */
     /* Sim-only: SIM_MANUAL=1 emulates manual hold — happ reports programState=0

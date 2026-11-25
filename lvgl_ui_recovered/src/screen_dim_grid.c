@@ -390,7 +390,7 @@ static void dim_climate_update(void) {
  * return come from happ_thermstat (BoilerInfo / dataset), the OTGW or the
  * master's rrd; an on/off boiler has none, then "--". Pressure colours follow
  * the home-screen banner: < 0.6 bar red, < 0.8 bar amber. */
-static lv_obj_t * dim_bo_flow = NULL, * dim_bo_ret = NULL, * dim_bo_pres = NULL;
+static lv_obj_t * dim_bo_flow = NULL, * dim_bo_ret = NULL, * dim_bo_pres = NULL, * dim_bo_mod = NULL;
 static void dim_boiler_update(void) {
     if (!dim_bo_flow) return;
     float fl = toon_state.boiler_out_temp > 0.5f ? toon_state.boiler_out_temp : toon_state.boiler_temp;
@@ -409,6 +409,20 @@ static void dim_boiler_update(void) {
         ui_label_set_text(dim_bo_pres, "-- bar");
     }
     ui_obj_set_style_text_color(dim_bo_pres, lv_color_hex(pc), 0);
+    /* Modulation: OpenTherm boilers only (an on/off boiler has none); the
+     * row is hidden otherwise. 0 % while the burner is off. */
+    if (dim_bo_mod) {
+        lv_obj_t * row = lv_obj_get_parent(dim_bo_mod);
+        if (toon_state.boiler_type == 0) {
+            int mod = (int)(toon_state.modulation_level + 0.5f);
+            if (!toon_state.burner_on && !toon_state.dhw_on) mod = 0;
+            if (mod >= 0 && mod <= 100) ui_label_set_text_fmt(dim_bo_mod, "%d%%", mod);
+            else ui_label_set_text(dim_bo_mod, "--");
+            ui_obj_clear_flag(row, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            ui_obj_add_flag(row, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
 }
 
 /* Integratie block (DB_INTEG): the tile value of the app bound to
@@ -1369,7 +1383,7 @@ lv_obj_t * screen_dim_grid_create(void) {
 
     /* ---- Ketel (DB_BOILER): flow, return, CH pressure as three
      * "caption  value" rows. Both Toons. ---- */
-    dim_bo_flow = dim_bo_ret = dim_bo_pres = NULL;
+    dim_bo_flow = dim_bo_ret = dim_bo_pres = dim_bo_mod = NULL;
     if (g_dim_blocks[DB_BOILER].visible) {
         int bbw = 0, bbh = 0;
         lv_obj_t * bx = dim_box(DB_BOILER, &bbw, &bbh);
@@ -1383,10 +1397,12 @@ lv_obj_t * screen_dim_grid_create(void) {
         lv_obj_set_style_pad_row(col, bbh >= SY(150) ? SY(10) : SY(2), 0);
         ui_obj_clear_flag(col, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
         lv_obj_center(col);
-        const lv_font_t * vf = bbh >= SY(150) ? SF(28) : SF(22);
+        /* four rows (flow, return, pressure, modulation) must fit a 2-row block */
+        const lv_font_t * vf = bbh >= SY(190) ? SF(28) : bbh >= SY(130) ? SF(22) : SF(18);
         dim_bo_flow = dim_boiler_row(col, rw, tr("Aanvoer", "Flow"),     vf);
         dim_bo_ret  = dim_boiler_row(col, rw, tr("Retour", "Return"),    vf);
         dim_bo_pres = dim_boiler_row(col, rw, tr("Druk", "Pressure"),    vf);
+        dim_bo_mod  = dim_boiler_row(col, rw, tr("Modulatie", "Modulation"), vf);
         dim_boiler_update();
     }
 

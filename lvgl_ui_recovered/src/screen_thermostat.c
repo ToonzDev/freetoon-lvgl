@@ -175,12 +175,15 @@ static void refresh_cb(lv_timer_t * t) {
         ui_label_set_text_fmt(lbl_burner, tr("Voorverwarmen naar %.1f°%s", "Pre-heating to %.1f°%s"),
                               boxtalk_preheat_target(), eta);
         ui_obj_set_style_text_color(lbl_burner, lv_color_hex(0xffaa44), 0);
-    } else if (toon_state.burner_on) {
-        ui_label_set_text(lbl_burner, tr("Verwarmen", "Heating"));
-        ui_obj_set_style_text_color(lbl_burner, lv_color_hex(0xff6644), 0);
-    } else if (toon_state.dhw_on) {
-        ui_label_set_text(lbl_burner, tr("Warm water", "Hot water"));
-        ui_obj_set_style_text_color(lbl_burner, lv_color_hex(0x44aaff), 0);
+    } else if (toon_state.burner_on || toon_state.dhw_on) {
+        /* OpenTherm boilers report their modulation: "Verwarmen  45%" */
+        const char * what = toon_state.burner_on ? tr("Verwarmen", "Heating") : tr("Warm water", "Hot water");
+        int mod = (int)(toon_state.modulation_level + 0.5f);
+        if (toon_state.boiler_type == 0 && mod > 0 && mod <= 100)
+            ui_label_set_text_fmt(lbl_burner, "%s  %d%%", what, mod);
+        else
+            ui_label_set_text(lbl_burner, what);
+        ui_obj_set_style_text_color(lbl_burner, lv_color_hex(toon_state.burner_on ? 0xff6644 : 0x44aaff), 0);
     } else {
         ui_label_set_text(lbl_burner, tr("Ketel rust", "Boiler idle"));
         ui_obj_set_style_text_color(lbl_burner, lv_color_hex(0x88aabb), 0);
