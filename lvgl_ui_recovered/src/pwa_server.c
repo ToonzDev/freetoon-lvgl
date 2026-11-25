@@ -57,6 +57,7 @@
 #include <errno.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <dirent.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <sys/time.h>
@@ -2414,9 +2415,28 @@ static int handle_v1_app_state_post(int fd, const char * app_id, const char * bo
     return send_json_response(fd, 200, "{\"ok\":true}");
 }
 
+/* Marketplace app logs: /var/volatile/tmp/integration-<id>.log (each app's
+ * daemon, from its inittab row) and integration_install.log. 1 = name is one. */
+static int integ_log_name_ok(const char * n) {
+    size_t l = strlen(n);
+    if (l < 16 || l > 60 || strncmp(n, "integration", 11) || strcmp(n + l - 4, ".log")) return 0;
+    for (const char * c = n; *c; c++)
+        if (!((*c >= 'a' && *c <= 'z') || (*c >= '0' && *c <= '9') || *c == '-' || *c == '_' || *c == '.')) return 0;
+    return !strstr(n, "..");
+}
+
 static int handle_log_get(int fd, const char * path) {
     const char * filename = "toonui.log";
-    if (strstr(path, "toonui.log.1")) filename = "toonui.log.1";
+    char integ[64] = "";
+    const char * q = strstr(path, "file=");
+    if (q) {                                        /* file=integration-<id>.log */
+        q += 5;
+        size_t l = strcspn(q, "&");
+        if (l < sizeof integ) { memcpy(integ, q, l); integ[l] = 0; }
+        if (!integ_log_name_ok(integ)) integ[0] = 0;
+    }
+    if (integ[0]) filename = integ;
+    else if (strstr(path, "toonui.log.1")) filename = "toonui.log.1";
     else if (strstr(path, "ui_launcher.log")) filename = "ui_launcher.log";
     else if (strstr(path, "x11vnc.log")) filename = "x11vnc.log";
 
@@ -2533,7 +2553,7 @@ static int handle_logs_index_get(int fd) {
     };
     int nfiles = sizeof(files) / sizeof(files[0]);
 
-    char body[12288];  /* 4 KB was nearly full before the diagnose block; + ketel-log block */
+    char body[20480];  /* fixed logs + app logs + the diagnose and ketel-log blocks */
     int pos = snprintf(body, sizeof(body),
         "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
@@ -2575,6 +2595,39 @@ static int handle_logs_index_get(int fd) {
                 "<div class=\"actions\"><a class=\"btn btn-sec\" href=\"/log?file=%s\" target=\"_blank\">Bekijken</a>"
                 "<a class=\"btn\" href=\"/log?file=%s\" download=\"%s\">Download</a></div></li>",
                 files[i], sz_str, files[i], files[i], files[i]);
+        }
+    }
+
+    /* Marketplace apps (Omvormers, Verkeer, ...): their daemons' logs. */
+    {
+        char names[16][64];
+        int nn = 0;
+        DIR * d = opendir("/var/volatile/tmp");
+        struct dirent * de;
+        while (d && (de = readdir(d)) && nn < 16)
+            if (integ_log_name_ok(de->d_name)) snprintf(names[nn++], sizeof names[0], "%s", de->d_name);
+        if (d) closedir(d);
+        for (int a = 1; a < nn; a++)                   /* sorted, few entries */
+            for (int b = a; b > 0 && strcmp(names[b - 1], names[b]) > 0; b--) {
+                char t[64];
+                memcpy(t, names[b], sizeof t); memcpy(names[b], names[b - 1], sizeof t); memcpy(names[b - 1], t, sizeof t);
+            }
+        if (nn)
+            pos += snprintf(body + pos, sizeof(body) - pos,
+                "</ul><p style=\"margin-top:20px\">Apps uit de Marketplace:</p><ul>");
+        for (int i = 0; i < nn && pos < (int)sizeof(body) - 600; i++) {
+            char fp[128];
+            struct stat st;
+            snprintf(fp, sizeof fp, "/var/volatile/tmp/%s", names[i]);
+            if (stat(fp, &st) != 0) continue;
+            char sz_str[32];
+            if (st.st_size < 1024) snprintf(sz_str, sizeof(sz_str), "%ld B", (long)st.st_size);
+            else snprintf(sz_str, sizeof(sz_str), "%.1f KB", (double)st.st_size / 1024.0);
+            pos += snprintf(body + pos, sizeof(body) - pos,
+                "<li><div><span class=\"fname\">%s</span><span class=\"fsize\">(%s)</span></div>"
+                "<div class=\"actions\"><a class=\"btn btn-sec\" href=\"/log?file=%s\" target=\"_blank\">Bekijken</a>"
+                "<a class=\"btn\" href=\"/log?file=%s\" download=\"%s\">Download</a></div></li>",
+                names[i], sz_str, names[i], names[i], names[i]);
         }
     }
 
