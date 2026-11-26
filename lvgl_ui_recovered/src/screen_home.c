@@ -408,7 +408,9 @@ static void make_tile(lv_obj_t * parent, int x, int y, int w, int h, int ltype,
         lv_obj_add_event_cb(t, tile_click_wrapper, LV_EVENT_CLICKED, (void *)click_cb);
     }
 
-    /* Thin accent bar on top */
+    /* Thin accent bar on top: no longer shown (user: no function, and the
+     * round thermostat's dial ran into it). Kept as a hidden first child so
+     * code that walks a tile's children keeps the same order. */
     lv_obj_t * bar = lv_obj_create(t);
     lv_obj_set_size(bar, w - 20, 4);
     lv_obj_set_pos(bar, 0, 0);
@@ -416,6 +418,7 @@ static void make_tile(lv_obj_t * parent, int x, int y, int w, int h, int ltype,
     ui_obj_set_style_border_width(bar, 0, 0);
     lv_obj_set_style_radius(bar, 2, 0);
     ui_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
+    ui_obj_add_flag(bar, LV_OBJ_FLAG_HIDDEN);
 
     lv_obj_t * lbl_title = lv_label_create(t);
     ui_obj_set_style_text_color(lbl_title, lv_color_hex(COL_TEXT_DIM), 0);
@@ -1488,6 +1491,7 @@ static slot_templogger_view_t * make_slot_templogger(lv_obj_t * tile) {
     ui_obj_set_style_bg_color(bar, lv_color_hex(0x3388ff), 0);
     ui_obj_set_style_border_width(bar, 0, 0);
     ui_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
+    ui_obj_add_flag(bar, LV_OBJ_FLAG_HIDDEN);   /* accent bars are no longer shown */
 
     /* Title label */
     lv_obj_t * lt = lv_label_create(root);
@@ -5394,6 +5398,7 @@ lv_obj_t * screen_home_create(void) {
         ui_obj_set_style_bg_color(bar, lv_color_hex(0x666688), 0);
         ui_obj_set_style_border_width(bar, 0, 0);
         lv_obj_set_style_radius(bar, 2, 0);
+        ui_obj_add_flag(bar, LV_OBJ_FLAG_HIDDEN);   /* accent bars are no longer shown */
 
         /* Title */
         lv_obj_t * tlbl = lv_label_create(news_box);
