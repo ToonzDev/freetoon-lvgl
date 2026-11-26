@@ -342,6 +342,9 @@ static lv_obj_t * lbl_nilm_event = NULL;
 static lv_obj_t * lbl_boiler_state;
 static lv_obj_t * lbl_boiler_pressure;
 static lv_obj_t * vent_fan_img = NULL;
+/* Ventilation tile too narrow for two 60 px buttons side by side (a Toon 1
+ * tile): buttons as wide as fits, no fan icon (the % / rpm line stays). */ 
+static int vent_narrow = 0;
 static lv_obj_t * lbl_vent_offline = NULL;
 static int        vent_anim_period_ms = -1;
 
@@ -1680,7 +1683,10 @@ static int render_tile_slot(int slot, lv_obj_t * lbl_main, lv_obj_t * lbl_sub) {
     if (!m) {
         if (slot == TILE_SLOT_VENT) {
             if (lbl_boiler_state) ui_obj_align(lbl_boiler_state, LV_ALIGN_TOP_RIGHT, -4, 14);
-            if (lbl_boiler_pressure) ui_obj_align(lbl_boiler_pressure, LV_ALIGN_BOTTOM_MID, 0, -38);
+            if (lbl_boiler_pressure) {
+                if (vent_narrow) ui_obj_align(lbl_boiler_pressure, LV_ALIGN_CENTER, 0, 10);
+                else             ui_obj_align(lbl_boiler_pressure, LV_ALIGN_BOTTOM_MID, 0, -38);
+            }
         } else if (slot == TILE_SLOT_ENERGY) {
             if (lbl_energy_today) ui_obj_clear_flag(lbl_energy_today, LV_OBJ_FLAG_HIDDEN);
             if (lbl_energy_gas) ui_obj_clear_flag(lbl_energy_gas, LV_OBJ_FLAG_HIDDEN);
@@ -3016,7 +3022,7 @@ static void refresh_cb(lv_timer_t * t) {
             }
         } else {
             if (lbl_vent_offline) ui_obj_add_flag(lbl_vent_offline, LV_OBJ_FLAG_HIDDEN);
-            if (vent_fan_img)     ui_obj_clear_flag(vent_fan_img,     LV_OBJ_FLAG_HIDDEN);
+            if (vent_fan_img && !vent_narrow) ui_obj_clear_flag(vent_fan_img, LV_OBJ_FLAG_HIDDEN);
             if (vent_btn_low)     ui_obj_clear_flag(vent_btn_low,     LV_OBJ_FLAG_HIDDEN);
             if (vent_btn_high)    ui_obj_clear_flag(vent_btn_high,    LV_OBJ_FLAG_HIDDEN);
             if (vent_btn_auto)    ui_obj_clear_flag(vent_btn_auto,    LV_OBJ_FLAG_HIDDEN);
@@ -3055,9 +3061,15 @@ static void refresh_cb(lv_timer_t * t) {
                 ui_label_set_text(lbl_boiler_state, vshown);
                 /* Shrink the font (no truncation) so the mode label never collides
                  * with the "Vent" title in a narrow custom tile. */
-                if (tile_vent)
+                if (tile_vent) {
+                    /* the room the title leaves (measured: "Ventilatie" is
+                     * wider than the 64 px this assumed, user photo) */
+                    lv_obj_t * vt = lbl_title_slot[TILE_SLOT_VENT];
+                    int tw = (vt && !lv_obj_has_flag(vt, LV_OBJ_FLAG_HIDDEN)) ? lv_obj_get_width(vt) + SX(10) : 0;
+                    if (tw < SX(40)) tw = SX(40);
                     fit_font(lbl_boiler_state, vshown,
-                             lv_obj_get_content_width(tile_vent) - SX(64), 18);
+                             lv_obj_get_content_width(tile_vent) - tw, 18);
+                }
             }
 
             /* Highlight whichever preset button matches the current fan_info
@@ -4820,10 +4832,25 @@ lv_obj_t * screen_home_create(void) {
         { LV_ALIGN_BOTTOM_LEFT,  4,  -4, 0x2e6e3a, "auto", "Auto",  on_vent_mode  },
         { LV_ALIGN_BOTTOM_RIGHT,-4,  -4, 0x6a5424, NULL,   "Timer", on_vent_timer },
     };
+    /* As wide as the tile allows: two 60 px buttons and the fan between
+     * them need ~180 px; a Toon 1 tile is ~120 px wide (user photo: Laag /
+     * Hoog over the fan, Auto / Timer over each other). */
+    lv_obj_update_layout(vent.tile);
+    int vcw = lv_obj_get_content_width(vent.tile);
+    int vbw = 60, vbh = 28;
+    vent_narrow = vcw < 60 * 2 + 8;            /* two buttons side by side + a gap */
+    if (vent_narrow) {
+        vbw = (vcw - 6) / 2;
+        if (vbw > 60) vbw = 60;
+        if (vbw < 40) vbw = 40;
+        vbh = 26;
+        ui_obj_add_flag(vent_fan_img, LV_OBJ_FLAG_HIDDEN);
+    }
     for (size_t i = 0; i < sizeof(btn)/sizeof(btn[0]); i++) {
         lv_obj_t * b = lv_btn_create(vent.tile);
-        lv_obj_set_size(b, 60, 28);
-        ui_obj_align(b, btn[i].a, btn[i].x, btn[i].y);
+        lv_obj_set_size(b, vbw, vbh);
+        ui_obj_align(b, btn[i].a, vent_narrow ? (btn[i].x < 0 ? -1 : 1) : btn[i].x,
+                     vent_narrow && btn[i].y > 0 ? 40 : btn[i].y);
         ui_obj_set_style_bg_color(b, lv_color_hex(btn[i].col), 0);
         lv_obj_set_style_radius(b, 8, 0);
         /* Pre-style border to 0 so the refresh-side toggle is a single
@@ -4834,7 +4861,7 @@ lv_obj_t * screen_home_create(void) {
                             (void *)(intptr_t)(uintptr_t)btn[i].cmd);
         lv_obj_t * bl = lv_label_create(b);
         ui_obj_set_style_text_color(bl, lv_color_hex(0xffffff), 0);
-        ui_obj_set_style_text_font(bl, SF(14), 0);
+        ui_obj_set_style_text_font(bl, vent_narrow ? SF(13) : SF(14), 0);
         /* btn[i].txt stays the stable English key for the strcmp() ref
          * matching below; only the visible label is translated. */
         const char * disp = btn[i].txt;
@@ -4863,6 +4890,7 @@ lv_obj_t * screen_home_create(void) {
     lv_obj_set_style_text_align(lbl_boiler_pressure, LV_TEXT_ALIGN_CENTER, 0);
     ui_label_set_text(lbl_boiler_pressure, "--\n--");
     ui_obj_align(lbl_boiler_pressure, LV_ALIGN_BOTTOM_MID, 0, -38);
+    if (vent_narrow) ui_obj_align(lbl_boiler_pressure, LV_ALIGN_CENTER, 0, 10);   /* where the fan was */
 
     lbl_vent_offline = lv_label_create(vent.tile);
     ui_obj_set_style_text_color(lbl_vent_offline, lv_color_hex(COL_TEXT_DIM), 0);
