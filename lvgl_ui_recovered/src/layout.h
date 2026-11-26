@@ -87,6 +87,7 @@ typedef enum {
     DB_CLIMATE,      /* Binnenklimaat: humidity + air quality (Toon 2 sensor, #56) */
     DB_BOILER,       /* Ketel: flow + return temperature + CH pressure */
     DB_INTEG,        /* Integratie: a marketplace app's tile value (tile_slots TILE_SLOT_DIM) */
+    DB_DIAL,         /* Thermostaat (rond): read-only dial like the home tile (tile_dial.c) */
     DB_COUNT
 } dim_block_id_t;
 

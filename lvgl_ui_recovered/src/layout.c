@@ -498,6 +498,7 @@ static const dim_block_t DIM_DEFAULTS[DB_COUNT] = {
     [DB_CLIMATE]  = { 0, 4, 3, 2, 0 },   /* Binnenklimaat (default hidden) */
     [DB_BOILER]   = { 0, 4, 3, 2, 0 },   /* Ketel: flow/return/pressure (default hidden) */
     [DB_INTEG]    = { 0, 4, 3, 2, 0 },   /* Integratie: an app's value (default hidden) */
+    [DB_DIAL]     = { 0, 3, 3, 3, 0 },   /* Thermostaat (rond): square, read-only (default hidden) */
 };
 
 void dim_layout_reset_default(void) {
@@ -563,6 +564,7 @@ const char * dim_block_name(int id) {
         case DB_CLIMATE:  return "Binnenklimaat";
         case DB_BOILER:   return "Ketel";
         case DB_INTEG:    return "Integratie";
+        case DB_DIAL:     return "Thermostaat (rond)";
     }
     return "?";
 }

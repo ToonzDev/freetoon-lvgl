@@ -473,12 +473,55 @@ static lv_obj_t * dim_boiler_row(lv_obj_t * col, int w, const char * caption, co
     return val;
 }
 
+/* Thermostaat (rond) block (DB_DIAL): the round home tile's look, read-only
+ * (a tap on the dim screen only wakes it). Ring = setpoint over 6-30 C,
+ * orange while the boiler heats, a muted blue otherwise; room temperature
+ * large in the middle, "naar 21,0" under it, the boiler state over it while
+ * heating. Dim colours: nothing bright at night. */
+static lv_obj_t * dim_dl_arc = NULL, * dim_dl_room = NULL, * dim_dl_sp = NULL, * dim_dl_state = NULL;
+static uint32_t   dim_dl_col = 0xffffffff;
+static int        dim_dl_small;   /* too small for the state line: the ring colour says it */
+static void dim_dial_update(void) {
+    if (!dim_dl_arc) return;
+    int sp = (int)(toon_state.setpoint * 10.0f + 0.5f);
+    if (sp >= 60 && sp <= 300) lv_arc_set_value(dim_dl_arc, sp);
+    char b[40];
+    if (toon_state.indoor_temp > 0) {
+        snprintf(b, sizeof b, "%.1f°", (double)toon_state.indoor_temp);
+        if (settings.language != LANG_EN) { char * d = strchr(b, '.'); if (d) *d = ','; }
+        ui_label_set_text(dim_dl_room, b);
+    }
+    if (toon_state.setpoint > 0) {
+        snprintf(b, sizeof b, tr("naar %.1f°", "to %.1f°"), (double)toon_state.setpoint);
+        if (settings.language != LANG_EN) { char * d = strchr(b, '.'); if (d) *d = ','; }
+        ui_label_set_text(dim_dl_sp, b);
+    }
+    int heat = toon_state.burner_on || boxtalk_preheat_shown();
+    if (heat && !dim_dl_small) {
+        int mod = (int)(toon_state.modulation_level + 0.5f);
+        if (toon_state.burner_on && toon_state.boiler_type == 0 && mod > 0 && mod <= 100)
+            snprintf(b, sizeof b, tr("Verwarmen %d%%", "Heating %d%%"), mod);
+        else
+            snprintf(b, sizeof b, "%s", toon_state.burner_on ? tr("Verwarmen", "Heating") : tr("Voorverwarmen", "Pre-heating"));
+        ui_label_set_text(dim_dl_state, b);
+        ui_obj_clear_flag(dim_dl_state, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        ui_obj_add_flag(dim_dl_state, LV_OBJ_FLAG_HIDDEN);
+    }
+    uint32_t col = heat ? 0xd8642a : 0x2f6fae;
+    if (col != dim_dl_col) {
+        dim_dl_col = col;
+        lv_obj_set_style_arc_color(dim_dl_arc, lv_color_hex(col), LV_PART_INDICATOR);
+    }
+}
+
 static void refresh_cb(lv_timer_t * t) {
     (void)t;
     if (lv_scr_act() != scr_root) return;
     dim_climate_update();
     dim_boiler_update();
     dim_integ_update();
+    dim_dial_update();
 
     time_t now = time(NULL);
     struct tm tm;
@@ -1398,6 +1441,54 @@ lv_obj_t * screen_dim_grid_create(void) {
         dim_bo_pres = dim_boiler_row(col, rw, tr("Druk", "Pressure"),    vf);
         dim_bo_mod  = dim_boiler_row(col, rw, tr("Modulatie", "Modulation"), vf);
         dim_boiler_update();
+    }
+
+    /* ---- Thermostaat (rond) (DB_DIAL): read-only dial. Both Toons. ---- */
+    dim_dl_arc = dim_dl_room = dim_dl_sp = dim_dl_state = NULL;
+    dim_dl_col = 0xffffffff;
+    if (g_dim_blocks[DB_DIAL].visible) {
+        int bw = 0, bh = 0;
+        lv_obj_t * bx = dim_box(DB_DIAL, &bw, &bh);
+        int d = (bw < bh ? bw : bh) - SX(6);
+        if (d < SX(90)) d = SX(90);
+        int aw = d >= SX(240) ? 12 : d >= SX(160) ? 9 : 7;
+        dim_dl_small = d < SX(170);
+        dim_dl_arc = lv_arc_create(bx);
+        lv_obj_set_size(dim_dl_arc, d, d);
+        lv_obj_center(dim_dl_arc);
+        lv_arc_set_rotation(dim_dl_arc, 135);              /* 270 deg, open at the bottom */
+        lv_arc_set_bg_angles(dim_dl_arc, 0, 270);
+        lv_arc_set_range(dim_dl_arc, 60, 300);
+        lv_arc_set_value(dim_dl_arc, 200);
+        lv_obj_set_style_arc_width(dim_dl_arc, aw, LV_PART_MAIN);
+        lv_obj_set_style_arc_width(dim_dl_arc, aw, LV_PART_INDICATOR);
+        lv_obj_set_style_arc_rounded(dim_dl_arc, true, LV_PART_MAIN);
+        lv_obj_set_style_arc_rounded(dim_dl_arc, true, LV_PART_INDICATOR);
+        lv_obj_set_style_arc_color(dim_dl_arc, lv_color_hex(0x1a2636), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(dim_dl_arc, LV_OPA_TRANSP, LV_PART_KNOB);   /* no knob: nothing to drag */
+        lv_obj_set_style_pad_all(dim_dl_arc, 0, LV_PART_KNOB);
+        lv_obj_set_style_bg_opa(dim_dl_arc, LV_OPA_TRANSP, 0);
+        ui_obj_clear_flag(dim_dl_arc, LV_OBJ_FLAG_CLICKABLE);              /* a tap wakes the Toon */
+        const lv_font_t * big = d >= SX(230) ? SF(48) : d >= SX(160) ? SF(36) : SF(28);
+        const lv_font_t * sm  = d >= SX(160) ? SF(16) : SF(14);
+        int lh = lv_font_get_line_height(big);
+        dim_dl_room = lv_label_create(bx);
+        ui_obj_set_style_text_color(dim_dl_room, lv_color_hex(0xffffff), 0);
+        ui_obj_set_style_text_font(dim_dl_room, big, 0);
+        ui_label_set_text(dim_dl_room, "--");
+        lv_obj_align(dim_dl_room, LV_ALIGN_CENTER, 0, -SY(4));
+        dim_dl_sp = lv_label_create(bx);
+        ui_obj_set_style_text_color(dim_dl_sp, lv_color_hex(0xaabbcc), 0);
+        ui_obj_set_style_text_font(dim_dl_sp, sm, 0);
+        ui_label_set_text(dim_dl_sp, "");
+        lv_obj_align(dim_dl_sp, LV_ALIGN_CENTER, 0, lh / 2 + SY(6));
+        dim_dl_state = lv_label_create(bx);
+        ui_obj_set_style_text_color(dim_dl_state, lv_color_hex(0xd8642a), 0);
+        ui_obj_set_style_text_font(dim_dl_state, sm, 0);
+        ui_label_set_text(dim_dl_state, "");
+        lv_obj_align(dim_dl_state, LV_ALIGN_CENTER, 0, -lh / 2 - SY(12));
+        ui_obj_add_flag(dim_dl_state, LV_OBJ_FLAG_HIDDEN);
+        dim_dial_update();
     }
 
     /* ---- Integratie (DB_INTEG): an app's tile value. Both Toons. ---- */
