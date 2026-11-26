@@ -2057,6 +2057,13 @@ int boxtalk_setpoint_decrease(void) {
     return boxtalk_set_setpoint(cur - 0.5f);
 }
 
+/* An absolute setpoint chosen by the user on the home screen (the round
+ * thermostat tile's dial): same override bookkeeping as +/-. */
+int boxtalk_setpoint_user(float temp) {
+    note_temp_override();
+    return boxtalk_set_setpoint(temp);
+}
+
 void boxtalk_tick(void) {
     static int wifi_poll_ticks = 0;
     if (++wifi_poll_ticks >= 30) {

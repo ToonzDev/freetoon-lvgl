@@ -1421,6 +1421,21 @@ int main(int argc, char ** argv) {
             continue;
         }
         if (!strncmp(argv[a], "shot:", 5)) { pump(30); dump_ppm(argv[a] + 5); continue; }
+        /* "drag:x1,y1,x2,y2": press, move in 12 steps, release (dials, sliders) */
+        if (!strncmp(argv[a], "drag:", 5)) {
+            int x1, y1, x2, y2;
+            if (sscanf(argv[a] + 5, "%d,%d,%d,%d", &x1, &y1, &x2, &y2) == 4) {
+                tap_x = x1; tap_y = y1; tap_pressed = 1; pump(5);
+                for (int k = 1; k <= 12; k++) {
+                    tap_x = x1 + (x2 - x1) * k / 12;
+                    tap_y = y1 + (y2 - y1) * k / 12;
+                    pump(3);
+                }
+                tap_pressed = 0; pump(10);
+                taps++;
+            }
+            continue;
+        }
         /* "hold:x,y": long press (~1 s) */
         if (!strncmp(argv[a], "hold:", 5)) {
             int hx, hy;

@@ -32,6 +32,7 @@
 #include "layout.h"
 #include "clock_studio.h"
 #include "tile_flows.h"
+#include "tile_dial.h"
 #include "energy_prices.h"
 #include "update_check.h"
 #include "pin_modal.h"
@@ -139,7 +140,8 @@ static lv_obj_t * lbl_lt_sp_power = NULL;
  * sensor (toon_state.humidity / eco2 / tvoc). */
 static lv_obj_t * tile_climate = NULL;
 static lv_obj_t * tile_clockstudio = NULL;
-static lv_obj_t * tile_hflows = NULL;        /* Homey flows (LT_HOMEY_FLOWS, tile_flows.c) */   /* Klok Studio (LT_CLOCKSTUDIO, #55) */
+static lv_obj_t * tile_hflows = NULL;
+static lv_obj_t * tile_tdial = NULL;         /* round thermostat (LT_THERMO_DIAL, tile_dial.c) */        /* Homey flows (LT_HOMEY_FLOWS, tile_flows.c) */   /* Klok Studio (LT_CLOCKSTUDIO, #55) */
 static void on_clockstudio_click(lv_event_t * e) { (void)e; cs_open_fullscreen(); }
 static lv_obj_t * lbl_cl_hum = NULL;       /* big "45%" */
 static lv_obj_t * lbl_cl_quality = NULL;   /* air-quality word, coloured */
@@ -2327,6 +2329,7 @@ static void refresh_cb(lv_timer_t * t) {
     update_tile_smartplug();
     update_tile_climate();
     tf_tile_update();
+    td_tile_update();
     update_rain_tile_ui();
 
     /* Only manage page-0 tile visibility while page 0 is showing — otherwise
@@ -3643,6 +3646,13 @@ static void home_show_page(int n) {
             if (n == 0) ui_obj_clear_flag(hs_tile[k], LV_OBJ_FLAG_HIDDEN);
             else ui_obj_add_flag(hs_tile[k], LV_OBJ_FLAG_HIDDEN);
         }
+    if (tile_tdial) {
+        const layout_tile_t * Ld = settings.custom_layout_enabled ? layout_find(LT_THERMO_DIAL) : NULL;
+        if (Ld && Ld->page == 0) {
+            if (n == 0 && Ld->visible) ui_obj_clear_flag(tile_tdial, LV_OBJ_FLAG_HIDDEN);
+            else ui_obj_add_flag(tile_tdial, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
     if (tile_hflows) {
         const layout_tile_t * Lf = settings.custom_layout_enabled ? layout_find(LT_HOMEY_FLOWS) : NULL;
         if (Lf && Lf->page == 0) {
@@ -4403,7 +4413,9 @@ lv_obj_t * screen_home_create(void) {
             th_w = w; th_h = h;
             lv_obj_set_pos(th, x, y);
             lv_obj_set_size(th, w, h);
-        } else if (L) {
+        } else if (L || layout_find(LT_THERMO_DIAL)) {
+            /* hidden in the layout, or replaced by the round thermostat
+             * (without either, the classic tile stays: never no thermostat) */
             ui_obj_add_flag(th, LV_OBJ_FLAG_HIDDEN);
         }
     }
@@ -5163,6 +5175,14 @@ lv_obj_t * screen_home_create(void) {
                                 (void *)(intptr_t)(TILE_SLOT_HOME_0 + k));
         }
 
+        /* Round thermostat tile: dial + knob, -/+; tap in the middle = thermostat screen */
+        if (layout_find(LT_THERMO_DIAL)) {
+            tile_t td_t;
+            make_tile(scr_root, 0, 0, 300, 300, LT_THERMO_DIAL, tr("Thermostaat", "Thermostat"), 0x3b6fb0, NULL, &td_t);
+            tile_tdial = td_t.tile;
+            td_tile_build(tile_tdial, td_t.title, open_thermostat);
+        }
+
         /* Homey flows tile: a button per chosen flow; long press = chooser */
         if (layout_find(LT_HOMEY_FLOWS)) {
             tile_t hf_t;
@@ -5871,6 +5891,7 @@ void screen_home_destroy(void) {
         tile_climate = NULL;
         tile_clockstudio = NULL;
         tile_hflows = NULL;
+        tile_tdial = NULL;
         for (int k = 0; k < TILE_SLOT_HOME_N; k++) hs_tile[k] = hs_title[k] = hs_main[k] = hs_sub[k] = NULL;
         g_hs_count = 0;
         lbl_cl_hum = NULL;

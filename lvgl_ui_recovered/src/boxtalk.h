@@ -83,6 +83,8 @@ int boxtalk_set_setpoint(float temp);
    actions on happ_thermstat (the same verbs qt-gui uses for +/- buttons). */
 int boxtalk_setpoint_increase(void);
 int boxtalk_setpoint_decrease(void);
+/* Absolute setpoint from a user control (dial); like +/- a temporary override. */
+int boxtalk_setpoint_user(float temp);
 
 void boxtalk_request_setpoint_refresh(void);
 /* A live CH water pressure reading (bar) from another source (OTGW): sets the
