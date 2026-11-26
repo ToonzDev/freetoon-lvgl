@@ -151,7 +151,12 @@ static int curl_fetch(const char * url, char * out, size_t out_max, int timeout_
             || c == ' ' || c == '\n' || c == '\r') return -1;
     }
 
+    /* curl's connect timeout covers the TLS handshake too, and on a Toon 1
+     * that alone takes ~4.4 s (measured on .24): with 4 s nearly every
+     * https feed failed there (weather report + radar URL missing, user
+     * report). For https the connect phase may use the whole budget. */
     int conn_to = (timeout_s >= 10) ? 8 : (timeout_s >= 4 ? 4 : timeout_s);
+    if (strncasecmp(url, "https://", 8) == 0) conn_to = timeout_s;
     char cmd[1024];
     snprintf(cmd, sizeof(cmd),
         "/usr/bin/curl -s -4 %s-L --compressed --max-time %d --connect-timeout %d "

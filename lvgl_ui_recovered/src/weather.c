@@ -466,7 +466,7 @@ static int fetch_br_forecast(int id) {
     static char body[160 * 1024];       /* ~80 KB today; room for growth */
     for (int attempt = 0; attempt < 2; attempt++) {
         if (attempt > 0) sleep(2);
-        if (http_fetch(url, body, sizeof body) != 0) continue;
+        if (http_fetch_to(url, body, sizeof body, 20) != 0) continue;   /* ~80 KB https; slow TLS on a Toon 1 */
         double lat = 0, lon = 0;
         weather_lock();
         int rc = parse_br_forecast(body, &lat, &lon);
@@ -701,7 +701,7 @@ static int fetch_radar_image(void) {
     if (!sh_is_http_url(weather_state.radar_url) ||
         !sh_quote(qurl, sizeof qurl, weather_state.radar_url)) return -1;
     snprintf(cmd, sizeof(cmd),
-        "/usr/bin/curl -s -k -L --max-time 10 -A 'toonui/1.0' "
+        "/usr/bin/curl -s -k -L --max-time 30 -A 'toonui/1.0' "   /* ~125 KB: ~9 s on a busy Toon 1 */
         "-o /tmp/toonui_radar.gif.tmp %s && mv /tmp/toonui_radar.gif.tmp /tmp/toonui_radar.gif",
         qurl);
     int rc = system(cmd);
@@ -958,11 +958,15 @@ static void * wx_thread(void * arg) {
 
         /* buienradar feed — radar-map URL + NL weather report, and the nearest
            station's temperature if the forecast fetch failed. */
-        if (http_fetch("https://data.buienradar.nl/2.0/feed/json",
-                       body, sizeof(body)) == 0) {
+        /* ~35 KB over https: on a Toon 1 the TLS handshake alone is ~4.5 s,
+         * so give it 20 s. */
+        if (http_fetch_to("https://data.buienradar.nl/2.0/feed/json",
+                          body, sizeof(body), 20) == 0) {
             weather_lock();
             parse_buienradar_extras(body);
             weather_unlock();
+        } else {
+            fprintf(stderr, "[wx] buienradar feed fetch failed (no weather report / radar URL this round)\n");
         }
 
         /* No forecast (e.g. WiFi still connecting on boot, or a busy first
