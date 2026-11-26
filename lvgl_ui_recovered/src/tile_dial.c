@@ -23,13 +23,15 @@
 #define COL_TRACK  (settings.home_light_mode ? 0xdde5ee : 0x24344c)
 #define COL_HI     (settings.home_light_mode ? 0x1e2838 : 0xffffff)
 #define COL_DIM    (settings.home_light_mode ? 0x687c94 : 0x88aabb)
+#define COL_PROG   (settings.home_light_mode ? 0x188a38 : 0x5fd38a)
 
-static lv_obj_t * g_tile, * g_arc, * g_sp, * g_room, * g_state, * g_flame;
+static lv_obj_t * g_tile, * g_arc, * g_sp, * g_room, * g_state, * g_flame, * g_prog;
 static lv_obj_t * g_minus, * g_plus;
 static int    g_drag;          /* the knob is being dragged: show its value */
+static int    g_cls;           /* size class of the built tile (0 XS .. 3 L) */
 static time_t g_hold_until;    /* after a change: keep our value until the happ follows */
 static int    g_hold_val;      /* tenths */
-static uint32_t g_col = 0xffffffff;
+static uint32_t g_col = 0xffffffff, g_pcol = 0xffffffff;
 
 static int snap(int v) {       /* 0.5 °C steps */
     v = (v + 2) / 5 * 5;
@@ -84,9 +86,9 @@ static void on_step(lv_event_t * e) {
 
 static void on_tile_delete(lv_event_t * e) {
     if (lv_event_get_target(e) != g_tile) return;
-    g_tile = g_arc = g_sp = g_room = g_state = g_flame = g_minus = g_plus = NULL;
+    g_tile = g_arc = g_sp = g_room = g_state = g_flame = g_prog = g_minus = g_plus = NULL;
     g_drag = 0;
-    g_col = 0xffffffff;
+    g_col = g_pcol = 0xffffffff;
 }
 
 static lv_obj_t * round_btn(lv_obj_t * parent, int sz, const char * sym, int up) {
@@ -155,6 +157,7 @@ void td_tile_build(lv_obj_t * tile, lv_obj_t * title, lv_event_cb_t on_open) {
 
     /* size classes: L >= 300, M >= 220, S >= 160, XS below (no state line) */
     int cls = d >= SY(300) ? 3 : d >= SY(220) ? 2 : d >= SY(160) ? 1 : 0;
+    g_cls = cls;
     const lv_font_t * big   = cls == 3 ? SF(64) : cls == 2 ? SF(48) : cls == 1 ? SF(36) : SF(28);
     const lv_font_t * small = cls >= 2 ? SF(18) : SF(14);
     int lh = lv_font_get_line_height(big);
@@ -192,12 +195,22 @@ void td_tile_build(lv_obj_t * tile, lv_obj_t * title, lv_event_cb_t on_open) {
     lv_label_set_text(g_sp, "--");
     lv_obj_align(g_sp, LV_ALIGN_TOP_MID, 0, cy - lh / 2);
 
+    /* program state ("Programma - Thuis" / "Thuis - handmatig") under the
+     * setpoint (user: you couldn't see whether the program runs); the room
+     * temperature under it where there is room (M / L) */
+    g_prog = lv_label_create(tile);
+    lv_obj_set_style_text_font(g_prog, small, 0);
+    lv_obj_set_style_text_color(g_prog, lv_color_hex(COL_DIM), 0);
+    lv_label_set_text(g_prog, "");
+    lv_obj_align(g_prog, LV_ALIGN_TOP_MID, 0, cy + lh / 2 + d / 40);
+    if (cls == 0) ui_obj_add_flag(g_prog, LV_OBJ_FLAG_HIDDEN);
+
     g_room = lv_label_create(tile);
     lv_obj_set_style_text_font(g_room, small, 0);
     lv_obj_set_style_text_color(g_room, lv_color_hex(COL_DIM), 0);
     lv_label_set_text(g_room, "");
-    lv_obj_align(g_room, LV_ALIGN_TOP_MID, 0, cy + lh / 2 + d / 40);
-    if (cls == 0) ui_obj_add_flag(g_room, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_align(g_room, LV_ALIGN_TOP_MID, 0, cy + lh / 2 + d / 40 + lv_font_get_line_height(small) + 2);
+    if (cls < 3) ui_obj_add_flag(g_room, LV_OBJ_FLAG_HIDDEN);   /* only clear of -/+ on L */
 
     /* -/+ in the open bottom of the dial */
     int bs = cls == 3 ? SX(56) : cls == 2 ? SX(46) : cls == 1 ? SX(38) : SX(32);
@@ -232,6 +245,20 @@ void td_tile_update(void) {
         snprintf(b, sizeof b, tr("In huis %.1f°", "Indoors %.1f°"), (double)toon_state.indoor_temp);
         if (settings.language != LANG_EN) { char * d = strchr(b, '.'); if (d) *d = ','; }
         ui_label_set_text(g_room, b);
+    }
+
+    /* program on: the weekly schedule runs (also during a temporary
+     * override, which ends at the next switch point) */
+    if (g_prog) {
+        int ps = toon_state.program_state;
+        int on = (ps == 1 || ps == 2 || ps == 3 || ps == 8) || boxtalk_temp_override_origin() >= 0;
+        int manual_preset = !on && toon_state.active_state >= 0 && toon_state.active_state <= 3 && g_cls >= 2;   /* S: too long */
+        if (on)                 snprintf(b, sizeof b, tr("Programma - %s", "Schedule - %s"), program_label());
+        else if (manual_preset) snprintf(b, sizeof b, tr("%s - handmatig", "%s - manual"), program_label());
+        else                    snprintf(b, sizeof b, "%s", tr("Handmatig", "Manual"));
+        ui_label_set_text(g_prog, b);
+        uint32_t pc = on ? COL_PROG : COL_DIM;
+        if (pc != g_pcol) { g_pcol = pc; lv_obj_set_style_text_color(g_prog, lv_color_hex(pc), 0); }
     }
 
     uint32_t col;
