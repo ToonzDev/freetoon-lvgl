@@ -174,6 +174,18 @@ int stats_fetch_range(const char * logger_name, const char * rra,
 
     /* If error response, bail */
     if (strstr(p, "\"error\"")) {
+        /* A logger this Toon doesn't have (e.g. the *_produ teruglevering
+         * counters without a P1 export, asked for by every Elektriciteit
+         * view): say so once per logger, not on every view. */
+        if (strstr(p, "unknown logger")) {
+            static char seen[16][48];
+            static int nseen;
+            for (int i = 0; i < nseen; i++)
+                if (!strcmp(seen[i], logger_name)) return -2;
+            if (nseen < 16) snprintf(seen[nseen++], sizeof seen[0], "%s", logger_name);
+            fprintf(stderr, "[stats] %s: no such logger on this Toon (logged once)\n", logger_name);
+            return -2;
+        }
         fprintf(stderr, "[stats] %s/%s error: %.200s\n", logger_name, rra, p);
         return -2;
     }
