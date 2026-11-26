@@ -465,6 +465,7 @@ static void mock_state(void) {
     toon_state.burner_on     = 0;
     toon_state.dhw_on        = 0;
     if (getenv("SIM_OT")) { toon_state.burner_on = 1; toon_state.modulation_level = 45.0f; }   /* OT boiler firing */
+    if (getenv("SIM_DHW")) toon_state.dhw_on = 1;   /* hot water being drawn (faucet + red drop on dim) */
     toon_state.program_state = 1;   /* scheme mode = PROG_BASE (weekly schedule) */
     toon_state.active_state  = 1;   /* live comfort preset = Home */
     /* Sim-only: SIM_MANUAL=1 emulates manual hold — happ reports programState=0

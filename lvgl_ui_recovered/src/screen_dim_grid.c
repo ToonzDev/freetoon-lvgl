@@ -541,14 +541,10 @@ static void refresh_cb(lv_timer_t * t) {
             ui_label_set_text(lbl_setpoint, prog ? prog : "");
         }
         lv_obj_update_layout(lbl_setpoint);
-        if (dim_img_flame) lv_obj_align_to(dim_img_flame, lbl_setpoint, LV_ALIGN_OUT_BOTTOM_MID, 0, 4);
-        if (dim_img_faucet) lv_obj_align_to(dim_img_faucet, lbl_setpoint, LV_ALIGN_OUT_BOTTOM_MID, -10, 4);
-        if (dim_img_drop) lv_obj_align_to(dim_img_drop, dim_img_faucet, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
-    } else {
-        if (dim_img_flame) lv_obj_align_to(dim_img_flame, lbl_temp, LV_ALIGN_OUT_BOTTOM_MID, 0, 4);
-        if (dim_img_faucet) lv_obj_align_to(dim_img_faucet, lbl_temp, LV_ALIGN_OUT_BOTTOM_MID, -10, 4);
-        if (dim_img_drop) lv_obj_align_to(dim_img_drop, dim_img_faucet, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
     }
+    /* radiator / hot-water / water-flow icons: one centred row under the
+     * setpoint (dim_status_row), so they sit side by side, never on top of
+     * each other (user photo: the radiator ran through "19.5 L/m"). */
 
     if (lbl_metrics) {
         if (!settings.show_dim_metrics) {
@@ -1209,42 +1205,41 @@ lv_obj_t * screen_dim_grid_create(void) {
     lbl_metrics  = NULL;
     lbl_burner   = NULL;
 
-    dim_img_flame = lv_img_create(bx_t);
-    ui_img_set_src(dim_img_flame, &icon_radiator);
-    lv_img_set_zoom(dim_img_flame, 256);
-    ui_obj_set_style_img_recolor(dim_img_flame, lv_color_hex(0xff8866), 0);
-    ui_obj_set_style_img_recolor_opa(dim_img_flame, 255, 0);
-    lv_obj_align_to(dim_img_flame, lbl_temp, LV_ALIGN_OUT_BOTTOM_MID, 0, 4);
-    ui_obj_add_flag(dim_img_flame, LV_OBJ_FLAG_HIDDEN);
-
-    dim_img_faucet = lv_img_create(bx_t);
-    ui_img_set_src(dim_img_faucet, &icon_faucet);
-    lv_img_set_zoom(dim_img_faucet, 256);
-    ui_obj_set_style_img_recolor(dim_img_faucet, lv_color_hex(0xff5544), 0);
-    ui_obj_set_style_img_recolor_opa(dim_img_faucet, 255, 0);
-    lv_obj_align_to(dim_img_faucet, lbl_temp, LV_ALIGN_OUT_BOTTOM_MID, -10, 4);
-    ui_obj_add_flag(dim_img_faucet, LV_OBJ_FLAG_HIDDEN);
-
-    dim_img_drop = lv_img_create(bx_t);
-    ui_img_set_src(dim_img_drop, &icon_drop);
-    lv_img_set_zoom(dim_img_drop, 256);
-    ui_obj_set_style_img_recolor(dim_img_drop, lv_color_hex(0xff5544), 0);
-    ui_obj_set_style_img_recolor_opa(dim_img_drop, 255, 0);
-    lv_obj_align_to(dim_img_drop, dim_img_faucet, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
-    ui_obj_add_flag(dim_img_drop, LV_OBJ_FLAG_HIDDEN);
-
-    /* Live water flow (HomeWizard watermeter): drop + "12.4 L/m" as one
-     * centred row under the setpoint line. It used to sit at a fixed spot
-     * near the top of the block, where it ran through the big temperature
-     * (user report). The row re-centres itself when the text changes. */
+    /* Status row under the setpoint line: radiator (CH firing), faucet +
+     * red drop (hot water), blue drop + "12.4 L/m" (HomeWizard water flow).
+     * A flex row, centred, so whatever is visible sits side by side and the
+     * row re-centres when an icon appears or the text changes. (The water
+     * flow used to be a separate row in the radiator's spot: user photo of
+     * the radiator running through "19.5 L/m".) */
     lv_obj_t * wrow = lv_obj_create(bx_t);
     lv_obj_remove_style_all(wrow);
     lv_obj_set_size(wrow, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(wrow, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(wrow, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(wrow, 6, 0);
+    lv_obj_set_style_pad_column(wrow, 8, 0);
     ui_obj_clear_flag(wrow, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
     ui_obj_align(wrow, LV_ALIGN_CENTER, 0, (DISP_VER < 600 ? 28 : 34) + SY(30));
+
+    dim_img_flame = lv_img_create(wrow);
+    ui_img_set_src(dim_img_flame, &icon_radiator);
+    lv_img_set_zoom(dim_img_flame, 256);
+    ui_obj_set_style_img_recolor(dim_img_flame, lv_color_hex(0xff8866), 0);
+    ui_obj_set_style_img_recolor_opa(dim_img_flame, 255, 0);
+    ui_obj_add_flag(dim_img_flame, LV_OBJ_FLAG_HIDDEN);
+
+    dim_img_faucet = lv_img_create(wrow);
+    ui_img_set_src(dim_img_faucet, &icon_faucet);
+    lv_img_set_zoom(dim_img_faucet, 256);
+    ui_obj_set_style_img_recolor(dim_img_faucet, lv_color_hex(0xff5544), 0);
+    ui_obj_set_style_img_recolor_opa(dim_img_faucet, 255, 0);
+    ui_obj_add_flag(dim_img_faucet, LV_OBJ_FLAG_HIDDEN);
+
+    dim_img_drop = lv_img_create(wrow);
+    ui_img_set_src(dim_img_drop, &icon_drop);
+    lv_img_set_zoom(dim_img_drop, 256);
+    ui_obj_set_style_img_recolor(dim_img_drop, lv_color_hex(0xff5544), 0);
+    ui_obj_set_style_img_recolor_opa(dim_img_drop, 255, 0);
+    ui_obj_add_flag(dim_img_drop, LV_OBJ_FLAG_HIDDEN);
 
     dim_img_water = lv_img_create(wrow);
     ui_img_set_src(dim_img_water, &icon_drop);
