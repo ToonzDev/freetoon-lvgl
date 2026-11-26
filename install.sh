@@ -215,8 +215,27 @@ download_artefacts() {
     # binary. main only as a last resort, logged.
     RAW_TAG="https://raw.githubusercontent.com/$REPO/$TAG"
     RAW_MAIN="https://raw.githubusercontent.com/$REPO/main"
-    for s in inittab_edit.sh ui_launcher.sh companion_gate.sh ot_mode_switch.sh toonvnc.sh integrations-install.sh freetoon_diag.sh ketellog.sh; do
+    HELPER_SCRIPTS="inittab_edit.sh ui_launcher.sh companion_gate.sh ot_mode_switch.sh toonvnc.sh integrations-install.sh freetoon_diag.sh ketellog.sh"
+
+    # Progress inside this step ("@@SUB 3/12 <name>", shown by the update
+    # dialog after the step name): one download each, slow on a Toon 1.
+    # Older cores ignore the line.
+    _sub_t=0; _sub_n=0
+    for s in $HELPER_SCRIPTS; do
         if [ "$FORCE_DOWNLOAD" = 1 ] || { [ ! -f "$HERE/scripts/$s" ] && [ ! -f "$HERE/$s" ] && [ ! -f "/mnt/data/$s" ]; }; then
+            _sub_t=$((_sub_t + 1))
+        fi
+    done
+    if [ "$IS_TOON1" = 1 ]; then _sfx="-toon1"; else _sfx=""; fi
+    for a in "wastefetch$_sfx" "quby_bridge$_sfx" "p1bridge$_sfx" fbvnc_input index.wasm; do
+        has_asset "$a" && _sub_t=$((_sub_t + 1))
+    done
+    if [ "$IS_TOON1" != 1 ] && has_asset "libttysniff.so"; then _sub_t=$((_sub_t + 1)); fi
+    sub() { _sub_n=$((_sub_n + 1)); echo "@@SUB $_sub_n/$_sub_t $1"; }
+
+    for s in $HELPER_SCRIPTS; do
+        if [ "$FORCE_DOWNLOAD" = 1 ] || { [ ! -f "$HERE/scripts/$s" ] && [ ! -f "$HERE/$s" ] && [ ! -f "/mnt/data/$s" ]; }; then
+            sub "$s"
             say "Fetching $s ($TAG)..."
             if fetch "$RAW_TAG/scripts/$s" "$DL_DIR/$s" 64 sh 30 \
                     || fetch "$RAW_TAG/$s" "$DL_DIR/$s" 64 sh 30; then
@@ -235,7 +254,7 @@ download_artefacts() {
     WF_ASSET="wastefetch"
     if [ "$IS_TOON1" = 1 ]; then WF_ASSET="wastefetch-toon1"; fi
     if has_asset "$WF_ASSET"; then
-        say "Fetching $WF_ASSET..."
+        sub "$WF_ASSET"; say "Fetching $WF_ASSET..."
         if fetch "$BASE/$WF_ASSET" "$DL_DIR/wastefetch" 10000 elf 60; then
             chmod +x "$DL_DIR/wastefetch" && WASTEFETCH_BIN="$DL_DIR/wastefetch"
         fi
@@ -244,7 +263,7 @@ download_artefacts() {
     QB_ASSET="quby_bridge"
     if [ "$IS_TOON1" = 1 ]; then QB_ASSET="quby_bridge-toon1"; fi
     if has_asset "$QB_ASSET"; then
-        say "Fetching $QB_ASSET..."
+        sub "$QB_ASSET"; say "Fetching $QB_ASSET..."
         if fetch "$BASE/$QB_ASSET" "$DL_DIR/quby_bridge" 10000 elf 60; then
             chmod +x "$DL_DIR/quby_bridge" && QUBY_BRIDGE_BIN="$DL_DIR/quby_bridge"
         fi
@@ -253,7 +272,7 @@ download_artefacts() {
     P1_ASSET="p1bridge"
     if [ "$IS_TOON1" = 1 ]; then P1_ASSET="p1bridge-toon1"; fi
     if has_asset "$P1_ASSET"; then
-        say "Fetching $P1_ASSET..."
+        sub "$P1_ASSET"; say "Fetching $P1_ASSET..."
         if fetch "$BASE/$P1_ASSET" "$DL_DIR/p1bridge" 10000 elf 60; then
             chmod +x "$DL_DIR/p1bridge" && P1_BRIDGE_BIN="$DL_DIR/p1bridge"
         fi
@@ -261,14 +280,14 @@ download_artefacts() {
 
     # Boiler serial tap for support (#64), Toon 2 only.
     if [ "$IS_TOON1" != 1 ] && has_asset "libttysniff.so"; then
-        say "Fetching libttysniff.so..."
+        sub libttysniff.so; say "Fetching libttysniff.so..."
         if fetch "$BASE/libttysniff.so" "$DL_DIR/libttysniff.so" 1000 elf 60; then
             TTYSNIFF_LIB="$DL_DIR/libttysniff.so"
         fi
     fi
 
     if has_asset "fbvnc_input"; then
-        say "Fetching fbvnc_input..."
+        sub fbvnc_input; say "Fetching fbvnc_input..."
         if fetch "$BASE/fbvnc_input" "$DL_DIR/fbvnc_input" 1000 elf 60; then
             chmod +x "$DL_DIR/fbvnc_input" && FBVNC_INPUT="$DL_DIR/fbvnc_input"
         fi
@@ -276,7 +295,7 @@ download_artefacts() {
 
     # WASM bundle for phone/browser UI
     if has_asset "index.wasm"; then
-        say "Fetching WASM bundle..."
+        sub "web UI"; say "Fetching WASM bundle..."
         mkdir -p "$DL_DIR/pwa/ui"
         # All three or none: a new index.js with an old/partial index.wasm
         # breaks the phone UI.

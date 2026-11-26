@@ -110,9 +110,9 @@ static void upd_prog_close(lv_event_t * e) {
     s_upd_prog_msg = NULL;
 }
 
-static void upd_row_set(int i, const char * mark, lv_color_t col) {
+static void upd_row_set(int i, const char * mark, lv_color_t col, const char * extra) {
     if (!s_upd_prog_row[i]) return;
-    lv_label_set_text_fmt(s_upd_prog_row[i], "%s  %s", mark, tr(UPD_STEPS[i], UPD_STEPS_EN[i]));
+    lv_label_set_text_fmt(s_upd_prog_row[i], "%s  %s%s", mark, tr(UPD_STEPS[i], UPD_STEPS_EN[i]), extra ? extra : "");
     lv_obj_set_style_text_color(s_upd_prog_row[i], col, 0);
 }
 
@@ -122,11 +122,14 @@ static void upd_prog_tick(lv_timer_t * t) {
     if (!f) return;
     char line[256];
     int cur = 0, failed = -1;
+    int sub_n = 0, sub_t = 0, sub_step = 0;   /* "@@SUB 3/12 name": progress inside a step */
     char failmsg[160] = "";
     while (fgets(line, sizeof line, f)) {
-        int n;
+        int n, a, b;
         if (sscanf(line, "@@STEP %d/", &n) == 1) {
             if (n > cur) cur = n;
+        } else if (sscanf(line, "@@SUB %d/%d", &a, &b) == 2) {
+            sub_n = a; sub_t = b; sub_step = cur;
         } else if (strncmp(line, "@@FAIL ", 7) == 0) {
             failed = cur > 0 ? cur : 1;
             snprintf(failmsg, sizeof failmsg, "%.*s", (int)sizeof(failmsg) - 1, line + 7);
@@ -136,11 +139,14 @@ static void upd_prog_tick(lv_timer_t * t) {
     }
     fclose(f);
 
+    char extra[24] = "";
+    if (sub_step == cur && cur > 0 && sub_t > 0 && sub_n <= sub_t)
+        snprintf(extra, sizeof extra, "  %d/%d", sub_n, sub_t);
     for (int i = 0; i < UPD_STEP_COUNT; i++) {
-        if (failed > 0 && i == failed - 1)      upd_row_set(i, LV_SYMBOL_CLOSE, lv_color_hex(settings.home_light_mode ? 0xcc2222 : 0xff5555));
-        else if (i < cur - 1)                   upd_row_set(i, LV_SYMBOL_OK,    lv_color_hex(settings.home_light_mode ? 0x188a38 : 0x66dd88));
-        else if (i == cur - 1 && cur > 0)       upd_row_set(i, LV_SYMBOL_RIGHT, lv_color_hex(settings.home_light_mode ? 0xd07800 : 0xffd24a));
-        else                                    upd_row_set(i, "-",             lv_color_hex(settings.home_light_mode ? 0x8898a8 : 0x6b7c93));
+        if (failed > 0 && i == failed - 1)      upd_row_set(i, LV_SYMBOL_CLOSE, lv_color_hex(settings.home_light_mode ? 0xcc2222 : 0xff5555), NULL);
+        else if (i < cur - 1)                   upd_row_set(i, LV_SYMBOL_OK,    lv_color_hex(settings.home_light_mode ? 0x188a38 : 0x66dd88), NULL);
+        else if (i == cur - 1 && cur > 0)       upd_row_set(i, LV_SYMBOL_RIGHT, lv_color_hex(settings.home_light_mode ? 0xd07800 : 0xffd24a), extra);
+        else                                    upd_row_set(i, "-",             lv_color_hex(settings.home_light_mode ? 0x8898a8 : 0x6b7c93), NULL);
     }
 
     if (s_upd_prog_msg) {
@@ -209,7 +215,7 @@ static void do_install_now(lv_event_t * e) {
             s_upd_prog_row[i] = lv_label_create(card);
             lv_obj_set_style_text_font(s_upd_prog_row[i], SF(20), 0);
             lv_obj_align(s_upd_prog_row[i], LV_ALIGN_TOP_LEFT, SX(28), SY(70 + i * 38));
-            upd_row_set(i, "-", lv_color_hex(settings.home_light_mode ? 0x8898a8 : 0x6b7c93));
+            upd_row_set(i, "-", lv_color_hex(settings.home_light_mode ? 0x8898a8 : 0x6b7c93), NULL);
         }
 
         s_upd_prog_msg = lv_label_create(card);
