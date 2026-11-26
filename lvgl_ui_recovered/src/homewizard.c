@@ -248,19 +248,42 @@ static void poll_water(void) {
         return;
     }
     hw_state.polled_water = 1;          /* a poll is being attempted */
+    /* Problems are logged once per kind (user report: water stayed 0 and
+     * the log said nothing): no answer, or an answer without the reading. */
+    static int wlog = -1;               /* -1 nothing yet, 0 reading, 1 no answer, 2 bad reply */
     static char body[2048];
     if (http_get(settings.p1_water_host, "/api/v1/data", body, sizeof(body)) != 0) {
+        if (wlog != 1) {
+            wlog = 1;
+            fprintf(stderr, "[hw] water meter http://%s/api/v1/data: no answer "
+                    "(address? Local API on in the HomeWizard app? a water meter on batteries "
+                    "may only answer while on USB power)\n", settings.p1_water_host);
+        }
         water_disconnected();
         return;
     }
     const char * j = strstr(body, "\r\n\r\n");
     j = j ? j + 4 : body;
     if (!strstr(j, "total_liter_m3")) {
+        if (wlog != 2) {
+            wlog = 2;
+            char head[100];
+            snprintf(head, sizeof head, "%s", j);
+            for (char * c = head; *c; c++) if (*c == '\n' || *c == '\r') *c = ' ';
+            fprintf(stderr, "[hw] water meter %s: reply without total_liter_m3 (not a water meter?): %s\n",
+                    settings.p1_water_host, head);
+        }
         hw_state.connected_water = 0;
         return;
     }
-    water_update((float)parse_num(j, "total_liter_m3",   0),
-                 (float)parse_num(j, "active_liter_lpm", 0), WATER_POLL_INTERVAL_S);
+    float tot = (float)parse_num(j, "total_liter_m3", 0), lpm = (float)parse_num(j, "active_liter_lpm", 0);
+    if (wlog != 0) {
+        wlog = 0;
+        fprintf(stderr, "[hw] water meter %s: reading, total %.3f m3, now %.1f l/min%s\n",
+                settings.p1_water_host, (double)tot, (double)lpm,
+                tot <= 0.0f ? " (total 0: is the starting meter reading set in the HomeWizard app?)" : "");
+    }
+    water_update(tot, lpm, WATER_POLL_INTERVAL_S);
 }
 
 /* kWh meter (HWE-KWH1/3, SDM230/630) on the PV inverter. Its active_power_w
