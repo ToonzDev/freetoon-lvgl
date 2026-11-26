@@ -4262,6 +4262,100 @@ static void on_int_toonwater_host(lv_event_t * e) {
         lv_obj_add_state(sw_int_p1_water, LV_STATE_CHECKED);
 }
 
+/* ============== Ventilation via Homey (vent_homey.c) ============== */
+/* A plain fan (off / low / high) on two relays Homey knows, e.g. a Shelly
+ * Plus 2PM in switch mode. Pick the two relay devices and which relays make
+ * "Laag" and "Hoog"; the ventilation tile then drives them. */
+#define VH_MAX 40
+static char vh_ids[VH_MAX][HY_ID_LEN];
+static int  vh_n;
+static void vh_save(void) { settings_save(); }
+static void on_vh_enable(lv_event_t * e) {
+    settings.vent_homey = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    vh_save();
+}
+static void on_vh_relay(lv_event_t * e) {
+    int which = (int)(intptr_t)lv_event_get_user_data(e);
+    int sel = (int)lv_dropdown_get_selected(lv_event_get_target(e));
+    char * dst = which ? settings.vent_hy_r2 : settings.vent_hy_r1;
+    size_t n = which ? sizeof settings.vent_hy_r2 : sizeof settings.vent_hy_r1;
+    snprintf(dst, n, "%s", (sel > 0 && sel <= vh_n) ? vh_ids[sel - 1] : "");
+    vh_save();
+}
+static void on_vh_map(lv_event_t * e) {
+    int which = (int)(intptr_t)lv_event_get_user_data(e);
+    int mask = (int)lv_dropdown_get_selected(lv_event_get_target(e)) + 1;   /* 1, 2, 3 */
+    if (which) settings.vent_hy_high = mask; else settings.vent_hy_low = mask;
+    vh_save();
+}
+static lv_obj_t * vh_dropdown(lv_obj_t * row, const char * opts, int sel, lv_event_cb_t cb, int which) {
+    lv_obj_t * dd = lv_dropdown_create(row);
+    lv_dropdown_set_options(dd, opts);
+    lv_dropdown_set_selected(dd, (uint16_t)sel);
+    lv_obj_set_width(dd, SX(380));
+    lv_obj_align(dd, LV_ALIGN_RIGHT_MID, SX(-12), 0);
+    lv_obj_add_event_cb(dd, cb, LV_EVENT_VALUE_CHANGED, (void *)(intptr_t)which);
+    return dd;
+}
+static void open_vent_homey_modal(lv_event_t * e) {
+    (void)e;
+    lv_obj_t * p = modal_open(tr("Ventilatie via Homey", "Ventilation via Homey"), 620);
+    int y = 70;
+    lv_obj_t * r = panel_row(p, y, tr("Ventilatie-tegel via Homey", "Ventilation tile via Homey"), NULL);
+    row_switch(r, settings.vent_homey, on_vh_enable);
+    y += 82;
+
+    /* the switchable Homey devices, "(geen)" first */
+    static char opts[VH_MAX * (HY_NAME_LEN + 4) + 16];
+    int sel1 = 0, sel2 = 0;
+    size_t o = (size_t)snprintf(opts, sizeof opts, "%s", tr("(geen)", "(none)"));
+    vh_n = 0;
+    homey_lock();
+    for (int i = 0; i < homey_state.ndev && vh_n < VH_MAX; i++) {
+        const hy_dev_t * d = &homey_state.dev[i];
+        if (!homey_switchable(d)) continue;
+        char nm[HY_NAME_LEN];
+        snprintf(nm, sizeof nm, "%s", d->name);
+        hy_fold_text(nm);
+        for (char * c = nm; *c; c++) if (*c == '\n') *c = ' ';
+        snprintf(vh_ids[vh_n], HY_ID_LEN, "%s", d->id);
+        if (!strcmp(d->id, settings.vent_hy_r1)) sel1 = vh_n + 1;
+        if (!strcmp(d->id, settings.vent_hy_r2)) sel2 = vh_n + 1;
+        if (o < sizeof opts) o += (size_t)snprintf(opts + o, sizeof opts - o, "\n%s", nm);
+        vh_n++;
+    }
+    homey_unlock();
+
+    r = panel_row(p, y, tr("Relais 1", "Relay 1"), NULL);
+    vh_dropdown(r, opts, sel1, on_vh_relay, 0);
+    y += 82;
+    r = panel_row(p, y, tr("Relais 2", "Relay 2"), NULL);
+    vh_dropdown(r, opts, sel2, on_vh_relay, 1);
+    y += 82;
+    const char * mopts = tr("Relais 1 aan\nRelais 2 aan\nBeide aan", "Relay 1 on\nRelay 2 on\nBoth on");
+    r = panel_row(p, y, tr("Stand Laag", "Position Low"), NULL);
+    vh_dropdown(r, mopts, ((settings.vent_hy_low & 3) ? (settings.vent_hy_low & 3) : 1) - 1, on_vh_map, 0);
+    y += 82;
+    r = panel_row(p, y, tr("Stand Hoog", "Position High"), NULL);
+    vh_dropdown(r, mopts, ((settings.vent_hy_high & 3) ? (settings.vent_hy_high & 3) : 2) - 1, on_vh_map, 1);
+    y += 82;
+
+    lv_obj_t * hint = lv_label_create(p);
+    lv_obj_set_style_text_font(hint, SF(16), 0);
+    lv_obj_set_style_text_color(hint, lv_color_hex(0x88aabb), 0);
+    lv_obj_set_width(hint, SX(800));
+    lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
+    if (!settings.enable_homey || vh_n == 0)
+        lv_label_set_text(hint, tr("Zet eerst Homey aan (Instellingen > Homey): hier verschijnen de schakelaars die Homey kent.",
+                                   "Switch Homey on first (Settings > Homey): its switches appear here."));
+    else
+        lv_label_set_text(hint, tr("Uit = beide relais uit. De tegel toont Laag / Hoog / Uit / Timer (10-30 min hoog, daarna "
+                                   "terug). FreeToon zet altijd eerst het ene relais uit en dan het andere aan.",
+                                   "Off = both relays off. The tile shows Low / High / Off / Timer (10-30 min high, then back). "
+                                   "FreeToon always switches one relay off before the other on."));
+    lv_obj_align(hint, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
+}
+
 static void on_int_video(lv_event_t * e) {
     settings.video_enabled = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
     settings_save();
@@ -4279,6 +4373,10 @@ static void open_energy_stats(lv_event_t * e) {
 static void open_integrations_modal(lv_event_t * e) {
     (void)e;
     lv_obj_t * p = modal_open(tr("Integraties", "Integrations"), 710);
+    /* more rows than a 600 px screen holds (Ventilatie via Homey): scroll */
+    lv_obj_add_flag(p, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(p, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(p, LV_SCROLLBAR_MODE_AUTO);
     int y = 70;
 
     lv_obj_t * r;
@@ -4399,6 +4497,19 @@ static void open_integrations_modal(lv_event_t * e) {
 
     r = panel_row(p, y, tr("Itho-ventilatie", "Itho ventilation"), NULL);
     sw_int_vent = row_switch(r, settings.enable_vent, on_int_vent);
+    y += 84;
+
+    /* a plain fan on two relays via Homey (e.g. a Shelly Plus 2PM) */
+    r = panel_row(p, y, tr("Ventilatie via Homey (Shelly)", "Ventilation via Homey (Shelly)"), NULL);
+    {
+        lv_obj_t * b = lv_btn_create(r);
+        lv_obj_set_size(b, SX(150), SY(44));
+        lv_obj_align(b, LV_ALIGN_RIGHT_MID, SX(-4), 0);
+        lv_obj_add_event_cb(b, open_vent_homey_modal, LV_EVENT_CLICKED, NULL);
+        lv_obj_t * bl = lv_label_create(b);
+        lv_label_set_text(bl, tr("Instellen", "Configure"));
+        lv_obj_center(bl);
+    }
     y += 84;
 
     r = panel_row(p, y, tr("Home Assistant (gordijnen, Life360)", "Home Assistant (curtains, Life360)"), NULL);
@@ -6558,3 +6669,11 @@ lv_obj_t * screen_settings_create(void) {
 
     return scr_root;
 }
+
+#ifdef SIM
+/* Sim: open a settings modal directly ("smodal:<name>" argument). */
+void screen_settings_sim_modal(const char * which) {
+    if (!strcmp(which, "venthomey"))    open_vent_homey_modal(NULL);
+    else if (!strcmp(which, "integrations")) open_integrations_modal(NULL);
+}
+#endif

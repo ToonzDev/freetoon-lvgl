@@ -30,6 +30,8 @@ static const char * cfg_path(void) {
 settings_t settings = {
     .auto_dim_enabled  = 1,
     .auto_dim_seconds  = 10,
+    .vent_hy_low       = 1,     /* Laag = relay 1 */
+    .vent_hy_high      = 2,     /* Hoog = relay 2 */
     .auto_home_enabled = 1,
     .auto_home_seconds = 60,
     .active_brightness = 800,
@@ -260,6 +262,11 @@ void settings_load(void) {
         else if (strcmp(k, "dim_thin_font")     == 0) settings.dim_thin_font     = iv ? 1 : 0;
         else if (strcmp(k, "dim_fc_min")        == 0) settings.dim_fc_min        = iv ? 1 : 0;
         else if (strcmp(k, "energy_nilm_label") == 0) settings.energy_nilm_label = iv ? 1 : 0;
+        else if (strcmp(k, "vent_homey")        == 0) settings.vent_homey        = iv ? 1 : 0;
+        else if (strcmp(k, "vent_hy_low")       == 0) settings.vent_hy_low       = iv & 3;
+        else if (strcmp(k, "vent_hy_high")      == 0) settings.vent_hy_high      = iv & 3;
+        else if (strcmp(k, "vent_hy_r1")        == 0) snprintf(settings.vent_hy_r1, sizeof settings.vent_hy_r1, "%s", v);
+        else if (strcmp(k, "vent_hy_r2")        == 0) snprintf(settings.vent_hy_r2, sizeof settings.vent_hy_r2, "%s", v);
         else if (strcmp(k, "boiler_remote_host") == 0)
             snprintf(settings.boiler_remote_host, sizeof settings.boiler_remote_host, "%s", v);
         else if (strcmp(k, "boiler_remote_on")  == 0) { if (iv >= 600 && iv <= 3000) settings.boiler_remote_on = iv; }
@@ -1069,6 +1076,11 @@ static void settings_write_file(void) {
     fprintf(f, "dim_thin_font=%d\n",     settings.dim_thin_font);
     fprintf(f, "dim_fc_min=%d\n",        settings.dim_fc_min);
     fprintf(f, "energy_nilm_label=%d\n", settings.energy_nilm_label);
+    fprintf(f, "vent_homey=%d\n",        settings.vent_homey);
+    fprintf(f, "vent_hy_r1=%s\n",        settings.vent_hy_r1);
+    fprintf(f, "vent_hy_r2=%s\n",        settings.vent_hy_r2);
+    fprintf(f, "vent_hy_low=%d\n",       settings.vent_hy_low);
+    fprintf(f, "vent_hy_high=%d\n",      settings.vent_hy_high);
     fprintf(f, "boiler_remote_host=%s\n", settings.boiler_remote_host);
     fprintf(f, "boiler_remote_on=%d\n",  settings.boiler_remote_on);
     fprintf(f, "boiler_remote_off=%d\n", settings.boiler_remote_off);

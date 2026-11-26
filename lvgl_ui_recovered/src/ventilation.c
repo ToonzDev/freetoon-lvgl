@@ -10,6 +10,8 @@
  * Falls back to compiled-in defaults if missing.
  */
 #include "ventilation.h"
+#include "vent_homey.h"
+#include "i18n.h"
 #include "http.h"
 #include "settings.h"
 #include <pthread.h>
@@ -190,8 +192,14 @@ const char * vent_mode_label(void) {
              vent_state.fan_info[0] ? (const char *)vent_state.fan_info
                                     : (const char *)vent_state.last_cmd);
     if (!src[0]) return "?";
-    if (!strncasecmp(src, "speed", 5)) return "Manual";
+    if (!strncasecmp(src, "speed", 5)) return tr("Handmatig", "Manual");
     if (!strncasecmp(src, "timer", 5)) return "Timer";
+    /* the known positions in the UI language (the buttons are Dutch too) */
+    if (!strcasecmp(src, "low"))    return tr("Laag", "Low");
+    if (!strcasecmp(src, "high"))   return tr("Hoog", "High");
+    if (!strcasecmp(src, "medium")) return tr("Midden", "Medium");
+    if (!strcasecmp(src, "auto"))   return "Auto";
+    if (!strcasecmp(src, "off"))    return tr("Uit", "Off");
     snprintf(out, sizeof out, "%c%s",
              (src[0] >= 'a' && src[0] <= 'z') ? src[0] - 'a' + 'A' : src[0],
              src + 1);
@@ -241,6 +249,7 @@ static void * vremote_thread(void * arg) {
 }
 
 void vent_send_vremote_async(const char * cmd) {
+    if (vent_homey_active()) { vent_homey_cmd(cmd); return; }   /* relays via Homey */
     int p = vent_expected_pct(cmd);
     if (p >= 0) {
         vent_state.speed_pct   = p;

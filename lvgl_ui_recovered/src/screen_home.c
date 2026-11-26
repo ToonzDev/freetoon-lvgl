@@ -33,6 +33,7 @@
 #include "clock_studio.h"
 #include "tile_flows.h"
 #include "tile_dial.h"
+#include "vent_homey.h"
 #include "energy_prices.h"
 #include "update_check.h"
 #include "pin_modal.h"
@@ -571,6 +572,7 @@ static void on_update_banner_click(lv_event_t * e) {
 static void open_vent(lv_event_t * e) {
     (void)e;
     if (check_slot_integration_open(2)) return;
+    if (vent_homey_active()) return;          /* the Itho remote screen has nothing to do */
     ui_push(screen_vent_remote_create());
 }
 
@@ -584,6 +586,8 @@ static uint32_t   vent_local_press_ms = 0;
  * the LVGL event loop snappy — the HTTP roundtrip used to block ~1 s. */
 static void on_vent_mode(lv_event_t * e) {
     const char * cmd = (const char *)lv_event_get_user_data(e);
+    /* via Homey the Auto button is "Uit" ("auto" itself = cancel a timer) */
+    if (cmd && !strcmp(cmd, "auto") && vent_homey_active()) cmd = "off";
     if (cmd) {
         vent_local_press_ms = lv_tick_get();
         vent_send_vremote_async(cmd);
@@ -1015,7 +1019,7 @@ static void apply_offline_tile_visibility(void) {
     int hide = settings.hide_offline_tiles;
     int energy_live = energy_connected();
     int water_live  = (water_enabled() || settings.client_mode) && hw_state.connected_water;
-    int vent_live   = (settings.enable_vent     || settings.client_mode) && vent_state.connected && (vent_state.itho_online != 0);
+    int vent_live   = (settings.enable_vent     || settings.client_mode || vent_homey_active()) && vent_state.connected && (vent_state.itho_online != 0);
     int family_live = settings.enable_ha || (settings.client_mode && (ha_state.connected || ha_state.loc_a[0]));
     struct { lv_obj_t * tile; int live; int ltype; } v[] = {
         { tile_energy,   energy_live, LT_ENERGY },
@@ -2989,7 +2993,8 @@ static void refresh_cb(lv_timer_t * t) {
        when a marketplace integration has taken over the slot — the labels
        were already rewritten by render_tile_slot. */
     if (!slot_active[TILE_SLOT_VENT]) {
-        int vent_online = (settings.enable_vent || settings.client_mode) &&
+        int vent_hy = vent_homey_active();
+        int vent_online = (settings.enable_vent || settings.client_mode || vent_hy) &&
                           vent_state.connected && (vent_state.itho_online != 0);
 
         if (!vent_online) {
@@ -3011,7 +3016,7 @@ static void refresh_cb(lv_timer_t * t) {
                 ui_obj_add_flag(lbl_boiler_pressure, LV_OBJ_FLAG_HIDDEN);
             }
             if (lbl_vent_offline) {
-                const char * off_txt = (!settings.enable_vent && !settings.client_mode)
+                const char * off_txt = (!settings.enable_vent && !settings.client_mode && !vent_hy)
                     ? tr("Geen instellingen", "No settings")
                     : tr("Offline", "Offline");
                 ui_label_set_text(lbl_vent_offline, off_txt);
@@ -3078,7 +3083,12 @@ static void refresh_cb(lv_timer_t * t) {
             int act_low   = strcmp(fi_local, "low")    == 0;
             int act_high  = strcmp(fi_local, "high")   == 0;
             int act_auto  = strcmp(fi_local, "auto")   == 0
-                         || strcmp(fi_local, "medium") == 0;
+                         || strcmp(fi_local, "medium") == 0
+                         || strcmp(fi_local, "off")    == 0;   /* Homey: the button is "Uit" */
+            if (vent_btn_auto) {
+                lv_obj_t * al = lv_obj_get_child(vent_btn_auto, 0);
+                if (al) ui_label_set_text(al, vent_hy ? tr("Uit", "Off") : tr("Auto", "Auto"));
+            }
             int act_timer = strncasecmp(fi_local, "timer", 5) == 0
                          || vent_state.remaining_min > 0;
             if (act_timer) { act_low = act_high = act_auto = 0; }
@@ -3113,6 +3123,12 @@ static void refresh_cb(lv_timer_t * t) {
                     (lv_tick_get() - vent_local_press_ms) < 90000) {
                     src_tag = "TOON";
                 }
+                if (vent_hy) {
+                    /* relays via Homey: no % / rpm, the Shelly's power if it reports it */
+                    double w = vent_homey_watts();
+                    if (w >= 0) ui_label_set_text_fmt(lbl_boiler_pressure, "%.0f W\nvia Homey", w);
+                    else        ui_label_set_text(lbl_boiler_pressure, "via Homey");
+                } else
                 ui_label_set_text_fmt(lbl_boiler_pressure,
                                       tr("%d%%  %drpm\nvia %s", "%d%%  %drpm\nvia %s"),
                                       vent_state.speed_pct,
@@ -4330,6 +4346,7 @@ static void open_family_map(lv_event_t * e) {
 void life360_map_open(void) { open_family_map(NULL); }
 
 lv_obj_t * screen_home_create(void) {
+    vent_homey_start();
     if (scr_root) return scr_root;
 
     scr_root = lv_obj_create(NULL);

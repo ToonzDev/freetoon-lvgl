@@ -1421,6 +1421,13 @@ int main(int argc, char ** argv) {
             continue;
         }
         if (!strncmp(argv[a], "shot:", 5)) { pump(30); dump_ppm(argv[a] + 5); continue; }
+        /* "smodal:<name>": open a settings modal (venthomey, integrations) */
+        if (!strncmp(argv[a], "smodal:", 7)) {
+            extern void screen_settings_sim_modal(const char * which);
+            screen_settings_sim_modal(argv[a] + 7);
+            pump(20);
+            continue;
+        }
         /* "drag:x1,y1,x2,y2": press, move in 12 steps, release (dials, sliders) */
         if (!strncmp(argv[a], "drag:", 5)) {
             int x1, y1, x2, y2;

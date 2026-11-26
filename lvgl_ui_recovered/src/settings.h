@@ -440,6 +440,13 @@ typedef struct {
     /* Energie tile: show the NILM step label ("~120 W ON") for 10 s after a
      * jump in power. Off by default: unlabelled it reads as a mystery value. */
     int  energy_nilm_label;
+    /* Ventilation tile via Homey (vent_homey.c): a plain fan switched by two
+     * relays (e.g. a Shelly Plus 2PM in switch mode) that Homey knows. */
+    int  vent_homey;          /* 1 = the ventilation tile drives these relays */
+    char vent_hy_r1[40];      /* Homey device id of relay 1 ("" = none) */
+    char vent_hy_r2[40];      /* Homey device id of relay 2 */
+    int  vent_hy_low;         /* relays on for "Laag": bit 0 = relay 1, bit 1 = relay 2 */
+    int  vent_hy_high;        /* relays on for "Hoog" */
 } settings_t;
 
 #define FORECAST_AUTO   0
