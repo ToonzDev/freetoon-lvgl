@@ -387,20 +387,44 @@ static volatile time_t g_press_seed_at = 0;   /* hcb_rrd seed (no live yet) */
 static volatile int    g_press_expired = 0;   /* aged out: no more rrd seeding */
 static volatile int    g_thermstat_answers = 0; /* BoilerChPressure answers WITHOUT a value */
 
-static inline void set_water_pressure_raw(float v) {
-    if (v <= 0.05f) return;
-    if (v >= 50.0f) toon_state.water_pressure = v / 100.0f;       /* centibar: 180 -> 1.80 */
-    else if (v >= 5.0f) toon_state.water_pressure = v / 10.0f;    /* decibar:  15  -> 1.50 */
-    else toon_state.water_pressure = v;                           /* bar:      1.5 -> 1.50 */
+/* A reading in bar, or 0 when it is no plausible CH pressure. The unit is
+ * only guessed where the result is a real CH pressure (0.2 - 4 bar):
+ * 0.2-4 = bar (happ_thermstat, OTGW), 10-40 = decibar, 100-400 = centibar.
+ * Anything else is ignored. Before, everything from 5 up was taken as
+ * decibar: a boiler (or happ) that answers "6.00" became 0.60 bar and a
+ * "CH water pressure CRITICAL" banner on a boiler that was fine (user
+ * report #63, diag: "BoilerChPressure = 6.00 (stored 0.60)"); the stock UI
+ * never shows this raw value, it uses Eneco's boiler monitor. */
+static float pressure_bar(float v) {
+    if (v >= 0.2f && v <= 4.0f)    return v;
+    if (v >= 10.0f && v <= 40.0f)  return v / 10.0f;
+    if (v >= 100.0f && v <= 400.0f) return v / 100.0f;
+    return 0.0f;
+}
+static inline int set_water_pressure_raw(float v) {
+    float b = pressure_bar(v);
+    if (b <= 0.0f) return 0;
+    toon_state.water_pressure = b;
+    return 1;
 }
 /* A live reading (BoxTalk / OTGW). src: 0 notify, 1 query answer,
  * 2 thermostatInfo dataset, 3 OTGW — the first reading per source is
  * logged, so the log shows which path keeps a Toon's pressure fresh. */
 static void set_water_pressure(float v, int src) {
     static const char * const names[] = { "notify", "query answer", "thermostatInfo dataset", "OTGW" };
-    static unsigned seen = 0;
+    static unsigned seen = 0, odd = 0;
     if (v <= 0.05f) return;
-    set_water_pressure_raw(v);
+    if (!set_water_pressure_raw(v)) {
+        /* not a CH pressure: like an answer without a value (the leftover
+         * hcb_rrd value then ages out too) */
+        if (src >= 0 && src < 4 && !(odd & (1u << src))) {
+            odd |= 1u << src;
+            fprintf(stderr, "[bxt] CH pressure %.2f via %s is no plausible pressure (0.2-4 bar) - ignored\n",
+                    v, names[src]);
+        }
+        if (src != 3) g_thermstat_answers++;
+        return;
+    }
     if (src >= 0 && src < 4 && !(seen & (1u << src))) {
         seen |= 1u << src;
         fprintf(stderr, "[bxt] live CH pressure %.2f bar via %s%s\n", toon_state.water_pressure,
@@ -1688,8 +1712,7 @@ static void* http_poll_thread(void* arg) {
                     while (*col == ' ' || *col == '\t') col++;
                     if (strncmp(col, "NaN", 3) != 0 && strncmp(col, "nan", 3) != 0 && strncmp(col, "null", 4) != 0) {
                         float bp = (float)atof(col);
-                        if (bp > 0.05f) {
-                            set_water_pressure_raw(bp);          /* a seed, not live */
+                        if (bp > 0.05f && set_water_pressure_raw(bp)) {   /* a seed, not live */
                             if (!g_press_seed_at) g_press_seed_at = time(NULL);
                         }
                     }

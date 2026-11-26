@@ -805,9 +805,12 @@ static int load_for_period(void) {
         if (series.n > 0) {
             for (int i = 0; i < series.n; i++) {
                 if (!isnan(series.samples[i]) && series.samples[i] > 0.05) {
+                    /* same rule as boxtalk.c pressure_bar(): only where the
+                     * result is a real CH pressure; "6.00" is no 0.6 bar */
                     double v = series.samples[i];
-                    if (v >= 50.0)      series.samples[i] = v / 100.0; /* centibar -> bar */
-                    else if (v >= 5.0)  series.samples[i] = v / 10.0;  /* decibar  -> bar */
+                    if (v >= 100.0 && v <= 400.0)    series.samples[i] = v / 100.0; /* centibar -> bar */
+                    else if (v >= 10.0 && v <= 40.0) series.samples[i] = v / 10.0;  /* decibar  -> bar */
+                    else if (v < 0.2 || v > 4.0)     series.samples[i] = NAN;       /* no CH pressure */
                 }
             }
         }
@@ -1449,8 +1452,8 @@ static void render_chart(void) {
     /* Extra safeguard: ensure CV bar values are in bar (e.g. 1.3 bar, not 13 or 130) */
     if (strcmp(m->label, "CV bar") == 0) {
         for (int i = 0; i < g_bar_count; i++) {
-            if (g_bar_val[i] >= 50.0)      g_bar_val[i] /= 100.0;
-            else if (g_bar_val[i] >= 5.0)  g_bar_val[i] /= 10.0;
+            if (g_bar_val[i] >= 100.0)     g_bar_val[i] /= 100.0;
+            else if (g_bar_val[i] >= 10.0) g_bar_val[i] /= 10.0;
         }
     }
 
