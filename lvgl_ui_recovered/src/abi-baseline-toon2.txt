@@ -143,6 +143,7 @@ strncasecmp@GLIBC_2.4
 strncat@GLIBC_2.4
 strncmp@GLIBC_2.4
 strncpy@GLIBC_2.4
+strpbrk@GLIBC_2.4
 strrchr@GLIBC_2.4
 strstr@GLIBC_2.4
 strtod@GLIBC_2.4

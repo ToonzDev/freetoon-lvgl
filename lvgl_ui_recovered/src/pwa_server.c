@@ -2895,8 +2895,19 @@ static const char * solar_source_name(char * buf, size_t n) {
     return buf;
 }
 
-static int handle_solar_get(int fd, const char * msg) {
-    size_t cap = 24 * 1024;
+/* The OAuth callback on this Toon as the browser reaches it ("http://<Host>/solar/callback"),
+ * for an app's "Koppelen" button (app_settings.c {REDIRECT}). */
+static void solar_redirect_uri(const char * req, char * out, size_t n) {
+    char host[128] = "";
+    if (req) req_header(req, "Host", host, sizeof host);
+    for (const char * p = host; *p; p++)
+        if (!(isalnum((unsigned char)*p) || strchr(".:-[]", *p))) { host[0] = 0; break; }
+    if (!host[0]) snprintf(host, sizeof host, "toon:10081");
+    snprintf(out, n, "http://%s/solar/callback", host);
+}
+
+static int handle_solar_get(int fd, const char * req, const char * msg) {
+    size_t cap = 32 * 1024;
     char * body = malloc(cap);
     if (!body) return send_status(fd, 500, "Internal Server Error", "oom");
     char app_id[48] = "", app_name[80] = "", src[80], ename[200];
@@ -2944,7 +2955,9 @@ static int handle_solar_get(int fd, const char * msg) {
     if (have_app) {
         html_attr_esc(ename, sizeof ename, app_name);
         pos += snprintf(body + pos, cap - pos, "<h2>Omvormer (app %s)</h2>", ename);
-        if (app_settings_form(app_id, "/solar", body, cap, &pos) != 0)
+        char redir[200];
+        solar_redirect_uri(req, redir, sizeof redir);
+        if (app_settings_form(app_id, "/solar", redir, body, cap, &pos) != 0)
             pos += snprintf(body + pos, cap - pos, "<p>De app heeft geen instellingen.</p>");
     } else {
         pos += snprintf(body + pos, cap - pos,
@@ -2970,15 +2983,50 @@ static int handle_solar_post(int fd, const char * req, const char * body) {
         return send_status(fd, 403, "Forbidden", "cross-site request refused");
     const char * cl = strcasestr(req, "Content-Length:");
     if (cl && strlen(body) < (size_t)atoi(cl + 15))
-        return handle_solar_get(fd, "Het formulier was te groot en is niet opgeslagen.");
+        return handle_solar_get(fd, req, "Het formulier was te groot en is niet opgeslagen.");
     char app_id[48] = "", app_name[80] = "", msg[300];
     if (!app_settings_find_solar(app_id, sizeof app_id, app_name, sizeof app_name))
-        return handle_solar_get(fd, "Geen omvormer-app geïnstalleerd.");
+        return handle_solar_get(fd, req, "Geen omvormer-app geïnstalleerd.");
     if (app_settings_save(app_id, body, msg, sizeof msg) != 0)
-        return handle_solar_get(fd, msg);
+        return handle_solar_get(fd, req, msg);
     g_solar_saved_at = time(NULL);
     fprintf(stderr, "[pwa] solar: settings of app %s saved via web\n", app_id);
     return send_redirect(fd, "/solar?saved", NULL);
+}
+
+/* GET /solar/callback?code=...&site_id=... : where a cloud (OAuth) provider
+ * sends the browser back after the user approved access. The query goes as
+ * it is to the solar app (file oauth_callback in its directory), which trades
+ * the code for tokens itself; the core keeps no secrets. Read from the
+ * request line, not `path`: that one is cut at 255 characters. */
+static int handle_solar_callback(int fd, const char * req) {
+    char app_id[48] = "", app_name[80] = "", dir[256], path[300], tmp[310];
+    if (!app_settings_find_solar(app_id, sizeof app_id, app_name, sizeof app_name) ||
+        app_settings_dir(app_id, dir, sizeof dir) != 0)
+        return handle_solar_get(fd, req, "Geen omvormer-app geïnstalleerd.");
+    /* request line "GET /solar/callback?<query> HTTP/1.1" */
+    const char * q = strchr(req, '?');
+    const char * sp = strchr(req, ' ');
+    const char * end = sp ? strpbrk(sp + 1, " \r\n") : NULL;
+    if (!q || !end || q > end) return handle_solar_get(fd, req, "Terugkeeradres zonder gegevens.");
+    char qs[2100];
+    size_t o = 0;
+    for (const char * p = q + 1; p < end && o + 1 < sizeof qs; p++)
+        if (isalnum((unsigned char)*p) || strchr("-._~%&=+", *p)) qs[o++] = *p;
+    qs[o] = 0;
+    snprintf(path, sizeof path, "%s/oauth_callback", dir);
+    snprintf(tmp, sizeof tmp, "%s.tmp", path);
+    int wfd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (wfd < 0 || write(wfd, qs, o) != (ssize_t)o) {
+        if (wfd >= 0) close(wfd);
+        return handle_solar_get(fd, req, "Kon het terugkeeradres niet aan de app doorgeven.");
+    }
+    close(wfd);
+    rename(tmp, path);
+    g_solar_saved_at = time(NULL);
+    fprintf(stderr, "[pwa] solar: OAuth callback handed to app %s (%u bytes%s)\n",
+            app_id, (unsigned)o, strstr(qs, "code=") ? ", with code" : "");
+    return send_redirect(fd, "/solar?linked", NULL);
 }
 
 /* --------------------------------------------------------------- /schema
@@ -3227,10 +3275,12 @@ static int dispatch(int fd, char * req) {
             return handle_ketellog_get(fd, path[9] == '?');
         if (!strcmp(path, "/homey"))       return handle_homey_get(fd, NULL);
         if (!strcmp(path, "/homey?saved")) return handle_homey_get(fd, "Opgeslagen.");
-        if (!strcmp(path, "/solar"))       return handle_solar_get(fd, NULL);
+        if (!strcmp(path, "/solar"))       return handle_solar_get(fd, req, NULL);
+        if (!strncmp(path, "/solar/callback", 15)) return handle_solar_callback(fd, req);
+        if (!strcmp(path, "/solar?linked")) return handle_solar_get(fd, req, "Toestemming ontvangen. De app koppelt nu; dit duurt hooguit een halve minuut.");
         if (!strcmp(path, "/schema"))      return handle_schema_get(fd, NULL, NULL);
         if (!strncmp(path, "/schema?", 8)) return handle_schema_get(fd, path + 8, NULL);
-        if (!strcmp(path, "/solar?saved")) return handle_solar_get(fd, "Opgeslagen. De app leest de omvormer binnen enkele seconden opnieuw uit.");
+        if (!strcmp(path, "/solar?saved")) return handle_solar_get(fd, req, "Opgeslagen. De app leest de omvormer binnen enkele seconden opnieuw uit.");
         if (!strcmp(path, "/") || !strcmp(path, "/index.html") || !strncmp(path, "/?", 2))
             return handle_remote_page(fd);
         return serve_static(fd, path);

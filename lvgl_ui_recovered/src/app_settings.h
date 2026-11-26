@@ -24,7 +24,7 @@ int app_settings_dir(const char * id, char * out, size_t n);
 
 /* Append the form for app `id` to buf at *pos (HTML, posting to `action`).
  * 0 = done, -1 = app missing or without a settings block. */
-int app_settings_form(const char * id, const char * action, char * buf, size_t n, int * pos);
+int app_settings_form(const char * id, const char * action, const char * redirect, char * buf, size_t n, int * pos);
 
 /* Apply a urlencoded form body. 0 = saved; otherwise msg says why not
  * (e.g. a guarded secret must be re-entered). */

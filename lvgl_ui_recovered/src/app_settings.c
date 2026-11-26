@@ -219,7 +219,71 @@ static int key_ok(const char * k) {
     return strlen(k) < AS_KEY_LEN - 6;   /* room for "clear_" */
 }
 
-int app_settings_form(const char * id, const char * action, char * buf, size_t n, int * pos) {
+/* Template expansion for manifest texts:
+ *   {REDIRECT}  the OAuth callback on this Toon (redirect; given by the page)
+ *   {KEY}       the stored value of field KEY, or its default
+ * url = 1 percent-encodes the inserted values (for a link). Returns 0 when a
+ * placeholder had no value (a link is then not usable yet). */
+static void pct(char * dst, size_t n, size_t * o, const char * s) {
+    static const char hx[] = "0123456789ABCDEF";
+    for (; *s && *o + 4 < n; s++) {
+        unsigned char c = (unsigned char)*s;
+        if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || strchr("-_.~", c))
+            dst[(*o)++] = (char)c;
+        else { dst[(*o)++] = '%'; dst[(*o)++] = hx[c >> 4]; dst[(*o)++] = hx[c & 15]; }
+    }
+}
+static int field_default(const char * man, const char * key, char * out, size_t n) {
+    for (int i = 0; i < 40; i++) {
+        char fp[32], k[AS_KEY_LEN];
+        snprintf(fp, sizeof fp, "settings.fields[%d]", i);
+        const char * f = mj_find(man, fp, NULL);
+        if (!f) break;
+        if (mj_str(f, "key", k, sizeof k) && !strcmp(k, key)) return mj_str(f, "default", out, n);
+    }
+    out[0] = 0;
+    return 0;
+}
+static int expand(char * dst, size_t n, const char * src, const char * man, const kv_t * kv,
+                  const char * redirect, int url, int depth) {
+    size_t o = 0;
+    int all = 1;
+    for (const char * p = src; *p && o + 1 < n; ) {
+        const char * e = (*p == '{') ? strchr(p, '}') : NULL;
+        if (e && e - p - 1 > 0 && e - p - 1 < AS_KEY_LEN) {
+            char key[AS_KEY_LEN];
+            memcpy(key, p + 1, (size_t)(e - p - 1));
+            key[e - p - 1] = 0;
+            if (key_ok(key)) {
+                static char val[AS_VAL_LEN];
+                val[0] = 0;
+                if (!strcmp(key, "REDIRECT")) snprintf(val, sizeof val, "%s", redirect ? redirect : "");
+                else {
+                    int ci = kv ? kv_find(kv, key) : -1;
+                    if (ci >= 0 && kv->v[ci][0]) snprintf(val, sizeof val, "%s", kv->v[ci]);
+                    else if (depth < 1) {
+                        char d[256];
+                        if (field_default(man, key, d, sizeof d) && d[0]) {
+                            char x[AS_VAL_LEN];
+                            expand(x, sizeof x, d, man, kv, redirect, 0, depth + 1);
+                            snprintf(val, sizeof val, "%s", x);
+                        }
+                    }
+                }
+                if (!val[0]) all = 0;
+                if (url) pct(dst, n, &o, val);
+                else for (const char * v = val; *v && o + 1 < n; v++) dst[o++] = *v;
+                p = e + 1;
+                continue;
+            }
+        }
+        dst[o++] = *p++;
+    }
+    dst[o] = 0;
+    return all;
+}
+
+int app_settings_form(const char * id, const char * action, const char * redirect, char * buf, size_t n, int * pos) {
     char * man = manifest(id);
     if (!man) return -1;
     char path[320];
@@ -245,8 +309,35 @@ int app_settings_form(const char * id, const char * action, char * buf, size_t n
         mj_str(f, "help", help, sizeof help);
         mj_str(f, "placeholder", ph, sizeof ph);
         mj_str(f, "default", dflt, sizeof dflt);
+        if (strchr(dflt, '{')) { char x[256]; expand(x, sizeof x, dflt, man, NULL, redirect, 0, 1); snprintf(dflt, sizeof dflt, "%s", x); }
+        if (strchr(help, '{')) { char x[600]; expand(x, sizeof x, help, man, kv, redirect, 0, 0); snprintf(help, sizeof help, "%s", x); }
         int ci = kv_find(kv, key);
         const char * cur = ci >= 0 ? kv->v[ci] : dflt;
+
+        /* "link": a button to an https:// address built from the stored
+         * values (e.g. an OAuth authorize URL with the client id and the
+         * Toon's callback). Not a value: nothing is stored for it. */
+        if (!strcmp(type, "link")) {
+            char tmpl[600] = "";
+            static char url[2048];
+            mj_str(f, "url", tmpl, sizeof tmpl);
+            if (strncmp(tmpl, "https://", 8)) continue;
+            int ready = expand(url, sizeof url, tmpl, man, kv, redirect, 1, 0);
+            esc(e, sizeof e, show);
+            ap(buf, n, pos, "<div class=\"row\"%s%s%s>", show[0] ? " data-show=\"" : "", show[0] ? e : "", show[0] ? "\"" : "");
+            esc(e, sizeof e, label[0] ? label : key);
+            if (ready) {
+                static char eu[4096];
+                esc(eu, sizeof eu, url);
+                ap(buf, n, pos, "<a class=\"btn\" href=\"%s\" rel=\"noreferrer\">%s</a>", eu, e);
+            } else {
+                ap(buf, n, pos, "<span class=\"btn btn-sec\" style=\"opacity:.6;cursor:default\">%s</span>"
+                                "<p class=\"help\">Vul eerst de velden hierboven in en klik op Opslaan.</p>", e);
+            }
+            if (help[0]) { esc(e, sizeof e, help); ap(buf, n, pos, "<p class=\"help\">%s</p>", e); }
+            ap(buf, n, pos, "</div>");
+            continue;
+        }
 
         esc(e, sizeof e, show);
         ap(buf, n, pos, "<div class=\"row\"%s%s%s>", show[0] ? " data-show=\"" : "", show[0] ? e : "", show[0] ? "\"" : "");
