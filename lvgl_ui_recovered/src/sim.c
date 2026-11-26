@@ -545,6 +545,37 @@ static void mock_state(void) {
         weather_state.days[i].wind_bft = 3;
         snprintf(weather_state.days[i].wind_dir, 6, "ZW");
     }
+    /* SIM_WX14=1: a synthetic 14-day forecast (winter-like) for the
+     * "14 dagen" chart; day 0 also has hours so a tap opens the hour view. */
+    if (getenv("SIM_WX14")) {
+        static const char * ic[14] = { "j","a","b","m","c","c","c","j","r","r","c","r","c","c" };
+        static const float mx[14] = { 1.1f,0.4f,2.0f,4.2f,6.1f,5.6f,5.6f,5.8f,5.0f,4.9f,4.9f,4.7f,4.1f,4.3f };
+        static const float mn[14] = { -1.3f,-2.2f,-1.8f,1.3f,3.6f,2.7f,2.0f,3.0f,2.5f,2.4f,2.8f,1.9f,1.7f,1.7f };
+        static const int   rn[14] = { 0,0,0,75,10,0,2,2,0,1,2,2,30,60 };
+        static const char * wd[7] = { "ma","di","wo","do","vr","za","zo" };
+        weather_ext_count = 14;
+        for (int i = 0; i < 14; i++) {
+            weather_ext_day_t * E = &weather_ext[i];
+            memset(E, 0, sizeof *E);
+            snprintf(E->day, sizeof E->day, "%s %d-%d", wd[(3 + i) % 7], 26 + i > 30 ? i - 4 : 26 + i, 26 + i > 30 ? 12 : 11);
+            snprintf(E->date_iso, sizeof E->date_iso, "2026-%02d-%02d", 26 + i > 30 ? 12 : 11, 26 + i > 30 ? i - 4 : 26 + i);
+            snprintf(E->icon, sizeof E->icon, "%s", ic[i]);
+            snprintf(E->desc, sizeof E->desc, "%s", i == 3 ? "Lichte regen" : "Half bewolkt");
+            E->max_temp = mx[i]; E->min_temp = mn[i]; E->rain_chance = rn[i];
+            E->rain_mm = rn[i] / 25.0f; E->wind_bft = 2 + i % 3; E->wind_deg = 135;
+            snprintf(E->wind_dir, sizeof E->wind_dir, "ZO");
+            E->cloud = 75; snprintf(E->sunrise, 6, "08:3%d", i % 10); snprintf(E->sunset, 6, "16:2%d", 8 - i % 9);
+        }
+        snprintf(weather_state.days[0].date_iso, sizeof weather_state.days[0].date_iso, "%s", weather_ext[0].date_iso);
+        weather_state.days[0].hour_count = 12;
+        for (int h = 0; h < 12; h++) {
+            weather_hourly_slot_t * H = &weather_state.days[0].hours[h];
+            snprintf(H->label, sizeof H->label, "%02d:00", 12 + h);
+            snprintf(H->icon, sizeof H->icon, "j");
+            H->temperature = 1.0f - h * 0.2f; H->feel_temp = H->temperature - 3; H->wind_bft = 2;
+            snprintf(H->wind_dir, sizeof H->wind_dir, "ZO"); H->wind_deg = 135;
+        }
+    }
 
     /* Energy/gas so the dim-screen usage bars render. Both auto-scale, so a
      * single frame pins them full (first reading == running max). */
@@ -673,6 +704,7 @@ static const struct { const char * name; create_fn fn; } SCREENS[] = {
     { "stats",       screen_stats_create },
     { "prices",      screen_prices_create },
     { "forecast",    screen_forecast_create },
+    { "weather14",   screen_weather14_create },
     { "heater",      screen_heater_advanced_create },
     { "vent_remote", screen_vent_remote_create },
     { "vent_adv",    screen_vent_advanced_create },

@@ -318,8 +318,45 @@ static void fill_hour(const char * ob, const char * oe, void * ctx) {
     D->hour_count++;
 }
 
+weather_ext_day_t weather_ext[WEATHER_EXT_DAYS];
+int weather_ext_count = 0;
+
+/* "2026-12-05T08:32:45" -> "08:32" */
+static void iso_hhmm(const char * ob, const char * oe, const char * key, char * out, size_t n) {
+    char iso[24] = "";
+    obj_str(ob, oe, key, iso, sizeof iso);
+    if (strlen(iso) >= 16) snprintf(out, n, "%.5s", iso + 11);
+    else out[0] = 0;
+}
+
+static void fill_ext_day(const char * ob, const char * oe) {
+    if (weather_ext_count >= WEATHER_EXT_DAYS) return;
+    weather_ext_day_t * E = &weather_ext[weather_ext_count];
+    memset(E, 0, sizeof *E);
+    char iso[24];
+    obj_str(ob, oe, "date", iso, sizeof iso);
+    if (strlen(iso) < 10) return;
+    snprintf(E->date_iso, sizeof E->date_iso, "%.10s", iso);
+    format_day_label(iso, E->day, sizeof E->day);
+    E->min_temp    = (float)obj_num(ob, oe, "mintemperature", 0);
+    E->max_temp    = (float)obj_num(ob, oe, "maxtemperature", 0);
+    E->rain_chance = (int)obj_num(ob, oe, "precipitation", 0);
+    E->rain_mm     = (float)obj_num(ob, oe, "precipitationmm", 0);
+    E->wind_bft    = (int)obj_num(ob, oe, "beaufort", 0);
+    E->wind_deg    = (int)obj_num(ob, oe, "winddirectiondegrees", 0);
+    E->cloud       = (int)obj_num(ob, oe, "cloudcover", -1);
+    obj_str(ob, oe, "winddirection", E->wind_dir, sizeof E->wind_dir);
+    iso_hhmm(ob, oe, "sunrise", E->sunrise, sizeof E->sunrise);
+    iso_hhmm(ob, oe, "sunset", E->sunset, sizeof E->sunset);
+    obj_str(ob, oe, "iconcode", E->icon, sizeof E->icon);
+    E->icon[1] = 0;
+    snprintf(E->desc, sizeof E->desc, "%s", br_desc(E->icon));
+    weather_ext_count++;
+}
+
 static void fill_day(const char * ob, const char * oe, void * ctx) {
     (void)ctx;
+    fill_ext_day(ob, oe);
     int dc = weather_state.day_count;
     if (dc >= WEATHER_FORECAST_DAYS) return;
     weather_day_t * D = &weather_state.days[dc];
@@ -360,13 +397,18 @@ static int parse_br_forecast(const char * body, double * lat, double * lon) {
     }
 
     static weather_day_t prev[WEATHER_FORECAST_DAYS];   /* keep the old forecast if this one is empty */
+    static weather_ext_day_t prev_ext[WEATHER_EXT_DAYS];
     memcpy(prev, weather_state.days, sizeof prev);
-    int prev_dc = weather_state.day_count;
+    memcpy(prev_ext, weather_ext, sizeof prev_ext);
+    int prev_dc = weather_state.day_count, prev_ec = weather_ext_count;
     weather_state.day_count = 0;
+    weather_ext_count = 0;
     each_obj(days, re, fill_day, NULL);
     if (weather_state.day_count == 0) {
         memcpy(weather_state.days, prev, sizeof prev);
         weather_state.day_count = prev_dc;
+        memcpy(weather_ext, prev_ext, sizeof prev_ext);
+        weather_ext_count = prev_ec;
         return -1;
     }
 

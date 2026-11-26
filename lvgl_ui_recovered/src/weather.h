@@ -63,6 +63,27 @@ typedef struct {
 
 extern weather_state_t weather_state;
 
+/* The 14-day forecast (same Buienradar answer: hours for the first week,
+ * day values only after that). Kept apart from weather_state so its layout
+ * (client link, web API, strips) stays as it is. Read under weather_lock(). */
+#define WEATHER_EXT_DAYS 14
+typedef struct {
+    char  day[16];           /* "ma 13-5" */
+    char  date_iso[16];      /* "2026-10-28" */
+    float min_temp, max_temp;
+    int   rain_chance;       /* % */
+    float rain_mm;           /* mm for the day */
+    int   wind_bft;
+    char  wind_dir[6];
+    int   wind_deg;
+    int   cloud;             /* cloud cover %, -1 unknown */
+    char  sunrise[6], sunset[6];   /* "08:32" */
+    char  icon[8];
+    char  desc[64];
+} weather_ext_day_t;
+extern weather_ext_day_t weather_ext[WEATHER_EXT_DAYS];
+extern int weather_ext_count;
+
 /* Returns either real temperature (default) or feel temperature per settings.weather_use_feel */
 float weather_display_temp(void);
 float weather_hour_display_temp(const weather_hour_t * h);

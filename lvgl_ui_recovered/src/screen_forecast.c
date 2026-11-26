@@ -232,6 +232,8 @@ static void on_view_btn_click(lv_event_t * e) {
     update_forecast_view_mode();
 }
 
+static void on_14days(lv_event_t * e) { (void)e; screen_weather14_show(); }
+
 static void on_day_card_clicked(lv_event_t * e) {
     int day_idx = (int)(intptr_t)lv_event_get_user_data(e);
     screen_weather_hourly_show(day_idx);
@@ -640,6 +642,24 @@ lv_obj_t * screen_forecast_create(void) {
 
         /* Verbose desc moved to the title body — match the home band. */
         fc_desc_lbl[i] = NULL;
+    }
+
+    /* "14 dagen": the 14-day chart (screen_weather14.c), left of the close button */
+    {
+        lv_obj_t * b14 = lv_btn_create(scr_root);
+        lv_obj_set_size(b14, (DISP_HOR < 1000) ? 120 : 150, lv_obj_get_height(close_btn));
+        lv_obj_align_to(b14, close_btn, LV_ALIGN_OUT_LEFT_MID, -10, 0);
+        lv_obj_set_style_bg_color(b14, lv_color_hex(THEME_BTN_BG), 0);
+        lv_obj_set_style_radius(b14, 10, 0);
+        lv_obj_set_ext_click_area(b14, 10);
+        lv_obj_add_event_cb(b14, on_14days, LV_EVENT_CLICKED, NULL);
+        lv_obj_t * l = lv_label_create(b14);
+        lv_label_set_text(l, tr("14 dagen", "14 days"));
+        lv_obj_set_style_text_color(l, lv_color_hex(THEME_TEXT_HI), 0);
+        lv_obj_set_style_text_font(l, (DISP_VER < 600) ? SF(16) : SF(18), 0);
+        lv_obj_center(l);
+        /* the title shares the row: keep it clear of the button */
+        if (lbl_title) lv_obj_set_width(lbl_title, right_w - 76 - ((DISP_HOR < 1000) ? 130 : 160));
     }
 
     lv_obj_move_foreground(close_btn);
