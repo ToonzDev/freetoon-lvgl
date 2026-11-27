@@ -900,3 +900,11 @@
 ### 88. Round thermostat as a dim block
 - **Status**: Implemented (2026-11-26), sim-checked (Toon 1 + 2, heating / idle, small size); device builds not made yet (user: commit only).
 - **What**: dim block DB_DIAL "Thermostaat (rond)" (default hidden; dim layout editor). Read-only: ring = setpoint over 6-30 C (no knob, not clickable: a tap wakes the Toon), orange while heating / pre-heating, muted blue otherwise; room temperature large, "naar 21,0" under it, "Verwarmen 45%" over it while heating (left out on small blocks, the ring colour says it). Dim-friendly colours.
+
+### 89. Dim editor "Vervang type" added a block instead of replacing it
+- **Status**: Fixed (2026-11-27, abd2a71), sim-checked (tap through the editor, saved layout) and on .16.
+- **What**: open_add_modal() began with close_chooser(), which clears replace_idx, so the replace path never ran since 0178bd1: the old block stayed and the new one landed in a free spot or at 0,0 over other blocks (seen when switching the thermostat to "Thermostaat (rond)"). The home layout editor was not affected.
+
+### 90. Release 1.0.23: round thermostat, ventilation via Homey, CH pressure fix
+- **Status**: Prepared (2026-11-27) in release_v1.0.23/ (built from the "chore(release): 1.0.23" commit, BUILD_VERSION=1.0.23, helpers and libttysniff.so copied from 1.0.22 as their sources are unchanged, index.* from web/build.sh). To publish: push, tag 1.0.23 on the release commit, publish non-prerelease with all files.
+- **Contents**: #85 round thermostat tile, #88 round thermostat dim block, tile accent bars removed, narrow ventilation tile, #87 ventilation via Homey, #86 CH pressure "6.00", HomeWizard water meter logging, #89 dim editor "Vervang type".
