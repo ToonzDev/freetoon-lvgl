@@ -441,7 +441,8 @@ static void refresh_cb(lv_timer_t * t) {
 /* ===================================================================== */
 /* Screen build                                                          */
 /* ===================================================================== */
-static void on_qr(lv_event_t * e) { (void)e; wq_show_big(); }
+/* the network the WiFi QR code holds (Instellingen is behind the PIN already) */
+static void on_qr(lv_event_t * e) { (void)e; screen_settings_open_wifiqr_modal(); }
 
 static void back_async(void * u) { (void)u; ui_pop(); }
 static void on_back(lv_event_t * e) { (void)e; lv_async_call(back_async, NULL); }
@@ -539,7 +540,7 @@ lv_obj_t * screen_wifi_create(void) {
     lv_obj_t * ql = lv_label_create(qrb);
     lv_obj_set_style_text_color(ql, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(ql, SF(22), 0);
-    lv_label_set_text(ql, tr("QR-code", "QR code"));
+    lv_label_set_text(ql, tr("Gast-QR", "Guest QR"));
     lv_obj_center(ql);
 
     lbl_hint = lv_label_create(scr_root);

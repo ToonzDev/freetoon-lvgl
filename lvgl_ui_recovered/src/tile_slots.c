@@ -9,6 +9,7 @@
 #include "boxtalk.h"
 #include "notify.h"
 #include "i18n.h"
+#include "homey_parse.h"   /* hy_fold_text */
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,6 +52,7 @@ const char * tile_slot_label(int slot) {
 /* manifest.json walker — same brittle-but-OK grep style used by
  * screen_marketplace.c. Pulls "key":"value" or "key":{...} fields. */
 /* ===================================================================== */
+static void fold_ui(const char * in, char * out, size_t n);   /* below */
 static int extract_str(const char * src, const char * key,
                        char * out, size_t outsz) {
     char needle[64];
@@ -175,8 +177,11 @@ static int load_manifest(const char * dir_path) {
         size_t sn = fread(sbuf, 1, sizeof sbuf - 1, sf);
         sbuf[sn] = 0;
         fclose(sf);
-        extract_str(sbuf, "value", (char *)m->latest_value, sizeof m->latest_value);
-        extract_str(sbuf, "subtitle", (char *)m->latest_subtitle, sizeof m->latest_subtitle);
+        char raw[INTEG_VALUE_MAX];
+        extract_str(sbuf, "value", raw, sizeof raw);
+        fold_ui(raw, (char *)m->latest_value, sizeof m->latest_value);
+        extract_str(sbuf, "subtitle", raw, sizeof raw);
+        fold_ui(raw, (char *)m->latest_subtitle, sizeof m->latest_subtitle);
         extract_str(sbuf, "alert", (char *)m->latest_alert, sizeof m->latest_alert);
     }
 
@@ -342,13 +347,35 @@ void tile_slots_set_from_remote(int n, const integration_meta_t * src) {
     g_integ_count = n;
 }
 
+/* An app's text -> what every UI font can draw: ASCII and the degree sign
+ * stay, accented letters fold to their base letter (ë -> e), the rest goes.
+ * The Montserrat sizes have no Latin-1 at all: a Teletekst headline with
+ * "ë" showed an empty box. */
+static void fold_ui(const char * in, char * out, size_t n) {
+    size_t o = 0;
+    const unsigned char * p = (const unsigned char *)in;
+    while (*p && o + 3 < n) {
+        if (*p < 0x80) { out[o++] = (char)*p++; continue; }
+        if (p[0] == 0xC2 && p[1] == 0xB0) { out[o++] = (char)0xC2; out[o++] = (char)0xB0; p += 2; continue; }
+        size_t l = (*p >= 0xF0) ? 4 : (*p >= 0xE0) ? 3 : (*p >= 0xC0) ? 2 : 1;
+        char one[8] = "";
+        size_t k = 0;
+        for (; k < l && p[k]; k++) one[k] = (char)p[k];
+        one[k] = 0;
+        hy_fold_text(one);                     /* "" when it has no ASCII form */
+        for (char * c = one; *c && o + 1 < n; c++) out[o++] = *c;
+        p += k;
+    }
+    out[o] = 0;
+}
+
 void tile_slots_set_value(const char * integration_id, const char * val, const char * sub, const char * alert) {
     if (!integration_id || !integration_id[0]) return;
     const char * bare_id = (strncmp(integration_id, "local:", 6) == 0) ? integration_id + 6 : integration_id;
     for (int i = 0; i < g_integ_count; i++) {
         if (strcmp(g_integ[i].id, integration_id) == 0 || strcmp(g_integ[i].id, bare_id) == 0) {
-            if (val) snprintf((char *)g_integ[i].latest_value, sizeof(g_integ[i].latest_value), "%s", val);
-            if (sub) snprintf((char *)g_integ[i].latest_subtitle, sizeof(g_integ[i].latest_subtitle), "%s", sub);
+            if (val) fold_ui(val, (char *)g_integ[i].latest_value, sizeof(g_integ[i].latest_value));
+            if (sub) fold_ui(sub, (char *)g_integ[i].latest_subtitle, sizeof(g_integ[i].latest_subtitle));
             if (alert) {
                 if (strcmp(alert, (char *)g_integ[i].latest_alert) != 0) {
                     if (alert[0]) notify_show("integration", g_integ[i].service_id, alert);

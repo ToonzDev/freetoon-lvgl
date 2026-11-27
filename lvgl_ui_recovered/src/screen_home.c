@@ -3748,7 +3748,15 @@ static void home_show_page(int n) {
     }
     home_set_dot(n);
 }
+/* LVGL sends CLICKED on release even after LONG_PRESSED: a long press on a
+ * slot tile opened "Tegel toewijzen" AND then acted as a tap (opened the app
+ * or the WiFi QR over the dialog, or toggled an HA switch). */
+static int after_long_press(lv_event_t * e) {
+    lv_indev_t * in = lv_event_get_indev(e);
+    return in && in->proc.long_pr_sent;
+}
 static void on_page1_slot(lv_event_t * e) {
+    if (after_long_press(e)) return;
     lv_obj_t * tapped = lv_event_get_current_target(e);
     for (int i = 0; i < g_p1_count; i++) {
         if (p1_main[i] && tapped == lv_obj_get_parent(p1_main[i])) {
@@ -3775,6 +3783,7 @@ static void on_page1_slot(lv_event_t * e) {
 
 /* Integratie tile on the home page: open the bound app, else choose one. */
 static void on_home_slot(lv_event_t * e) {
+    if (after_long_press(e)) return;
     lv_obj_t * tapped = lv_event_get_current_target(e);
     for (int k = 0; k < g_hs_count; k++)
         if (tapped == hs_tile[k]) {
@@ -3785,6 +3794,7 @@ static void on_home_slot(lv_event_t * e) {
 }
 /* Page-3 tile: open the bound app, else choose one. */
 static void on_page3_slot(lv_event_t * e) {
+    if (after_long_press(e)) return;
     lv_obj_t * tapped = lv_event_get_current_target(e);
     for (int i = 0; i < g_p3_count; i++)
         if (p3_main[i] && tapped == lv_obj_get_parent(p3_main[i])) {

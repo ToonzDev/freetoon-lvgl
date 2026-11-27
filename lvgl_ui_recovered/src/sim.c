@@ -1316,6 +1316,12 @@ int main(int argc, char ** argv) {
                 for (int k = 1; k <= 12; k++) { tap_x = x + (x2 - x) * k / 12; tap_y = y + (y2 - y) * k / 12; pump(3); }
                 tap_pressed = 0; pump(10);
             }
+            else if (!strncmp(argv[a], "hold:", 5) && sscanf(argv[a] + 5, "%d,%d", &x, &y) == 2) {
+                /* long press (~1 s), as in the single-screen mode */
+                tap_x = x; tap_y = y; tap_pressed = 1;
+                for (int ms = 1100; ms > 0; ms -= 20) { lv_timer_handler(); lv_tick_inc(20); }
+                tap_pressed = 0; pump(10);
+            }
             else if (sscanf(argv[a], "%d,%d", &x, &y) == 2) sim_tap(x, y);
             else if (!strncmp(argv[a], "wait:", 5))   /* let background fetches land */
                 for (int ms = atoi(argv[a] + 5); ms > 0; ms -= 20) { lv_timer_handler(); lv_tick_inc(20); usleep(20000); ep_tick(); }

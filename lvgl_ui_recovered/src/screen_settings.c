@@ -38,6 +38,7 @@
 #include "tile_slots.h"
 #include "tile_ext.h"
 #include "tile_wifiqr.h"
+#include "pin_modal.h"      /* pin_gate */
 #include "homey_parse.h"   /* hy_fold_text */
 #include "news.h"
 #include "wastecollection.h"
@@ -5341,6 +5342,11 @@ static void on_modal_ext_pick(lv_event_t * e) {
     modal_close(e);
     screen_ext_picker_open_tile(v / 2, v % 2);
 }
+static void wq_open_action(void * ctx) { (void)ctx; screen_settings_open_wifiqr_modal(); }
+static void on_modal_wifiqr(lv_event_t * e) {
+    modal_close(e);
+    pin_gate(wq_open_action, NULL);       /* the dialog shows the network: PIN when set */
+}
 static void on_modal_ext_unbind(lv_event_t * e) {
     int slot = (int)(intptr_t)lv_event_get_user_data(e);
     tile_ext_bind(slot, TEXT_NONE, NULL, NULL);
@@ -5390,6 +5396,11 @@ void screen_settings_open_tile_slot_single_modal(int slot) {
     /* An HA entity or Domoticz device on the tile (not on the four fixed
      * home tiles, which have their own content). */
     if (slot >= 4) {
+        const char * bnd = tile_slots_binding(slot);
+        if (bnd && !strcmp(bnd, "local:wifiqr")) {      /* which network the QR code holds */
+            lv_obj_t * w = modal_small_btn(p, SX(250), tr("WiFi-netwerk...", "WiFi network..."), 0x2f8f6f, on_modal_wifiqr, 0);
+            lv_obj_align(w, LV_ALIGN_TOP_RIGHT, SX(-4), SY(160));
+        }
         char cur[140];
         tile_ext_describe(slot, cur, sizeof cur);
         if (cur[0]) {
