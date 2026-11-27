@@ -453,6 +453,10 @@ typedef struct {
     /* Integratie tiles bound to "local:ext" (tile_ext.c): per slot
      * "ha:<entity_id>" or "dz:<idx>"; must match TILE_SLOT_COUNT. */
     char tile_slot_ext[33][96];
+    /* Ventilation via Homey: the on/off capability of relay 1 / 2 ("" =
+     * "onoff"; "onoff.1" etc. for one channel of a multi-channel device). */
+    char vent_hy_c1[24];
+    char vent_hy_c2[24];
 } settings_t;
 
 #define FORECAST_AUTO   0

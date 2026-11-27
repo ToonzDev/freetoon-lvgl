@@ -20,8 +20,15 @@ int vent_homey_active(void) {
            (settings.vent_hy_r1[0] || settings.vent_hy_r2[0]);
 }
 
+/* The on/off capability of relay r (0/1): "onoff", or one channel of a
+ * multi-channel device ("onoff.1", ...). */
+static const char * relay_cap(int r) {
+    const char * c = r ? settings.vent_hy_c2 : settings.vent_hy_c1;
+    return c[0] ? c : "onoff";
+}
+
 /* Relay state from Homey. Caller holds the lock. 1 on, 0 off, -1 not found. */
-static int relay_on(const char * id, double * watts) {
+static int relay_on(const char * id, const char * cap, double * watts) {
     if (!id[0]) return 0;                       /* no such relay: counts as off */
     for (int i = 0; i < homey_state.ndev; i++) {
         const hy_dev_t * d = &homey_state.dev[i];
@@ -29,7 +36,7 @@ static int relay_on(const char * id, double * watts) {
         int on = -1;
         for (int c = 0; c < d->ncap; c++) {
             const hy_cap_t * k = &d->cap[c];
-            if (!strcmp(k->id, "onoff") && k->type != HY_V_NONE) on = k->num != 0;
+            if (!strcmp(k->id, cap) && k->type != HY_V_NONE) on = k->num != 0;
             else if (!strncmp(k->id, "measure_power", 13) && k->type == HY_V_NUM) {
                 if (*watts < 0) *watts = 0;
                 *watts += k->num;
@@ -54,7 +61,7 @@ static void apply_mask(int mask) {
         for (int r = 0; r < 2; r++) {
             if (!id[r][0]) continue;
             int want = (mask >> r) & 1;
-            if (want == pass) homey_onoff(id[r], want);
+            if (want == pass) homey_set_bool(id[r], relay_cap(r), want);
         }
     fprintf(stderr, "[vent-homey] relays -> %s (mask %d)\n", mode_of(mask), mask);
 }
@@ -93,8 +100,10 @@ static void tick(lv_timer_t * t) {
     double w = -1;
     homey_lock();
     int ok = homey_state.status == HOMEY_ST_OK;
-    int a = relay_on(settings.vent_hy_r1, &w);
-    int b = relay_on(settings.vent_hy_r2, &w);
+    int a = relay_on(settings.vent_hy_r1, relay_cap(0), &w);
+    /* both relays on one 2-channel device: count its power once */
+    double w2 = -1;
+    int b = relay_on(settings.vent_hy_r2, relay_cap(1), strcmp(settings.vent_hy_r1, settings.vent_hy_r2) ? &w : &w2);
     homey_unlock();
     if (a < 0 || b < 0) ok = 0;
     g_watts = w;

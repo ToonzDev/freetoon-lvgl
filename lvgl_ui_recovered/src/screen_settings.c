@@ -4267,9 +4267,13 @@ static void on_int_toonwater_host(lv_event_t * e) {
 /* A plain fan (off / low / high) on two relays Homey knows, e.g. a Shelly
  * Plus 2PM in switch mode. Pick the two relay devices and which relays make
  * "Laag" and "Hoog"; the ventilation tile then drives them. */
-#define VH_MAX 40
-static char vh_ids[VH_MAX][HY_ID_LEN];
+#define VH_MAX 256
+typedef struct { char id[HY_ID_LEN]; char cap[24]; char label[HY_NAME_LEN + 24]; } vh_opt_t;
+static vh_opt_t vh_opt[VH_MAX];
 static int  vh_n;
+static int vh_cmp(const void * a, const void * b) {
+    return strncasecmp(((const vh_opt_t *)a)->label, ((const vh_opt_t *)b)->label, sizeof ((const vh_opt_t *)a)->label);
+}
 static void vh_save(void) { settings_save(); }
 static void on_vh_enable(lv_event_t * e) {
     settings.vent_homey = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
@@ -4280,7 +4284,11 @@ static void on_vh_relay(lv_event_t * e) {
     int sel = (int)lv_dropdown_get_selected(lv_event_get_target(e));
     char * dst = which ? settings.vent_hy_r2 : settings.vent_hy_r1;
     size_t n = which ? sizeof settings.vent_hy_r2 : sizeof settings.vent_hy_r1;
-    snprintf(dst, n, "%s", (sel > 0 && sel <= vh_n) ? vh_ids[sel - 1] : "");
+    char * cdst = which ? settings.vent_hy_c2 : settings.vent_hy_c1;
+    size_t cn = which ? sizeof settings.vent_hy_c2 : sizeof settings.vent_hy_c1;
+    int ok = sel > 0 && sel <= vh_n;
+    snprintf(dst, n, "%s", ok ? vh_opt[sel - 1].id : "");
+    snprintf(cdst, cn, "%s", ok && strcmp(vh_opt[sel - 1].cap, "onoff") ? vh_opt[sel - 1].cap : "");
     vh_save();
 }
 static void on_vh_map(lv_event_t * e) {
@@ -4306,26 +4314,45 @@ static void open_vent_homey_modal(lv_event_t * e) {
     row_switch(r, settings.vent_homey, on_vh_enable);
     y += 82;
 
-    /* the switchable Homey devices, "(geen)" first */
-    static char opts[VH_MAX * (HY_NAME_LEN + 4) + 16];
+    /* Every switchable on/off capability of every Homey device, sorted by
+     * name, "(geen)" first. A multi-channel device (a Shelly 2PM in some
+     * Homey apps: onoff.1 / onoff.2 instead of onoff) gives one entry per
+     * channel. Was the first 40 devices with a plain "onoff" only, so a
+     * relay could be missing from the list. */
+    static char opts[VH_MAX * (HY_NAME_LEN + 28) + 16];
     int sel1 = 0, sel2 = 0;
     size_t o = (size_t)snprintf(opts, sizeof opts, "%s", tr("(geen)", "(none)"));
     vh_n = 0;
     homey_lock();
     for (int i = 0; i < homey_state.ndev && vh_n < VH_MAX; i++) {
         const hy_dev_t * d = &homey_state.dev[i];
-        if (!homey_switchable(d)) continue;
-        char nm[HY_NAME_LEN];
-        snprintf(nm, sizeof nm, "%s", d->name);
-        hy_fold_text(nm);
-        for (char * c = nm; *c; c++) if (*c == '\n') *c = ' ';
-        snprintf(vh_ids[vh_n], HY_ID_LEN, "%s", d->id);
-        if (!strcmp(d->id, settings.vent_hy_r1)) sel1 = vh_n + 1;
-        if (!strcmp(d->id, settings.vent_hy_r2)) sel2 = vh_n + 1;
-        if (o < sizeof opts) o += (size_t)snprintf(opts + o, sizeof opts - o, "\n%s", nm);
-        vh_n++;
+        if (homey_read_only(d) || d->kind == HY_K_COVER) continue;
+        int chans = 0;
+        for (int c = 0; c < d->ncap; c++)
+            if (!strncmp(d->cap[c].id, "onoff", 5) && (!d->cap[c].id[5] || d->cap[c].id[5] == '.') && d->cap[c].setable) chans++;
+        for (int c = 0; c < d->ncap && vh_n < VH_MAX; c++) {
+            const hy_cap_t * k = &d->cap[c];
+            if (strncmp(k->id, "onoff", 5) || (k->id[5] && k->id[5] != '.') || !k->setable) continue;
+            vh_opt_t * v = &vh_opt[vh_n++];
+            char nm[HY_NAME_LEN];
+            snprintf(nm, sizeof nm, "%s", d->name);
+            hy_fold_text(nm);
+            for (char * ch = nm; *ch; ch++) if (*ch == '\n') *ch = ' ';
+            snprintf(v->id, sizeof v->id, "%s", d->id);
+            snprintf(v->cap, sizeof v->cap, "%s", k->id);
+            if (chans > 1) snprintf(v->label, sizeof v->label, "%s (%s)", nm, k->id);
+            else snprintf(v->label, sizeof v->label, "%s", nm);
+        }
     }
     homey_unlock();
+    if (vh_n > 1) qsort(vh_opt, (size_t)vh_n, sizeof vh_opt[0], vh_cmp);
+    const char * c1 = settings.vent_hy_c1[0] ? settings.vent_hy_c1 : "onoff";
+    const char * c2 = settings.vent_hy_c2[0] ? settings.vent_hy_c2 : "onoff";
+    for (int i = 0; i < vh_n; i++) {
+        if (!strcmp(vh_opt[i].id, settings.vent_hy_r1) && !strcmp(vh_opt[i].cap, c1)) sel1 = i + 1;
+        if (!strcmp(vh_opt[i].id, settings.vent_hy_r2) && !strcmp(vh_opt[i].cap, c2)) sel2 = i + 1;
+        if (o < sizeof opts) o += (size_t)snprintf(opts + o, sizeof opts - o, "\n%s", vh_opt[i].label);
+    }
 
     r = panel_row(p, y, tr("Relais 1", "Relay 1"), NULL);
     vh_dropdown(r, opts, sel1, on_vh_relay, 0);

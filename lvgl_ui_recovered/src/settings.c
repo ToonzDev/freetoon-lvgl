@@ -267,6 +267,8 @@ void settings_load(void) {
         else if (strcmp(k, "vent_hy_high")      == 0) settings.vent_hy_high      = iv & 3;
         else if (strcmp(k, "vent_hy_r1")        == 0) snprintf(settings.vent_hy_r1, sizeof settings.vent_hy_r1, "%s", v);
         else if (strcmp(k, "vent_hy_r2")        == 0) snprintf(settings.vent_hy_r2, sizeof settings.vent_hy_r2, "%s", v);
+        else if (strcmp(k, "vent_hy_c1")        == 0) snprintf(settings.vent_hy_c1, sizeof settings.vent_hy_c1, "%s", v);
+        else if (strcmp(k, "vent_hy_c2")        == 0) snprintf(settings.vent_hy_c2, sizeof settings.vent_hy_c2, "%s", v);
         else if (strcmp(k, "boiler_remote_host") == 0)
             snprintf(settings.boiler_remote_host, sizeof settings.boiler_remote_host, "%s", v);
         else if (strcmp(k, "boiler_remote_on")  == 0) { if (iv >= 600 && iv <= 3000) settings.boiler_remote_on = iv; }
@@ -1089,6 +1091,8 @@ static void settings_write_file(void) {
     fprintf(f, "vent_homey=%d\n",        settings.vent_homey);
     fprintf(f, "vent_hy_r1=%s\n",        settings.vent_hy_r1);
     fprintf(f, "vent_hy_r2=%s\n",        settings.vent_hy_r2);
+    fprintf(f, "vent_hy_c1=%s\n",        settings.vent_hy_c1);
+    fprintf(f, "vent_hy_c2=%s\n",        settings.vent_hy_c2);
     fprintf(f, "vent_hy_low=%d\n",       settings.vent_hy_low);
     fprintf(f, "vent_hy_high=%d\n",      settings.vent_hy_high);
     fprintf(f, "boiler_remote_host=%s\n", settings.boiler_remote_host);

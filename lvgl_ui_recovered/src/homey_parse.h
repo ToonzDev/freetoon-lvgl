@@ -20,7 +20,7 @@
 
 #include <stddef.h>
 
-#define HY_MAX_DEV   160
+#define HY_MAX_DEV   256    /* was 160: a big Homey lost devices past it */
 #define HY_MAX_CAP   10
 #define HY_MAX_ZONE  64
 #define HY_MAX_FLOW  64

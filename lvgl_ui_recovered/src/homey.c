@@ -222,6 +222,11 @@ static int poll_devices_locked(int * count_out) {
     int n = code == 200 ? hy_parse_devices(body, len, g_dev, HY_MAX_DEV) : -1;
     free(body);
     if (n < 0) return HOMEY_ST_BADDATA;
+    static int logged_full;
+    if (n >= HY_MAX_DEV && !logged_full) {
+        logged_full = 1;
+        fprintf(stderr, "[homey] more than %d devices: the rest is not shown\n", HY_MAX_DEV);
+    }
     if (count_out) *count_out = n;
     if (g_act_gen != act_before) {
         g_refresh = 1;                 /* overlapped an action: re-poll instead */
