@@ -540,7 +540,12 @@ static void on_restore_block(lv_event_t * e) {
 
 static void open_add_modal(lv_event_t * e) {
     (void)e;
+    /* close_chooser() clears replace_idx; "Vervang type" set it just before
+     * calling us, so keep it (without this every type change was an add:
+     * the old block stayed and the new one landed in a free spot / 0,0). */
+    int keep = replace_idx;
     close_chooser();
+    replace_idx = keep;
 
     chooser_modal = lv_obj_create(modal);
     lv_obj_set_size(chooser_modal, SCR_W, SCR_H);
