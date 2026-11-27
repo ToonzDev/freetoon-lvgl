@@ -1398,7 +1398,7 @@ static void wq_scan_tick(void) {
         lv_label_set_text_fmt(wq_scan_lbl, tr("%d netwerk(en) in de buurt - kies je gastnetwerk:", "%d network(s) nearby - pick your guest network:"), wq_net_n);
         for (int i = 0; i < wq_net_n; i++) {
             char nm[64];
-            snprintf(nm, sizeof nm, "%s", wq_net[i].ssid);
+            snprintf(nm, sizeof nm, "%.47s", wq_net[i].ssid);
             hy_fold_text(nm);
             lv_obj_t * b = lv_btn_create(wq_scan_list);
             lv_obj_set_size(b, LV_PCT(100), SY(52));
@@ -1449,10 +1449,34 @@ static void wq_show_current(void) {
     } else
         lv_label_set_text(wq_lbl_cur, tr("Nog geen netwerk: vul hieronder je gastnetwerk in.", "No network yet: enter your guest network below."));
 }
+/* The guest-network controls: greyed out and inert while the QR code holds
+ * the Toon's own network (their values are kept for when it is switched off). */
+#define WQ_GUEST_MAX 10
+static lv_obj_t * wq_guest[WQ_GUEST_MAX];
+static unsigned char wq_guest_dim[WQ_GUEST_MAX];   /* 0: inside a dimmed row (opacity reaches children) */
+static int wq_nguest;
+static void wq_guest_add2(lv_obj_t * o, int dim) {
+    if (o && wq_nguest < WQ_GUEST_MAX) { wq_guest_dim[wq_nguest] = (unsigned char)dim; wq_guest[wq_nguest++] = o; }
+}
+static void wq_guest_add(lv_obj_t * o) { wq_guest_add2(o, 1); }
+static void wq_apply_mode(void) {
+    int off = settings.wifiqr_mode == 0;
+    for (int i = 0; i < wq_nguest; i++) {
+        if (lv_obj_check_type(wq_guest[i], &lv_textarea_class)) {
+            /* not "disabled": that style hides the text and the stored guest
+             * network looked erased; just untappable, dimmed */
+            if (off) lv_obj_clear_flag(wq_guest[i], LV_OBJ_FLAG_CLICKABLE);
+            else lv_obj_add_flag(wq_guest[i], LV_OBJ_FLAG_CLICKABLE);
+        } else if (off) lv_obj_add_state(wq_guest[i], LV_STATE_DISABLED);
+        else lv_obj_clear_state(wq_guest[i], LV_STATE_DISABLED);
+        if (wq_guest_dim[i]) lv_obj_set_style_opa(wq_guest[i], off ? LV_OPA_40 : LV_OPA_COVER, 0);
+    }
+}
 static void on_wq_mode(lv_event_t * e) {
     settings.wifiqr_mode = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 0 : 1;
     settings_save();
     wq_show_current();
+    wq_apply_mode();
 }
 static void on_wq_sec(lv_event_t * e) {
     settings.wifiqr_sec = (int)lv_dropdown_get_selected(lv_event_get_target(e));
@@ -1465,13 +1489,14 @@ static void on_wq_hidden(lv_event_t * e) {
 static void on_wq_save(lv_event_t * e) {
     snprintf(settings.wifiqr_ssid, sizeof settings.wifiqr_ssid, "%.63s", lv_textarea_get_text(wq_ta_ssid));
     snprintf(settings.wifiqr_pass, sizeof settings.wifiqr_pass, "%.63s", lv_textarea_get_text(wq_ta_pass));
-    if (settings.wifiqr_ssid[0]) settings.wifiqr_mode = 1;     /* typed a network: use it */
-    settings_save();
+    settings_save();                    /* the switch alone decides which network the QR code holds */
     wq_ta_ssid = wq_ta_pass = wq_lbl_cur = wq_dd_sec = NULL;
+    wq_nguest = 0;
     modal_close(e);
 }
 void screen_settings_open_wifiqr_modal(void) {
     lv_obj_t * p = modal_open(tr("WiFi QR-code", "WiFi QR code"), 640);
+    wq_nguest = 0;
     lv_obj_add_flag(p, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(p, LV_DIR_VER);
     int y = 70;
@@ -1499,8 +1524,15 @@ void screen_settings_open_wifiqr_modal(void) {
     lv_obj_t * pl = lv_label_create(pick);
     lv_label_set_text_fmt(pl, LV_SYMBOL_WIFI " %s", tr("Kies", "Pick"));
     lv_obj_center(pl);
+    /* the field labels are created just before their textareas */
+    wq_guest_add(lv_obj_get_child(p, (int32_t)lv_obj_get_index(wq_ta_ssid) - 1));
+    wq_guest_add(lv_obj_get_child(p, (int32_t)lv_obj_get_index(wq_ta_pass) - 1));
+    wq_guest_add(wq_ta_ssid);
+    wq_guest_add(wq_ta_pass);
+    wq_guest_add(pick);
     y += 86;
     r = panel_row(p, y, tr("Beveiliging", "Security"), NULL);
+    wq_guest_add(r);
     lv_obj_t * dd = lv_dropdown_create(r);
     wq_dd_sec = dd;
     lv_dropdown_set_options(dd, tr("WPA / WPA2 / WPA3\nWEP\nGeen (open)", "WPA / WPA2 / WPA3\nWEP\nNone (open)"));
@@ -1510,15 +1542,18 @@ void screen_settings_open_wifiqr_modal(void) {
     lv_obj_add_event_cb(dd, on_wq_sec, LV_EVENT_VALUE_CHANGED, NULL);
     y += 82;
     r = panel_row(p, y, tr("Verborgen netwerk", "Hidden network"), NULL);
-    row_switch(r, settings.wifiqr_hidden, on_wq_hidden);
+    lv_obj_t * hsw = row_switch(r, settings.wifiqr_hidden, on_wq_hidden);
+    wq_guest_add(r);
+    wq_guest_add2(hsw, 0);
+    wq_guest_add2(dd, 0);
     y += 82;
     lv_obj_t * hint = lv_label_create(p);
     lv_obj_set_style_text_font(hint, SF(16), 0);
     lv_obj_set_style_text_color(hint, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_width(hint, SX(560));
     lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
-    lv_label_set_text(hint, tr("Een ingevuld gastnetwerk wordt gebruikt zodra je opslaat. Tonen: de tegel 'WiFi QR', of 'WiFi QR-code' op een Integratie-tegel (ook op pagina 2 en 3).",
-                               "A guest network is used once you save. Show it with the 'WiFi QR' tile, or 'WiFi QR code' on an Integration tile (pages 2 and 3 too)."));
+    lv_label_set_text(hint, tr("Voor een gastnetwerk: zet 'Netwerk van de Toon zelf' uit, kies of typ het netwerk en sla op. Tonen: 'WiFi QR-code' op een Integratie-tegel, of de tegel 'WiFi QR'.",
+                               "For a guest network: switch 'The Toon's own network' off, pick or type the network and save. Show it with 'WiFi QR code' on an Integration tile, or the 'WiFi QR' tile."));
     lv_obj_align(hint, LV_ALIGN_TOP_LEFT, SX(8), SY(y));
     lv_obj_t * sv = lv_btn_create(p);
     lv_obj_set_size(sv, SX(200), SY(52));
@@ -1527,6 +1562,7 @@ void screen_settings_open_wifiqr_modal(void) {
     lv_obj_add_event_cb(sv, on_wq_save, LV_EVENT_CLICKED, NULL);
     lv_obj_t * sl = lv_label_create(sv);
     lv_label_set_text(sl, tr("Opslaan", "Save"));
+    wq_apply_mode();
     lv_obj_center(sl);
 }
 
