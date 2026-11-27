@@ -1329,7 +1329,116 @@ static lv_obj_t * waste_field(lv_obj_t * p, int x, int y, int w, const char * lb
 }
 
 /* ---- WiFi QR tile (tile_wifiqr.c): which network the QR code holds ---- */
-static lv_obj_t * wq_ta_ssid, * wq_ta_pass, * wq_lbl_cur;
+static lv_obj_t * wq_ta_ssid, * wq_ta_pass, * wq_lbl_cur, * wq_dd_sec;
+/* "Kies netwerk": a scan via hcb_netcon (GetWirelessNetworks, as the WiFi
+ * screen does), the networks in range as buttons; a pick fills in the name
+ * and the security. The Toon's radio is 2.4 GHz only. */
+#define WQ_NET_MAX 32
+static struct { char ssid[48]; int quality; int sec; } wq_net[WQ_NET_MAX];
+static int wq_net_n, wq_scan_secs;
+static lv_obj_t * wq_scan_list, * wq_scan_lbl;
+static int wq_xml(const char * a, const char * end, const char * tag, char * out, size_t n) {
+    char o[32], c[32];
+    snprintf(o, sizeof o, "<%s>", tag);
+    snprintf(c, sizeof c, "</%s>", tag);
+    const char * p = strstr(a, o);
+    if (!p || p >= end) { out[0] = 0; return 0; }
+    p += strlen(o);
+    const char * q = strstr(p, c);
+    if (!q || q > end) { out[0] = 0; return 0; }
+    size_t l = (size_t)(q - p);
+    if (l >= n) l = n - 1;
+    memcpy(out, p, l);
+    out[l] = 0;
+    return 1;
+}
+static void on_wq_pick(lv_event_t * e) {
+    int i = (int)(intptr_t)lv_event_get_user_data(e);
+    if (i < 0 || i >= wq_net_n) return;
+    if (wq_ta_ssid) lv_textarea_set_text(wq_ta_ssid, wq_net[i].ssid);
+    settings.wifiqr_sec = wq_net[i].sec;
+    if (wq_dd_sec) lv_dropdown_set_selected(wq_dd_sec, (uint16_t)wq_net[i].sec);
+    wq_scan_list = wq_scan_lbl = NULL;
+    modal_close(e);                                   /* back to the WiFi QR dialog */
+}
+static void wq_scan_tick(void) {
+    if (!wq_scan_list) return;
+    if (netcon_response_ready && strstr(netcon_response_buf, "GetWirelessNetworksResponse")) {
+        const char * buf = netcon_response_buf, * end = buf + strlen(buf);
+        wq_net_n = 0;
+        for (const char * a = buf; wq_net_n < WQ_NET_MAX && (a = strstr(a, "<WirelessNetwork>")) != NULL; ) {
+            const char * z = strstr(a, "</WirelessNetwork>");
+            if (!z) break;
+            char ssid[48], q[16], auth[24];
+            if (wq_xml(a, z, "ESSID", ssid, sizeof ssid) && ssid[0]) {
+                wq_xml(a, z, "Quality", q, sizeof q);
+                wq_xml(a, z, "Auth", auth, sizeof auth);
+                int dup = -1;
+                for (int k = 0; k < wq_net_n; k++) if (!strcmp(wq_net[k].ssid, ssid)) dup = k;
+                int qual = (int)strtol(q, NULL, 10);
+                if (dup >= 0) { if (qual > wq_net[dup].quality) wq_net[dup].quality = qual; }
+                else {
+                    snprintf(wq_net[wq_net_n].ssid, sizeof wq_net[0].ssid, "%s", ssid);
+                    wq_net[wq_net_n].quality = qual;
+                    wq_net[wq_net_n].sec = !strcmp(auth, "OPEN") ? 2 : strstr(auth, "WEP") ? 1 : 0;
+                    wq_net_n++;
+                }
+            }
+            a = z + 1;
+        }
+        netcon_response_ready = 0;
+        (void)end;
+        for (int i = 0; i < wq_net_n; i++)                 /* strongest first */
+            for (int j = i + 1; j < wq_net_n; j++)
+                if (wq_net[j].quality > wq_net[i].quality) {
+                    __typeof__(wq_net[0]) t = wq_net[i]; wq_net[i] = wq_net[j]; wq_net[j] = t;
+                }
+        lv_obj_clean(wq_scan_list);
+        lv_label_set_text_fmt(wq_scan_lbl, tr("%d netwerk(en) in de buurt - kies je gastnetwerk:", "%d network(s) nearby - pick your guest network:"), wq_net_n);
+        for (int i = 0; i < wq_net_n; i++) {
+            char nm[64];
+            snprintf(nm, sizeof nm, "%s", wq_net[i].ssid);
+            hy_fold_text(nm);
+            lv_obj_t * b = lv_btn_create(wq_scan_list);
+            lv_obj_set_size(b, LV_PCT(100), SY(52));
+            lv_obj_set_style_bg_color(b, lv_color_hex(THEME_ROW_BG), 0);
+            lv_obj_add_event_cb(b, on_wq_pick, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+            lv_obj_t * l = lv_label_create(b);
+            lv_label_set_text_fmt(l, "%s   %s%d%%", nm, wq_net[i].sec == 2 ? "" : LV_SYMBOL_KEYBOARD " ", wq_net[i].quality);
+            lv_obj_set_style_text_font(l, SF(20), 0);
+            lv_obj_align(l, LV_ALIGN_LEFT_MID, 0, 0);
+        }
+        return;
+    }
+    if (++wq_scan_secs > 25 && wq_scan_lbl)
+        lv_label_set_text(wq_scan_lbl, tr("Geen antwoord van de netwerkbeheerder van de Toon. Typ de naam in.",
+                                          "No answer from the Toon's network manager. Type the name."));
+}
+static void on_wq_scan(lv_event_t * e) {
+    (void)e;
+    lv_obj_t * p = modal_open(tr("Kies je gastnetwerk", "Pick your guest network"), 560);
+    wq_scan_lbl = lv_label_create(p);
+    lv_obj_set_style_text_font(wq_scan_lbl, SF(18), 0);
+    lv_obj_set_style_text_color(wq_scan_lbl, lv_color_hex(THEME_TEXT_DIM), 0);
+    lv_obj_set_width(wq_scan_lbl, SX(800));
+    lv_label_set_long_mode(wq_scan_lbl, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(wq_scan_lbl, tr("Zoeken naar netwerken... (WiFi van de Toon hapert even)", "Searching for networks... (the Toon's WiFi pauses briefly)"));
+    lv_obj_align(wq_scan_lbl, LV_ALIGN_TOP_LEFT, SX(8), SY(70));
+    wq_scan_list = lv_obj_create(p);
+    lv_obj_set_size(wq_scan_list, SX(800), SY(380));
+    lv_obj_align(wq_scan_list, LV_ALIGN_TOP_LEFT, SX(4), SY(110));
+    lv_obj_set_style_bg_opa(wq_scan_list, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(wq_scan_list, 0, 0);
+    lv_obj_set_style_pad_all(wq_scan_list, 4, 0);
+    lv_obj_set_style_pad_row(wq_scan_list, 6, 0);
+    lv_obj_set_flex_flow(wq_scan_list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_scroll_dir(wq_scan_list, LV_DIR_VER);
+    wq_scan_secs = 0;
+    netcon_response_ready = 0;
+    boxtalk_wifi_scan();
+    modal_tick_fn = wq_scan_tick;
+    modal_timer = lv_timer_create(modal_timer_cb, 1000, NULL);
+}
 static void wq_show_current(void) {
     if (!wq_lbl_cur) return;
     char qr[300], ssid[96];
@@ -1353,11 +1462,11 @@ static void on_wq_hidden(lv_event_t * e) {
     settings_save();
 }
 static void on_wq_save(lv_event_t * e) {
-    snprintf(settings.wifiqr_ssid, sizeof settings.wifiqr_ssid, "%s", lv_textarea_get_text(wq_ta_ssid));
-    snprintf(settings.wifiqr_pass, sizeof settings.wifiqr_pass, "%s", lv_textarea_get_text(wq_ta_pass));
+    snprintf(settings.wifiqr_ssid, sizeof settings.wifiqr_ssid, "%.63s", lv_textarea_get_text(wq_ta_ssid));
+    snprintf(settings.wifiqr_pass, sizeof settings.wifiqr_pass, "%.63s", lv_textarea_get_text(wq_ta_pass));
     if (settings.wifiqr_ssid[0]) settings.wifiqr_mode = 1;     /* typed a network: use it */
     settings_save();
-    wq_ta_ssid = wq_ta_pass = wq_lbl_cur = NULL;
+    wq_ta_ssid = wq_ta_pass = wq_lbl_cur = wq_dd_sec = NULL;
     modal_close(e);
 }
 void screen_settings_open_wifiqr_modal(void) {
@@ -1378,9 +1487,19 @@ void screen_settings_open_wifiqr_modal(void) {
     y += 34;
     wq_ta_ssid = waste_field(p, 8, y, 390, tr("Gastnetwerk: naam (SSID)", "Guest network: name (SSID)"), settings.wifiqr_ssid);
     wq_ta_pass = waste_field(p, 418, y, 390, tr("Wachtwoord", "Password"), settings.wifiqr_pass);
+    lv_obj_set_width(wq_ta_ssid, SX(250));
+    lv_obj_t * pick = lv_btn_create(p);
+    lv_obj_set_size(pick, SX(132), SY(44));
+    lv_obj_align(pick, LV_ALIGN_TOP_LEFT, SX(266), SY(y + 26));
+    lv_obj_set_style_bg_color(pick, lv_color_hex(0x2e4e6e), 0);
+    lv_obj_add_event_cb(pick, on_wq_scan, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * pl = lv_label_create(pick);
+    lv_label_set_text_fmt(pl, LV_SYMBOL_WIFI " %s", tr("Kies", "Pick"));
+    lv_obj_center(pl);
     y += 86;
     r = panel_row(p, y, tr("Beveiliging", "Security"), NULL);
     lv_obj_t * dd = lv_dropdown_create(r);
+    wq_dd_sec = dd;
     lv_dropdown_set_options(dd, tr("WPA / WPA2 / WPA3\nWEP\nGeen (open)", "WPA / WPA2 / WPA3\nWEP\nNone (open)"));
     lv_dropdown_set_selected(dd, (uint16_t)(settings.wifiqr_sec >= 0 && settings.wifiqr_sec <= 2 ? settings.wifiqr_sec : 0));
     lv_obj_set_width(dd, SX(330));
@@ -1395,8 +1514,8 @@ void screen_settings_open_wifiqr_modal(void) {
     lv_obj_set_style_text_color(hint, lv_color_hex(THEME_TEXT_DIM), 0);
     lv_obj_set_width(hint, SX(560));
     lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
-    lv_label_set_text(hint, tr("Een ingevuld gastnetwerk wordt gebruikt zodra je opslaat. Zet de tegel 'WiFi QR' op je startscherm via Instellingen > Indeling.",
-                               "A guest network is used once you save. Put the 'WiFi QR' tile on your home screen via Settings > Layout."));
+    lv_label_set_text(hint, tr("Een ingevuld gastnetwerk wordt gebruikt zodra je opslaat. Tonen: de tegel 'WiFi QR', of 'WiFi QR-code' op een Integratie-tegel (ook op pagina 2 en 3).",
+                               "A guest network is used once you save. Show it with the 'WiFi QR' tile, or 'WiFi QR code' on an Integration tile (pages 2 and 3 too)."));
     lv_obj_align(hint, LV_ALIGN_TOP_LEFT, SX(8), SY(y));
     lv_obj_t * sv = lv_btn_create(p);
     lv_obj_set_size(sv, SX(200), SY(52));
@@ -4997,14 +5116,15 @@ static void build_slot_options(int slot, char * out, size_t cap) {
         n = snprintf(out, cap, "%s\n%s\n%s\n%s", def_label,
                      tr("Agenda", "Calendar"), tr("Afval", "Waste"), "Philips Hue");
     } else {
-        n = snprintf(out, cap, "%s\n%s\n%s\n%s\n%s\n%s\n%s",
+        n = snprintf(out, cap, "%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s",
                      tr("Geen", "None"),
                      tr("Energie", "Energy"),
                      tr("Familie", "Family"),
                      tr("Ventilatie", "Ventilation"),
                      tr("Water", "Water"),
                      tr("Agenda", "Calendar"),
-                     tr("Afval", "Waste"));
+                     tr("Afval", "Waste"),
+                     tr("WiFi QR-code", "WiFi QR code"));
     }
 
     int total = tile_slots_integration_count();
@@ -5034,7 +5154,8 @@ static const char * slot_dropdown_to_id(int slot, int idx) {
         if (idx == 4) return "local:water";
         if (idx == 5) return "local:agenda";
         if (idx == 6) return "local:waste";
-        const integration_meta_t * m = tile_slots_integration_at(idx - 7);
+        if (idx == 7) return "local:wifiqr";
+        const integration_meta_t * m = tile_slots_integration_at(idx - 8);
         return m ? m->id : "";
     }
 }
@@ -5063,10 +5184,11 @@ static int slot_dropdown_from_id(int slot, const char * id) {
         if (strcmp(id, "local:water") == 0) return 4;
         if (strcmp(id, "local:agenda") == 0) return 5;
         if (strcmp(id, "local:waste") == 0) return 6;
+        if (strcmp(id, "local:wifiqr") == 0) return 7;
         int total = tile_slots_integration_count();
         for (int i = 0; i < total; i++) {
             const integration_meta_t * m = tile_slots_integration_at(i);
-            if (strcmp(m->id, id) == 0 || (strcmp(id, "local:sonos") == 0 && strcmp(m->id, "sonos") == 0)) return i + 7;
+            if (strcmp(m->id, id) == 0 || (strcmp(id, "local:sonos") == 0 && strcmp(m->id, "sonos") == 0)) return i + 8;
         }
     }
     return 0;

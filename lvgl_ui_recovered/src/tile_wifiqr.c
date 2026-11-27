@@ -197,6 +197,84 @@ void wq_tile_update(void) {
     }
 }
 
+/* ------------------------------------------ an Integratie tile ("local:wifiqr") */
+/* Slot tiles (home Integratie tiles, pages 2 and 3) bound to "local:wifiqr"
+ * get a QR box over their value labels. */
+#define WQ_SLOTS 40
+static struct { lv_obj_t * tile, * box, * qr, * mn, * sb; int sb_was_hidden; char last[300]; } g_sl[WQ_SLOTS];
+
+static void on_slot_box_delete(lv_event_t * e) {
+    lv_obj_t * b = lv_event_get_target(e);
+    for (int i = 0; i < WQ_SLOTS; i++) if (g_sl[i].box == b) memset(&g_sl[i], 0, sizeof g_sl[i]);
+}
+
+void wq_slot_render(lv_obj_t * title, lv_obj_t * mn, lv_obj_t * sb) {
+    lv_obj_t * tile = mn ? lv_obj_get_parent(mn) : NULL;
+    if (!tile) return;
+    int k = -1, fr = -1;
+    for (int i = 0; i < WQ_SLOTS; i++) {
+        if (g_sl[i].tile == tile && g_sl[i].box) { k = i; break; }
+        if (!g_sl[i].box && fr < 0) fr = i;
+    }
+    if (k < 0) {
+        if (fr < 0) return;
+        k = fr;
+        lv_obj_update_layout(tile);
+        int w = lv_obj_get_content_width(tile), h = lv_obj_get_content_height(tile);
+        int top = 14 + lv_font_get_line_height(SF(18)) + 4;   /* make_tile's title */
+        int sz = h - top - 2;
+        if (sz > w - 4) sz = w - 4;
+        if (sz < 56) { sz = h - 4; top = 2; }                /* a low tile: QR over the title */
+        if (sz < 40) sz = 40;
+        g_sl[k].tile = tile;
+        g_sl[k].mn = mn;
+        g_sl[k].sb = sb;
+        g_sl[k].sb_was_hidden = sb ? lv_obj_has_flag(sb, LV_OBJ_FLAG_HIDDEN) : 1;
+        g_sl[k].last[0] = 1; g_sl[k].last[1] = 0;
+        lv_obj_t * b = lv_obj_create(tile);
+        lv_obj_remove_style_all(b);
+        lv_obj_set_size(b, sz, sz);
+        lv_obj_set_style_bg_color(b, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
+        lv_obj_set_style_radius(b, 6, 0);
+        lv_obj_align(b, LV_ALIGN_TOP_MID, 0, top);
+        lv_obj_clear_flag(b, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_event_cb(b, on_slot_box_delete, LV_EVENT_DELETE, NULL);
+        g_sl[k].box = b;
+        g_sl[k].qr = lv_qrcode_create(b, sz - 10, lv_color_hex(0x000000), lv_color_hex(0xffffff));
+        lv_obj_center(g_sl[k].qr);
+        lv_obj_clear_flag(g_sl[k].qr, LV_OBJ_FLAG_CLICKABLE);
+    }
+    char qr[300], ssid[96];
+    int ok = wifiqr_payload(qr, sizeof qr, ssid, sizeof ssid, NULL, 0);
+    if (title) lv_label_set_text(title, "WiFi");
+    if (sb) lv_obj_add_flag(sb, LV_OBJ_FLAG_HIDDEN);
+    if (!ok) qr[0] = 0;
+    if (!strcmp(qr, g_sl[k].last)) return;
+    snprintf(g_sl[k].last, sizeof g_sl[k].last, "%s", qr);
+    if (ok) {
+        lv_qrcode_update(g_sl[k].qr, qr, (uint32_t)strlen(qr));
+        lv_obj_clear_flag(g_sl[k].box, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(mn, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(g_sl[k].box, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(mn, LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text(mn, tr("Geen WiFi-netwerk", "No WiFi network"));
+    }
+}
+
+void wq_slot_clear(lv_obj_t * mn) {
+    lv_obj_t * tile = mn ? lv_obj_get_parent(mn) : NULL;
+    if (!tile) return;
+    for (int i = 0; i < WQ_SLOTS; i++) {
+        if (g_sl[i].tile != tile || !g_sl[i].box) continue;
+        lv_obj_clear_flag(g_sl[i].mn, LV_OBJ_FLAG_HIDDEN);
+        if (g_sl[i].sb && !g_sl[i].sb_was_hidden) lv_obj_clear_flag(g_sl[i].sb, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_del(g_sl[i].box);                   /* the DELETE event clears the entry */
+        return;
+    }
+}
+
 /* ------------------------------------------------------ full-screen view */
 static lv_obj_t * g_big;
 static lv_timer_t * g_big_timer;
@@ -250,13 +328,13 @@ void wq_show_big(void) {
     snprintf(ps, sizeof ps, "%s", pass);
     hy_fold_text(ns);
     hy_fold_text(ps);
-    struct { const char * cap; const char * val; } rows[3] = {
+    /* no password here: the QR code is there so visitors need not see it */
+    struct { const char * cap; const char * val; } rows[2] = {
         { tr("Scan met je telefoon", "Scan with your phone"), "" },
-        { tr("Netwerk", "Network"), ok ? ns : tr("geen netwerk ingesteld", "no network set") },
-        { tr("Wachtwoord", "Password"), ok ? (ps[0] ? ps : tr("(geen)", "(none)")) : "" } };
+        { tr("Netwerk", "Network"), ok ? ns : tr("geen netwerk ingesteld", "no network set") } };
+    (void)ps;
     int y = SY(90);
-    for (int i = 0; i < 3; i++) {
-        if (i == 2 && !ok) break;
+    for (int i = 0; i < 2; i++) {
         lv_obj_t * c = lv_label_create(g_big);
         lv_obj_set_style_text_font(c, SF(i == 0 ? 28 : 18), 0);
         lv_obj_set_style_text_color(c, lv_color_hex(i == 0 ? 0xffffff : 0x8fb3cc), 0);

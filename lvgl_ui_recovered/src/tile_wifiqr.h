@@ -15,6 +15,12 @@ void wq_tile_build(lv_obj_t * tile, lv_obj_t * title);   /* make_tile() result *
 void wq_tile_update(void);                               /* from the home refresh */
 void wq_tile_forget(void);                               /* home screen torn down */
 
+/* An Integratie tile bound to "local:wifiqr": a QR box over the tile's value
+ * labels (mn = its value label, its parent is the tile). wq_slot_clear
+ * removes it again when the tile is bound to something else. */
+void wq_slot_render(lv_obj_t * title, lv_obj_t * mn, lv_obj_t * sb);
+void wq_slot_clear(lv_obj_t * mn);
+
 void wq_show_big(void);      /* full-screen QR (top layer) */
 void wq_close_big(void);
 

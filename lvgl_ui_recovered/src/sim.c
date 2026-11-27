@@ -1441,6 +1441,20 @@ int main(int argc, char ** argv) {
             pump(20);
             continue;
         }
+        /* "netscan": a synthetic hcb_netcon scan answer (WiFi QR network picker) */
+        if (!strcmp(argv[a], "netscan")) {
+            snprintf(netcon_response_buf, sizeof netcon_response_buf,
+                "<action class=\"response\" uuid=\"x\"><GetWirelessNetworksResponse>"
+                "<WirelessNetwork><ESSID>Thuisnet</ESSID><Quality>82/100</Quality><Auth>WPA2</Auth></WirelessNetwork>"
+                "<WirelessNetwork><ESSID>Gasten</ESSID><Quality>78/100</Quality><Auth>WPA2</Auth></WirelessNetwork>"
+                "<WirelessNetwork><ESSID>Buren-5G</ESSID><Quality>35/100</Quality><Auth>WPA2</Auth></WirelessNetwork>"
+                "<WirelessNetwork><ESSID>Gasten</ESSID><Quality>40/100</Quality><Auth>WPA2</Auth></WirelessNetwork>"
+                "<WirelessNetwork><ESSID>Open Cafe</ESSID><Quality>20/100</Quality><Auth>OPEN</Auth></WirelessNetwork>"
+                "</GetWirelessNetworksResponse></action>");
+            netcon_response_ready = 1;
+            pump(80);
+            continue;
+        }
         /* "drag:x1,y1,x2,y2": press, move in 12 steps, release (dials, sliders) */
         if (!strncmp(argv[a], "drag:", 5)) {
             int x1, y1, x2, y2;

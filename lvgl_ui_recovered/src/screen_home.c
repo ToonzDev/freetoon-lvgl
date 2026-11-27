@@ -552,6 +552,7 @@ int open_integration_by_id(const char * b) {
 static int check_slot_integration_open(int slot) {
     const char * b = tile_slots_binding(slot);
     if (b && !strcmp(b, "local:ext")) return tile_ext_tap(slot);   /* toggle, or nothing for a sensor */
+    if (b && !strcmp(b, "local:wifiqr")) { wq_show_big(); return 1; }   /* the QR code full screen */
     return open_integration_by_id(b);
 }
 
@@ -2270,6 +2271,8 @@ static void update_tile_lights(void) {
  * the bound local content or integration, or a "tap to assign" placeholder. */
 static void render_assignable_slot(int slot, lv_obj_t * t, lv_obj_t * mn, lv_obj_t * sb) {
     const char * b = tile_slots_binding(slot);
+    if (b && !strcmp(b, "local:wifiqr")) { wq_slot_render(t, mn, sb); return; }   /* WiFi QR code */
+    wq_slot_clear(mn);                                                           /* bound to something else now */
     tile_ext_t x;
     if (b && !strcmp(b, "local:ext") && tile_ext_get(slot, &x)) {   /* an HA entity / Domoticz device */
         if (t) ui_label_set_text(t, x.name[0] ? x.name : x.id);
