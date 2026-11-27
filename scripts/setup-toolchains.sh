@@ -17,41 +17,51 @@ mkdir -p "$TC_ROOT" "$CACHE"
 
 say() { printf '\n== %s\n' "$1"; }
 
-# fetch <url> <cached-filename>  — cache-first, so a re-run (or a dead upstream)
-# doesn't re-download 100 MB.
+# fetch <cached-filename> <sha256> <url> [<url> ...]  — cache-first, so a re-run
+# doesn't re-download 100 MB; otherwise each url in turn until one gives a file
+# with the pinned SHA-256 (mirrors go down: dotsrc did on 2026-11-27 and broke
+# CI). The checksum is of the tarball every release so far was built with, so
+# any mirror is fine as long as it serves the very same file.
 fetch() {
-    if [ -s "$CACHE/$2" ]; then
-        echo "   cached: $2"
+    f=$1; sum=$2; shift 2
+    if [ -s "$CACHE/$f" ] && echo "$sum  $CACHE/$f" | sha256sum -c - >/dev/null 2>&1; then
+        echo "   cached: $f"
         return 0
     fi
-    echo "   downloading: $2"
-    curl -fSL --retry 3 -o "$CACHE/$2.part" "$1"
-    mv "$CACHE/$2.part" "$CACHE/$2"
+    for url in "$@"; do
+        echo "   downloading: $url"
+        if curl -fSL --retry 3 --connect-timeout 20 -o "$CACHE/$f.part" "$url" &&
+           echo "$sum  $CACHE/$f.part" | sha256sum -c - >/dev/null 2>&1; then
+            mv "$CACHE/$f.part" "$CACHE/$f"
+            return 0
+        fi
+        echo "   failed or wrong checksum, next mirror" >&2
+        rm -f "$CACHE/$f.part"
+    done
+    echo "   no mirror gave $f with SHA-256 $sum" >&2
+    exit 1
 }
 
 # --- Toon 2: Linaro armhf ---------------------------------------------------
 # The docs used to name gcc-linaro-7.5.0-2019.12. Linaro has since taken
 # releases.linaro.org offline and that exact tarball is simply gone from the
-# internet, so we use 7.4.1-2019.02 from the dotsrc Armbian mirror instead.
+# internet, so we use 7.4.1-2019.02 from Armbian's toolchain mirrors instead.
 #
 # This substitution is SAFE, and not on faith: `make TARGET=toon2 abi-check`
 # passes, and the resulting binary imports exactly the same glibc symbol
 # versions (GLIBC_2.4, GLIBC_2.7) as the toonui shipped in v0.9.54. abi-check is
 # the real guarantee here — re-run it if you ever change toolchain.
 LINARO_TAR=gcc-linaro-7.4.1-2019.02-x86_64_arm-linux-gnueabihf.tar.xz
-LINARO_URL=https://mirrors.dotsrc.org/armbian-dl/_toolchain/$LINARO_TAR
+LINARO_SHA256=3c951cf1941d0fa06d64cc0d5e88612b209d8123b273fa26c16d70bd7bc6b163
 
 if [ -x "$TC_ROOT/linaro/bin/arm-linux-gnueabihf-gcc" ]; then
     say "Toon 2 (Linaro armhf): already present"
 else
     say "Toon 2 (Linaro armhf)"
-    fetch "$LINARO_URL" "$LINARO_TAR"
-    # The mirror's .asc is an MD5, not a signature — same-host, so it proves the
-    # download isn't corrupt, nothing more. Check it if we have it.
-    if curl -fsSL -o "$CACHE/$LINARO_TAR.md5" "$LINARO_URL.asc" 2>/dev/null; then
-        ( cd "$CACHE" && md5sum -c "$LINARO_TAR.md5" ) || {
-            echo "   MD5 MISMATCH — refusing to use it" >&2; exit 1; }
-    fi
+    fetch "$LINARO_TAR" "$LINARO_SHA256" \
+        "https://armbian.chi.auroradev.org/dl/_toolchain/$LINARO_TAR" \
+        "https://dl.armbian.com/_toolchain/$LINARO_TAR" \
+        "https://mirrors.dotsrc.org/armbian-dl/_toolchain/$LINARO_TAR"
     tar xf "$CACHE/$LINARO_TAR" -C "$TC_ROOT"
     mv "$TC_ROOT/${LINARO_TAR%.tar.xz}" "$TC_ROOT/linaro"
 fi
@@ -61,13 +71,14 @@ fi
 # links dynamically, so the device's glibc 2.21 resolves it at runtime — as long
 # as nothing newer than 2.21 is pulled in, which is what abi-check enforces.
 BOOTLIN_TAR=armv5-eabi--glibc--stable-2018.02-2.tar.bz2
-BOOTLIN_URL=https://toolchains.bootlin.com/downloads/releases/toolchains/armv5-eabi/tarballs/$BOOTLIN_TAR
+BOOTLIN_SHA256=51740e636ff46ca806621ba64ad6f384b4e2878f5fed2019bdbf5e279165a372
 
 if [ -x "$TC_ROOT/toon1-toolchain/bin/arm-linux-gcc" ]; then
     say "Toon 1 (Bootlin armv5): already present"
 else
     say "Toon 1 (Bootlin armv5)"
-    fetch "$BOOTLIN_URL" "$BOOTLIN_TAR"
+    fetch "$BOOTLIN_TAR" "$BOOTLIN_SHA256" \
+        "https://toolchains.bootlin.com/downloads/releases/toolchains/armv5-eabi/tarballs/$BOOTLIN_TAR"
     mkdir -p "$TC_ROOT/toon1-toolchain"
     tar xf "$CACHE/$BOOTLIN_TAR" -C "$TC_ROOT/toon1-toolchain" --strip-components=1
 fi
