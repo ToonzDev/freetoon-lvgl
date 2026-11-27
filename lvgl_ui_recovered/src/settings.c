@@ -246,6 +246,7 @@ void settings_load(void) {
         else if (strcmp(k, "active_brightness") == 0) settings.active_brightness = iv;
         else if (strcmp(k, "dim_brightness")    == 0) settings.dim_brightness    = iv;
         else if (strcmp(k, "dim_sleep_away_black") == 0) settings.dim_sleep_away_black = iv;
+        else if (strcmp(k, "dim_home_black")       == 0) settings.dim_home_black = iv ? 1 : 0;
         else if (strcmp(k, "auto_brightness")   == 0) settings.auto_brightness   = iv;
         else if (strcmp(k, "touch_swap_xy")     == 0) settings.touch_swap_xy     = iv;
         else if (strcmp(k, "touch_invert_x")    == 0) settings.touch_invert_x    = iv;
@@ -1040,7 +1041,7 @@ static void settings_write_file(void) {
     snprintf(json, sizeof json,
         "{\"auto_dim_enabled\":%d,\"auto_dim_seconds\":%d,"
         "\"auto_home_enabled\":%d,\"auto_home_seconds\":%d,"
-        "\"active_brightness\":%d,\"dim_brightness\":%d,\"dim_sleep_away_black\":%d,"
+        "\"active_brightness\":%d,\"dim_brightness\":%d,\"dim_sleep_away_black\":%d,\"dim_home_black\":%d,"
         "\"pwa_login_enabled\":%d,\"pwa_login_user\":\"%s\",\"pwa_login_pass\":\"%s\","
         "\"pin_enabled\":%d,\"pin_code\":\"%s\","
         "\"weather_location\":\"%s\",\"weather_location_id\":%d,"
@@ -1049,7 +1050,7 @@ static void settings_write_file(void) {
         "\"home_theme\":%d}",
         settings.auto_dim_enabled, settings.auto_dim_seconds,
         settings.auto_home_enabled, settings.auto_home_seconds,
-        settings.active_brightness, settings.dim_brightness, settings.dim_sleep_away_black,
+        settings.active_brightness, settings.dim_brightness, settings.dim_sleep_away_black, settings.dim_home_black,
         settings.pwa_login_enabled, eu, ep,
         settings.pin_enabled, ec,
         ewl, settings.weather_location_id,
@@ -1080,6 +1081,7 @@ static void settings_write_file(void) {
     fprintf(f, "active_brightness=%d\n", settings.active_brightness);
     fprintf(f, "dim_brightness=%d\n",    settings.dim_brightness);
     fprintf(f, "dim_sleep_away_black=%d\n", settings.dim_sleep_away_black);
+    fprintf(f, "dim_home_black=%d\n", settings.dim_home_black);
     fprintf(f, "auto_brightness=%d\n",   settings.auto_brightness);
     fprintf(f, "touch_swap_xy=%d\n",     settings.touch_swap_xy);
     fprintf(f, "touch_invert_x=%d\n",    settings.touch_invert_x);

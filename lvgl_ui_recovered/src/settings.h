@@ -465,6 +465,9 @@ typedef struct {
     char wifiqr_pass[64];
     int  wifiqr_sec;
     int  wifiqr_hidden;
+    /* Screen off (black, backlight 0) when dimmed in the Thuis preset too,
+     * next to dim_sleep_away_black for Slapen / Weg. */
+    int  dim_home_black;
 } settings_t;
 
 #define FORECAST_AUTO   0

@@ -1434,7 +1434,7 @@ static int handle_settings_get(int fd) {
     int n = snprintf(body, sizeof body,
         "{"
         "\"auto_dim_enabled\":%d,\"auto_dim_seconds\":%d,"
-        "\"active_brightness\":%d,\"dim_brightness\":%d,\"dim_sleep_away_black\":%d,\"auto_brightness\":%d,"
+        "\"active_brightness\":%d,\"dim_brightness\":%d,\"dim_sleep_away_black\":%d,\"dim_home_black\":%d,\"auto_brightness\":%d,"
         "\"temp_offset_centi\":%d,\"show_dim_weather\":%d,"
         "\"show_dim_waste\":%d,\"dim_waste_lead_days\":%d,\"dim_waste_hour\":%d,"
         "\"waste_postcode\":\"%s\",\"waste_housenr\":\"%s\","
@@ -1463,7 +1463,7 @@ static int handle_settings_get(int fd) {
         "\"home_theme\":%d"
         "}",
         settings.auto_dim_enabled, settings.auto_dim_seconds,
-        settings.active_brightness, settings.dim_brightness, settings.dim_sleep_away_black, settings.auto_brightness,
+        settings.active_brightness, settings.dim_brightness, settings.dim_sleep_away_black, settings.dim_home_black, settings.auto_brightness,
         (int)(toon_state.temp_offset * 100.0f + (toon_state.temp_offset < 0 ? -0.5f : 0.5f)), settings.show_dim_weather,
         settings.show_dim_waste, settings.dim_waste_lead_days, settings.dim_waste_hour,
         settings.waste_postcode, settings.waste_housenr,
@@ -1528,6 +1528,7 @@ static int handle_settings_post(int fd, const char * body) {
     if (extract_int(body, "active_brightness", &iv))  settings.active_brightness = iv < 0 ? 0 : (iv > 1000 ? 1000 : iv);
     if (extract_int(body, "dim_brightness", &iv))     settings.dim_brightness = iv < 0 ? 0 : (iv > 1000 ? 1000 : iv);
     if (extract_int(body, "dim_sleep_away_black", &iv)) settings.dim_sleep_away_black = !!iv;
+    if (extract_int(body, "dim_home_black", &iv))       settings.dim_home_black = !!iv;
     if (extract_int(body, "auto_brightness", &iv))    settings.auto_brightness = !!iv;
     /* Room-temp correction lives in happ_thermstat (shared with qt-gui); only
        write it when it actually changes, since a settings POST carries every

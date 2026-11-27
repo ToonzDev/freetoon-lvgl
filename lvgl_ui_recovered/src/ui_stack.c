@@ -129,6 +129,13 @@ lv_obj_t * screen_black_create(void) {
 static inline int is_sleep_or_away(void) {
     return (toon_state.active_state == 2 || toon_state.active_state == 3);
 }
+/* Dimmed = screen off (black, backlight 0)? Slapen / Weg with
+ * dim_sleep_away_black, Thuis (1) with dim_home_black. */
+static int want_black(void) {
+    if (settings.dim_sleep_away_black && is_sleep_or_away()) return 1;
+    if (settings.dim_home_black && toon_state.active_state == 1) return 1;
+    return 0;
+}
 
 static void push_impl(lv_obj_t * scr, int own) {
     if (!scr) return;
@@ -181,7 +188,7 @@ void ui_dim_now(void) {
     screen_home_dismiss_modals();
     screen_settings_close_modals();
     cs_close_settings();
-    if (settings.dim_sleep_away_black && is_sleep_or_away()) {
+    if (want_black()) {
         backlight_set(0);
         ui_push(screen_black_create());
         is_black_screen = 1;
@@ -269,7 +276,7 @@ void ui_idle_tick(void) {
                 /* Screen is black because state was Slapen (2) or Weg (3).
                  * If state changed to something else (e.g. Thuis (1), Comfort (0), Manual (-1)),
                  * wake up automatically. */
-                if (!is_sleep_or_away()) {
+                if (!want_black()) {   /* the new preset does not want it black */
                     fprintf(stderr, "[ui] active_state changed from %d to %d -> waking from black screen\n",
                             prev_as, toon_state.active_state);
                     ui_wake_now();
@@ -278,7 +285,7 @@ void ui_idle_tick(void) {
             } else {
                 /* Screen is dimmed on normal dim screen.
                  * If state changed to Slapen (2) or Weg (3), switch to black screen. */
-                if (settings.dim_sleep_away_black && is_sleep_or_away()) {
+                if (want_black()) {
                     fprintf(stderr, "[ui] active_state changed from %d to %d while dimmed -> switching to black screen\n",
                             prev_as, toon_state.active_state);
                     backlight_set(0);
@@ -295,7 +302,7 @@ void ui_idle_tick(void) {
     }
 
     /* Live settings change: if user disabled dim_sleep_away_black while dimmed black, switch back to normal dim */
-    if (is_dimmed && is_black_screen && !settings.dim_sleep_away_black) {
+    if (is_dimmed && is_black_screen && !want_black()) {   /* option for this preset switched off */
         backlight_set(settings.dim_brightness);
         if (sp > 1) {
             stack[sp - 1] = screen_dim_create();
@@ -365,7 +372,7 @@ void ui_idle_tick(void) {
         screen_calendar_close();
         screen_waste_close();
         screen_home_dismiss_modals();
-        if (settings.dim_sleep_away_black && is_sleep_or_away()) {
+        if (want_black()) {
             backlight_set(0);
             ui_push(screen_black_create());
             is_black_screen = 1;

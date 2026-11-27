@@ -128,6 +128,9 @@ static void on_dim_bars_vertical_change(lv_event_t * e) {
     settings.dim_bars_vertical = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
     settings_save();
 }
+static void on_dim_home_black_change(lv_event_t * e) {
+    settings.dim_home_black = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+}
 static void on_dim_sleep_away_black_change(lv_event_t * e) {
     settings.dim_sleep_away_black = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
     settings_save();
@@ -1041,6 +1044,9 @@ static void open_display_modal(lv_event_t * e) {
     /* Screen off on sleep / away presets (pure black + backlight 0) */
     r = panel_row(p, y, tr("Scherm uit bij Slapen en Weg", "Screen off on Sleep and Away"), NULL);
     row_switch(r, settings.dim_sleep_away_black, on_dim_sleep_away_black_change);
+    y += 82;
+    r = panel_row(p, y, tr("Scherm uit bij Thuis", "Screen off on Home"), NULL);
+    row_switch(r, settings.dim_home_black, on_dim_home_black_change);
     y += 82;
 
     /* Clock + indoor/outdoor temperature on the dim screen: thin (original

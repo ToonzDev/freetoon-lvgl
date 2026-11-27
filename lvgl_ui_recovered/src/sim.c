@@ -1324,7 +1324,10 @@ int main(int argc, char ** argv) {
             }
             else if (sscanf(argv[a], "%d,%d", &x, &y) == 2) sim_tap(x, y);
             else if (!strncmp(argv[a], "wait:", 5))   /* let background fetches land */
-                for (int ms = atoi(argv[a] + 5); ms > 0; ms -= 20) { lv_timer_handler(); lv_tick_inc(20); usleep(20000); ep_tick(); }
+                for (int ms = atoi(argv[a] + 5); ms > 0; ms -= 20) {
+                    lv_timer_handler(); lv_tick_inc(20); usleep(20000); ep_tick();
+                    if (getenv("SIM_IDLE")) ui_idle_tick();   /* auto-dim / auto-home as on the Toon */
+                }
         }
         pump(60);
         dump_ppm(out);
