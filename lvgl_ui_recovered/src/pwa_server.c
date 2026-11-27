@@ -2833,6 +2833,143 @@ static int handle_homey_post(int fd, const char * req, const char * body) {
     return send_redirect(fd, "/homey?saved", NULL);
 }
 
+/* ---------------------------------------------------------------- /agenda
+ * Calendar settings in a browser: the long private .ics links are pasted
+ * here instead of typed on the Toon's keyboard. Same login and cross-site
+ * rule as /homey. Links one per line; webcal:// and a missing scheme become
+ * https:// (as the Toon's own dialog does). */
+static void html_text_esc(char * dst, size_t n, const char * s) {   /* for <textarea> */
+    size_t o = 0;
+    for (; s && *s && o + 6 < n; s++) {
+        if (*s == '<') { memcpy(dst + o, "&lt;", 4); o += 4; }
+        else if (*s == '>') { memcpy(dst + o, "&gt;", 4); o += 4; }
+        else if (*s == '&') { memcpy(dst + o, "&amp;", 5); o += 5; }
+        else dst[o++] = *s;
+    }
+    if (n) dst[o] = 0;
+}
+
+static int handle_agenda_get(int fd, const char * msg) {
+    char ics[sizeof settings.calendar_ics_url * 2], ha[sizeof settings.calendar_ha_entity * 6], status[200];
+    html_text_esc(ics, sizeof ics, settings.calendar_ics_url);
+    html_attr_esc(ha, sizeof ha, settings.calendar_ha_entity);
+    calendar_lock();
+    int cnt = calendar_state.count, con = calendar_state.connected;
+    calendar_unlock();
+    if (!settings.calendar_enabled) snprintf(status, sizeof status, "Agenda staat uit.");
+    else if (!settings.calendar_ics_url[0] && !settings.calendar_ha_entity[0]) snprintf(status, sizeof status, "Nog geen kalender ingesteld.");
+    else if (con) snprintf(status, sizeof status, "Geladen: %d komende afspraken.", cnt);
+    else snprintf(status, sizeof status, "Nog niet geladen (bezig, of de link werkt niet - zie het logboek).");
+    /* just saved: reload a few times until the first fetch is in */
+    int refresh = msg && settings.calendar_enabled && !con;
+
+    char body[9000];
+    int pos = snprintf(body, sizeof body,
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">%s"
+        "<title>FreeToon - Agenda</title><style>"
+        "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0f1a2a;color:#e2e8f0;margin:0;padding:24px;line-height:1.5}"
+        ".card{max-width:720px;margin:0 auto;background:#1e293b;border-radius:12px;padding:24px}"
+        "h1{margin-top:0;font-size:22px;color:#38bdf8}p{color:#94a3b8;font-size:14px}"
+        "label{display:block;margin:14px 0 4px;font-size:14px}"
+        "input[type=text],input[type=number],textarea{width:100%%;box-sizing:border-box;padding:9px;border-radius:6px;border:1px solid #334155;background:#0f172a;color:#f8fafc;font-size:14px}"
+        "textarea{height:150px;font-family:monospace;font-size:13px;white-space:pre;overflow-x:auto}"
+        ".row{display:flex;align-items:center;gap:8px;margin-top:14px}.row label{margin:0}"
+        ".btn{background:#2563eb;color:#fff;border:0;padding:9px 18px;border-radius:6px;font-size:14px;cursor:pointer;margin-top:18px;text-decoration:none;display:inline-block}"
+        ".btn-sec{background:#334155;color:#e2e8f0}.st{background:#0f172a;border-radius:8px;padding:10px 14px;margin-top:18px}"
+        ".msg{color:#fbbf24}</style></head><body><div class=\"card\"><h1>Agenda</h1>"
+        "<p>De afspraken op de Toon komen uit iCal-links (.ics) en/of een Home Assistant-kalender. "
+        "Een geheime iCal-link vind je bij Google Agenda onder Instellingen &gt; je agenda &gt; "
+        "&quot;Geheim adres in iCal-indeling&quot;, bij Outlook.com onder Agenda delen &gt; ICS-link.</p>"
+        "%s%s%s"
+        "<form method=\"post\" action=\"/agenda\">"
+        "<div class=\"row\"><input type=\"checkbox\" id=\"en\" name=\"enabled\" value=\"1\"%s><label for=\"en\">Agenda aan</label></div>"
+        "<label>iCal-links (.ics), &eacute;&eacute;n per regel</label>"
+        "<textarea name=\"ics\" spellcheck=\"false\" placeholder=\"https://calendar.google.com/calendar/ical/.../basic.ics\">%s</textarea>"
+        "<label>Home Assistant-kalender (optioneel)</label>"
+        "<input type=\"text\" name=\"ha\" value=\"%s\" placeholder=\"calendar.familie\" autocomplete=\"off\">"
+        "<div class=\"row\"><input type=\"checkbox\" id=\"nt\" name=\"notify\" value=\"1\"%s><label for=\"nt\">Melding op de Toon voor een afspraak begint</label></div>"
+        "<label>Hoeveel minuten van tevoren</label>"
+        "<input type=\"number\" name=\"lead\" min=\"1\" max=\"1440\" value=\"%d\" style=\"max-width:140px\">"
+        "<br><button class=\"btn\">Opslaan</button></form>"
+        "<div class=\"st\"><b>Status:</b> %s</div>"
+        "<p style=\"margin-top:20px;text-align:center\"><a href=\"/\" class=\"btn btn-sec\">&larr; Terug naar Toon</a></p>"
+        "</div></body></html>",
+        refresh ? "<meta http-equiv=\"refresh\" content=\"3\">" : "",
+        msg ? "<p class=\"msg\">" : "", msg ? msg : "", msg ? "</p>" : "",
+        settings.calendar_enabled ? " checked" : "",
+        ics, ha,
+        settings.calendar_notify_enabled ? " checked" : "",
+        settings.calendar_notify_lead_min > 0 ? settings.calendar_notify_lead_min : 15,
+        status);
+    if (pos < 0 || pos >= (int)sizeof body) return send_status(fd, 500, "Internal Server Error", "page too large");
+    char hdr[200];
+    int hn = snprintf(hdr, sizeof hdr,
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: %d\r\n"
+        "Cache-Control: no-store\r\nX-Frame-Options: DENY\r\nConnection: close\r\n\r\n", pos);
+    if (sock_send_all(fd, hdr, hn) < 0) return -1;
+    return sock_send_all(fd, body, pos);
+}
+
+static int handle_agenda_post(int fd, const char * req, const char * body) {
+    if (!homey_same_origin(req))
+        return send_status(fd, 403, "Forbidden", "cross-site request refused");
+    const char * cl = strcasestr(req, "Content-Length:");
+    if (cl && strlen(body) < (size_t)atoi(cl + 15))
+        return handle_agenda_get(fd, "Het formulier was te groot en is niet opgeslagen.");
+    static char raw[4096];
+    char ha[sizeof settings.calendar_ha_entity] = "", lead[16] = "", v[8];
+    if (!form_get(body, "ics", raw, sizeof raw)) raw[0] = 0;
+    form_get(body, "ha", ha, sizeof ha);
+    form_get(body, "lead", lead, sizeof lead);
+    /* the links, one per line: normalised, checked, duplicates dropped */
+    char out[sizeof settings.calendar_ics_url] = "";
+    char * save = NULL;
+    for (char * u = strtok_r(raw, "\r\n", &save); u; u = strtok_r(NULL, "\r\n", &save)) {
+        while (*u == ' ' || *u == '\t') u++;
+        for (size_t L = strlen(u); L && (u[L - 1] == ' ' || u[L - 1] == '\t'); ) u[--L] = 0;
+        if (!*u) continue;
+        char url[700];
+        if (!strncmp(u, "webcal://", 9)) snprintf(url, sizeof url, "https://%s", u + 9);
+        else if (!strncmp(u, "http://", 7) || !strncmp(u, "https://", 8)) snprintf(url, sizeof url, "%s", u);
+        else if (strchr(u, '.')) snprintf(url, sizeof url, "https://%s", u);
+        else return handle_agenda_get(fd, "Een regel is geen link (begin met https://, http:// of webcal://).");
+        for (const char * c = url; *c; c++)
+            if ((unsigned char)*c <= ' ' || *c == '"' || *c == '\'' || *c == '<' || *c == '>' || *c == '\\' || *c == '`')
+                return handle_agenda_get(fd, "Een link bevat een spatie of een teken dat niet in een link hoort.");
+        if (strlen(url) > 640)
+            return handle_agenda_get(fd, "Een link is langer dan 640 tekens.");
+        if (strstr(out, url)) continue;
+        if (strlen(out) + strlen(url) + 2 > sizeof out)
+            return handle_agenda_get(fd, "Te veel of te lange links: samen mogen ze 1000 tekens zijn.");
+        if (out[0]) strncat(out, "\n", sizeof out - strlen(out) - 1);
+        strncat(out, url, sizeof out - strlen(out) - 1);
+    }
+    /* a Home Assistant entity: calendar.<name> */
+    char * h = ha; while (*h == ' ') h++;
+    memmove(ha, h, strlen(h) + 1);
+    for (size_t L = strlen(ha); L && ha[L - 1] == ' '; ) ha[--L] = 0;
+    for (const char * c = ha; *c; c++)
+        if (!(islower((unsigned char)*c) || isdigit((unsigned char)*c) || *c == '_' || *c == '.'))
+            return handle_agenda_get(fd, "De Home Assistant-kalender heet bijvoorbeeld calendar.familie (kleine letters, cijfers, _ en .).");
+    int m = lead[0] ? atoi(lead) : 15;
+    if (m < 1) m = 1;
+    if (m > 1440) m = 1440;
+
+    snprintf(settings.calendar_ics_url, sizeof settings.calendar_ics_url, "%s", out);
+    snprintf(settings.calendar_ha_entity, sizeof settings.calendar_ha_entity, "%s", ha);
+    settings.calendar_enabled = form_get(body, "enabled", v, sizeof v) ? 1 : 0;
+    settings.calendar_notify_enabled = form_get(body, "notify", v, sizeof v) ? 1 : 0;
+    settings.calendar_notify_lead_min = m;
+    settings_save();
+    if (settings.calendar_enabled) calendar_refresh_async();
+    int n = 0;
+    for (const char * c = out; *c; c++) n += *c == '\n';
+    fprintf(stderr, "[pwa] calendar settings saved via web (%d link(s), HA %s, %s)\n",
+            out[0] ? n + 1 : 0, ha[0] ? ha : "-", settings.calendar_enabled ? "on" : "off");
+    return send_redirect(fd, "/agenda?saved", NULL);
+}
+
 /* ---------------------------------------------------------------- /solar
  * Solar production (BACKLOG #60). An inverter app (marketplace, e.g.
  * "inverters") POSTs its readings to /api/v1/solar/source; this page shows
@@ -3274,6 +3411,8 @@ static int dispatch(int fd, char * req) {
         if (!strcmp(path, "/ketellog") || !strcmp(path, "/ketellog?view"))
             return handle_ketellog_get(fd, path[9] == '?');
         if (!strcmp(path, "/homey"))       return handle_homey_get(fd, NULL);
+        if (!strcmp(path, "/agenda"))       return handle_agenda_get(fd, NULL);
+        if (!strcmp(path, "/agenda?saved")) return handle_agenda_get(fd, "Opgeslagen. De Toon haalt de agenda nu op.");
         if (!strcmp(path, "/homey?saved")) return handle_homey_get(fd, "Opgeslagen.");
         if (!strcmp(path, "/solar"))       return handle_solar_get(fd, req, NULL);
         if (!strncmp(path, "/solar/callback", 15)) return handle_solar_callback(fd, req);
@@ -3313,6 +3452,7 @@ static int dispatch(int fd, char * req) {
         if (!strcmp(path, "/ketellog/start")) { ketellog_start(60); return send_redirect(fd, "/logs", NULL); }
         if (!strcmp(path, "/ketellog/stop"))  { ketellog_stop();    return send_redirect(fd, "/logs", NULL); }
         if (!strcmp(path, "/homey"))          return handle_homey_post(fd, req, body);
+        if (!strcmp(path, "/agenda"))         return handle_agenda_post(fd, req, body);
         if (!strcmp(path, "/solar"))          return handle_solar_post(fd, req, body);
         if (!strcmp(path, "/schema"))         return handle_schema_post(fd, req, body);
         if (!strcmp(path, "/api/v1/boiler/remote")) return handle_boiler_remote_post(fd, body);

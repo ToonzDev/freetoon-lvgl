@@ -3909,9 +3909,15 @@ static void open_calendar_modal(lv_event_t * e) {
     lv_obj_set_style_text_font(lbl_cal_status, SF(16), 0);
     lv_obj_set_width(lbl_cal_status, SX(740));
     lv_label_set_long_mode(lbl_cal_status, LV_LABEL_LONG_WRAP);
-    lv_label_set_text(lbl_cal_status, "");
+    {   /* until a link is added here: where pasting is easier */
+        char ip[40];
+        ft_lan_ip(ip, sizeof ip);
+        lv_label_set_text_fmt(lbl_cal_status, tr("Lange link? Plakken gaat makkelijker in een browser: http://%s:10081/agenda",
+                                                 "Long link? Easier to paste in a browser: http://%s:10081/agenda"),
+                              ip[0] ? ip : "<toon-ip>");
+    }
     lv_obj_align(lbl_cal_status, LV_ALIGN_TOP_LEFT, SX(4), SY(y));
-    y += 32;
+    y += 52;   /* room for two lines (the address tip wraps) */
 
     /* Notifications */
     lv_obj_t * rn = panel_row(p, y, tr("Meldingen", "Notifications"), NULL);
@@ -7012,6 +7018,7 @@ lv_obj_t * screen_settings_create(void) {
 void screen_settings_sim_modal(const char * which) {
     if (!strcmp(which, "venthomey"))    open_vent_homey_modal(NULL);
     else if (!strcmp(which, "wifiqr"))  screen_settings_open_wifiqr_modal();
+    else if (!strcmp(which, "calendar")) open_calendar_modal(NULL);
     else if (!strcmp(which, "integrations")) open_integrations_modal(NULL);
 }
 #endif
