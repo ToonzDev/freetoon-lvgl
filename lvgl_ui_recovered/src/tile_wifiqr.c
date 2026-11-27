@@ -5,6 +5,7 @@
 #include "i18n.h"
 #include "screens.h"        /* screen_settings_open_wifiqr_modal */
 #include "homey_parse.h"    /* hy_fold_text: names -> what the UI fonts draw */
+#include "pin_modal.h"      /* pin_gate */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -125,9 +126,10 @@ void wq_tile_forget(void) {
 }
 
 static void on_tap(lv_event_t * e) { (void)e; wq_show_big(); }
+static void open_settings_action(void * ctx) { (void)ctx; screen_settings_open_wifiqr_modal(); }
 static void on_hold(lv_event_t * e) {
     (void)e;
-    screen_settings_open_wifiqr_modal();
+    pin_gate(open_settings_action, NULL);   /* the settings show the network: PIN when set */
 }
 
 void wq_tile_build(lv_obj_t * tile, lv_obj_t * title) {
@@ -289,11 +291,6 @@ static void on_big_timeout(lv_timer_t * t) {
     g_big_timer = NULL;        /* a repeat-count-1 timer deletes itself after this */
     wq_close_big();
 }
-static void on_big_settings(lv_event_t * e) {
-    lv_event_stop_bubbling(e);
-    wq_close_big();
-    screen_settings_open_wifiqr_modal();
-}
 
 void wq_show_big(void) {
     wq_close_big();
@@ -353,14 +350,8 @@ void wq_show_big(void) {
         lv_obj_update_layout(v);
         y += lv_obj_get_height(v) + SY(26);
     }
-    lv_obj_t * b = lv_btn_create(g_big);
-    lv_obj_set_size(b, SX(180), SY(52));
-    lv_obj_align(b, LV_ALIGN_BOTTOM_RIGHT, -SX(24), -SY(24));
-    lv_obj_set_style_bg_color(b, lv_color_hex(0x2e4e6e), 0);
-    lv_obj_add_event_cb(b, on_big_settings, LV_EVENT_CLICKED, NULL);
-    lv_obj_t * bl = lv_label_create(b);
-    lv_label_set_text_fmt(bl, LV_SYMBOL_SETTINGS "  %s", tr("Instellen", "Settings"));
-    lv_obj_center(bl);
+    /* no "Instellen" here: this view is for visitors, and the settings hold
+     * the password (they are behind a long press on the tile / Instellingen) */
     lv_obj_t * hint = lv_label_create(g_big);
     lv_obj_set_style_text_font(hint, SF(14), 0);
     lv_obj_set_style_text_color(hint, lv_color_hex(0x6f8fa6), 0);

@@ -1487,6 +1487,8 @@ void screen_settings_open_wifiqr_modal(void) {
     y += 34;
     wq_ta_ssid = waste_field(p, 8, y, 390, tr("Gastnetwerk: naam (SSID)", "Guest network: name (SSID)"), settings.wifiqr_ssid);
     wq_ta_pass = waste_field(p, 418, y, 390, tr("Wachtwoord", "Password"), settings.wifiqr_pass);
+    lv_textarea_set_password_bullet(wq_ta_pass, "*");      /* shown as ***** (the fonts have no bullet) */
+    lv_textarea_set_password_mode(wq_ta_pass, true);
     lv_obj_set_width(wq_ta_ssid, SX(250));
     lv_obj_t * pick = lv_btn_create(p);
     lv_obj_set_size(pick, SX(132), SY(44));
