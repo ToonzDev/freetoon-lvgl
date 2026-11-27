@@ -3611,9 +3611,11 @@ static void on_devices_btn(lv_event_t * e) { (void)e; open_devices_hub(); }
 /* ---- swipeable tile pages ---- */
 static void home_set_dot(int active) {
     for (int i = 0; i < LAYOUT_PAGES; i++)
-        if (home_dot[i])
+        if (home_dot[i]) {
             ui_obj_set_style_bg_opa(home_dot[i],
                                     i == active ? LV_OPA_COVER : LV_OPA_30, 0);
+            lv_obj_move_foreground(home_dot[i]);   /* over the forecast strip and pages 2/3 */
+        }
 }
 static void home_show_page(int n) {
     home_tile_page = n;
@@ -5468,9 +5470,12 @@ lv_obj_t * screen_home_create(void) {
     /* Pagination dots, centred in the gap under the tile zone. */
     for (int i = 0; i < LAYOUT_PAGES; i++) home_dot[i] = NULL;
     for (int i = 0; i < home_npages; i++) {
+        /* As low as they go: the bottom-right corner, inside the forecast
+         * strip right of its last column; drawn on top (home_set_dot). */
         home_dot[i] = lv_obj_create(scr_root);
-        lv_obj_set_size(home_dot[i], 10, 10);
-        lv_obj_set_pos(home_dot[i], SX(984 - (home_npages - 1 - i) * 18), SY(461));   /* on the location row, right — off the ticker */
+        lv_obj_set_size(home_dot[i], 8, 8);
+        lv_obj_set_pos(home_dot[i], LV_HOR_RES - SX(24) - (home_npages - 1 - i) * SX(16), LV_VER_RES - SY(16));
+        ui_obj_clear_flag(home_dot[i], LV_OBJ_FLAG_CLICKABLE);   /* taps go to the tile underneath */
         lv_obj_set_style_radius(home_dot[i], LV_RADIUS_CIRCLE, 0);
         ui_obj_set_style_bg_color(home_dot[i], lv_color_hex(settings.home_light_mode ? 0x1e2838 : 0xffffff), 0);
         ui_obj_set_style_border_width(home_dot[i], 0, 0);
@@ -5983,6 +5988,7 @@ lv_obj_t * screen_home_create(void) {
 
     /* Ensure gear is always in the foreground so nothing intercepts touches */
     lv_obj_move_foreground(gear);
+    home_set_dot(home_tile_page);   /* the page dots over every tile built after them */
 
     if (!refresh_timer) refresh_timer = lv_timer_create(refresh_cb, 500, NULL);
     return scr_root;
