@@ -184,4 +184,10 @@ typedef struct {
 int ha_discover_entities(const char * domain_prefix,
                           ha_discovered_t * out, int * count, int max);
 
+/* Integratie tiles showing an HA entity (tile_ext.c): fetch the ones bound
+ * since the last fetch now (async), and toggle a switch / light /
+ * input_boolean. */
+void ha_tiles_refresh_async(void);
+void ha_entity_toggle_async(const char * entity_id);
+
 #endif

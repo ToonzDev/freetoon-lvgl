@@ -9,6 +9,7 @@
  */
 
 #include "homeassistant.h"
+#include "tile_ext.h"
 #include "http.h"
 #include "notify.h"
 #include "settings.h"
@@ -550,11 +551,16 @@ static void poll_devices(void) {
 
 /* Generic fire-and-forget service call + a quick re-poll so the screen
  * reflects the result within a second instead of waiting for the next pass. */
-struct ha_svc_arg { char domain[12]; char service[24]; char entity[64]; };
+struct ha_svc_arg { char domain[24]; char service[24]; char entity[64]; };   /* "input_boolean" */
 static void * ha_svc_thread(void * arg) {
     struct ha_svc_arg * a = (struct ha_svc_arg *)arg;
     ha_call_service(a->domain, a->service, a->entity, NULL);
     poll_devices();
+    if (tile_ext_wants_ha(a->entity)) {        /* an Integratie tile shows it */
+        char body[8192];
+        int ok = ha_get_state(a->entity, body, sizeof body) == 0 && strstr(body, "\"state\"");
+        tile_ext_apply_ha(a->entity, body, ok);
+    }
     free(a);
     return NULL;
 }
@@ -567,6 +573,14 @@ static void ha_service_async(const char * domain, const char * service, const ch
     pthread_t t;
     if (pthread_create(&t, NULL, ha_svc_thread, a) != 0) { free(a); return; }
     pthread_detach(t);
+}
+
+/* Integratie tile tap: "<domain>.x" -> <domain>.toggle (switch / light / input_boolean). */
+void ha_entity_toggle_async(const char * entity_id) {
+    char dom[24];
+    snprintf(dom, sizeof dom, "%.*s", (int)strcspn(entity_id, "."), entity_id);
+    if (strcmp(dom, "switch") && strcmp(dom, "light") && strcmp(dom, "input_boolean")) return;
+    ha_service_async(dom, "toggle", entity_id);
 }
 
 void ha_device_toggle_async(int type, const char * entity_id) {
@@ -1298,6 +1312,31 @@ static int ha_rest_ping(void) {
     return strstr(body, "API running") ? 0 : -1;
 }
 
+/* Integratie tiles bound to an HA entity (tile_ext.c): REST read of each, or
+ * only of those bound since the last read. */
+static pthread_mutex_t g_tile_poll_mtx = PTHREAD_MUTEX_INITIALIZER;   /* body[] is static */
+static void poll_tile_entities(int only_dirty) {
+    pthread_mutex_lock(&g_tile_poll_mtx);
+    int it = 0;
+    char ent[96];
+    while (tile_ext_next(TEXT_HA, &it, ent, sizeof ent, only_dirty) >= 0) {
+        static char body[8192];
+        int ok = ha_get_state(ent, body, sizeof body) == 0 && strstr(body, "\"state\"");
+        tile_ext_apply_ha(ent, body, ok);
+    }
+    pthread_mutex_unlock(&g_tile_poll_mtx);
+}
+static void * ha_tiles_thread(void * arg) {
+    (void)arg;
+    if (!g_token[0]) load_token();
+    poll_tile_entities(1);
+    return NULL;
+}
+void ha_tiles_refresh_async(void) {
+    pthread_t t;
+    if (pthread_create(&t, NULL, ha_tiles_thread, NULL) == 0) pthread_detach(t);
+}
+
 static void seed_all(void) {
     poll_once();        /* curtain group + battery */
     poll_blinds();      /* blinds cover + battery */
@@ -1306,6 +1345,7 @@ static void seed_all(void) {
     poll_life360();
     poll_energy();      /* power/gas (when energy_source == HA) + solar */
     poll_doorbell();    /* arms the trigger edge-detector */
+    poll_tile_entities(0);   /* Integratie tiles showing an HA entity */
 }
 
 /* Route a state_changed event to the right apply_*. Scopes parsing to the
@@ -1346,6 +1386,8 @@ static void dispatch_event(const char * msg) {
     else if (settings.energy_source == 3 && settings.ha_gas_entity[0] &&
              !strcmp(ent, settings.ha_gas_entity))
         apply_ha_number(ns, &ha_state.energy_gas_m3, &ha_state.have_gas);
+    /* Integratie tiles showing this entity (any number of them) */
+    if (tile_ext_wants_ha(ent)) tile_ext_apply_ha(ent, ns, 1);
     /* Unified device list (light/cover/switch). */
     pthread_mutex_lock(&g_dev_mtx);
     for (int i = 0; i < ha_device_count; i++)
@@ -1517,6 +1559,7 @@ static void * ha_thread(void * arg) {
                     last_ping = time(NULL);
                 }
                 maybe_fetch_device_areas();   /* list edited in Settings / 30-min refresh */
+                poll_tile_entities(1);        /* a tile bound just now: its first value */
                 continue;
             }
             int n = ws_recv_msg(fd, msg, sizeof msg);

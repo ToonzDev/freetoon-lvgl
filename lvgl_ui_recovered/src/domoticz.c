@@ -15,6 +15,7 @@
  */
 #define _GNU_SOURCE
 #include "domoticz.h"
+#include "tile_ext.h"
 #include "http.h"
 #include "settings.h"
 #include <stdio.h>
@@ -429,6 +430,77 @@ static int http_getdevices(void) {
     return -1;
 }
 
+/* GET a json.htm query with the same auth ladder as http_getdevices. 0 = a
+ * body with "result" or "status" came back. */
+static int dz_get(const char * query, char * body, size_t n) {
+    char host[80], port[8], url[400];
+    parse_host(host, sizeof host, port, sizeof port);
+    session_jar_path();
+    snprintf(url, sizeof url, "http://%s:%s/%s", host, port, query);
+    if (http_fetch_cookies(url, g_jar, body, n) == 0 && strstr(body, "\"status\"")) return 0;
+    if (settings.domoticz_user[0] && dz_login() &&
+        http_fetch_cookies(url, g_jar, body, n) == 0 && strstr(body, "\"status\"")) return 0;
+    build_url(url, sizeof url, query);
+    if (http_fetch(url, body, n) == 0 && strstr(body, "\"status\"")) return 0;
+    return -1;
+}
+
+int domoticz_list_all(dz_item_t * out, int max) {
+    if (!settings.domoticz_host[0]) return -1;
+    size_t cap = 768 * 1024;
+    char * body = malloc(cap);
+    if (!body) return -1;
+    if (dz_get("json.htm?type=command&param=getdevices&used=true&order=Name", body, cap) != 0) {
+        free(body);
+        return -1;
+    }
+    int n = 0;
+    const char * p = strstr(body, "\"result\"");
+    while (p && n < max && (p = strchr(p, '{')) != NULL) {
+        const char * end = strchr(p, '}');
+        if (!end) break;
+        char idx[16] = "";
+        jstr(p, end, "idx", idx, sizeof idx);
+        if (idx[0]) {
+            dz_item_t * it = &out[n];
+            it->idx = (int)strtol(idx, NULL, 10);
+            jstr(p, end, "Name", it->name, sizeof it->name);
+            jstr(p, end, "Type", it->type, sizeof it->type);
+            jstr(p, end, "Data", it->data, sizeof it->data);
+            if (it->name[0]) n++;
+        }
+        p = end + 1;
+    }
+    free(body);
+    return n;
+}
+
+/* Integratie tiles: read each bound device (getdevices&rid=<idx>). */
+static pthread_mutex_t g_tile_mtx = PTHREAD_MUTEX_INITIALIZER;
+static void dz_poll_tiles(int only_dirty) {
+    if (!settings.domoticz_host[0]) return;
+    pthread_mutex_lock(&g_tile_mtx);
+    int it = 0;
+    char id[96];
+    while (tile_ext_next(TEXT_DZ, &it, id, sizeof id, only_dirty) >= 0) {
+        int idx = (int)strtol(id, NULL, 10);
+        static char body[16 * 1024];
+        char q[96];
+        snprintf(q, sizeof q, "json.htm?type=command&param=getdevices&rid=%d", idx);
+        int ok = dz_get(q, body, sizeof body) == 0;
+        const char * o = ok ? strstr(body, "\"result\"") : NULL;
+        o = o ? strchr(o, '{') : NULL;
+        const char * end = o ? strchr(o, '}') : NULL;
+        tile_ext_apply_dz(idx, o, end, ok && o && end);
+    }
+    pthread_mutex_unlock(&g_tile_mtx);
+}
+static void * dz_tiles_thread(void * arg) { (void)arg; dz_poll_tiles(1); return NULL; }
+void domoticz_tiles_refresh_async(void) {
+    pthread_t t;
+    if (pthread_create(&t, NULL, dz_tiles_thread, NULL) == 0) pthread_detach(t);
+}
+
 /* Settings "test connection": run the auth ladder once and report a granular
  * result. `reached` tracks whether any HTTP body came back at all, so we can
  * tell "wrong credentials" (got the server's 401 page) from "host unreachable"
@@ -475,6 +547,7 @@ static void * dz_thread(void * arg) {
         /* Seed the device list over HTTP — reliable, and shows devices even if
          * the WebSocket can't connect. */
         if (http_getdevices() == 0) domoticz_state.connected = 1;
+        dz_poll_tiles(0);                              /* Integratie tiles */
 
         /* The WebSocket is purely a push channel: Domoticz broadcasts a frame to
          * all connected clients whenever a device changes. We don't request data
@@ -489,15 +562,23 @@ static void * dz_thread(void * arg) {
             sleep(15);
             continue;
         }
-        time_t last_ping = time(NULL), last_fetch = time(NULL);
+        time_t last_ping = time(NULL), last_fetch = time(NULL), last_tiles = time(NULL);
         for (;;) {
             fd_set rs; FD_ZERO(&rs); FD_SET(fd, &rs);
-            struct timeval tv = { .tv_sec = 30, .tv_usec = 0 };
+            /* 5 s wake-ups: a tile bound just now gets its first value soon */
+            struct timeval tv = { .tv_sec = 5, .tv_usec = 0 };
             int s = select(fd + 1, &rs, NULL, NULL, &tv);
             if (s < 0) { if (errno == EINTR) continue; break; }
-            if (s == 0) {                              /* idle → keepalive ping */
-                if (ws_send(fd, 0x9, NULL, 0) < 0) break;
-                last_ping = time(NULL);
+            if (s == 0) {
+                if (time(NULL) - last_ping >= 30) {    /* idle → keepalive ping */
+                    if (ws_send(fd, 0x9, NULL, 0) < 0) break;
+                    last_ping = time(NULL);
+                }
+                /* tiles: new ones now, all of them every minute (sensors that
+                 * Domoticz does not push) */
+                int all = time(NULL) - last_tiles >= 60;
+                dz_poll_tiles(!all);
+                if (all) last_tiles = time(NULL);
                 continue;
             }
             int n = ws_recv_msg(fd, msg, sizeof msg);
@@ -506,7 +587,8 @@ static void * dz_thread(void * arg) {
              * once a second so a burst of pushes doesn't hammer the API). */
             if (time(NULL) - last_fetch >= 1) {
                 if (http_getdevices() == 0) domoticz_state.connected = 1;
-                last_fetch = time(NULL);
+                dz_poll_tiles(0);
+                last_fetch = last_tiles = time(NULL);
             }
             if (time(NULL) - last_ping > 45) {
                 if (ws_send(fd, 0x9, NULL, 0) < 0) break;

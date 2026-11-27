@@ -1356,6 +1356,12 @@ int main(int argc, char ** argv) {
         if (ha_start() != 0) fprintf(stderr, "[sim] ha_start failed\n");
         usleep(1500000);
     }
+    /* Domoticz the same way: enable_domoticz + domoticz_host, a local mock. */
+    if (settings.enable_domoticz && settings.domoticz_host[0]) {
+        extern int domoticz_start(void);
+        if (domoticz_start() != 0) fprintf(stderr, "[sim] domoticz_start failed\n");
+        usleep(1500000);
+    }
     /* Marketplace apps as on the Toon (/mnt/data/integrations/<id>/manifest.json);
      * SIM_INTEG_VALUE="<id>|<value>|<subtitle>" stands in for the app's tile post. */
     {

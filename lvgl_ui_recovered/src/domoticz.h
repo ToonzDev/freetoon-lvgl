@@ -49,4 +49,11 @@ void domoticz_switch_async(int idx, const char * cmd);   /* "On"/"Off"/"Toggle"/
  * Updates domoticz_state at once so the UI does not jump back until the next poll. */
 void domoticz_set_level_async(int idx, int pct);
 
+/* Every used device (sensors too), for the Integratie-tile picker. Blocking
+ * (one HTTP call); returns the count, or -1 when Domoticz did not answer. */
+typedef struct { int idx; char name[48]; char type[40]; char data[40]; } dz_item_t;
+int  domoticz_list_all(dz_item_t * out, int max);
+/* Integratie tiles showing a Domoticz device (tile_ext.c): fetch them now (async). */
+void domoticz_tiles_refresh_async(void);
+
 #endif

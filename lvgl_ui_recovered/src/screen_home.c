@@ -29,6 +29,7 @@
 #include "calendar.h"
 #include "packages.h"
 #include "tile_slots.h"
+#include "tile_ext.h"
 #include "layout.h"
 #include "clock_studio.h"
 #include "tile_flows.h"
@@ -548,6 +549,7 @@ int open_integration_by_id(const char * b) {
 
 static int check_slot_integration_open(int slot) {
     const char * b = tile_slots_binding(slot);
+    if (b && !strcmp(b, "local:ext")) return tile_ext_tap(slot);   /* toggle, or nothing for a sensor */
     return open_integration_by_id(b);
 }
 
@@ -2266,6 +2268,26 @@ static void update_tile_lights(void) {
  * the bound local content or integration, or a "tap to assign" placeholder. */
 static void render_assignable_slot(int slot, lv_obj_t * t, lv_obj_t * mn, lv_obj_t * sb) {
     const char * b = tile_slots_binding(slot);
+    tile_ext_t x;
+    if (b && !strcmp(b, "local:ext") && tile_ext_get(slot, &x)) {   /* an HA entity / Domoticz device */
+        if (t) ui_label_set_text(t, x.name[0] ? x.name : x.id);
+        if (mn) {
+            lv_obj_t * pt = lv_obj_get_parent(mn);
+            lv_coord_t th = pt ? lv_obj_get_height(pt) : 0;
+            const lv_font_t * vf = (th >= 230) ? SF(48) : (th >= 130 ? SF(28) : SF(22));
+            ui_obj_set_style_text_font(mn, vf, 0);
+            ui_obj_set_style_text_color(mn, lv_color_hex(x.switchable && x.on ? 0xffcc44 : COL_TEXT_HI), 0);
+            if (th >= 110) ui_obj_align(mn, LV_ALIGN_CENTER, 0, th >= 130 ? -8 : 0);
+            else ui_obj_align(mn, LV_ALIGN_RIGHT_MID, -4, 0);
+            ui_label_set_text(mn, x.have ? x.value : (x.error ? tr("geen antwoord", "no answer") : "..."));
+        }
+        if (sb) {
+            char age[40];
+            tile_ext_age(x.have ? x.changed : 0, age, sizeof age);
+            ui_label_set_text(sb, age);
+        }
+        return;
+    }
     if (b && !strcmp(b, "local:agenda")) {
         if (t) ui_label_set_text(t, tr("Agenda", "Calendar"));
         if (calendar_state.count > 0) {

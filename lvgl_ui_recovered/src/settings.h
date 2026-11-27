@@ -450,6 +450,9 @@ typedef struct {
     /* Page 3 of the home screen (custom layout): integration ids of its
      * slot tiles (tile_slots.h TILE_SLOT_P3_0..); must match TILE_SLOT_P3_N. */
     char tile_slot_page3[12][48];
+    /* Integratie tiles bound to "local:ext" (tile_ext.c): per slot
+     * "ha:<entity_id>" or "dz:<idx>"; must match TILE_SLOT_COUNT. */
+    char tile_slot_ext[33][96];
 } settings_t;
 
 #define FORECAST_AUTO   0

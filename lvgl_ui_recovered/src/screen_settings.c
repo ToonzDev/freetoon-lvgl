@@ -36,6 +36,7 @@
 #include "boxtalk.h"
 #include "icons.h"
 #include "tile_slots.h"
+#include "tile_ext.h"
 #include "news.h"
 #include "wastecollection.h"
 #include "update_check.h"
@@ -4964,6 +4965,7 @@ static int slot_dropdown_from_id(int slot, const char * id) {
 
 static void on_tile_slot_change(lv_event_t * e) {
     lv_obj_t * dd = lv_event_get_target(e);
+    lv_dropdown_set_text(dd, NULL);            /* drop the "Home Assistant / Domoticz" caption */
     int slot = (int)(intptr_t)lv_event_get_user_data(e);
     int idx  = lv_dropdown_get_selected(dd);
     tile_slots_bind(slot, slot_dropdown_to_id(slot, idx));
@@ -5099,12 +5101,38 @@ void screen_settings_open_tile_slots_modal(void) {
     open_tile_slots_modal(NULL);
 }
 
+/* "Home Assistant..." / "Domoticz..." in the tile dialog: pick an entity /
+ * device for the tile (user data: slot * 2 + dz). */
+static void on_modal_ext_pick(lv_event_t * e) {
+    int v = (int)(intptr_t)lv_event_get_user_data(e);
+    modal_close(e);
+    screen_ext_picker_open_tile(v / 2, v % 2);
+}
+static void on_modal_ext_unbind(lv_event_t * e) {
+    int slot = (int)(intptr_t)lv_event_get_user_data(e);
+    tile_ext_bind(slot, TEXT_NONE, NULL, NULL);
+    modal_close(e);
+}
+static lv_obj_t * modal_small_btn(lv_obj_t * parent, int w, const char * txt, uint32_t col,
+                                  lv_event_cb_t cb, int ud) {
+    lv_obj_t * b = lv_btn_create(parent);
+    lv_obj_set_size(b, w, SY(50));
+    lv_obj_set_style_bg_color(b, lv_color_hex(col), 0);
+    lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, (void *)(intptr_t)ud);
+    lv_obj_t * l = lv_label_create(b);
+    lv_label_set_text(l, txt);
+    lv_obj_set_style_text_color(l, lv_color_hex(0xffffff), 0);
+    lv_obj_center(l);
+    return b;
+}
+
 /* Open single-slot assignment modal for a specific tile slot (0..7). */
 void screen_settings_open_tile_slot_single_modal(int slot) {
     if (slot < 0 || slot >= TILE_SLOT_COUNT) return;
     char title[64];
     snprintf(title, sizeof title, "%s: %s", tr("Tegel toewijzen", "Assign tile"), tile_slot_label(slot));
-    lv_obj_t * p = modal_open(title, 260);
+    /* taller from slot 4 on: room for "Nu: ..." + the HA / Domoticz buttons */
+    lv_obj_t * p = modal_open(title, slot >= 4 ? 340 : 260);
 
     lv_obj_t * info = lv_label_create(p);
     lv_obj_set_style_text_font(info, SF(18), 0);
@@ -5124,6 +5152,35 @@ void screen_settings_open_tile_slot_single_modal(int slot) {
     lv_obj_set_style_text_font(dd, SF(22), 0);
     lv_obj_add_event_cb(dd, on_tile_slot_change, LV_EVENT_VALUE_CHANGED, (void *)(intptr_t)slot);
     dd_tile_slot[slot] = dd;
+    if (tile_ext_kind(slot)) lv_dropdown_set_text(dd, tr("Home Assistant / Domoticz", "Home Assistant / Domoticz"));
+
+    /* An HA entity or Domoticz device on the tile (not on the four fixed
+     * home tiles, which have their own content). */
+    if (slot >= 4) {
+        char cur[140];
+        tile_ext_describe(slot, cur, sizeof cur);
+        if (cur[0]) {
+            lv_obj_t * l = lv_label_create(p);
+            lv_obj_set_style_text_font(l, SF(16), 0);
+            lv_obj_set_style_text_color(l, lv_color_hex(0xffcc44), 0);
+            lv_label_set_long_mode(l, LV_LABEL_LONG_DOT);
+            lv_obj_set_width(l, SX(560));
+            lv_label_set_text_fmt(l, "%s %s", tr("Nu:", "Now:"), cur);
+            lv_obj_align(l, LV_ALIGN_TOP_LEFT, SX(20), SY(172));
+            lv_obj_t * u = modal_small_btn(p, SX(160), tr("Ontkoppel", "Unlink"), 0x6e2e2e, on_modal_ext_unbind, slot);
+            lv_obj_align(u, LV_ALIGN_TOP_RIGHT, SX(-4), SY(160));
+        }
+        int x = SX(4);
+        if (settings.enable_ha) {
+            lv_obj_t * b = modal_small_btn(p, SX(250), "Home Assistant...", 0x2e4e6e, on_modal_ext_pick, slot * 2);
+            lv_obj_align(b, LV_ALIGN_BOTTOM_LEFT, x, SY(-8));
+            x += SX(260);
+        }
+        if (settings.enable_domoticz && settings.domoticz_host[0]) {
+            lv_obj_t * b = modal_small_btn(p, SX(250), "Domoticz...", 0x2e4e6e, on_modal_ext_pick, slot * 2 + 1);
+            lv_obj_align(b, LV_ALIGN_BOTTOM_LEFT, x, SY(-8));
+        }
+    }
 
     marketplace_button(p);
 }

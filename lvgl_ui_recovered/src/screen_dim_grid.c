@@ -23,6 +23,7 @@
 #include "icons.h"
 #include "buienradar_rain.h"
 #include "tile_slots.h"      /* Integratie block: an app's tile value */
+#include "tile_ext.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -430,6 +431,15 @@ static void dim_boiler_update(void) {
 static lv_obj_t * dim_in_title = NULL, * dim_in_val = NULL, * dim_in_sub = NULL;
 static void dim_integ_update(void) {
     if (!dim_in_val) return;
+    tile_ext_t x;
+    if (tile_ext_get(TILE_SLOT_DIM, &x)) {           /* an HA entity / Domoticz device */
+        char age[40];
+        tile_ext_age(x.have ? x.changed : 0, age, sizeof age);
+        ui_label_set_text(dim_in_title, x.name[0] ? x.name : x.id);
+        ui_label_set_text(dim_in_val, x.have ? x.value : "--");
+        ui_label_set_text(dim_in_sub, age);
+        return;
+    }
     const integration_meta_t * m = tile_slots_meta_for(TILE_SLOT_DIM);
     if (!m) {
         ui_label_set_text(dim_in_title, tr("Integratie", "Integration"));
