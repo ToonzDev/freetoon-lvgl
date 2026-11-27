@@ -400,7 +400,7 @@ static void refresh_cb(lv_timer_t * t) {
             g_scanning = 0;
             build_rows();
             lv_label_set_text_fmt(lbl_hint, tr("%d netwerk%s gevonden.", "%d network%s found."),
-                                  g_ap_count, g_ap_count == 1 ? "" : "s");
+                                  g_ap_count, g_ap_count == 1 ? "" : tr("en", "s"));   /* "netwerken" */
         } else if (strstr(netcon_response_buf, "GetWirelessNetworkInformationResponse")) {
             parse_status(netcon_response_buf);
             g_status_known = 1;   /* we now have a real answer to render */
@@ -499,7 +499,11 @@ lv_obj_t * screen_wifi_create(void) {
     lv_obj_set_style_text_color(lbl_status, lv_color_hex(COL_TEXT_DIM), 0);
     lv_obj_set_style_text_font(lbl_status, SF(18), 0);
     lv_label_set_text(lbl_status, tr("opvragen...", "querying..."));
-    lv_obj_align(lbl_status, LV_ALIGN_TOP_LEFT, SX(180), SY(26));
+    /* own line under the buttons: next to the title a long "SSID  82%  IP
+     * internet OK" ran under the Gast-QR / Verbreek buttons */
+    lv_obj_set_width(lbl_status, SX(980));
+    lv_label_set_long_mode(lbl_status, LV_LABEL_LONG_DOT);
+    lv_obj_align(lbl_status, LV_ALIGN_TOP_LEFT, SX(22), SY(76));
 
     /* Scan button (top-right) */
     lv_obj_t * scan = lv_btn_create(scr_root);
@@ -549,11 +553,11 @@ lv_obj_t * screen_wifi_create(void) {
     lv_obj_set_width(lbl_hint, SX(980));
     lv_label_set_long_mode(lbl_hint, LV_LABEL_LONG_WRAP);
     lv_label_set_text(lbl_hint, tr("Tik op Scan om netwerken in de buurt te tonen.  WPS wordt niet ondersteund door de netwerkbeheerder van de Toon.", "Tap Scan to list nearby networks.  WPS is not supported by the Toon's network manager."));
-    lv_obj_align(lbl_hint, LV_ALIGN_TOP_LEFT, SX(22), SY(76));
+    lv_obj_align(lbl_hint, LV_ALIGN_TOP_LEFT, SX(22), SY(104));
 
     list_box = lv_obj_create(scr_root);
-    lv_obj_set_size(list_box, SX(980), SY(470));
-    lv_obj_align(list_box, LV_ALIGN_TOP_LEFT, SX(22), SY(110));
+    lv_obj_set_size(list_box, SX(980), SY(446));
+    lv_obj_align(list_box, LV_ALIGN_TOP_LEFT, SX(22), SY(134));
     lv_obj_set_style_bg_opa(list_box, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(list_box, 0, 0);
     lv_obj_set_style_pad_all(list_box, 4, 0);

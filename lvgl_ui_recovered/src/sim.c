@@ -1447,6 +1447,16 @@ int main(int argc, char ** argv) {
             pump(20);
             continue;
         }
+        /* "netstatus": a synthetic hcb_netcon status answer (WiFi screen status line) */
+        if (!strcmp(argv[a], "netstatus")) {
+            snprintf(netcon_response_buf, sizeof netcon_response_buf,
+                "<action class=\"response\" uuid=\"x\"><GetWirelessNetworkInformationResponse>"
+                "<SSID>Familie-de-Vries-Thuisnetwerk-2.4GHz</SSID><Link_Quality>82/100</Link_Quality>"
+                "<ipAddress>192.168.178.123</ipAddress></GetWirelessNetworkInformationResponse></action>");
+            netcon_response_ready = 1;
+            pump(80);
+            continue;
+        }
         /* "netscan": a synthetic hcb_netcon scan answer (WiFi QR network picker) */
         if (!strcmp(argv[a], "netscan")) {
             snprintf(netcon_response_buf, sizeof netcon_response_buf,
