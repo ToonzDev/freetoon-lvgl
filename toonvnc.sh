@@ -128,7 +128,9 @@ setup_pipeinput() {
     TSLIB_OPT=",tslib_cal=/etc/pointercal"
   fi
 
-  if [ -n "$TOUCH_DEV" ] && "$X11VNC" -help 2>&1 | grep -q "mt"; then
+  # "mt_major" only exists in the patched build (a bare "mt" also matches
+  # words like "format" in the stock x11vnc's help)
+  if [ -n "$TOUCH_DEV" ] && "$X11VNC" -help 2>&1 | grep -q "mt_major"; then
     PIPE="-pipeinput UINPUT:mt,touch_always=1,pressure=128${TSLIB_OPT},direct_abs=$TOUCH_DEV,nouinput"
     RAWFB="map:/dev/fb0@$GEOM"
   elif [ -x "$INPUT" ]; then

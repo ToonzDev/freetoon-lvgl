@@ -231,6 +231,7 @@ download_artefacts() {
         has_asset "$a" && _sub_t=$((_sub_t + 1))
     done
     if [ "$IS_TOON1" != 1 ] && has_asset "libttysniff.so"; then _sub_t=$((_sub_t + 1)); fi
+    has_asset "x11vnc$_sfx" && _sub_t=$((_sub_t + 1))
     sub() { _sub_n=$((_sub_n + 1)); echo "@@SUB $_sub_n/$_sub_t $1"; }
 
     for s in $HELPER_SCRIPTS; do
@@ -290,6 +291,16 @@ download_artefacts() {
         sub fbvnc_input; say "Fetching fbvnc_input..."
         if fetch "$BASE/fbvnc_input" "$DL_DIR/fbvnc_input" 1000 elf 60; then
             chmod +x "$DL_DIR/fbvnc_input" && FBVNC_INPUT="$DL_DIR/fbvnc_input"
+        fi
+    fi
+
+    # x11vnc for VNC: the ToonSoftwareCollective build with multitouch input
+    # (statically linked: no libraries needed). toonvnc.sh prefers
+    # /mnt/data/x11vnc over the stock /usr/bin/x11vnc.
+    if has_asset "x11vnc$_sfx"; then
+        sub x11vnc; say "Fetching x11vnc$_sfx..."
+        if fetch "$BASE/x11vnc$_sfx" "$DL_DIR/x11vnc" 100000 elf 120; then
+            chmod +x "$DL_DIR/x11vnc" && X11VNC_BIN="$DL_DIR/x11vnc"
         fi
     fi
 
@@ -538,6 +549,16 @@ do_install() {
     install_file "$KETELLOG_SH"     /mnt/data/ketellog.sh        # optional (#64)
     install_file "$TTYSNIFF_LIB"    /mnt/data/libttysniff.so     # optional, Toon 2 (#64)
     install_file "$FBVNC_INPUT"     /mnt/data/fbvnc_input
+    # x11vnc is optional: a failed copy (e.g. a full /mnt/data) keeps the old
+    # one and does not stop the update. When VNC is on (its inittab row),
+    # stop the running one so init restarts it with the new binary.
+    if [ -n "${X11VNC_BIN:-}" ] && [ -e "$X11VNC_BIN" ]; then
+        if push "$X11VNC_BIN" /mnt/data/x11vnc; then
+            remote 'grep -q "^vncs:" /etc/inittab 2>/dev/null && { killall x11vnc 2>/dev/null || true; }; true'
+        else
+            say "Note: x11vnc not updated - the old one is kept"
+        fi
+    fi
     if [ -n "$WASTEFETCH_BIN" ] && [ -e "$WASTEFETCH_BIN" ]; then
         install_file "$WASTEFETCH_BIN" /mnt/data/wastefetch
     else
