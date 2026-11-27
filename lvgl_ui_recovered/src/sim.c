@@ -1307,9 +1307,16 @@ int main(int argc, char ** argv) {
         ui_init();                 /* home + ui stack so ui_push navigation works */
         pump(100);
         if (getenv("TOONUI_SIM_PAGE2")) { screen_home_force_page(1); pump(40); }  /* page 2 is gesture-only */
+        if (getenv("TOONUI_SIM_PAGE"))  { screen_home_force_page(atoi(getenv("TOONUI_SIM_PAGE"))); pump(40); }  /* 1 = page 2, 2 = page 3 */
         for (int a = 3; a < argc; a++) {
-            int x, y;
-            if (sscanf(argv[a], "%d,%d", &x, &y) == 2) sim_tap(x, y);
+            int x, y, x2, y2;
+            if (!strncmp(argv[a], "drag:", 5) && sscanf(argv[a] + 5, "%d,%d,%d,%d", &x, &y, &x2, &y2) == 4) {
+                /* swipe (home pages): press, move in 12 steps, release */
+                tap_x = x; tap_y = y; tap_pressed = 1; pump(5);
+                for (int k = 1; k <= 12; k++) { tap_x = x + (x2 - x) * k / 12; tap_y = y + (y2 - y) * k / 12; pump(3); }
+                tap_pressed = 0; pump(10);
+            }
+            else if (sscanf(argv[a], "%d,%d", &x, &y) == 2) sim_tap(x, y);
             else if (!strncmp(argv[a], "wait:", 5))   /* let background fetches land */
                 for (int ms = atoi(argv[a] + 5); ms > 0; ms -= 20) { lv_timer_handler(); lv_tick_inc(20); usleep(20000); ep_tick(); }
         }

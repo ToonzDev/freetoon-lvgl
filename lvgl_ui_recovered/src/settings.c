@@ -399,6 +399,10 @@ void settings_load(void) {
         }
         else if (strcmp(k, "tile_slot_dim") == 0)
             snprintf(settings.tile_slot_dim, sizeof settings.tile_slot_dim, "%s", v);
+        else if (strncmp(k, "tile_slot_p3_", 13) == 0) {
+            int n = atoi(k + 13);                  /* tile_slot_p3_0 .. _11 */
+            if (n >= 0 && n < 12) snprintf(settings.tile_slot_page3[n], 48, "%s", v);
+        }
         else if (strncmp(k, "tile_slot_p1_", 13) == 0) {
             int n = atoi(k + 13);                  /* tile_slot_p1_0 .. _11 */
             if (n >= 0 && n < 12) snprintf(settings.tile_slot_page1[n], 48, "%s", v);
@@ -938,6 +942,7 @@ static void sanitize_all_strings(void) {
     for (size_t i = 0; i < sizeof fields / sizeof fields[0]; i++)
         settings_sanitize_str(fields[i]);
     settings_sanitize_str(settings.hw_kwh_host);
+    for (int i = 0; i < 12; i++) settings_sanitize_str(settings.tile_slot_page3[i]);
     settings_sanitize_str(settings.hw_kwh2_host);
     for (int i = 0; i < HW_SOCKET_MAX; i++) {
         settings_sanitize_str(settings.hw_socket_name[i]);
@@ -1159,6 +1164,8 @@ static void settings_write_file(void) {
         fprintf(f, "tile_slot_p1_%d=%s\n", i, settings.tile_slot_page1[i]);
     for (int i = 0; i < 4; i++)
         fprintf(f, "tile_slot_home_%d=%s\n", i, settings.tile_slot_home[i]);
+    for (int i = 0; i < 12; i++)
+        fprintf(f, "tile_slot_p3_%d=%s\n", i, settings.tile_slot_page3[i]);
     fprintf(f, "tile_slot_dim=%s\n", settings.tile_slot_dim);
     fprintf(f, "tile_rotate_enabled=%d\n", settings.tile_rotate_enabled);
     fprintf(f, "tile_rotate_seconds=%d\n", settings.tile_rotate_seconds);

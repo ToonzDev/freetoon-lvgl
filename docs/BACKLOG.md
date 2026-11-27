@@ -908,3 +908,8 @@
 ### 90. Release 1.0.23: round thermostat, ventilation via Homey, CH pressure fix
 - **Status**: Prepared (2026-11-27) in release_v1.0.23/ (built from the "chore(release): 1.0.23" commit, BUILD_VERSION=1.0.23, helpers and libttysniff.so copied from 1.0.22 as their sources are unchanged, index.* from web/build.sh). To publish: push, tag 1.0.23 on the release commit, publish non-prerelease with all files.
 - **Contents**: #85 round thermostat tile, #88 round thermostat dim block, tile accent bars removed, narrow ventilation tile, #87 ventilation via Homey, #86 CH pressure "6.00", HomeWizard water meter logging, #89 dim editor "Vervang type".
+
+### 91. Home page 3 (optional) + edit pencil on pages 2 and 3
+- **Status**: Implemented (2026-11-27), sim-checked (Toon 1 + 2: pages 1-3, swipes left/right incl. the last page, pencil opens the editor on that page); not on a device yet.
+- **What**: custom layout only: tiles on layout page 3 (index 2) get a third swipe page (full-screen like a custom page 2): up to 12 integration slots (TILE_SLOT_P3_0 = 21.., settings tile_slot_page3[12] appended to settings_t, keys tile_slot_p3_N) plus the rain tile. The page exists only when it has tiles; a third pagination dot then. Layout editor: page button cycles 1 -> 2 -> 3, page 3 offers the page-2 palette (slot, rain), max 12 slots; LAYOUT_MAX_TILES 24 -> 36. Pencil (top right) on pages 2 and 3 opens the editor on that page (screen_layout_editor_show_page). Also fixed: a left swipe on the last page landed as a tap on the tile under the finger (opened "Tegel toewijzen").
+- **Sim**: nav mode with TOONUI_SIM_PAGE=1|2 and drag:x1,y1,x2,y2 (drag added to nav mode).

@@ -76,6 +76,7 @@ void screen_home_dismiss_modals(void);
 void screen_settings_close_modals(void);
 /* Home-tile layout editor ("Indeling"). */
 void screen_layout_editor_show(void);
+void screen_layout_editor_show_page(int page);   /* 0..2: open on that home page */
 lv_obj_t * screen_layout_editor_create(void);
 /* Dim-screen block layout editor ("Dim indeling"). */
 void screen_dim_layout_editor_show(void);

@@ -12,7 +12,8 @@
  * A missing/empty file seeds the built-in default arrangement, so behaviour is
  * unchanged until the user edits the layout in the "Indeling" editor. */
 
-#define LAYOUT_MAX_TILES 24
+#define LAYOUT_PAGES     3    /* home page 1 + swipe pages 2 and 3 */
+#define LAYOUT_MAX_TILES 36   /* all pages together (page 3: up to 12 slots) */
 #define LAYOUT_COLS      12      /* grid columns across the screen */
 #define LAYOUT_ROWS       8      /* grid rows down the screen      */
 #define LAYOUT_NAME_MAX  24      /* max preset-name length (incl. NUL) */

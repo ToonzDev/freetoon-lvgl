@@ -239,12 +239,13 @@ void layout_cell_px(int col, int row, int w, int h,
     if (ph) *ph = y1 - y0;
 }
 
-/* Page 1 (0) shows every type except the page-2 integration slot; page 2 (1)
- * shows integration slots and the rain tile (built on home_page1) only. Each
- * other type is one object on page 1, placed from layout_find(). */
+/* Page 1 (0) shows every type except the page-2 integration slot; pages 2
+ * and 3 (1, 2) show integration slots and the rain tile (built on the page's
+ * overlay) only. Each other type is one object on page 1, placed from
+ * layout_find(). */
 int layout_type_fits_page(int type, int page) {
     if (page == 0) return 1;            /* LT_SLOT too: home Integratie tiles (TILE_SLOT_HOME_*) */
-    if (page == 1) return type == LT_SLOT || type == LT_RAINFALL;
+    if (page == 1 || page == 2) return type == LT_SLOT || type == LT_RAINFALL;
     return 0;
 }
 

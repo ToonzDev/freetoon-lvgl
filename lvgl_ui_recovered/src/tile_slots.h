@@ -45,7 +45,11 @@
 #define TILE_SLOT_HOME_0  16
 #define TILE_SLOT_HOME_N  4
 #define TILE_SLOT_DIM     20
-#define TILE_SLOT_COUNT   21
+/* Page-3 (second swipe page) slots, custom layout only: the k-th visible
+ * LT_SLOT on page 3 in layout order shows TILE_SLOT_P3_0 + k. */
+#define TILE_SLOT_P3_0    21
+#define TILE_SLOT_P3_N    12
+#define TILE_SLOT_COUNT   33
 
 #define INTEG_NAME_MAX        48
 #define INTEG_ID_MAX          48

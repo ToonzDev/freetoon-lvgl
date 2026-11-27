@@ -394,14 +394,13 @@ static void populate_types(void) {
     int added = 0;
     int cur_w = (replace_idx >= 0) ? edit.tiles[replace_idx].w : pick_w;
     int cur_h = (replace_idx >= 0) ? edit.tiles[replace_idx].h : pick_h;
-    const int * pal = edit_page == 1 ? PALETTE_P2 : PALETTE;
-    int npal = edit_page == 1 ? N_PALETTE_P2 : N_PALETTE;
-    int slots_p2 = 0, slots_home = 0;
+    const int * pal = edit_page >= 1 ? PALETTE_P2 : PALETTE;
+    int npal = edit_page >= 1 ? N_PALETTE_P2 : N_PALETTE;
+    int slots_here = 0;                      /* visible slot tiles on this page */
     for (int k = 0; k < edit.count; k++)
-        if (edit.tiles[k].type == LT_SLOT && edit.tiles[k].visible) {
-            if (edit.tiles[k].page == 1) slots_p2++;
-            else if (edit.tiles[k].page == 0 && k != replace_idx) slots_home++;
-        }
+        if (edit.tiles[k].type == LT_SLOT && edit.tiles[k].visible &&
+            edit.tiles[k].page == edit_page && k != replace_idx) slots_here++;
+    int slots_max = edit_page == 0 ? TILE_SLOT_HOME_N : edit_page == 1 ? TILE_SLOT_P1_N : TILE_SLOT_P3_N;
     for (int p = 0; p < npal; p++) {
         int type = pal[p];
         int visible_any = 0;       /* every type but the slot is ONE object on the home screen */
@@ -413,8 +412,7 @@ static void populate_types(void) {
             else if (edit.tiles[k].page == edit_page) hidden_on_page = 1;
         }
         if (visible_any && type != LT_SLOT) continue;
-        if (type == LT_SLOT && edit_page == 1 && slots_p2 >= TILE_SLOT_P1_N) continue;   /* page 2 has 12 slots */
-        if (type == LT_SLOT && edit_page == 0 && slots_home >= TILE_SLOT_HOME_N) continue; /* home: 4 */
+        if (type == LT_SLOT && slots_here >= slots_max) continue;   /* home 4, pages 2 and 3 12 each */
 
         int mw, mh; layout_type_min(type, &mw, &mh);
         if (cur_w < mw || cur_h < mh) continue;   /* too small for this content */
@@ -1014,15 +1012,18 @@ static void on_theme_toggle(lv_event_t * e) {
     theme_btn_label();
 }
 
-/* Toolbar "Pagina" — flip between editing page 1 and page 2 (0/1 internally). */
+/* Show page `p` (0..2) in the editor: button label, canvas, hint. */
+static void set_edit_page(int p) {
+    edit_page = (p >= 0 && p < LAYOUT_PAGES) ? p : 0;
+    sel = -1;
+    if (page_btn) lv_label_set_text_fmt(lv_obj_get_child(page_btn, 0), tr("Pagina %d", "Page %d"), edit_page + 1);
+    build_canvas_rects();
+    if (sel_lbl) lv_label_set_text_fmt(sel_lbl, tr("Pagina %d - tik een tegel om te selecteren", "Page %d - tap a tile to select"), edit_page + 1);
+}
+/* Toolbar "Pagina" — cycle page 1 -> 2 -> 3 -> 1 (0..2 internally). */
 static void on_page_toggle(lv_event_t * e) {
     (void)e;
-    edit_page ^= 1;
-    sel = -1;
-    if (page_btn) lv_label_set_text(lv_obj_get_child(page_btn, 0),
-                                    edit_page == 0 ? tr("Pagina 1", "Page 1") : tr("Pagina 2", "Page 2"));
-    build_canvas_rects();
-    lv_label_set_text_fmt(sel_lbl, tr("Pagina %d - tik een tegel om te selecteren", "Page %d - tap a tile to select"), edit_page + 1);
+    set_edit_page((edit_page + 1) % LAYOUT_PAGES);
 }
 
 /* Copy the SHAPE of page-0's visible tiles onto page 1 as generic slots (no
@@ -1149,4 +1150,11 @@ void screen_layout_editor_show(void) {
     lv_obj_t * save = tb_btn(bar, SCR_W - SX(96), SX(88), tr("Opslaan", "Save"), on_save, NULL, 0x2e6e3a);
     (void)save;
     update_sel_label();
+}
+
+/* Open the editor directly on home page `page` (0..2): the edit icon on the
+ * home screen's pages 2 and 3. */
+void screen_layout_editor_show_page(int page) {
+    screen_layout_editor_show();
+    if (page > 0) set_edit_page(page);
 }

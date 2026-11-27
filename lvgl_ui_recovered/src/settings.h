@@ -447,6 +447,9 @@ typedef struct {
     char vent_hy_r2[40];      /* Homey device id of relay 2 */
     int  vent_hy_low;         /* relays on for "Laag": bit 0 = relay 1, bit 1 = relay 2 */
     int  vent_hy_high;        /* relays on for "Hoog" */
+    /* Page 3 of the home screen (custom layout): integration ids of its
+     * slot tiles (tile_slots.h TILE_SLOT_P3_0..); must match TILE_SLOT_P3_N. */
+    char tile_slot_page3[12][48];
 } settings_t;
 
 #define FORECAST_AUTO   0

@@ -40,6 +40,10 @@ const char * tile_slot_label(int slot) {
         return buf;
     }
     if (slot == TILE_SLOT_DIM) return tr("Dimscherm - Integratie", "Dim screen - Integration");
+    if (slot >= TILE_SLOT_P3_0 && slot < TILE_SLOT_P3_0 + TILE_SLOT_P3_N) {
+        snprintf(buf, sizeof buf, "%s %d", tr("Pagina 3 - Slot", "Page 3 - Slot"), slot - TILE_SLOT_P3_0 + 1);
+        return buf;
+    }
     return "?";
 }
 
@@ -275,6 +279,8 @@ static char * slot_field(int slot) {
             if (slot >= TILE_SLOT_HOME_0 && slot < TILE_SLOT_HOME_0 + TILE_SLOT_HOME_N)
                 return settings.tile_slot_home[slot - TILE_SLOT_HOME_0];
             if (slot == TILE_SLOT_DIM) return settings.tile_slot_dim;
+            if (slot >= TILE_SLOT_P3_0 && slot < TILE_SLOT_P3_0 + TILE_SLOT_P3_N)
+                return settings.tile_slot_page3[slot - TILE_SLOT_P3_0];
             return NULL;
     }
 }

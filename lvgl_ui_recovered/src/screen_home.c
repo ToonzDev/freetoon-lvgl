@@ -293,14 +293,22 @@ static lv_obj_t * devices_btn       = NULL;   /* top-right, opens the Devices hu
  * overlay with extra configurable slots — and swiping right returns. We keep
  * page 0 absolutely positioned and just toggle visibility (no reparenting). */
 static lv_obj_t * home_page1      = NULL;   /* page-1 overlay container */
-static lv_obj_t * home_dot[2]     = {0};    /* pagination dots */
+static lv_obj_t * home_page2      = NULL;   /* page-2 overlay ("Pagina 3"), custom layout only */
+static lv_obj_t * home_dot[LAYOUT_PAGES] = {0};   /* pagination dots */
 static int        home_tile_page  = 0;
+static int        home_npages     = 2;      /* 3 when the custom layout puts tiles on page 3 */
+static lv_obj_t * page_edit_btn[LAYOUT_PAGES] = {0};   /* pencil on pages 2 and 3 */
 /* Page-1 tiles render whatever marketplace integration is bound to slots
  * TILE_SLOT_P1_0..3 (or a "tap to assign" placeholder when empty). */
 static lv_obj_t * p1_title[TILE_SLOT_P1_N] = {0};
 static lv_obj_t * p1_main[TILE_SLOT_P1_N]  = {0};
 static lv_obj_t * p1_sub[TILE_SLOT_P1_N]   = {0};
 static int        g_p1_count = 4;   /* active page-2 slots (4 fixed, or N from a custom layout) */
+/* Page-3 tiles: the k-th visible LT_SLOT on layout page 3 shows TILE_SLOT_P3_0 + k. */
+static lv_obj_t * p3_title[TILE_SLOT_P3_N] = {0};
+static lv_obj_t * p3_main[TILE_SLOT_P3_N]  = {0};
+static lv_obj_t * p3_sub[TILE_SLOT_P3_N]   = {0};
+static int        g_p3_count = 0;
 /* Integratie tiles on the home page of a custom layout (LT_SLOT on page 0):
  * the k-th in layout order shows slot TILE_SLOT_HOME_0 + k. */
 static lv_obj_t * hs_tile[TILE_SLOT_HOME_N], * hs_title[TILE_SLOT_HOME_N];
@@ -2441,6 +2449,9 @@ static void refresh_cb(lv_timer_t * t) {
     /* Integratie tiles on the home page (custom layout) */
     for (int i = 0; i < g_hs_count; i++)
         render_assignable_slot(TILE_SLOT_HOME_0 + i, hs_title[i], hs_main[i], hs_sub[i]);
+    /* Page 3 (custom layout) */
+    for (int i = 0; i < g_p3_count; i++)
+        render_assignable_slot(TILE_SLOT_P3_0 + i, p3_title[i], p3_main[i], p3_sub[i]);
 
     /* News ticker text — rebuild only when the lead headline changes (every
      * ~15 min) so the scroll animation isn't reset each second. */
@@ -3599,7 +3610,7 @@ static void on_devices_btn(lv_event_t * e) { (void)e; open_devices_hub(); }
 
 /* ---- swipeable tile pages ---- */
 static void home_set_dot(int active) {
-    for (int i = 0; i < 2; i++)
+    for (int i = 0; i < LAYOUT_PAGES; i++)
         if (home_dot[i])
             ui_obj_set_style_bg_opa(home_dot[i],
                                     i == active ? LV_OPA_COVER : LV_OPA_30, 0);
@@ -3620,6 +3631,7 @@ static void home_show_page(int n) {
             ui_obj_clear_flag(p0[i], LV_OBJ_FLAG_HIDDEN);
         }
         if (home_page1) ui_obj_add_flag(home_page1, LV_OBJ_FLAG_HIDDEN);
+        if (home_page2) ui_obj_add_flag(home_page2, LV_OBJ_FLAG_HIDDEN);
         /* ticker belongs to page 0 — show it again (if news is on, and the
          * custom layout hasn't hidden it). */
         if (news_ticker && settings.news_enabled) {
@@ -3635,11 +3647,16 @@ static void home_show_page(int n) {
         apply_offline_tile_visibility();   /* re-hide offline tiles after un-hiding */
     } else {
         for (int i = 0; i < 5; i++) if (p0[i]) ui_obj_add_flag(p0[i], LV_OBJ_FLAG_HIDDEN);
-        if (home_page1) {
-            ui_obj_clear_flag(home_page1, LV_OBJ_FLAG_HIDDEN);
-            /* bring to front so a full-screen custom page 2 covers the thermostat
+        lv_obj_t * show = (n == 2 && home_page2) ? home_page2 : home_page1;
+        lv_obj_t * hide = show == home_page1 ? home_page2 : home_page1;
+        if (hide) ui_obj_add_flag(hide, LV_OBJ_FLAG_HIDDEN);
+        if (show) {
+            ui_obj_clear_flag(show, LV_OBJ_FLAG_HIDDEN);
+            /* bring to front so a full-screen custom page covers the thermostat
              * + weather strip (which are created later, hence higher z). */
-            lv_obj_move_foreground(home_page1);
+            lv_obj_move_foreground(show);
+            /* the rain tile is built later on the same page: keep the pencil on top */
+            if (n < LAYOUT_PAGES && page_edit_btn[n]) lv_obj_move_foreground(page_edit_btn[n]);
         }
         /* hide the page-0 ticker so it doesn't draw over the page-2 slots */
         if (news_box) ui_obj_add_flag(news_box, LV_OBJ_FLAG_HIDDEN);
@@ -3729,6 +3746,69 @@ static void on_home_slot(lv_event_t * e) {
             return;
         }
 }
+/* Page-3 tile: open the bound app, else choose one. */
+static void on_page3_slot(lv_event_t * e) {
+    lv_obj_t * tapped = lv_event_get_current_target(e);
+    for (int i = 0; i < g_p3_count; i++)
+        if (p3_main[i] && tapped == lv_obj_get_parent(p3_main[i])) {
+            if (check_slot_integration_open(TILE_SLOT_P3_0 + i)) return;
+            screen_settings_open_tile_slot_single_modal(TILE_SLOT_P3_0 + i);
+            return;
+        }
+}
+static void on_page1_slot_longpress(lv_event_t * e);
+/* Pencil top right on pages 2 and 3: the layout editor, on that page. */
+static void on_page_edit(lv_event_t * e) {
+    screen_layout_editor_show_page((int)(intptr_t)lv_event_get_user_data(e));
+}
+static void add_page_edit_btn(lv_obj_t * page, int page_no) {
+    lv_obj_t * b = lv_btn_create(page);
+    lv_obj_set_size(b, SX(44), SX(44));
+    lv_obj_align(b, LV_ALIGN_TOP_RIGHT, -SX(6), SY(6));
+    lv_obj_set_style_radius(b, LV_RADIUS_CIRCLE, 0);
+    ui_obj_set_style_bg_color(b, lv_color_hex(settings.home_light_mode ? 0xdde3ea : 0x101820), 0);
+    ui_obj_set_style_bg_opa(b, LV_OPA_80, 0);
+    lv_obj_set_style_shadow_width(b, 0, 0);
+    lv_obj_set_ext_click_area(b, 10);
+    lv_obj_add_event_cb(b, on_page_edit, LV_EVENT_CLICKED, (void *)(intptr_t)page_no);
+    if (page_no >= 0 && page_no < LAYOUT_PAGES) page_edit_btn[page_no] = b;
+    lv_obj_t * l = lv_label_create(b);
+    ui_label_set_text(l, LV_SYMBOL_EDIT);
+    ui_obj_set_style_text_color(l, lv_color_hex(settings.home_light_mode ? 0x1e2838 : 0xdddddd), 0);
+    ui_obj_set_style_text_font(l, SF(18), 0);
+    lv_obj_center(l);
+    lv_obj_move_foreground(b);
+}
+/* One assignable slot tile (pages 2 and 3): title / value / subtitle labels;
+ * a long press opens the picker for `slot`. */
+static void make_slot_tile(lv_obj_t * parent, int x, int y, int w, int h, uint32_t col,
+                           lv_event_cb_t on_tap, int slot,
+                           lv_obj_t ** title, lv_obj_t ** main, lv_obj_t ** sub) {
+    tile_t s;
+    make_tile(parent, x, y, w, h, LT_NONE, "", col, on_tap, &s);
+    *title = s.title;   /* make_tile's title label, reused */
+    /* Short, wide block → lay title + value horizontally on one row (like
+     * the curtains strip); taller block → stacked with a value font that
+     * scales to the height (and room for the subtitle below). */
+    int horiz = h < 110;
+    *main = lv_label_create(s.tile);
+    ui_obj_set_style_text_color(*main, lv_color_hex(COL_TEXT_DIM), 0);
+    ui_obj_set_style_text_font(*main, SF(14), 0);
+    ui_label_set_text(*main, tr(LV_SYMBOL_PLUS "  Tik om te koppelen", LV_SYMBOL_PLUS "  Tap to assign"));
+    if (horiz) {
+        ui_obj_align(*title, LV_ALIGN_LEFT_MID, 0, 0);   /* title left-of-centre */
+        ui_obj_align(*main,  LV_ALIGN_RIGHT_MID, -4, 0); /* value right, same line */
+    } else {
+        ui_obj_align(*main, LV_ALIGN_CENTER, 0, 0);
+    }
+    *sub = lv_label_create(s.tile);
+    ui_obj_set_style_text_color(*sub, lv_color_hex(COL_TEXT_DIM), 0);
+    ui_obj_set_style_text_font(*sub, SF(18), 0);
+    ui_label_set_text(*sub, "");
+    if (horiz) ui_obj_add_flag(*sub, LV_OBJ_FLAG_HIDDEN);   /* no room on one row */
+    else ui_obj_align(*sub, LV_ALIGN_BOTTOM_MID, 0, -4);
+    lv_obj_add_event_cb(s.tile, on_page1_slot_longpress, LV_EVENT_LONG_PRESSED, (void *)(intptr_t)slot);
+}
 static void on_page1_slot_longpress(lv_event_t * e) {
     int slot = (int)(intptr_t)lv_event_get_user_data(e);
     screen_settings_open_tile_slot_single_modal(slot);
@@ -3764,10 +3844,16 @@ static void on_home_gesture(lv_event_t * e) {
      * is full-screen+opaque so the touch lands left of x≈556 (over the covered
      * thermostat zone) — gating the back-swipe on x there left the user stuck on
      * page 2 (BUG 8). The lights shortcut only applies on page 0. */
+    /* Pages 2 and 3: right = back one page, left = on to page 3 (if any). */
     if (home_tile_page != 0) {
         if (dir == LV_DIR_RIGHT) {
             lv_indev_wait_release(indev);
-            home_show_page(0);
+            home_show_page(home_tile_page - 1);
+        } else if (dir == LV_DIR_LEFT) {
+            /* also on the last page: swallow the release, else it lands as a
+             * tap on the tile under the finger (opened "Tegel toewijzen") */
+            lv_indev_wait_release(indev);
+            if (home_tile_page + 1 < home_npages) home_show_page(home_tile_page + 1);
         }
         return;
     }
@@ -5338,41 +5424,53 @@ lv_obj_t * screen_home_create(void) {
             for (int i = 0; i < 4; i++) { sx[i] = SX(dx[i]); sy[i] = SY(dy[i]); sw[i] = SX(214); sh[i] = SY(196); }
         }
 
-        for (int i = 0; i < g_p1_count; i++) {
-            tile_t s;
-            make_tile(home_page1, sx[i], sy[i], sw[i], sh[i], LT_NONE,
-                      "", CYC[i % 6], on_page1_slot, &s);
-            p1_title[i] = s.title;   /* make_tile's title label, reused */
-            /* Short, wide block → lay title + value horizontally on one row (like
-             * the curtains strip); taller block → stacked with a value font that
-             * scales to the height (and room for the subtitle below). */
-            int horiz = sh[i] < 110;
-            p1_main[i] = lv_label_create(s.tile);
-            ui_obj_set_style_text_color(p1_main[i], lv_color_hex(COL_TEXT_DIM), 0);
-            ui_obj_set_style_text_font(p1_main[i], SF(14), 0);
-            ui_label_set_text(p1_main[i], tr(LV_SYMBOL_PLUS "  Tik om te koppelen", LV_SYMBOL_PLUS "  Tap to assign"));
-            if (horiz) {
-                ui_obj_align(p1_title[i], LV_ALIGN_LEFT_MID, 0, 0);   /* title left-of-centre */
-                ui_obj_align(p1_main[i],  LV_ALIGN_RIGHT_MID, -4, 0); /* value right, same line */
-            } else {
-                ui_obj_align(p1_main[i], LV_ALIGN_CENTER, 0, 0);
-            }
-            p1_sub[i] = lv_label_create(s.tile);
-            ui_obj_set_style_text_color(p1_sub[i], lv_color_hex(COL_TEXT_DIM), 0);
-            ui_obj_set_style_text_font(p1_sub[i], SF(18), 0);
-            ui_label_set_text(p1_sub[i], "");
-            if (horiz) ui_obj_add_flag(p1_sub[i], LV_OBJ_FLAG_HIDDEN);   /* no room on one row */
-            else ui_obj_align(p1_sub[i], LV_ALIGN_BOTTOM_MID, 0, -4);
+        for (int i = 0; i < g_p1_count; i++)
+            make_slot_tile(home_page1, sx[i], sy[i], sw[i], sh[i], CYC[i % 6], on_page1_slot,
+                           TILE_SLOT_P1_0 + i, &p1_title[i], &p1_main[i], &p1_sub[i]);
+        add_page_edit_btn(home_page1, 1);
+    }
 
-            lv_obj_add_event_cb(s.tile, on_page1_slot_longpress, LV_EVENT_LONG_PRESSED, (void *)(intptr_t)(4 + i));
+    /* ---- Page-3 overlay (custom layout only): swipe left from page 2. Like a
+     * custom page 2: full-screen, opaque, the user's grid of slot tiles. ---- */
+    home_page2 = NULL;
+    g_p3_count = 0;
+    home_npages = 2;
+    if (settings.custom_layout_enabled) {
+        const layout_tile_t * p3t[TILE_SLOT_P3_N];
+        for (int i = 0; i < g_layout.count && g_p3_count < TILE_SLOT_P3_N; i++)
+            if (g_layout.tiles[i].page == 2 && g_layout.tiles[i].visible && g_layout.tiles[i].type == LT_SLOT)
+                p3t[g_p3_count++] = &g_layout.tiles[i];
+        int rain3 = 0;
+        const layout_tile_t * Lr3 = layout_find(LT_RAINFALL);
+        if (Lr3 && Lr3->page == 2 && Lr3->visible) rain3 = 1;
+        if (g_p3_count > 0 || rain3) {
+            home_page2 = lv_obj_create(scr_root);
+            ui_obj_set_style_border_width(home_page2, 0, 0);
+            lv_obj_set_style_pad_all(home_page2, 0, 0);
+            ui_obj_clear_flag(home_page2, LV_OBJ_FLAG_SCROLLABLE);
+            ui_obj_add_flag(home_page2, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_pos(home_page2, 0, 0);
+            lv_obj_set_size(home_page2, LV_HOR_RES, LV_VER_RES);
+            ui_obj_set_style_bg_color(home_page2, lv_color_hex(COL_BG), 0);
+            ui_obj_set_style_bg_opa(home_page2, LV_OPA_COVER, 0);
+            static const uint32_t CYC3[6] = { 0x44aaff, 0xddaa44, 0x88dd66, 0xaa77ff, 0x66bbdd, 0xff8866 };
+            for (int i = 0; i < g_p3_count; i++) {
+                int x, y, w, h;
+                layout_cell_px(p3t[i]->col, p3t[i]->row, p3t[i]->w, p3t[i]->h, &x, &y, &w, &h);
+                make_slot_tile(home_page2, x + 4, y + 4, w - 8, h - 8, CYC3[i % 6], on_page3_slot,
+                               TILE_SLOT_P3_0 + i, &p3_title[i], &p3_main[i], &p3_sub[i]);
+            }
+            add_page_edit_btn(home_page2, 2);
+            home_npages = 3;
         }
     }
 
     /* Pagination dots, centred in the gap under the tile zone. */
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < LAYOUT_PAGES; i++) home_dot[i] = NULL;
+    for (int i = 0; i < home_npages; i++) {
         home_dot[i] = lv_obj_create(scr_root);
         lv_obj_set_size(home_dot[i], 10, 10);
-        lv_obj_set_pos(home_dot[i], SX(966 + i * 18), SY(461));   /* on the location row, right — off the ticker */
+        lv_obj_set_pos(home_dot[i], SX(984 - (home_npages - 1 - i) * 18), SY(461));   /* on the location row, right — off the ticker */
         lv_obj_set_style_radius(home_dot[i], LV_RADIUS_CIRCLE, 0);
         ui_obj_set_style_bg_color(home_dot[i], lv_color_hex(settings.home_light_mode ? 0x1e2838 : 0xffffff), 0);
         ui_obj_set_style_border_width(home_dot[i], 0, 0);
@@ -5716,7 +5814,8 @@ lv_obj_t * screen_home_create(void) {
     int rtx = SX(20), rty = SY(20), rtw = SX(330), rth = SY(180);
     int rt_show = 0;
     const layout_tile_t * Lr = settings.custom_layout_enabled ? layout_find(LT_RAINFALL) : NULL;
-    lv_obj_t * rain_parent = (Lr && Lr->page == 1) ? home_page1 : scr_root;
+    lv_obj_t * rain_parent = (Lr && Lr->page == 1) ? home_page1
+                           : (Lr && Lr->page == 2 && home_page2) ? home_page2 : scr_root;
     if (Lr && Lr->visible) {
         layout_cell_px(Lr->col, Lr->row, Lr->w, Lr->h, &rtx, &rty, &rtw, &rth);
         rtx += 4; rty += 4; rtw -= 8; rth -= 8;
@@ -6009,8 +6108,13 @@ void screen_home_destroy(void) {
         lbl_lt_sonos_main = NULL;
         lbl_lt_sonos_sub = NULL;
         home_page1 = NULL;
-        home_dot[0] = NULL;
-        home_dot[1] = NULL;
+        home_page2 = NULL;
+        for (int k = 0; k < LAYOUT_PAGES; k++) home_dot[k] = page_edit_btn[k] = NULL;
+        for (int k = 0; k < TILE_SLOT_P1_N; k++) p1_title[k] = p1_main[k] = p1_sub[k] = NULL;
+        for (int k = 0; k < TILE_SLOT_P3_N; k++) p3_title[k] = p3_main[k] = p3_sub[k] = NULL;
+        g_p1_count = 0;
+        g_p3_count = 0;
+        home_npages = 2;
         news_box = NULL;
         news_ticker = NULL;
         news_last_first[0] = '\0';
