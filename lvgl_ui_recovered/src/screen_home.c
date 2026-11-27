@@ -30,6 +30,7 @@
 #include "packages.h"
 #include "tile_slots.h"
 #include "tile_ext.h"
+#include "tile_wifiqr.h"
 #include "layout.h"
 #include "clock_studio.h"
 #include "tile_flows.h"
@@ -143,6 +144,7 @@ static lv_obj_t * lbl_lt_sp_power = NULL;
 static lv_obj_t * tile_climate = NULL;
 static lv_obj_t * tile_clockstudio = NULL;
 static lv_obj_t * tile_hflows = NULL;
+static lv_obj_t * tile_wifiqr = NULL;        /* WiFi QR (LT_WIFIQR, tile_wifiqr.c) */
 static lv_obj_t * tile_tdial = NULL;         /* round thermostat (LT_THERMO_DIAL, tile_dial.c) */        /* Homey flows (LT_HOMEY_FLOWS, tile_flows.c) */   /* Klok Studio (LT_CLOCKSTUDIO, #55) */
 static void on_clockstudio_click(lv_event_t * e) { (void)e; cs_open_fullscreen(); }
 static lv_obj_t * lbl_cl_hum = NULL;       /* big "45%" */
@@ -2471,6 +2473,7 @@ static void refresh_cb(lv_timer_t * t) {
     /* Integratie tiles on the home page (custom layout) */
     for (int i = 0; i < g_hs_count; i++)
         render_assignable_slot(TILE_SLOT_HOME_0 + i, hs_title[i], hs_main[i], hs_sub[i]);
+    wq_tile_update();   /* WiFi QR tile: the network may have changed */
     /* Page 3 (custom layout) */
     for (int i = 0; i < g_p3_count; i++)
         render_assignable_slot(TILE_SLOT_P3_0 + i, p3_title[i], p3_main[i], p3_sub[i]);
@@ -3726,6 +3729,13 @@ static void home_show_page(int n) {
             else ui_obj_add_flag(tile_tdial, LV_OBJ_FLAG_HIDDEN);
         }
     }
+    if (tile_wifiqr) {
+        const layout_tile_t * Lw = settings.custom_layout_enabled ? layout_find(LT_WIFIQR) : NULL;
+        if (Lw && Lw->page == 0) {
+            if (n == 0 && Lw->visible) ui_obj_clear_flag(tile_wifiqr, LV_OBJ_FLAG_HIDDEN);
+            else ui_obj_add_flag(tile_wifiqr, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
     if (tile_hflows) {
         const layout_tile_t * Lf = settings.custom_layout_enabled ? layout_find(LT_HOMEY_FLOWS) : NULL;
         if (Lf && Lf->page == 0) {
@@ -3838,6 +3848,7 @@ static void on_page1_slot_longpress(lv_event_t * e) {
     screen_settings_open_tile_slot_single_modal(slot);
 }
 void screen_home_dismiss_modals(void) {
+    wq_close_big();
     if (news_modal) {
         lv_obj_del_async(news_modal);
         news_modal = NULL;
@@ -5342,6 +5353,14 @@ lv_obj_t * screen_home_create(void) {
             td_tile_build(tile_tdial, td_t.title, open_thermostat);
         }
 
+        /* WiFi QR tile: tap = big QR, long press = settings */
+        if (layout_find(LT_WIFIQR)) {
+            tile_t wq_t;
+            make_tile(scr_root, 0, 0, 200, 200, LT_WIFIQR, "WiFi", 0x2f8f6f, NULL, &wq_t);
+            tile_wifiqr = wq_t.tile;
+            wq_tile_build(tile_wifiqr, wq_t.title);
+        }
+
         /* Homey flows tile: a button per chosen flow; long press = chooser */
         if (layout_find(LT_HOMEY_FLOWS)) {
             tile_t hf_t;
@@ -6069,6 +6088,8 @@ void screen_home_destroy(void) {
         tile_clockstudio = NULL;
         tile_hflows = NULL;
         tile_tdial = NULL;
+        tile_wifiqr = NULL;
+        wq_tile_forget();
         for (int k = 0; k < TILE_SLOT_HOME_N; k++) hs_tile[k] = hs_title[k] = hs_main[k] = hs_sub[k] = NULL;
         g_hs_count = 0;
         lbl_cl_hum = NULL;

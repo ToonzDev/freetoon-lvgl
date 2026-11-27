@@ -457,6 +457,14 @@ typedef struct {
      * "onoff"; "onoff.1" etc. for one channel of a multi-channel device). */
     char vent_hy_c1[24];
     char vent_hy_c2[24];
+    /* WiFi QR tile (tile_wifiqr.c): mode 0 = the Toon's own network
+     * (/qmf/config/config_hcb_netcon.xml), 1 = the network below (a guest
+     * network). sec: 0 WPA/WPA2/WPA3, 1 WEP, 2 none. */
+    int  wifiqr_mode;
+    char wifiqr_ssid[64];
+    char wifiqr_pass[64];
+    int  wifiqr_sec;
+    int  wifiqr_hidden;
 } settings_t;
 
 #define FORECAST_AUTO   0

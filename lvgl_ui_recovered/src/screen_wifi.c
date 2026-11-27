@@ -15,6 +15,7 @@
  * shown as unsupported rather than implemented unsafely.
  */
 #include "screens.h"
+#include "tile_wifiqr.h"   /* QR-code button */
 #include "display.h"
 #include "i18n.h"
 #include "boxtalk.h"
@@ -440,6 +441,8 @@ static void refresh_cb(lv_timer_t * t) {
 /* ===================================================================== */
 /* Screen build                                                          */
 /* ===================================================================== */
+static void on_qr(lv_event_t * e) { (void)e; wq_show_big(); }
+
 static void back_async(void * u) { (void)u; ui_pop(); }
 static void on_back(lv_event_t * e) { (void)e; lv_async_call(back_async, NULL); }
 
@@ -524,6 +527,20 @@ lv_obj_t * screen_wifi_create(void) {
     lv_obj_set_style_text_font(dl, SF(22), 0);
     lv_label_set_text(dl, tr("Verbreek", "Disconnect"));
     lv_obj_center(dl);
+
+    /* QR code of the (guest) network for visitors (tile_wifiqr.c) */
+    lv_obj_t * qrb = lv_btn_create(scr_root);
+    lv_obj_set_size(qrb, SX(130), SY(52));
+    lv_obj_align(qrb, LV_ALIGN_TOP_RIGHT, SX(-356), SY(14));
+    lv_obj_set_style_bg_color(qrb, lv_color_hex(0x2f8f6f), 0);
+    lv_obj_set_style_radius(qrb, 10, 0);
+    lv_obj_set_ext_click_area(qrb, 8);
+    lv_obj_add_event_cb(qrb, on_qr, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * ql = lv_label_create(qrb);
+    lv_obj_set_style_text_color(ql, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(ql, SF(22), 0);
+    lv_label_set_text(ql, tr("QR-code", "QR code"));
+    lv_obj_center(ql);
 
     lbl_hint = lv_label_create(scr_root);
     lv_obj_set_style_text_color(lbl_hint, lv_color_hex(COL_TEXT_DIM), 0);

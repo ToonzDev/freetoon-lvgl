@@ -37,6 +37,8 @@
 #include "icons.h"
 #include "tile_slots.h"
 #include "tile_ext.h"
+#include "tile_wifiqr.h"
+#include "homey_parse.h"   /* hy_fold_text */
 #include "news.h"
 #include "wastecollection.h"
 #include "update_check.h"
@@ -1324,6 +1326,86 @@ static lv_obj_t * waste_field(lv_obj_t * p, int x, int y, int w, const char * lb
     lv_textarea_set_one_line(ta, true);
     lv_textarea_set_text(ta, val ? val : "");
     return ta;
+}
+
+/* ---- WiFi QR tile (tile_wifiqr.c): which network the QR code holds ---- */
+static lv_obj_t * wq_ta_ssid, * wq_ta_pass, * wq_lbl_cur;
+static void wq_show_current(void) {
+    if (!wq_lbl_cur) return;
+    char qr[300], ssid[96];
+    if (wifiqr_payload(qr, sizeof qr, ssid, sizeof ssid, NULL, 0)) {
+        hy_fold_text(ssid);
+        lv_label_set_text_fmt(wq_lbl_cur, "%s %s", tr("De QR-code geeft nu toegang tot:", "The QR code now joins:"), ssid);
+    } else
+        lv_label_set_text(wq_lbl_cur, tr("Nog geen netwerk: vul hieronder je gastnetwerk in.", "No network yet: enter your guest network below."));
+}
+static void on_wq_mode(lv_event_t * e) {
+    settings.wifiqr_mode = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 0 : 1;
+    settings_save();
+    wq_show_current();
+}
+static void on_wq_sec(lv_event_t * e) {
+    settings.wifiqr_sec = (int)lv_dropdown_get_selected(lv_event_get_target(e));
+    settings_save();
+}
+static void on_wq_hidden(lv_event_t * e) {
+    settings.wifiqr_hidden = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0;
+    settings_save();
+}
+static void on_wq_save(lv_event_t * e) {
+    snprintf(settings.wifiqr_ssid, sizeof settings.wifiqr_ssid, "%s", lv_textarea_get_text(wq_ta_ssid));
+    snprintf(settings.wifiqr_pass, sizeof settings.wifiqr_pass, "%s", lv_textarea_get_text(wq_ta_pass));
+    if (settings.wifiqr_ssid[0]) settings.wifiqr_mode = 1;     /* typed a network: use it */
+    settings_save();
+    wq_ta_ssid = wq_ta_pass = wq_lbl_cur = NULL;
+    modal_close(e);
+}
+void screen_settings_open_wifiqr_modal(void) {
+    lv_obj_t * p = modal_open(tr("WiFi QR-code", "WiFi QR code"), 640);
+    lv_obj_add_flag(p, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(p, LV_DIR_VER);
+    int y = 70;
+    lv_obj_t * r = panel_row(p, y, tr("Netwerk van de Toon zelf", "The Toon's own network"), NULL);
+    row_switch(r, settings.wifiqr_mode == 0, on_wq_mode);
+    y += 82;
+    wq_lbl_cur = lv_label_create(p);
+    lv_obj_set_style_text_font(wq_lbl_cur, SF(16), 0);
+    lv_obj_set_style_text_color(wq_lbl_cur, lv_color_hex(0xffcc44), 0);
+    lv_obj_set_width(wq_lbl_cur, SX(800));
+    lv_label_set_long_mode(wq_lbl_cur, LV_LABEL_LONG_DOT);
+    lv_obj_align(wq_lbl_cur, LV_ALIGN_TOP_LEFT, SX(8), SY(y));
+    wq_show_current();
+    y += 34;
+    wq_ta_ssid = waste_field(p, 8, y, 390, tr("Gastnetwerk: naam (SSID)", "Guest network: name (SSID)"), settings.wifiqr_ssid);
+    wq_ta_pass = waste_field(p, 418, y, 390, tr("Wachtwoord", "Password"), settings.wifiqr_pass);
+    y += 86;
+    r = panel_row(p, y, tr("Beveiliging", "Security"), NULL);
+    lv_obj_t * dd = lv_dropdown_create(r);
+    lv_dropdown_set_options(dd, tr("WPA / WPA2 / WPA3\nWEP\nGeen (open)", "WPA / WPA2 / WPA3\nWEP\nNone (open)"));
+    lv_dropdown_set_selected(dd, (uint16_t)(settings.wifiqr_sec >= 0 && settings.wifiqr_sec <= 2 ? settings.wifiqr_sec : 0));
+    lv_obj_set_width(dd, SX(330));
+    lv_obj_align(dd, LV_ALIGN_RIGHT_MID, SX(-12), 0);
+    lv_obj_add_event_cb(dd, on_wq_sec, LV_EVENT_VALUE_CHANGED, NULL);
+    y += 82;
+    r = panel_row(p, y, tr("Verborgen netwerk", "Hidden network"), NULL);
+    row_switch(r, settings.wifiqr_hidden, on_wq_hidden);
+    y += 82;
+    lv_obj_t * hint = lv_label_create(p);
+    lv_obj_set_style_text_font(hint, SF(16), 0);
+    lv_obj_set_style_text_color(hint, lv_color_hex(THEME_TEXT_DIM), 0);
+    lv_obj_set_width(hint, SX(560));
+    lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(hint, tr("Een ingevuld gastnetwerk wordt gebruikt zodra je opslaat. Zet de tegel 'WiFi QR' op je startscherm via Instellingen > Indeling.",
+                               "A guest network is used once you save. Put the 'WiFi QR' tile on your home screen via Settings > Layout."));
+    lv_obj_align(hint, LV_ALIGN_TOP_LEFT, SX(8), SY(y));
+    lv_obj_t * sv = lv_btn_create(p);
+    lv_obj_set_size(sv, SX(200), SY(52));
+    lv_obj_align(sv, LV_ALIGN_TOP_RIGHT, SX(-8), SY(y));
+    lv_obj_set_style_bg_color(sv, lv_color_hex(0x2e6e3a), 0);
+    lv_obj_add_event_cb(sv, on_wq_save, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * sl = lv_label_create(sv);
+    lv_label_set_text(sl, tr("Opslaan", "Save"));
+    lv_obj_center(sl);
 }
 
 static void open_waste_modal(lv_event_t * e) {
@@ -6758,6 +6840,7 @@ lv_obj_t * screen_settings_create(void) {
 /* Sim: open a settings modal directly ("smodal:<name>" argument). */
 void screen_settings_sim_modal(const char * which) {
     if (!strcmp(which, "venthomey"))    open_vent_homey_modal(NULL);
+    else if (!strcmp(which, "wifiqr"))  screen_settings_open_wifiqr_modal();
     else if (!strcmp(which, "integrations")) open_integrations_modal(NULL);
 }
 #endif

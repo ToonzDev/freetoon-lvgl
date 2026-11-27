@@ -87,7 +87,8 @@ lv_obj_t * screen_crypto_picker_create(void);   /* Settings -> Crypto coin live-
 lv_obj_t * screen_ha_picker_create(void);       /* Settings -> HA entity picker (domain-filtered list) */
 void screen_ha_picker_open(const char * domain, lv_obj_t * target_ta);  /* sets domain+target, then ui_push */
 void screen_ha_picker_open_add(const char * domain, int dev_type);      /* add-mode: pick -> ha_device_add */
-void screen_ext_picker_open_tile(int slot, int dz);  /* Integratie tile: pick an HA entity (0) / Domoticz device (1) */
+void screen_ext_picker_open_tile(int slot, int dz);
+void screen_settings_open_wifiqr_modal(void);   /* WiFi QR tile settings (guest network) */  /* Integratie tile: pick an HA entity (0) / Domoticz device (1) */
 lv_obj_t * screen_ha_devices_create(void);      /* Settings -> Devices manager (add/remove/pin) */
 lv_obj_t * screen_crypto_create(void);           /* crypto tile-tap -> price-history graphs */
 lv_obj_t * screen_forecast_create(void);

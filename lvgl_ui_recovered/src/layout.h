@@ -43,6 +43,7 @@ typedef enum {
     LT_CLOCKSTUDIO,     /* Klok Studio: configurable clock face (clock_studio.c, #55) */
     LT_HOMEY_FLOWS,     /* buttons that start Homey flows (tile_flows.c) */
     LT_THERMO_DIAL,     /* round thermostat: dial + knob (tile_dial.c) */
+    LT_WIFIQR,          /* QR code of a (guest) WiFi network (tile_wifiqr.c) */
     LT_COUNT
 } layout_tile_type_t;
 

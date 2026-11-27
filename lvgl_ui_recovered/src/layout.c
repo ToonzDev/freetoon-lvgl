@@ -432,6 +432,7 @@ void layout_type_min(int type, int * min_w, int * min_h) {
         case LT_CLOCKSTUDIO:  w = 2; h = 2; break;
         case LT_HOMEY_FLOWS:  w = 2; h = 1; break;
         case LT_THERMO_DIAL:  w = 2; h = 2; break;
+        case LT_WIFIQR:       w = 2; h = 2; break;
         default:              w = 0; h = 0; break;
     }
     if (min_w) *min_w = w;
@@ -460,6 +461,7 @@ const char * layout_type_name(int type) {
         case LT_CLOCKSTUDIO: return "Klok Studio";
         case LT_HOMEY_FLOWS: return "Homey flows";
         case LT_THERMO_DIAL: return "Thermostaat (rond)";
+        case LT_WIFIQR:      return "WiFi QR";
         default:             return "?";
     }
 }

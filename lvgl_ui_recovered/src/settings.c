@@ -268,6 +268,11 @@ void settings_load(void) {
         else if (strcmp(k, "vent_hy_r1")        == 0) snprintf(settings.vent_hy_r1, sizeof settings.vent_hy_r1, "%s", v);
         else if (strcmp(k, "vent_hy_r2")        == 0) snprintf(settings.vent_hy_r2, sizeof settings.vent_hy_r2, "%s", v);
         else if (strcmp(k, "vent_hy_c1")        == 0) snprintf(settings.vent_hy_c1, sizeof settings.vent_hy_c1, "%s", v);
+        else if (strcmp(k, "wifiqr_mode")       == 0) settings.wifiqr_mode = iv ? 1 : 0;
+        else if (strcmp(k, "wifiqr_ssid")       == 0) snprintf(settings.wifiqr_ssid, sizeof settings.wifiqr_ssid, "%s", v);
+        else if (strcmp(k, "wifiqr_pass")       == 0) snprintf(settings.wifiqr_pass, sizeof settings.wifiqr_pass, "%s", v);
+        else if (strcmp(k, "wifiqr_sec")        == 0) settings.wifiqr_sec = (iv >= 0 && iv <= 2) ? iv : 0;
+        else if (strcmp(k, "wifiqr_hidden")     == 0) settings.wifiqr_hidden = iv ? 1 : 0;
         else if (strcmp(k, "vent_hy_c2")        == 0) snprintf(settings.vent_hy_c2, sizeof settings.vent_hy_c2, "%s", v);
         else if (strcmp(k, "boiler_remote_host") == 0)
             snprintf(settings.boiler_remote_host, sizeof settings.boiler_remote_host, "%s", v);
@@ -950,6 +955,8 @@ static void sanitize_all_strings(void) {
     settings_sanitize_str(settings.hw_kwh_host);
     for (int i = 0; i < 12; i++) settings_sanitize_str(settings.tile_slot_page3[i]);
     for (int i = 0; i < 33; i++) settings_sanitize_str(settings.tile_slot_ext[i]);
+    settings_sanitize_str(settings.wifiqr_ssid);
+    settings_sanitize_str(settings.wifiqr_pass);
     settings_sanitize_str(settings.hw_kwh2_host);
     for (int i = 0; i < HW_SOCKET_MAX; i++) {
         settings_sanitize_str(settings.hw_socket_name[i]);
@@ -1093,6 +1100,11 @@ static void settings_write_file(void) {
     fprintf(f, "vent_hy_r2=%s\n",        settings.vent_hy_r2);
     fprintf(f, "vent_hy_c1=%s\n",        settings.vent_hy_c1);
     fprintf(f, "vent_hy_c2=%s\n",        settings.vent_hy_c2);
+    fprintf(f, "wifiqr_mode=%d\n",       settings.wifiqr_mode);
+    fprintf(f, "wifiqr_ssid=%s\n",       settings.wifiqr_ssid);
+    fprintf(f, "wifiqr_pass=%s\n",       settings.wifiqr_pass);
+    fprintf(f, "wifiqr_sec=%d\n",        settings.wifiqr_sec);
+    fprintf(f, "wifiqr_hidden=%d\n",     settings.wifiqr_hidden);
     fprintf(f, "vent_hy_low=%d\n",       settings.vent_hy_low);
     fprintf(f, "vent_hy_high=%d\n",      settings.vent_hy_high);
     fprintf(f, "boiler_remote_host=%s\n", settings.boiler_remote_host);
