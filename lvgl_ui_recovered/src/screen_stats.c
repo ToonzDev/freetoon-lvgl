@@ -37,8 +37,22 @@ static lv_obj_t * lbl_unit;
 static lv_obj_t * lbl_value;
 static lv_obj_t * lbl_legend = NULL;   /* left column under the rates: source / export */
 static lv_obj_t * tab_metric_btns[6];
-#define N_PERIOD 6
+#define N_PERIOD 7
 static lv_obj_t * tab_period_btns[N_PERIOD];
+
+/* "Dit jaar" view (PERIOD_THISYEAR): Jan..Dec of one year, each month next
+ * to the same month of the year before (grey, the `cs` series on the left;
+ * `g_cs_cur` on the right holds the year itself). Months still to come show
+ * a light forecast bar: last year's month x this year's trend so far. The
+ * second series exists only while this view is shown: LVGL 8.3 also counts
+ * hidden series when it sizes the bars. */
+static lv_chart_series_t * g_cs_cur = NULL;
+static double g_yr_prev[12], g_yr_cur[12], g_yr_fc[12];
+static int    g_yr_have_prev[12], g_yr_have_cur[12];
+static int    g_yr_year = 0;        /* the year shown */
+static int    g_yr_cm = -1;         /* current month (0-11) in the shown year, -1 = a past year */
+static int    g_yr_any_prev = 0;    /* last year has data at all */
+#define YR_PREV_COLOR (settings.home_light_mode ? 0xa9b6c4 : 0x66788e)   /* last year's bars */
 
 /* Mode (UoM vs Euro) & rate widgets */
 static lv_obj_t * btn_mode_uom = NULL;
@@ -78,7 +92,8 @@ typedef enum {
     PERIOD_DAYS,    /* 31 days (31 daily bars) */
     PERIOD_WEEKS,   /* 12 weeks (12 weekly bars) */
     PERIOD_MONTHS,  /* 12 months (12 monthly bars) */
-    PERIOD_YEARS    /* 12 years (12 yearly bars) */
+    PERIOD_YEARS,   /* 12 years (12 yearly bars) */
+    PERIOD_THISYEAR /* Jan..Dec of one year vs the year before (tab between Maanden and Jaren) */
 } period_t;
 
 typedef struct {
@@ -117,6 +132,23 @@ static lv_obj_t * btn_plug_next = NULL;
 static int selected_metric;   /* defined below */
 
 static int is_plug(void) { return selected_metric == M_PLUG && g_plug_n > 0; }
+/* Elektriciteit, Zon, Gas, Water: meters with years of daily history
+ * ("Dit jaar" view); CV bar and the plugs keep a month or a year at most. */
+static int metric_has_year(void) { return selected_metric >= 0 && selected_metric <= 3; }
+
+/* A "Dit jaar" amount: kWh / m3, or euro in the euro view. */
+static int metric_has_euro(void);
+static void yr_fmt(char * o, size_t n, double v) {
+    if (settings.stats_show_euro && metric_has_euro()) {
+        if (v >= 100) snprintf(o, n, "€ %.0f", v);
+        else          snprintf(o, n, "€ %.2f", v);
+    } else {
+        const char * u = metrics[selected_metric].unit_cum;
+        if (v >= 100)      snprintf(o, n, "%.0f %s", v, u);
+        else if (v >= 10)  snprintf(o, n, "%.1f %s", v, u);
+        else               snprintf(o, n, "%.2f %s", v, u);
+    }
+}
 /* Euro view: electricity, solar, gas and the plugs (electricity tariff). */
 static int metric_has_euro(void) { return selected_metric <= 2 || is_plug(); }
 
@@ -189,6 +221,7 @@ static void on_scr_delete(lv_event_t * e) {
     s_tooltip_last_id = -1;
     btn_plug_next = NULL;
     lbl_legend = NULL;
+    g_cs_cur = NULL;          /* went with the chart */
     for (int i = 0; i < N_METRIC; i++) tab_metric_btns[i] = NULL;
     scr_root = NULL;
 }
@@ -392,6 +425,18 @@ static lv_coord_t g_y_min_s = 0, g_y_max_s = 1;   /* chart range, scaled units *
 static lv_obj_t * g_xlbl[XLBL_COUNT] = {0};
 #define XLBL_Y SY(535)
 
+/* Position of bar b (chart-relative). With the "Dit jaar" pair: the middle
+ * of the two bars, at the taller one. */
+static void bar_point(int b, lv_point_t * pt) {
+    lv_chart_get_point_pos_by_id(chart, cs, (uint16_t)b, pt);
+    if (g_cs_cur) {
+        lv_point_t p2;
+        lv_chart_get_point_pos_by_id(chart, g_cs_cur, (uint16_t)b, &p2);
+        pt->x = (pt->x + p2.x) / 2;
+        if (p2.y < pt->y) pt->y = p2.y;
+    }
+}
+
 static void place_x_labels(void) {
     for (int i = 0; i < XLBL_COUNT; i++)
         if (g_xlbl[i]) lv_obj_add_flag(g_xlbl[i], LV_OBJ_FLAG_HIDDEN);
@@ -407,7 +452,7 @@ static void place_x_labels(void) {
         int b = (g_bar_count <= 16) ? k
               : (shown > 1 ? k * (g_bar_count - 1) / (shown - 1) : 0);
         lv_point_t pt;
-        lv_chart_get_point_pos_by_id(chart, cs, (uint16_t)b, &pt);
+        bar_point(b, &pt);
         int cx = chart_x + pt.x;
 
         if (!g_xlbl[k]) continue;
@@ -427,7 +472,24 @@ static void show_tooltip(int b, int bar_screen_x, int bar_screen_y) {
     char buf[112];
     double val = g_bar_val[b];
 
-    if (show_euro) {
+    if (selected_period == PERIOD_THISYEAR) {
+        /* "mrt • 2026: 312 kWh" + "2025: 340 kWh", or the forecast */
+        char a[32], p[32];
+        yr_fmt(a, sizeof a, b == g_yr_cm || g_yr_cm < 0 || b < g_yr_cm ? g_yr_cur[b] : g_yr_fc[b]);
+        yr_fmt(p, sizeof p, g_yr_prev[b]);
+        int future = g_yr_cm >= 0 && b > g_yr_cm;
+        int l = snprintf(buf, sizeof buf, "%s • %d: %s%s", g_bar_label[b], g_yr_year,
+                         future ? "~" : "", (future || g_yr_have_cur[b]) ? a : "--");
+        if (future) snprintf(buf + l, sizeof buf - (size_t)l, "%s", tr(" (verwachting)", " (forecast)"));
+        else if (b == g_yr_cm) {
+            char f[32];
+            yr_fmt(f, sizeof f, g_yr_fc[b]);
+            snprintf(buf + l, sizeof buf - (size_t)l, tr(" (verw. %s)", " (exp. %s)"), f);
+        }
+        l = (int)strlen(buf);
+        if (g_yr_any_prev)
+            snprintf(buf + l, sizeof buf - (size_t)l, "\n%d: %s", g_yr_year - 1, g_yr_have_prev[b] ? p : "--");
+    } else if (show_euro) {
         if (selected_period == PERIOD_NOW) {
             snprintf(buf, sizeof buf, "%s • € %.2f/u", g_bar_label[b], val);
         } else {
@@ -541,7 +603,7 @@ static void on_chart_click(lv_event_t * e) {
 
     for (int b = 0; b < g_bar_count; b++) {
         lv_point_t pt;
-        lv_chart_get_point_pos_by_id(chart, cs, (uint16_t)b, &pt);
+        bar_point(b, &pt);
         int bar_screen_x = coords.x1 + pt.x;
         int d = abs(p.x - bar_screen_x);
         if (d < best_dist) {
@@ -613,7 +675,18 @@ static void update_nav_range_label(long start_t, long end_t) {
         case PERIOD_YEARS:
             snprintf(buf, sizeof(buf), "%s", tr("Jaaroverzicht", "Yearly overview"));
             break;
+        case PERIOD_THISYEAR:
+            /* the colour key: the year in the metric colour, the year before grey */
+            if (g_yr_any_prev)
+                snprintf(buf, sizeof(buf), tr("#%06x %d#  t.o.v.  #%06x %d#%s", "#%06x %d#  vs  #%06x %d#%s"),
+                         (unsigned)(metrics[selected_metric].color & 0xffffff), g_yr_year,
+                         (unsigned)(YR_PREV_COLOR & 0xffffff), g_yr_year - 1,
+                         g_yr_cm >= 0 ? tr("   (licht = verwachting)", "   (light = forecast)") : "");
+            else
+                snprintf(buf, sizeof(buf), "%d", g_yr_year);
+            break;
     }
+    lv_label_set_recolor(lbl_nav_range, selected_period == PERIOD_THISYEAR);
     lv_label_set_text(lbl_nav_range, buf);
 }
 
@@ -776,6 +849,7 @@ static int load_for_period(void) {
             break;
         }
         case PERIOD_YEARS:
+        case PERIOD_THISYEAR:   /* not used: render_year() loads its own data */
             to = now;
             from = 0;
             break;
@@ -851,6 +925,7 @@ static int load_for_period(void) {
             case PERIOD_MONTHS:
                 return stats_fetch_range(lg, "1yearday", from - DAY, to, 370, &series);
             case PERIOD_YEARS:
+        case PERIOD_THISYEAR:   /* not used: render_year() loads its own data */
                 return stats_fetch_range(lg, "1yearday", 0, 0, 370, &series);
         }
         return -1;
@@ -954,6 +1029,7 @@ static int load_for_period(void) {
             }
 
         case PERIOD_YEARS:
+        case PERIOD_THISYEAR:   /* not used: render_year() loads its own data */
             /* Full 10-year archive at downsampled monthly resolution (~120 samples) -> grouped by year */
             if (m->cum_logger_extra) {
                 stats_fetch_range(m->cum_logger_extra, "10yrdays", 0, 0, 120, &series2);
@@ -991,6 +1067,9 @@ static void style_period_tab(int i, int sel) {
     lv_obj_set_style_border_width(tab_period_btns[i], sel ? 2 : 1, 0);
     lv_obj_t * lbl = lv_obj_get_child(tab_period_btns[i], 0);
     if (lbl) lv_obj_set_style_text_color(lbl, lv_color_hex(sel ? 0xffffff : THEME_TEXT_HI), 0);
+    /* "Dit jaar" needs a year of meter history: not for CV bar / plugs */
+    if (i == PERIOD_THISYEAR)
+        lv_obj_set_style_opa(tab_period_btns[i], metric_has_year() ? LV_OPA_COVER : LV_OPA_40, 0);
 }
 
 /* Diff a cumulative series in place to per-sample usage deltas (Wh / mL).
@@ -1046,6 +1125,30 @@ static lv_coord_t chart_value_y(lv_coord_t v) {
 static void chart_draw_event_cb(lv_event_t * e) {
     lv_obj_draw_part_dsc_t * dsc = lv_event_get_draw_part_dsc(e);
     if (!dsc) return;
+    /* "Dit jaar": months still to come are a light forecast bar; the
+     * running month gets a light extension up to its expected total. */
+    if (g_cs_cur && dsc->part == LV_PART_ITEMS && dsc->type == LV_CHART_DRAW_PART_BAR && dsc->draw_area) {
+        int id = (int)dsc->id;
+        int cur = dsc->sub_part_ptr == g_cs_cur;
+        if (lv_event_get_code(e) == LV_EVENT_DRAW_PART_BEGIN) {
+            /* lv_chart reuses one rect descriptor for all bars: set it every time */
+            if (dsc->rect_dsc)
+                dsc->rect_dsc->bg_opa = (cur && g_yr_cm >= 0 && id > g_yr_cm) ? LV_OPA_40 : LV_OPA_COVER;
+        } else if (cur && g_yr_cm >= 0 && id == g_yr_cm && id < 12 && g_yr_fc[id] > g_yr_cur[id]) {
+            lv_area_t a = *dsc->draw_area;
+            a.y2 = a.y1 - 1;
+            a.y1 = chart_value_y((lv_coord_t)(g_yr_fc[id] * g_y_scale + 0.5));
+            if (a.y2 > a.y1) {
+                lv_draw_rect_dsc_t rd;
+                lv_draw_rect_dsc_init(&rd);
+                rd.bg_color = lv_color_hex(metrics[selected_metric].color);
+                rd.bg_opa = LV_OPA_40;
+                rd.radius = 3;
+                lv_draw_rect(dsc->draw_ctx, &rd, &a);
+            }
+        }
+        return;
+    }
     /* With teruglevering the range goes below 0: lv_chart draws bars up from
      * the chart's bottom edge, so start them at the zero line instead, and
      * draw the export of the same bar below it. */
@@ -1730,6 +1833,7 @@ static void load_export(void) {
             break;
         }
         case PERIOD_YEARS:
+        case PERIOD_THISYEAR:   /* not used: render_year() loads its own data */
             rc = stats_fetch_range("elec_quantity_nt_produ", "10yrdays", 0, 0, 120, &series3);
             if (stats_fetch_range("elec_quantity_lt_produ", "10yrdays", 0, 0, 120, &series4) != 0) series4.n = 0;
             break;
@@ -1764,8 +1868,211 @@ static void update_legend(void) {
     lv_label_set_text(lbl_legend, b);
 }
 
+/* ---- "Dit jaar" (PERIOD_THISYEAR) ---------------------------------------
+ * Usage per calendar month of `year`, through the same steps as the
+ * Maanden view: daily meter readings (10yrdays; water from its hourly
+ * archive; the elec tariffs summed; solar falls back to the P1 export),
+ * diffed, priced in the euro view, and summed per month. */
+static void year_months(int year, double out[12], int have[12]) {
+    const metric_t * m = &metrics[selected_metric];
+    const long DAY = 86400;
+    for (int k = 0; k < 12; k++) { out[k] = 0; have[k] = 0; }
+    struct tm a = {0};
+    a.tm_year = year - 1900; a.tm_mon = 0; a.tm_mday = 1; a.tm_isdst = -1;
+    long from = (long)mktime(&a);
+    struct tm b = {0};
+    b.tm_year = year + 1 - 1900; b.tm_mon = 0; b.tm_mday = 1; b.tm_isdst = -1;
+    long to = (long)mktime(&b);
+    long now = (long)time(NULL);
+    if (to > now) to = now;
+    if (to <= from) return;
+
+    g_solar_produ = 0;
+    if (m->cum_logger_extra) {
+        if (stats_fetch_range(m->cum_logger_extra, "10yrdays", from - DAY, to, 370, &series2) != 0) series2.n = 0;
+    } else {
+        series2.n = 0;
+    }
+    int rc = metric_is_water()
+           ? fetch_daily_from_hourly(m->cum_logger, "10yrhours", from - DAY, to, &series)
+           : stats_fetch_range(m->cum_logger, "10yrdays", from - DAY, to, 370, &series);
+    if ((rc != 0 || series.n == 0) && selected_metric == 1) {
+        series2.n = 0;
+        rc = solar_produ("10yrdays", from - DAY, to, 370);
+    }
+    if (rc != 0) return;
+    int n = series.n > STATS_MAX_SAMPLES ? STATS_MAX_SAMPLES : series.n;
+    diff_in_place(&series, n, 4000000.0);
+    if ((m->cum_logger_extra || g_solar_produ) && series2.n >= n) {
+        diff_in_place(&series2, n, 4000000.0);
+        for (int i = 0; i < n; i++) {
+            if (isnan(series.samples[i]) && !isnan(series2.samples[i]))
+                series.samples[i] = series2.samples[i];
+            else if (!isnan(series.samples[i]) && !isnan(series2.samples[i]))
+                series.samples[i] += series2.samples[i];
+        }
+    }
+    int euro = settings.stats_show_euro && metric_has_euro();
+    g_dyn_applied = 0;
+    if (euro && ep_dynamic(metric_com())) apply_dynamic_prices(n);
+
+    char yy[3];
+    int y2 = ((year % 100) + 100) % 100;
+    yy[0] = (char)('0' + y2 / 10); yy[1] = (char)('0' + y2 % 10); yy[2] = 0;
+    for (int i = 0; i < n; i++) {
+        if (isnan(series.samples[i]) || strncmp(series.year2[i], yy, 2) != 0) continue;
+        int mm = atoi(series.labels[i] + 3);      /* "DD-MM HH:MM": the day the usage is for */
+        if (mm < 1 || mm > 12) continue;
+        out[mm - 1] += series.samples[i];
+        have[mm - 1] = 1;
+    }
+    double f = (euro && !g_dyn_applied) ? fixed_rate() : 1.0;
+    for (int k = 0; k < 12; k++) out[k] = out[k] / 1000.0 * f;   /* Wh / L -> kWh / m3 (or EUR) */
+}
+
+static void render_year(void) {
+    time_t tn = time(NULL);
+    struct tm lt;
+    localtime_r(&tn, &lt);
+    g_yr_year = lt.tm_year + 1900 + g_time_offset;
+    g_current_start_t = g_current_end_t = 0;
+
+    year_months(g_yr_year - 1, g_yr_prev, g_yr_have_prev);
+    year_months(g_yr_year, g_yr_cur, g_yr_have_cur);
+    g_yr_any_prev = 0;
+    for (int k = 0; k < 12; k++) if (g_yr_have_prev[k]) g_yr_any_prev = 1;
+    g_yr_cm = g_time_offset == 0 ? lt.tm_mon : -1;
+
+    /* Forecast: last year's month x the trend so far (this year / last year
+     * over the full months both have; early in a month with only January,
+     * the running month itself), clamped to 0.5 .. 2. */
+    double frac = 1.0;                       /* part of the running month gone */
+    for (int k = 0; k < 12; k++) g_yr_fc[k] = 0;
+    if (g_yr_cm >= 0) {
+        static const int mdays[12] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+        int dim = mdays[g_yr_cm];
+        int y = g_yr_year;
+        if (g_yr_cm == 1 && ((y % 4 == 0 && y % 100 != 0) || y % 400 == 0)) dim = 29;
+        frac = (lt.tm_mday - 1 + lt.tm_hour / 24.0) / dim;
+        double sc = 0, sp = 0, ratio = 1.0;
+        for (int k = 0; k < g_yr_cm; k++)
+            if (g_yr_have_cur[k] && g_yr_have_prev[k] && g_yr_prev[k] > 0) { sc += g_yr_cur[k]; sp += g_yr_prev[k]; }
+        if (sp > 0) ratio = sc / sp;
+        else if (g_yr_have_prev[g_yr_cm] && g_yr_prev[g_yr_cm] > 0 && frac >= 0.3)
+            ratio = g_yr_cur[g_yr_cm] / (g_yr_prev[g_yr_cm] * frac);
+        if (ratio < 0.5) ratio = 0.5;
+        if (ratio > 2.0) ratio = 2.0;
+        for (int k = g_yr_cm + 1; k < 12; k++)
+            g_yr_fc[k] = g_yr_have_prev[k] ? g_yr_prev[k] * ratio : 0;
+        g_yr_fc[g_yr_cm] = g_yr_cur[g_yr_cm] +
+            (g_yr_have_prev[g_yr_cm] ? g_yr_prev[g_yr_cm] * ratio * (1.0 - frac) : 0);
+    }
+
+    g_bar_count = 12;
+    g_exp_have = 0;
+    g_unit_wh = 0;
+    double hi = 0;
+    for (int k = 0; k < 12; k++) {
+        snprintf(g_bar_label[k], sizeof g_bar_label[0], "%.7s", i18n_month_short(k));
+        g_bar_val[k] = (g_yr_cm >= 0 && k > g_yr_cm) ? g_yr_fc[k] : g_yr_cur[k];
+        if (g_yr_prev[k] > hi) hi = g_yr_prev[k];
+        if (g_yr_cur[k] > hi) hi = g_yr_cur[k];
+        if (g_yr_fc[k] > hi) hi = g_yr_fc[k];
+    }
+    double top = calculate_nice_top(hi);
+    double step = top / 4.0;
+    if (top <= 200.0)                                                     g_y_scale = 100;
+    else if (fabs(step - floor(step + 0.0001)) < 0.001)                  g_y_scale = 1;
+    else if (fabs(step * 10.0 - floor(step * 10.0 + 0.0001)) < 0.001)    g_y_scale = 10;
+    else                                                                  g_y_scale = 100;
+    lv_chart_set_point_count(chart, 12);
+    lv_coord_t top_scaled = (lv_coord_t)(top * g_y_scale + 0.5);
+    if (top_scaled < 1) top_scaled = 1;
+    g_y_min_s = 0;
+    g_y_max_s = top_scaled;
+    lv_chart_set_range(chart, LV_CHART_AXIS_PRIMARY_Y, 0, top_scaled);
+    for (int k = 0; k < 12; k++) {
+        cs->y_points[k] = g_yr_have_prev[k] ? (lv_coord_t)(g_yr_prev[k] * g_y_scale + 0.5) : LV_CHART_POINT_NONE;
+        int shown = (g_yr_cm >= 0 && k > g_yr_cm) ? g_yr_fc[k] > 0 : g_yr_have_cur[k];
+        g_cs_cur->y_points[k] = shown ? (lv_coord_t)(g_bar_val[k] * g_y_scale + 0.5) : LV_CHART_POINT_NONE;
+    }
+    lv_chart_refresh(chart);
+    place_x_labels();
+    update_nav_range_label(0, 0);
+
+    if (btn_nav_prev && btn_nav_next) {
+        lv_obj_clear_flag(btn_nav_prev, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(btn_nav_next, LV_OBJ_FLAG_HIDDEN);
+        if (g_time_offset >= 0) {
+            lv_obj_set_style_opa(btn_nav_next, LV_OPA_30, 0);
+            lv_obj_clear_flag(btn_nav_next, LV_OBJ_FLAG_CLICKABLE);
+        } else {
+            lv_obj_set_style_opa(btn_nav_next, LV_OPA_COVER, 0);
+            lv_obj_add_flag(btn_nav_next, LV_OBJ_FLAG_CLICKABLE);
+        }
+    }
+
+    /* Headline: the total so far; left column: the year before over the
+     * same stretch, and the forecast for the whole year. */
+    double tot = 0, prev_same = 0, fc_year = 0;
+    int any_cur = 0;
+    for (int k = 0; k < 12; k++) {
+        if (g_yr_have_cur[k]) { tot += g_yr_cur[k]; any_cur = 1; }
+        if (g_yr_cm < 0 || k < g_yr_cm) prev_same += g_yr_prev[k];
+        else if (k == g_yr_cm)          prev_same += g_yr_prev[k] * frac;
+    }
+    if (g_yr_cm >= 0) {
+        for (int k = 0; k < g_yr_cm; k++) fc_year += g_yr_cur[k];
+        for (int k = g_yr_cm; k < 12; k++) fc_year += g_yr_fc[k];
+    }
+    char b1[32], b2[32], txt[200];
+    if (g_yr_cm >= 0)
+        lv_label_set_text_fmt(lbl_unit, tr("Jan t/m %s", "Jan to %s"), i18n_month_short(g_yr_cm));
+    else
+        lv_label_set_text_fmt(lbl_unit, tr("Heel %d", "All of %d"), g_yr_year);
+    if (!any_cur) lv_label_set_text(lbl_value, tr("geen data", "no data"));
+    else { yr_fmt(b1, sizeof b1, tot); lv_label_set_text(lbl_value, b1); }
+
+    if (lbl_legend) {
+        int l = 0;
+        txt[0] = 0;
+        if (g_yr_any_prev && any_cur && prev_same > 0) {
+            yr_fmt(b2, sizeof b2, prev_same);
+            double pct = (tot - prev_same) / prev_same * 100.0;
+            l += snprintf(txt + l, sizeof txt - (size_t)l,
+                          g_yr_cm >= 0 ? tr("Zelfde periode %d:\n%s (%+.0f%%)", "Same period %d:\n%s (%+.0f%%)")
+                                       : tr("%d: %s (%+.0f%%)", "%d: %s (%+.0f%%)"),
+                          g_yr_year - 1, b2, pct);
+        }
+        if (g_yr_cm >= 0 && g_yr_any_prev && fc_year > 0) {
+            yr_fmt(b2, sizeof b2, fc_year);
+            l += snprintf(txt + l, sizeof txt - (size_t)l, tr("%sVerwachting heel %d:\n~%s", "%sForecast all of %d:\n~%s"),
+                          l ? "\n" : "", g_yr_year, b2);
+        }
+        lv_obj_set_style_text_color(lbl_legend, lv_color_hex(THEME_TEXT_DIM), 0);
+        lv_label_set_text(lbl_legend, txt);
+    }
+}
+
 static void reload_and_render(void) {
     hide_tooltip();
+    if (selected_period == PERIOD_THISYEAR && metric_has_year()) {
+        /* the pair of bars: last year (cs, grey, left) and this year */
+        lv_label_set_text(lbl_metric_name, metric_title(selected_metric));
+        lv_obj_clear_flag(lbl_metric_name, LV_OBJ_FLAG_HIDDEN);
+        if (btn_plug_next) lv_obj_add_flag(btn_plug_next, LV_OBJ_FLAG_HIDDEN);
+        if (!g_cs_cur) g_cs_cur = lv_chart_add_series(chart, lv_color_hex(metrics[selected_metric].color), LV_CHART_AXIS_PRIMARY_Y);
+        lv_chart_set_series_color(chart, cs, lv_color_hex(YR_PREV_COLOR));
+        lv_chart_set_series_color(chart, g_cs_cur, lv_color_hex(metrics[selected_metric].color));
+        render_year();
+        if (btn_mode_uom && btn_mode_euro) {
+            lv_obj_set_style_bg_color(btn_mode_uom, lv_color_hex(settings.stats_show_euro ? THEME_BTN_BG : THEME_ACCENT_BLUE), 0);
+            lv_obj_set_style_bg_color(btn_mode_euro, lv_color_hex(settings.stats_show_euro ? THEME_ACCENT_BLUE : THEME_BTN_BG), 0);
+        }
+        update_rate_labels();
+        return;
+    }
+    if (g_cs_cur) { lv_chart_remove_series(chart, g_cs_cur); g_cs_cur = NULL; }
     lv_chart_set_series_color(chart, cs, lv_color_hex(metrics[selected_metric].color));
     lv_label_set_text(lbl_metric_name, metric_title(selected_metric));
     if (is_plug()) {
@@ -1809,7 +2116,9 @@ static void on_metric_tap(lv_event_t * e) {
     if (idx == M_PLUG && g_plug_n == 0) return;
     selected_metric = idx;
     g_time_offset = 0;
+    if (selected_period == PERIOD_THISYEAR && !metric_has_year()) selected_period = PERIOD_MONTHS;
     for (int i = 0; i < N_METRIC; i++) style_metric_tab(i, i == idx);
+    for (int i = 0; i < N_PERIOD; i++) style_period_tab(i, i == (int)selected_period);
     reload_and_render();
 }
 /* Next smart plug (button next to the plug name). */
@@ -1822,6 +2131,7 @@ static void on_plug_next(lv_event_t * e) {
 static void on_period_tap(lv_event_t * e) {
     int idx = (int)(long)lv_event_get_user_data(e);
     if (idx < 0 || idx >= N_PERIOD) return;
+    if (idx == PERIOD_THISYEAR && !metric_has_year()) return;
     selected_period = (period_t)idx;
     g_time_offset = 0;
     for (int i = 0; i < N_PERIOD; i++) style_period_tab(i, i == idx);
@@ -2106,19 +2416,22 @@ lv_obj_t * screen_stats_create(void) {
         style_metric_tab(i, i == selected_metric);
     }
 
-    /* Period tabs row (6 tabs: Nu, Uren, Dagen, Weken, Maanden, Jaren) */
-    const char * periods[] = {
+    /* Period tabs row (7 tabs: Nu, Uren, Dagen, Weken, Maanden, Dit jaar,
+     * Jaren). Index = period_t; `order` is the place on screen. */
+    const char * periods[N_PERIOD] = {
         tr("Nu", "Now"),
         tr("Uren", "Hours"),
         tr("Dagen", "Days"),
         tr("Weken", "Weeks"),
         tr("Maanden", "Months"),
-        tr("Jaren", "Years")
+        tr("Jaren", "Years"),
+        tr("Dit jaar", "This year")
     };
+    static const int order[N_PERIOD] = { 0, 1, 2, 3, 4, 6, 5 };
     for (int i = 0; i < N_PERIOD; i++) {
         lv_obj_t * t = lv_obj_create(scr_root);
-        lv_obj_set_size(t, SX(150), SY(44));
-        lv_obj_set_pos(t, SX(26 + i * 163), SY(164));
+        lv_obj_set_size(t, SX(130), SY(44));
+        lv_obj_set_pos(t, SX(26 + order[i] * 139), SY(164));
         lv_obj_set_style_radius(t, 10, 0);
         lv_obj_set_style_pad_all(t, 0, 0);
         lv_obj_clear_flag(t, LV_OBJ_FLAG_SCROLLABLE);
