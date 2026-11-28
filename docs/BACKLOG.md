@@ -942,3 +942,7 @@
 - **Status**: Implemented (2026-11-27), sim-checked (SIM_IDLE=1 nav mode: Thuis+option on -> black, Thuis+off -> dim, Slapen+Slapen/Weg option -> black, Weg+only Thuis option -> dim); not on a device yet.
 - **What**: settings.dim_home_black (appended; Instellingen > Scherm "Scherm uit bij Thuis", web settings + JSON mirror). ui_stack.c: one rule want_black() (Slapen/Weg with dim_sleep_away_black, Thuis with dim_home_black) for dimming, preset changes while dimmed (black <-> dim, wake from black) and a live settings change.
 - **Sim**: SIM_IDLE=1 runs ui_idle_tick during nav-mode waits (auto-dim / auto-home).
+
+### 98. "Weer nu" tile on the home screen (outside temperature, as on the dim screen)
+- **Status**: Implemented (2026-11-28), sim-checked (3x2, 2x3 light theme at -12.4, 2x2 minimum); not on a device yet.
+- **What**: new layout tile type LT_WEATHER_NOW ("Weer nu", appended after LT_WIFIQR = 22, min 2x2, home page only like the other typed tiles). Title "Buiten"; big temperature (dim_set_outside_temp fallbacks) with the Buienradar icon next to it, or under it on a narrow tile; the current description at the bottom when the tile is tall enough. Font picked by height and width (dim_big_font at full size). Tap = the weather screen (open_forecast). Refreshed with the other home tiles.

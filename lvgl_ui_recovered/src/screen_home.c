@@ -31,6 +31,7 @@
 #include "tile_slots.h"
 #include "tile_ext.h"
 #include "tile_wifiqr.h"
+#include "homey_parse.h"   /* hy_fold_text */
 #include "layout.h"
 #include "clock_studio.h"
 #include "tile_flows.h"
@@ -148,6 +149,12 @@ static lv_obj_t * tile_wifiqr = NULL;        /* WiFi QR (LT_WIFIQR, tile_wifiqr.
 static lv_obj_t * tile_tdial = NULL;         /* round thermostat (LT_THERMO_DIAL, tile_dial.c) */        /* Homey flows (LT_HOMEY_FLOWS, tile_flows.c) */   /* Klok Studio (LT_CLOCKSTUDIO, #55) */
 static void on_clockstudio_click(lv_event_t * e) { (void)e; cs_open_fullscreen(); }
 static lv_obj_t * lbl_cl_hum = NULL;       /* big "45%" */
+/* "Weer nu" tile (LT_WEATHER_NOW): the dim screen's outside-temperature
+ * block on the home screen. Big temperature with the weather icon next to
+ * it, the Buienradar description under it; tap = weather screen. */
+static lv_obj_t * tile_wxnow = NULL;
+static lv_obj_t * wxn_temp = NULL, * wxn_icon = NULL, * wxn_desc = NULL;
+static lv_coord_t wxn_temp_w = 0;           /* room for the temperature text */
 static lv_obj_t * lbl_cl_quality = NULL;   /* air-quality word, coloured */
 static lv_obj_t * lbl_cl_air = NULL;       /* "CO2 650  TVOC 120" */
 static int        cl_wide = 0;             /* tile wide enough for "Lucht: Goed" */
@@ -2146,6 +2153,40 @@ static void update_tile_smartplug(void) {
 }
 
 /* Binnenklimaat tile: "--" for any value the sensor hasn't reported (0). */
+static void update_tile_wxnow(void) {
+    if (!tile_wxnow || !wxn_temp) return;
+    if (!weather_state.connected) {
+        ui_label_set_text(wxn_temp, "--");
+        if (wxn_icon) ui_obj_add_flag(wxn_icon, LV_OBJ_FLAG_HIDDEN);
+        if (wxn_desc) ui_label_set_text(wxn_desc, "");
+        return;
+    }
+    dim_set_outside_temp(wxn_temp, weather_display_temp(), wxn_temp_w);
+    if (wxn_icon) {
+        char ic[8];
+        snprintf(ic, sizeof ic, "%s", weather_state.current_icon);
+        if (!ic[0] && weather_state.day_count > 0) snprintf(ic, sizeof ic, "%s", weather_state.days[0].icon);
+        if (ic[0]) {
+            uint32_t c = weather_icon_color_for(ic);
+            if (settings.home_light_mode && (c == 0xc8d4e0 || c == 0xe8f0ff || c == 0xf0f4f8 || c == 0x9aa6b3))
+                c = (c == 0xe8f0ff) ? 0x3b82f6 : 0x64748b;
+            else if (settings.home_light_mode && (c == 0xffd24a || c == 0xf2c66a))
+                c = 0xd97706;
+            ui_img_set_src(wxn_icon, weather_icon_for_lg(ic));
+            ui_obj_set_style_img_recolor(wxn_icon, lv_color_hex(c), 0);
+            ui_obj_clear_flag(wxn_icon, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            ui_obj_add_flag(wxn_icon, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    if (wxn_desc) {
+        char d[80];
+        snprintf(d, sizeof d, "%s", weather_state.current_desc);
+        hy_fold_text(d);              /* the UI fonts have no Latin-1 */
+        ui_label_set_text(wxn_desc, d);
+    }
+}
+
 static void update_tile_climate(void) {
     if (!tile_climate) return;
     float hum = toon_state.humidity;
@@ -2377,6 +2418,7 @@ static void refresh_cb(lv_timer_t * t) {
     update_tile_lights();
     update_tile_smartplug();
     update_tile_climate();
+    update_tile_wxnow();
     tf_tile_update();
     td_tile_update();
     update_rain_tile_ui();
@@ -3730,6 +3772,13 @@ static void home_show_page(int n) {
         if (Ld && Ld->page == 0) {
             if (n == 0 && Ld->visible) ui_obj_clear_flag(tile_tdial, LV_OBJ_FLAG_HIDDEN);
             else ui_obj_add_flag(tile_tdial, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    if (tile_wxnow) {
+        const layout_tile_t * Lx = settings.custom_layout_enabled ? layout_find(LT_WEATHER_NOW) : NULL;
+        if (Lx && Lx->page == 0) {
+            if (n == 0 && Lx->visible) ui_obj_clear_flag(tile_wxnow, LV_OBJ_FLAG_HIDDEN);
+            else ui_obj_add_flag(tile_wxnow, LV_OBJ_FLAG_HIDDEN);
         }
     }
     if (tile_wifiqr) {
@@ -5374,6 +5423,76 @@ lv_obj_t * screen_home_create(void) {
             wq_tile_build(tile_wifiqr, wq_t.title);
         }
 
+        /* "Weer nu" tile: outside temperature + icon, like the dim screen */
+        if (layout_find(LT_WEATHER_NOW)) {
+            tile_t wx_t;
+            make_tile(scr_root, 0, 0, 200, 200, LT_WEATHER_NOW, tr("Buiten", "Outside"), 0x4488aa, open_forecast, &wx_t);
+            tile_wxnow = wx_t.tile;
+            lv_obj_update_layout(tile_wxnow);
+            int cw = lv_obj_get_content_width(tile_wxnow);
+            int ch = lv_obj_get_content_height(tile_wxnow);
+            int top = SY(40);                          /* under the title */
+            int avail = ch - top;
+            int desc_h = lv_font_get_line_height(SF(16)) + 2;
+            int show_desc = avail >= SY(110);          /* room for a description line */
+            if (show_desc) avail -= desc_h;
+            /* Biggest readout font that fits: icon next to the temperature
+             * (wide tiles), else the icon under it (narrow, tall tiles, as
+             * on the dim screen). Width is checked against "-18°", the
+             * shortest text dim_set_outside_temp falls back to. */
+            static const int sizes[] = { 96, 64, 48, 36, 28 };
+            const lv_font_t * f = SF(28);
+            int col = 0, lh = 0, icon_px = 40;
+            for (size_t i = 0; i < sizeof sizes / sizeof sizes[0]; i++) {
+                const lv_font_t * c = SF(sizes[i]);
+                if (c == SF(96)) c = dim_big_font();   /* same face as the dim screen */
+                lv_point_t sz;
+                lv_txt_get_size(&sz, "-18°", c, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+                int h = lv_font_get_line_height(c);
+                int ip = h * 9 / 10; if (ip > 80) ip = 80;          /* icon_wx_*_lg are 80 px */
+                if (h <= avail && sz.x + SX(10) + ip <= cw) { f = c; lh = h; icon_px = ip; col = 0; break; }
+                int ipc = avail - h - 4; if (ipc > 80) ipc = 80;
+                if (ipc >= 40 && sz.x <= cw) { f = c; lh = h; icon_px = ipc; col = 1; break; }
+                f = c; lh = h; icon_px = ip;                       /* smallest: best effort */
+            }
+
+            lv_obj_t * row = lv_obj_create(tile_wxnow);
+            lv_obj_remove_style_all(row);
+            lv_obj_set_size(row, cw, LV_SIZE_CONTENT);
+            lv_obj_set_flex_flow(row, col ? LV_FLEX_FLOW_COLUMN_REVERSE : LV_FLEX_FLOW_ROW);
+            lv_obj_set_flex_align(row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+            lv_obj_set_style_pad_column(row, SX(10), 0);
+            lv_obj_set_style_pad_row(row, 4, 0);
+            ui_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+            int blk = col ? lh + 4 + icon_px : lh;
+            ui_obj_align(row, LV_ALIGN_TOP_MID, 0, top + (avail - blk) / 2);
+
+            wxn_icon = lv_img_create(row);
+            ui_img_set_src(wxn_icon, &icon_wx_cloud_lg);
+            ui_obj_set_style_img_recolor_opa(wxn_icon, 255, 0);
+            lv_img_set_size_mode(wxn_icon, LV_IMG_SIZE_MODE_REAL);
+            lv_img_set_zoom(wxn_icon, (uint16_t)(icon_px * 256 / 80));
+            ui_obj_add_flag(wxn_icon, LV_OBJ_FLAG_HIDDEN);
+
+            wxn_temp = lv_label_create(row);
+            ui_obj_set_style_text_color(wxn_temp, lv_color_hex(COL_TEXT_HI), 0);
+            ui_obj_set_style_text_font(wxn_temp, f, 0);
+            ui_label_set_text(wxn_temp, "--");
+            wxn_temp_w = col ? cw : cw - icon_px - SX(10);
+
+            if (show_desc) {
+                wxn_desc = lv_label_create(tile_wxnow);
+                ui_obj_set_style_text_color(wxn_desc, lv_color_hex(COL_TEXT_DIM), 0);
+                ui_obj_set_style_text_font(wxn_desc, SF(16), 0);
+                lv_obj_set_width(wxn_desc, cw);
+                lv_obj_set_style_text_align(wxn_desc, LV_TEXT_ALIGN_CENTER, 0);
+                lv_label_set_long_mode(wxn_desc, LV_LABEL_LONG_DOT);
+                ui_obj_align(wxn_desc, LV_ALIGN_BOTTOM_MID, 0, 0);
+                ui_label_set_text(wxn_desc, "");
+            }
+            update_tile_wxnow();
+        }
+
         /* Homey flows tile: a button per chosen flow; long press = chooser */
         if (layout_find(LT_HOMEY_FLOWS)) {
             tile_t hf_t;
@@ -6102,6 +6221,7 @@ void screen_home_destroy(void) {
         tile_hflows = NULL;
         tile_tdial = NULL;
         tile_wifiqr = NULL;
+        tile_wxnow = NULL; wxn_temp = wxn_icon = wxn_desc = NULL;
         wq_tile_forget();
         for (int k = 0; k < TILE_SLOT_HOME_N; k++) hs_tile[k] = hs_title[k] = hs_main[k] = hs_sub[k] = NULL;
         g_hs_count = 0;

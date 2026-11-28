@@ -44,6 +44,7 @@ typedef enum {
     LT_HOMEY_FLOWS,     /* buttons that start Homey flows (tile_flows.c) */
     LT_THERMO_DIAL,     /* round thermostat: dial + knob (tile_dial.c) */
     LT_WIFIQR,          /* QR code of a (guest) WiFi network (tile_wifiqr.c) */
+    LT_WEATHER_NOW,     /* "Weer nu": outside temperature + weather icon (as DB_WEATHER on the dim screen) */
     LT_COUNT
 } layout_tile_type_t;
 
