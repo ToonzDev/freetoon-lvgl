@@ -43,7 +43,7 @@ static lv_obj_t * tab_period_btns[N_PERIOD];
 /* "Dit jaar" view (PERIOD_THISYEAR): Jan..Dec of one year, each month next
  * to the same month of the year before (grey, the `cs` series on the left;
  * `g_cs_cur` on the right holds the year itself). Months still to come show
- * a light forecast bar: last year's month x this year's trend so far. The
+ * a transparent forecast bar: last year's month x this year's trend so far. The
  * second series exists only while this view is shown: LVGL 8.3 also counts
  * hidden series when it sizes the bars. */
 static lv_chart_series_t * g_cs_cur = NULL;
@@ -681,7 +681,7 @@ static void update_nav_range_label(long start_t, long end_t) {
                 snprintf(buf, sizeof(buf), tr("#%06x %d#  t.o.v.  #%06x %d#%s", "#%06x %d#  vs  #%06x %d#%s"),
                          (unsigned)(metrics[selected_metric].color & 0xffffff), g_yr_year,
                          (unsigned)(YR_PREV_COLOR & 0xffffff), g_yr_year - 1,
-                         g_yr_cm >= 0 ? tr("   (licht = verwachting)", "   (light = forecast)") : "");
+                         g_yr_cm >= 0 ? tr("   (transparant = verwachting)", "   (transparent = forecast)") : "");
             else
                 snprintf(buf, sizeof(buf), "%d", g_yr_year);
             break;
@@ -1125,7 +1125,7 @@ static lv_coord_t chart_value_y(lv_coord_t v) {
 static void chart_draw_event_cb(lv_event_t * e) {
     lv_obj_draw_part_dsc_t * dsc = lv_event_get_draw_part_dsc(e);
     if (!dsc) return;
-    /* "Dit jaar": months still to come are a light forecast bar; the
+    /* "Dit jaar": months still to come are a transparent forecast bar; the
      * running month gets a light extension up to its expected total. */
     if (g_cs_cur && dsc->part == LV_PART_ITEMS && dsc->type == LV_CHART_DRAW_PART_BAR && dsc->draw_area) {
         int id = (int)dsc->id;
