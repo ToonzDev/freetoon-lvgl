@@ -5436,16 +5436,16 @@ lv_obj_t * screen_home_create(void) {
             int desc_h = lv_font_get_line_height(SF(16)) + 2;
             int show_desc = avail >= SY(110);          /* room for a description line */
             if (show_desc) avail -= desc_h;
-            /* Biggest readout font that fits: icon next to the temperature
+            /* The home clock's size (SF(64)), smaller only when it does not
+             * fit: icon next to the temperature
              * (wide tiles), else the icon under it (narrow, tall tiles, as
              * on the dim screen). Width is checked against "-18°", the
              * shortest text dim_set_outside_temp falls back to. */
-            static const int sizes[] = { 96, 64, 48, 36, 28 };
+            static const int sizes[] = { 64, 48, 36, 28 };   /* 64 = the home clock (LT_CLOCK) */
             const lv_font_t * f = SF(28);
             int col = 0, lh = 0, icon_px = 40;
             for (size_t i = 0; i < sizeof sizes / sizeof sizes[0]; i++) {
                 const lv_font_t * c = SF(sizes[i]);
-                if (c == SF(96)) c = dim_big_font();   /* same face as the dim screen */
                 lv_point_t sz;
                 lv_txt_get_size(&sz, "-18°", c, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
                 int h = lv_font_get_line_height(c);
