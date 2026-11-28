@@ -27,6 +27,7 @@
 
 static lv_obj_t * g_tile, * g_arc, * g_sp, * g_room, * g_state, * g_flame, * g_prog;
 static lv_obj_t * g_minus, * g_plus;
+static lv_obj_t * g_pre[4];    /* Comfort / Thuis / Slapen / Weg under the dial (tall tiles) */
 static int    g_drag;          /* the knob is being dragged: show its value */
 static int    g_cls;           /* size class of the built tile (0 XS .. 3 L) */
 static time_t g_hold_until;    /* after a change: keep our value until the happ follows */
@@ -84,9 +85,29 @@ static void on_step(lv_event_t * e) {
     pin_gate(up ? up_cb : down_cb, NULL);
 }
 
+/* The schedule runs (also during a temporary override, which ends at the
+ * next switch point). */
+static int program_on(void) {
+    int ps = toon_state.program_state;
+    return (ps == 1 || ps == 2 || ps == 3 || ps == 8) || boxtalk_temp_override_origin() >= 0;
+}
+
+/* A preset button: as on the classic thermostat tile (screen_home.c
+ * preset_apply): with the program on, switch the program's preset;
+ * otherwise set the preset and stay manual. */
+static void preset_cb(void * ctx) {
+    int s = (int)(intptr_t)ctx;
+    if (!program_on() || toon_state.program_state == 0) boxtalk_set_manual_preset(s);
+    else                                                 boxtalk_set_program(s);
+}
+static void on_preset(lv_event_t * e) {
+    pin_gate(preset_cb, lv_event_get_user_data(e));
+}
+
 static void on_tile_delete(lv_event_t * e) {
     if (lv_event_get_target(e) != g_tile) return;
     g_tile = g_arc = g_sp = g_room = g_state = g_flame = g_prog = g_minus = g_plus = NULL;
+    for (int i = 0; i < 4; i++) g_pre[i] = NULL;
     g_drag = 0;
     g_col = g_pcol = 0xffffffff;
 }
@@ -114,10 +135,26 @@ void td_tile_build(lv_obj_t * tile, lv_obj_t * title, lv_event_cb_t on_open) {
 
     lv_obj_update_layout(tile);
     int cw = lv_obj_get_content_width(tile), ch = lv_obj_get_content_height(tile);
+    /* A row of programme buttons under the dial when the tile is tall
+     * enough for it: the dial keeps at least 3/4 of the tile width (a
+     * square or wide tile stays as it was). */
+    int row_h = SY(44), row_gap = SY(8);
+    int with_pre = (ch - row_h - row_gap) >= cw * 3 / 4 && (ch - row_h - row_gap) >= 120;
+    if (with_pre) ch -= row_h + row_gap;      /* the dial lays out in the part above the row */
     int d = cw < ch ? cw : ch;
     d -= (DISP_VER < 600) ? 4 : 8;
     if (d < 120) d = 120;
+    /* With the buttons: dial + row as one block, centred in the tile (a
+     * very tall tile otherwise left a gap between the dial and the row) */
     int cx = cw / 2, cy = ch / 2;
+    int pre_y = 0;
+    if (with_pre) {
+        int area = d + ((DISP_VER < 600) ? 4 : 8);   /* the dial's square */
+        if (area > ch) area = ch;
+        int oy = (ch - area) / 2;
+        cy = oy + area / 2;
+        pre_y = oy + area + row_gap;
+    }
     int aw = d >= 300 ? 18 : d >= 200 ? 14 : 10;          /* ring width */
 
     /* tap in the middle: the thermostat screen (the ring and the buttons
@@ -221,6 +258,41 @@ void td_tile_build(lv_obj_t * tile, lv_obj_t * title, lv_event_cb_t on_open) {
     lv_obj_set_pos(g_minus, cx - bx - bs / 2, cy + by - bs / 2);
     lv_obj_set_pos(g_plus,  cx + bx - bs / 2, cy + by - bs / 2);
 
+    if (with_pre) {
+        static const char * const nl[4] = { "Comfort", "Thuis", "Slapen", "Weg" };
+        static const char * const en[4] = { "Comfort", "Home", "Sleep", "Away" };
+        int gap = SX(6);
+        int bw = (cw - 3 * gap) / 4;
+        /* full names in 16 px if "Comfort" fits, else 13 px, else C/T/S/W */
+        const lv_font_t * f = SF(16);
+        int shortn = 0;
+        lv_point_t sz;
+        lv_txt_get_size(&sz, "Comfort", f, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+        if (sz.x > bw - 8) {
+            f = SF(13);
+            lv_txt_get_size(&sz, "Comfort", f, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+            if (sz.x > bw - 6) { shortn = 1; f = SF(16); }
+        }
+        static const char * const sh[4] = { "C", "T", "S", "W" };
+        static const char * const she[4] = { "C", "H", "S", "A" };
+        for (int i = 0; i < 4; i++) {
+            lv_obj_t * b = lv_btn_create(tile);
+            g_pre[i] = b;
+            lv_obj_set_size(b, bw, row_h);
+            lv_obj_set_pos(b, i * (bw + gap), pre_y);
+            lv_obj_set_style_radius(b, 6, 0);
+            lv_obj_set_style_shadow_width(b, 0, 0);
+            lv_obj_set_style_border_width(b, 0, 0);
+            lv_obj_set_ext_click_area(b, 4);
+            lv_obj_add_event_cb(b, on_preset, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+            lv_obj_t * l = lv_label_create(b);
+            int eng = settings.language == LANG_EN;
+            lv_label_set_text(l, shortn ? (eng ? she[i] : sh[i]) : (eng ? en[i] : nl[i]));
+            lv_obj_set_style_text_font(l, f, 0);
+            lv_obj_center(l);
+        }
+    }
+
     td_tile_update();
 }
 
@@ -249,9 +321,30 @@ void td_tile_update(void) {
 
     /* program on: the weekly schedule runs (also during a temporary
      * override, which ends at the next switch point) */
+    /* programme buttons: as on the classic tile - the active preset with a
+     * border, filled in its colour while the program runs, border only
+     * when manual */
+    if (g_pre[0]) {
+        static const uint32_t pcols[4] = { 0xcc7733, 0x3377cc, 0x553388, 0x557788 };
+        int on = program_on();
+        int org = boxtalk_temp_override_origin();
+        int hi = (toon_state.active_state >= 0 && toon_state.active_state <= 3) ? toon_state.active_state
+               : (org >= 0 && org <= 3) ? org : -1;
+        uint32_t base = settings.home_light_mode ? 0xccddee : 0x243242;
+        for (int i = 0; i < 4; i++) {
+            int act = i == hi;
+            ui_obj_set_style_border_width(g_pre[i], act ? 2 : 0, 0);
+            ui_obj_set_style_border_color(g_pre[i], lv_color_hex(COL_HI), 0);
+            ui_obj_set_style_bg_color(g_pre[i], lv_color_hex(act && on ? pcols[i] : base), 0);
+            lv_obj_t * l = lv_obj_get_child(g_pre[i], 0);
+            uint32_t tc = settings.home_light_mode ? 0x223344 : (act ? 0xffffff : 0x88aabb);
+            if (act && on) tc = 0xffffff;
+            if (l) ui_obj_set_style_text_color(l, lv_color_hex(tc), 0);
+        }
+    }
+
     if (g_prog) {
-        int ps = toon_state.program_state;
-        int on = (ps == 1 || ps == 2 || ps == 3 || ps == 8) || boxtalk_temp_override_origin() >= 0;
+        int on = program_on();
         int manual_preset = !on && toon_state.active_state >= 0 && toon_state.active_state <= 3 && g_cls >= 2;   /* S: too long */
         if (on)                 snprintf(b, sizeof b, tr("Programma - %s", "Schedule - %s"), program_label());
         else if (manual_preset) snprintf(b, sizeof b, tr("%s - handmatig", "%s - manual"), program_label());

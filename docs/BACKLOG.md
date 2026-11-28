@@ -946,3 +946,7 @@
 ### 98. "Weer nu" tile on the home screen (outside temperature, as on the dim screen)
 - **Status**: Implemented (2026-11-28), sim-checked (3x2, 2x3 light theme at -12.4, 2x2 minimum); not on a device yet.
 - **What**: new layout tile type LT_WEATHER_NOW ("Weer nu", appended after LT_WIFIQR = 22, min 2x2, home page only like the other typed tiles). Title "Buiten"; big temperature (dim_set_outside_temp fallbacks) with the Buienradar icon next to it, or under it on a narrow tile; the current description at the bottom when the tile is tall enough. Font picked by height and width: SF(64) like the home clock, smaller only when that does not fit (not the bold dim readout font). Tap = the weather screen (open_forecast). Refreshed with the other home tiles.
+
+### 99. Programme buttons on the round thermostat tile
+- **Status**: Implemented (2026-11-28), sim-checked (Toon 2: 4x4 unchanged, 4x5 full names, 3x4 / 2x3 C-T-S-W, 3x6 light theme; Toon 1: 4x5, 3x4; tap on Weg -> Programma - Weg); on .16.
+- **What**: field request (users of LT_THERMO_DIAL missed Comfort / Thuis / Slapen / Weg). No new tile type: tile_dial.c adds the row under the dial when the tile is taller than wide (dial still >= 3/4 of the width); dial + row are centred as one block. Same behaviour and colours as the classic tile (preset_apply: program on -> boxtalk_set_program, else manual preset; PIN gate; active preset bordered, filled while the program runs).

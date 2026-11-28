@@ -5,6 +5,8 @@
  * open bottom. The setpoint is sent when the knob is released (one request,
  * not one per step), through the PIN gate like the other thermostat
  * controls. A tap in the middle opens the thermostat screen.
+ * A tile taller than wide (dial still >= 3/4 of the width) gets the four
+ * programme buttons (Comfort / Thuis / Slapen / Weg) under the dial.
  */
 #ifndef TILE_DIAL_H
 #define TILE_DIAL_H
